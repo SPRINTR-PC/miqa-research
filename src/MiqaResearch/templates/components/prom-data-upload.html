@@ -1,0 +1,8 @@
+<div id="{{ card_id }}" data-state="active" data-orientation="horizontal" role="tabpanel" aria-labelledby="radix-:r3p:-trigger-prom" id="radix-:r3p:-content-prom" tabindex="0" class="mt-2 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+  <div class="relative rounded-lg border-2 border-dashed p-10 text-center transition-colors border-border hover:border-primary/50 cursor-pointer">
+    <input id="file-input-PROM PDF" type="file" accept=".pdf" multiple="" class="hidden">
+    {% include "components/icon.html" with icon_name="upload.svg" icon_classes="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" bare_icon=True %}
+    <p class="font-medium text-foreground mb-1">Drop PROM PDF files here</p>
+    <p class="text-sm text-muted-foreground">Drag &amp; drop PROM form PDFs here, or click to browse. Only .pdf files are accepted.</p>
+  </div>
+</div>

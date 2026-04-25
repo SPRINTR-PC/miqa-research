@@ -1,0 +1,8 @@
+{% load inline_svg %}
+{% if bare_icon %}
+  {% svg icon_name icon_classes %}
+{% else %}
+<div class="icon {{ icon_classes }}">
+  {% svg icon_name %}
+</div>
+{% endif %}

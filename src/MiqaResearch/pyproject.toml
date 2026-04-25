@@ -1,0 +1,47 @@
+[project]
+name = "miqaresearch"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.14"
+dependencies = [
+    "django>=6.0.3",
+    "django-environ>=0.13.0",
+    "django-htmx>=1.27.0",
+    "django-allauth[mfa]>=65.16.1",
+    "django-rosetta>=0.10.3",
+    "psycopg[binary]>=3.3.3",
+    "django-ninja",
+    "httpx",
+    "pydicom",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.11",
+    "pytest>=9.0.3",
+    "pytest-django>=4.12.0",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py314"
+
+[tool.ruff.lint]
+select = [
+    "E", # pycodestyle errors
+    "W", # pycodestyle warnings
+    "F", # pyflakes
+    "I", # isort
+    "DJ", # flake8-django
+    "UP", # pyupgrade
+]
+ignore = []
+
+[tool.ruff.lint.isort]
+known-first-party = ["MiqaResearch", "data", "documentation"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "MiqaResearch.settings"
+python_files = ["tests.py", "test_*.py", "*_tests.py"]
+testpaths = ["MiqaResearch"]
+addopts = "--reuse-db"

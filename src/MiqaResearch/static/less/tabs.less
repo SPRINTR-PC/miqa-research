@@ -1,0 +1,17 @@
+.horizontal-tablist {
+  border-radius: 10px;
+
+  .tab {
+    border-width: 0;
+    background-color: transparent;
+
+    &[aria-selected="true"] {
+      background-color: var(--color-background);
+    }
+
+    svg {
+      height: 1rem;
+      width: 1rem;
+    }
+  }
+}

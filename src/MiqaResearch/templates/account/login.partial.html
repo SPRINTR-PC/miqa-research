@@ -1,0 +1,69 @@
+<div class="max-w-md mx-auto space-y-8 py-10">
+    <div class="text-center space-y-2">
+        <h1 class="text-3xl font-bold">{% translate "Sign In" %}</h1>
+        <p class="text-muted-foreground">{% translate "Choose your preferred login method" %}</p>
+    </div>
+
+    <div class="grid gap-6">
+        <div class="p-6 border rounded-xl shadow-sm hover:border-primary/50 transition-all bg-card text-card-foreground">
+            <h2 class="text-xl font-semibold mb-2 flex items-center gap-2">
+                {% include "components/icon.html" with icon_name="shield-check.svg" icon_classes="h-5 w-5 text-primary" %}
+                {% translate "YubiKey / Passkey" %}
+            </h2>
+            <p class="text-sm text-muted-foreground mb-6">{% translate "Login securely using your hardware security key or biometric authentication." %}</p>
+            <a href="{% url 'mfa_reauthenticate' %}" class="w-full inline-flex items-center justify-center h-10 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 font-medium transition-colors">
+                {% translate "Sign in with Passkey" %}
+            </a>
+        </div>
+
+        <div class="p-6 border rounded-xl shadow-sm hover:border-primary/50 transition-all bg-card text-card-foreground">
+            <h2 class="text-xl font-semibold mb-2 flex items-center gap-2">
+                {% include "components/icon.html" with icon_name="users.svg" icon_classes="h-5 w-5 text-primary" %}
+                {% translate "SITHS / BankID" %}
+            </h2>
+            <p class="text-sm text-muted-foreground mb-6">{% translate "Authenticate using official Swedish identification services via Svensk E-identitet." %}</p>
+            <div class="grid grid-cols-2 gap-4">
+                <a href="{% url 'siths_login' %}" class="inline-flex items-center justify-center h-10 px-4 py-2 border border-input rounded-md hover:bg-accent hover:text-accent-foreground font-medium transition-colors">
+                    {% translate "SITHS" %}
+                </a>
+                <a href="{% url 'bankid_login' %}" class="inline-flex items-center justify-center h-10 px-4 py-2 border border-input rounded-md hover:bg-accent hover:text-accent-foreground font-medium transition-colors">
+                    {% translate "BankID" %}
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="relative py-4">
+        <div class="absolute inset-0 flex items-center">
+            <span class="w-full border-t"></span>
+        </div>
+        <div class="relative flex justify-center text-xs uppercase">
+            <span class="bg-background px-4 text-muted-foreground font-medium">{% translate "Or continue with email" %}</span>
+        </div>
+    </div>
+
+    <form method="post" action="{% url 'account_login' %}" class="space-y-4 p-6 border rounded-xl bg-card">
+        {% csrf_token %}
+        <div class="space-y-2">
+            <label for="id_login" class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">{% translate "Email" %}</label>
+            <input type="email" name="login" id="id_login" required class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" placeholder="name@example.com">
+        </div>
+        <div class="space-y-2">
+            <div class="flex items-center justify-between">
+                <label for="id_password" class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">{% translate "Password" %}</label>
+                <a href="{% url 'account_reset_password' %}" class="text-xs text-primary hover:underline">{% translate "Forgot password?" %}</a>
+            </div>
+            <input type="password" name="password" id="id_password" required class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" placeholder="••••••••">
+        </div>
+        <button type="submit" class="w-full inline-flex items-center justify-center h-10 px-4 py-2 bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/80 font-medium transition-colors">
+            {% translate "Sign In" %}
+        </button>
+    </form>
+
+    <div class="text-center text-sm">
+        <p class="text-muted-foreground">
+            {% translate "Don't have an account?" %}
+            <a href="{% url 'account_signup' %}" class="text-primary hover:underline font-medium">{% translate "Sign up" %}</a>
+        </p>
+    </div>
+</div>

@@ -1,0 +1,53 @@
+services:
+  mires_db:
+    image: postgres:latest
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=miqaresearch
+    networks:
+      - mires
+    ports:
+      - "5434:5432"
+    restart: on-failure
+
+  mires_fs:
+    image: rustfs/rustfs:latest
+    networks:
+      - mires
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - ./LocalOnly/rustfs:/data
+    restart: on-failure
+
+#  mires_web:
+#    build: .
+#    command: sh -c "python manage.py migrate && python manage.py createcachetable && python /code/manage.py runserver 0.0.0.0:8000"
+#    environment:
+#      - MIRES_DEBUG=1
+#      - MIRES_SECRET_KEY=pf*3@8!@!8dtx%p)51_*sl*-5+fk)8ei^pq)j1$tcr$qm(j#q!
+#      - MIRES_DATABASE_URL=psql://postgres:postgres@mires_db:5432/miqaresearch
+#      - MIRES_SU_EMAIL=root@root.com
+#      - MIRES_SU_PASSWORD=root
+#      - MIRES_FRONTEND_URL=http://localhost:8000
+#      - MIRES_ALLOWED_HOSTS=*
+#      - MIRES_CACHE_BACKEND=django.core.cache.backends.db.DatabaseCache
+#      - MIRES_CACHE_LOCATION=miqa_research_cache
+#      - MIRES_EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend
+#      - MIRES_CSRF_TRUSTED_ORIGINS=http://localhost:8000
+#    depends_on:
+#      - mires_db
+#    expose:
+#      - "8000"
+#    ports:
+#      - "8000:8000"
+#    volumes:
+#      - .:/code
+#    networks:
+#      - mires
+#    restart: on-failure
+
+networks:
+  mires:
