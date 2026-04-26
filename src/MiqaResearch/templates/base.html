@@ -1,0 +1,25 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="{% static 'icons/miqa-research-logo.svg' %}" type="image/x-icon" />
+  <link rel="shortcut icon" href="{% static 'icons/miqa-research-logo.svg' %}" type="image/x-icon" />
+  <title>MIQA research</title>
+  <link rel="stylesheet" href="{% static 'css/mires.css' %}" />
+</head>
+<body class="dark" hx-headers='{"x-csrftoken": "{{ csrf_token }}"}'>
+{% include "navigation.html" %}
+<div id="mires-main" class="container main-container py-6 space-y-16">
+{% block main %}
+{% endblock %}
+</div>
+<script src="{% static 'js/htmx/htmx.min.js' %}" type="application/javascript"></script>
+<script src="{% static 'js/htmx/ext/sse.js' %}" type="application/javascript"></script>
+<script src="{% static 'js/htmx/ext/ws.js' %}" type="application/javascript"></script>
+<script src="{% static 'js/htmx/ext/head-support.js' %}" type="application/javascript"></script>
+<script src="{% static 'js/mires.js' %}" type="application/javascript"></script>
+<script src="{% static 'js/mireswc.js' %}" type="application/javascript"></script>
+</body>
+</html>

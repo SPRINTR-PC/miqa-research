@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>mireswc</title>
+    <link rel="stylesheet" href="./src/index.css" />
+    <!--<script type="module" src="/src/prom-upload.ts"></script>
+    <script type="module" src="/src/kp-select.ts"></script>-->
+    <script type="module" src="/src/miqa-monitor.ts"></script>
+    <script type="module" src="/src/miqa-monitor-columns.ts"></script>
+    <script type="module" src="/src/miqa-monitor-filter.ts"></script>
+    <script type="module" src="/src/miqa-monitor-table.ts"></script>
+  </head>
+  <body>
+    <div id="app" style="width: 960px; padding: 20px;">
+      <miqa-monitor
+        columnListApiUri="http://localhost:8000/api/v1/monitor/columnlist"
+      ></miqa-monitor>
+      <!--
+      <prom-upload language="en" uploadurl="/static/prom_data"></prom-upload>
+      
+      <div style="margin-top: 40px; border-top: 1px solid #ccc; padding-top: 20px;">
+        <h3>kp-select Demo (Slot-based)</h3>
+        <div style="width: 300px;">
+          <kp-select id="select-demo" searchable placeholder="Choose a fruit...">
+            <option value="apple">Apple</option>
+            <option value="banana">Banana</option>
+            <option value="cherry">Cherry</option>
+            <option value="date">Date</option>
+            <option value="elderberry">Elderberry</option>
+            <option value="fig">Fig</option>
+            <option value="grape">Grape</option>
+          </kp-select>
+        </div>
+        <p id="selected-value">Selected: none</p>
+      </div>
+      -->
+    </div>
+
+    <!--
+    <script>
+      const kpSelect = document.getElementById('select-demo');
+
+      kpSelect.addEventListener('change', (e) => {
+        document.getElementById('selected-value').textContent = 'Selected: ' + e.detail.value;
+      });
+    </script>
+  -->
+  </body>
+</html>

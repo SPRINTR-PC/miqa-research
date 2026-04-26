@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% load static %}
+{% get_current_language as LANGUAGE_CODE %}
+{% block main %}
+  <div class="container py-8 space-y-6 max-w-5xl">
+    <div>
+      <div class="flex items-center gap-3">
+        {% include "components/icon.html" with icon_name="upload.svg" icon_classes="h-6 w-6 text-primary" %}
+        <h1 class="font-bold text-3xl tracking-tight">{% translate "Upload Data" %}</h1>
+      </div>
+      <p class="text-muted-foreground mt-1">{% translate "Upload DICOM files or PROM forms to a research project." %}</p>
+    </div>
+    <div class="rounded-lg border bg-card text-card-foreground shadow-sm">
+      <div class="flex flex-col space-y-1.5 p-6 pb-3">
+        <h3 class="font-semibold tracking-tight text-lg">{% translate "Select Project" %}</h3>
+        <p class="text-sm text-muted-foreground">{%  translate "Choose the project to upload data to." %}</p>
+      </div>
+      <div class="p-6 pt-0">
+        <kp-select id="project-select" name="project" searchable placeholder="{% translate 'Select a project' %}" searchPlaceholder="{% translate 'Search...' %}">
+          {% for project in projects %}
+          <option value="{{ project.id }}">{{ project.name }}</option>
+          {% endfor %}
+        </kp-select>
+      </div>
+    </div>
+    <prom-upload language="{{ LANGUAGE_CODE }}" uploadUrl="{% static 'prom_data' %}"></prom-upload>
+  </div>
+{% endblock main %}

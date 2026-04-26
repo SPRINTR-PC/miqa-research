@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 300" width="100%" height="100%">
+    <defs>
+        <style>
+            .text-brand { fill: var(--text-brand, #0f172a); }
+            .text-sub { fill: var(--text-fill, #64748b); }
+
+            /* Hover Animations */
+            .dash-line {
+                transition: stroke-width 0.3s ease;
+            }
+            svg:hover .dash-line {
+                animation: dashFlow 0.8s linear infinite;
+                stroke-width: 4;
+            }
+            .isodose-ring {
+                transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1), stroke-width 0.3s ease;
+                transform-origin: 150px 150px;
+            }
+            svg:hover .isodose-ring.outer {
+                transform: scale(1.08);
+            }
+            svg:hover .isodose-ring.inner {
+                transform: scale(1.18);
+                stroke-width: 3;
+            }
+            .logo-text {
+                transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+            }
+            svg:hover .logo-text {
+                transform: translateX(12px);
+            }
+
+            @keyframes dashFlow {
+                to { stroke-dashoffset: -12; }
+            }
+        </style>
+        <mask id="cutoutMask">
+            <!-- Everything white stays, black is cut out -->
+            <rect width="800" height="300" fill="white"></rect>
+            <!-- Medical Cross Cutout -->
+            <path d="M 145 135 h 10 v 10 h 10 v 10 h -10 v 10 h -10 v -10 h -10 v -10 h 10 Z" fill="black"></path>
+            <!-- Node Center Cutouts -->
+            <circle cx="150" cy="30" r="5" fill="black"></circle>
+            <circle cx="254" cy="210" r="5" fill="black"></circle>
+            <circle cx="46" cy="210" r="5" fill="black"></circle>
+        </mask>
+    </defs>
+
+    <!-- Connecting Lines (Dashed) -->
+    <line class="dash-line" x1="150" y1="30" x2="150" y2="150" stroke="rgba(50, 210, 151, 0.992)" stroke-width="3" stroke-dasharray="6 6"></line>
+    <line class="dash-line" x1="254" y1="210" x2="150" y2="150" stroke="rgba(50, 210, 151, 0.992)" stroke-width="3" stroke-dasharray="6 6"></line>
+    <line class="dash-line" x1="46" y1="210" x2="150" y2="150" stroke="rgba(50, 210, 151, 0.992)" stroke-width="3" stroke-dasharray="6 6"></line>
+
+    <!-- Isodose Rings -->
+    <circle class="isodose-ring outer" cx="150" cy="150" r="80" stroke="rgba(50, 210, 151, 0.2)" stroke-width="2" fill="none"></circle>
+    <circle class="isodose-ring inner" cx="150" cy="150" r="55" stroke="rgba(50, 210, 151, 0.4)" stroke-width="2" fill="none"></circle>
+
+    <!-- Group applying the transparent cutouts -->
+    <g mask="url(#cutoutMask)">
+        <!-- Central Target -->
+        <circle cx="150" cy="150" r="35" fill="rgba(50, 210, 151, 0.992)"></circle>
+
+        <!-- Nodes -->
+        <circle cx="150" cy="30" r="14" fill="rgba(50, 210, 151, 0.992)"></circle>
+        <circle cx="254" cy="210" r="14" fill="rgba(50, 210, 151, 0.992)"></circle>
+        <circle cx="46" cy="210" r="14" fill="rgba(50, 210, 151, 0.992)"></circle>
+    </g>
+
+    <!-- SEPARATOR -->
+    <line x1="300" y1="80" x2="300" y2="220" stroke="rgba(50, 210, 151, 0.3)" stroke-width="2" stroke-linecap="round"></line>
+
+    <!-- TYPOGRAPHY -->
+    <g class="logo-text">
+        <text x="340" y="155" font-family="ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-weight="800" font-size="88" class="text-brand" text-anchor="start" letter-spacing="0.02em">MIQA</text>
+
+        <text x="345" y="200" font-family="ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-weight="600" font-size="24" class="text-sub" text-anchor="start" letter-spacing="0.4em">RESEARCH</text>
+    </g>
+</svg>

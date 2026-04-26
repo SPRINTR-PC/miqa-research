@@ -1,0 +1,35 @@
+<header class="sticky top-0 z-50 w-full border-b">
+  <div class="container top-bar flex items-center justify-between">
+    <a class="flex items-center logo-container gap-2 text-lg" href="/">
+      {% include "components/icon.html" with icon_name="miqa-research-logo.svg" icon_classes="top-nav-logo" %}
+      <span class="inline text-lg">{% translate 'MIQA Research' %}</span>
+    </a>
+    <nav id="top-nav" class="flex items-center gap-1">
+      <a id="nav-dashboard" class="navlink" href="/dashboard">{% translate "Dashboard" %}</a>
+      <a id="nav-administration" class="navlink" href="/administration">{% translate "Administration" %}</a>
+      <a id="nav-monitor" class="navlink" href="/monitor">{% translate "Monitor" %}</a>
+      <a id="nav-upload-data" class="navlink" href="{% url 'upload_data' %}">{% translate "Upload Data" %}</a>
+      <a id="nav-about" class="navlink" href="/about">{% translate "About" %}</a>
+    </nav>
+    <div class="flex items-center gap-1">
+      <button class="btn icon-btn" aria-label="{% translate 'Notifications' %}" type="button" aria-haspopup="dialog">{% include 'components/icon.html' with icon_name='notification' %}</button>
+      <button class="btn icon-btn" aria-label="{% translate 'Select language' %}" type="button" aria-haspopup="dialog">{% include 'components/icon.html' with icon_name='language' %}</button>
+      <button class="btn icon-btn" aria-label="{% translate 'User manual' %}" type="button" aria-haspopup="dialog">{% include 'components/icon.html' with icon_name='user-manual' %}</button>
+      <button id="theme-toggle-btn" class="btn icon-btn" aria-label="{% translate 'Toggle theme' %}" type="button" aria-haspopup="dialog" data-icon-dark="dark-mode" data-icon-light="light-mode">
+        {% include 'components/icon.html' with icon_name='dark-mode' %}
+      </button>
+
+      {% if user.is_authenticated %}
+      <button hx-get="{% url 'account_logout' %}" hx-target="#mires-main" hx-method="innerHTML" class="btn login-btn">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-log-out h-4 w-4 mr-2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" x2="9" y1="12" y2="12"></line></svg>
+        {% translate "Sign out" %}
+      </button>
+      {% else %}
+      <button hx-get="{% url 'account_login' %}" hx-target="#mires-main" hx-method="innerHTML" class="btn login-btn">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-log-in h-4 w-4 mr-2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" x2="3" y1="12" y2="12"></line></svg>
+        {% translate "Sign in" %}
+      </button>
+      {% endif %}
+    </div>
+  </div>
+</header>
