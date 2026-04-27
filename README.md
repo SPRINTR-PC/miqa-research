@@ -1,2 +1,9 @@
 # miqa-research
 A Django based web application for managing storage and export of research data, enabling connecting data to research project.
+
+## Configuration management
+
+### .NET applications/services
+For .NET applications that are part of MIQA Research, the _appsettings.json_ file that is included with the compiled application/service can be used to configure the application.
+
+All configurations found in that file can also be configured with environment variables. The environment variables should be named as the structure of the settings in the appsettings.json file and prefixed with _MIRES_. For example, the AE-title for the DICOM receiver could be configured by the environment variable _MIRES_DICOMRECEIVER_AETITLE_.
