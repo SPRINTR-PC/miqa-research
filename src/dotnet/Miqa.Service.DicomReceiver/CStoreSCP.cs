@@ -10,7 +10,6 @@ namespace Miqa.Service.DicomReceiver;
 
 public partial class CStoreSCP : DicomService, IDicomServiceProvider, IDicomCStoreProvider, IDicomCEchoProvider
 {
-    private readonly HashSet<string> _validIps = MiqaConfiguration.DicomReceiverConfiguration.AllowedIPAddresses; 
     private static DateTime ReceiveDataTimer { get; set; }
     private static short ReceiveFilesCounter { get; set; }
     
@@ -54,13 +53,15 @@ public partial class CStoreSCP : DicomService, IDicomServiceProvider, IDicomCSto
     
     public Task OnReceiveAssociationRequestAsync(DicomAssociation association)
     {
-        if (association.CalledAE != MiqaConfiguration.DicomReceiverConfiguration.AETitle)
+        var ae = MiqaConfiguration.DicomReceiverConfiguration.AETitle;
+        if (association.CalledAE != ae)
             return SendAssociationRejectAsync(
                 DicomRejectResult.Permanent,
                 DicomRejectSource.ServiceUser,
                 DicomRejectReason.CalledAENotRecognized);
 
-        if (_validIps.Count > 0 && !_validIps.Contains("*") && !_validIps.Contains(association.RemoteHost))
+        var allowedIps = MiqaConfiguration.DicomReceiverConfiguration.AllowedIPAddresses;
+        if (allowedIps.Count > 0 && !allowedIps.Contains("*") && !allowedIps.Contains(association.RemoteHost))
         {
             Logger.LogWarning(
                 "Received association request from {RemoteHost} ({CallingAE}) which is not in the list of allowed IPs",

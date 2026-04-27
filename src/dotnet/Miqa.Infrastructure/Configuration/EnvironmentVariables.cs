@@ -33,7 +33,7 @@ public class EnvironmentVariables
     {
         var allEnvVars = Environment.GetEnvironmentVariables();
         foreach (var envVar in allEnvVars.Cast<DictionaryEntry>()
-                     .Where(envVar => envVar.Key.ToString().ToLower().StartsWith("miqa_")))
+                     .Where(envVar => envVar.Key.ToString().ToLower().StartsWith("mires_")))
         {
             yield return envVar;
         }
