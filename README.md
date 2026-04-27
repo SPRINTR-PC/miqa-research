@@ -1,4 +1,8 @@
-# miqa-research
+<div style="width: 100%;">
+<img src="src/MiqaResearch/static/icons/miqa-research-logo-full.svg" alt="MIQA Research" style="width: 100%; max-width: 50rem;"/>
+</div>
+
+# MIQA-research
 A Django based web application for managing storage and export of research data, enabling connecting data to research project.
 
 ## Configuration management
