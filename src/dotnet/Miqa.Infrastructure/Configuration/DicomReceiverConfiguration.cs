@@ -6,4 +6,6 @@ public class DicomReceiverConfiguration
     public string AETitle { get; set; }
     public int Port { get; set; }
     public HashSet<string> AllowedIPAddresses { get; set; } = new HashSet<string>();
+    public string? CertificatePath { get; set; }
+    public string? CertificatePassword { get; set; }
 }
