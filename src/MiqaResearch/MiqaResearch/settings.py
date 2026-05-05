@@ -2,6 +2,13 @@ from pathlib import Path
 
 import environ
 
+from contract.constants.scopes import (
+    SCOPE_ADMIN,
+    SCOPE_MONITOR_CLIENT,
+    SCOPE_READ,
+    SCOPE_UPSERT_CONSENT,
+)
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 env = environ.Env(
@@ -19,6 +26,8 @@ env = environ.Env(
     MIRES_DB_PORT=(str, None),
     MIRES_DB_SSL_MODE=(str, None),
     MIRES_LOGFILE_PATH=(Path, BASE_DIR / "LocalOnly/Logs/mires.log"),
+    MIRES_LOGGING_LEVEL=(str, "INFO"),
+    MIRES_LOGGING_DIR=(Path, BASE_DIR / "LocalOnly/Logs"),
     MIRES_BASEURL=(str, "http://localhost:8000"),
     MIRES_ALLOWED_HOSTS=(str, None),
     MIRES_CSRF_TRUSTED_ORIGINS=(str, None),
@@ -26,6 +35,12 @@ env = environ.Env(
     MIRES_CACHE_TTL=(int, 300),
     MIRES_CACHE_BACKEND=(str, "django.core.cache.backends.db.DatabaseCache"),
     MIRES_CACHE_LOCATION=(str, "miqa_research_cache"),
+    MIRES_CELERY_BROKER_URL=(str, None),
+    MIRES_CELERY_RESULT_BACKEND=(str, "django-db"),
+    MIRES_CELERY_RESULT_EXTENDED=(bool, True),
+    MIRES_CELERY_TIMEZONE=(str, "Europe/Stockholm"),
+    MIRES_CELERY_TASK_TRACK_STARTED=(bool, True),
+    MIRES_CELERY_TASK_TIME_LIMIT=(int, 30 * 60),
     MIRES_EMAIL_HOST=(str, None),
     MIRES_EMAIL_PORT=(int, 1234),
     MIRES_EMAIL_HOST_USER=(str, None),
@@ -36,14 +51,23 @@ env = environ.Env(
     MIRES_EID_CLIENT_ID=(str, None),
     MIRES_EID_CLIENT_SECRET=(str, None),
     MIRES_OLLAMA_URL=(str, "http://localhost:11434"),
-    MIRES_OLLAMA_MODEL=(str, "gemma3"),
+    MIRES_OLLAMA_MODEL=(str, "gemma4"),
+    MIRES_OTLP_ENDPOINT=(str, "http://localhost:4318/v1/logs"),
+    MIRES_OTLP_PROTOCOL=(str, "http"),
+    MIRES_OTLP_INSECURE=(bool, False),
+    MIRES_OTLP_SERVICE_NAME=(str, "miqa-research"),
+    MIRES_TASK_CONSENT_ADFS_TOKEN_URL=(str, None),
+    MIRES_TASK_CONSENT_RESOURCE=(str, None),
+    MIRES_TASK_CONSENT_CLIENT_ID=(str, None),
+    MIRES_TASK_CONSENT_CLIENT_SECRET=(str, None),
+    MIRES_TASK_CONSENT_BASE_URL=(str, None),
 )
 
 environ.Env.read_env(BASE_DIR / ".env")
 
 SECRET_KEY = env("MIRES_SECRET_KEY")
 
-DEBUG = env("MIRES_DEBUG", default=False)
+DEBUG = env("MIRES_DEBUG")
 
 SESSION_COOKIE_SECURE = False if DEBUG else True
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False if DEBUG else True
@@ -73,6 +97,10 @@ INSTALLED_APPS = [
     'allauth',
     'allauth.account',
     'allauth.mfa',
+    'oauth2_provider',
+    'ninja',
+    'django_celery_beat',
+    'django_celery_results',
     'django_htmx',
     'django.contrib.sites',
     'MiqaResearch.data',
@@ -171,14 +199,43 @@ CACHES = {
     }
 }
 
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "opentelemetry": {
+            "format": "%(asctime)s %(levelname)s [%(name)s] [%(filename)s:%(lineno)d] [trace_id=%(otelTraceID)s span_id=%(otelSpanID)s resource.service.name=%(otelServiceName)s] - %(message)s",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "opentelemetry",
+        },
+        "file": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": env("MIRES_LOGGING_DIR") / "miqa_research.log",
+            "maxBytes": 1024 * 1024 * 5,  # 5 MB
+            "backupCount": 5,
+            "formatter": "opentelemetry",
+        },
+        "elasticsearch": {
+            "class": "MiqaResearch.logging_handlers.OTelElasticsearchHandler",
+            "level": "INFO",
+            "formatter": "opentelemetry",
+        },
+    },
+    "root": {
+        "handlers": ["console", "file", "elasticsearch"],
+        "level": env("MIRES_LOGGING_LEVEL"),
+    },
+}
+
+
 
 # E-Identitet Settings
 EID_CLIENT_ID = env("MIRES_EID_CLIENT_ID", default=None)
 EID_CLIENT_SECRET = env("MIRES_EID_CLIENT_SECRET", default=None)
-
-# Ollama Settings
-OLLAMA_URL = env("MIRES_OLLAMA_URL")
-OLLAMA_MODEL = env("MIRES_OLLAMA_MODEL")
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
@@ -232,3 +289,58 @@ STATICFILES_FINDERS = [
 ]
 
 STATIC_ROOT_IGNORES = ["less", "webcomponents"]
+
+# ==============================
+# CELERY
+# ==============================
+CELERY_BROKER_URL = env("MIRES_CELERY_BROKER_URL", default="amqp://guest:guest@oqarabbit:5672//")
+CELERY_BROKER_RETRY_ON_STARTUP = True
+CELERY_RESULT_BACKEND = env("MIRES_CELERY_RESULT_BACKEND")
+CELERY_RESULT_EXTENDED = env("MIRES_CELERY_RESULT_EXTENDED")
+CELERY_TIMEZONE = env("MIRES_CELERY_TIMEZONE")
+CELERY_TASK_TRACK_STARTED = env("MIRES_CELERY_TASK_TRACK_STARTED")
+CELERY_TASK_TIME_LIMIT = env("MIRES_CELERY_TASK_TIME_LIMIT")
+CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+
+
+# =======================================================
+# EXTRA SETTINGS FOR TASKS AND THIRD PARTY INTEGRATIONS
+# =======================================================
+# OAUTH2
+OAUTH2_PROVIDER = {
+    "SCOPES": {
+        SCOPE_READ: "Read access to all data endpoints except ones with higher permission requirements",
+        SCOPE_UPSERT_CONSENT: "Upsert study participant consents",
+        SCOPE_MONITOR_CLIENT: "Access the MIQA Monitor client API",
+        SCOPE_ADMIN: "Full administrative access to MIQA Research",
+    },
+    "DEFAULT_SCOPES": ["read"],
+}
+
+# Ollama Settings
+OLLAMA_URL = env("MIRES_OLLAMA_URL")
+OLLAMA_MODEL = env("MIRES_OLLAMA_MODEL")
+
+# Participant consent settings
+TASK_CONSENT_ADFS_TOKEN_URL = env("MIRES_TASK_CONSENT_ADFS_TOKEN_URL")
+TASK_CONSENT_RESOURCE = env("MIRES_TASK_CONSENT_RESOURCE")
+TASK_CONSENT_CLIENT_ID = env("MIRES_TASK_CONSENT_CLIENT_ID")
+TASK_CONSENT_CLIENT_SECRET = env("MIRES_TASK_CONSENT_CLIENT_SECRET")
+TASK_CONSENT_BASE_URL = env("MIRES_TASK_CONSENT_BASE_URL")
+TASK_CONSENT_FORM_COL_NAME = env("MIRES_TASK_CONSENT_FORM_COL_NAME", default="Namn")
+TASK_CONSENT_FORM_COL_PID = env("MIRES_TASK_CONSENT_FORM_COL_PID", default="Personnummer")
+TASK_CONSENT_FORM_COL_STATUS = env("MIRES_TASK_CONSENT_FORM_COL_STATUS", default="Status")
+TASK_CONSENT_FORM_COL_SIGNED = env("MIRES_TASK_CONSENT_FORM_COL_SIGNED", default="Signerat")
+TASK_CONSENT_FORM_COL_LAST_UPDATED = env("MIRES_TASK_CONSENT_FORM_COL_LAST_UPDATED", default="Senast Uppdaterad")
+TASK_CONSENT_FORM_COL_RETRACTED = env("MIRES_TASK_CONSENT_FORM_COL_RETRACTED", default="Återtaget")
+TASK_CONSENT_FORM_COL_CLINIC = env("MIRES_TASK_CONSENT_FORM_COL_CLINIC", default="klinik")
+TASK_CONSENT_FORM_COL_RESEARCH_PERSON_INFORMATION = env("MIRES_TASK_CONSENT_FORM_COL_RESEARCH_PERSON_INFORMATION", default="fpi")
+TASK_CONSENT_FORM_COL_READ_INFORMATION = env("MIRES_TASK_CONSENT_FORM_COL_READ_INFORMATION", default='Jag har läst och förstått "Information till forskningspersoner"')
+TASK_CONSENT_FORM_COL_COMMENT = env("MIRES_TASK_CONSENT_FORM_COL_COMMENT", default="Kommentar")
+TASK_CONSENT_FORM_CONSENTED_TRUE_VALUE = env("MIRES_TASK_CONSENT_FORM_COL_CONSENTED_TRUE_VALUE", default="Ja")
+
+# OTLP Settings
+OTLP_ENDPOINT = env("MIRES_OTLP_ENDPOINT")
+OTLP_PROTOCOL = env("MIRES_OTLP_PROTOCOL")
+OTLP_INSECURE = env("MIRES_OTLP_INSECURE")
+OTLP_SERVICE_NAME = "miqa-research"

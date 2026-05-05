@@ -25,5 +25,6 @@ urlpatterns = [
     path('accounts/bankid/login/', bankid_login_redirect, name='bankid_login'),
     path('accounts/eid/callback/', eid_callback, name='eid_callback'),
     path('accounts/', include('allauth.urls')),
+    path('o/', include('oauth2_provider.urls', namespace='oauth2_provider')),
     path('api/', api.urls, name="api"),
 ]
