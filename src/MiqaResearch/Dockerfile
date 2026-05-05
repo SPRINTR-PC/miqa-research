@@ -26,7 +26,6 @@ WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 
 # Copy the rest of the application
-# Use --link for faster copying if available
 COPY . .
 
 # Set environment variables
