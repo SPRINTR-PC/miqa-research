@@ -38,5 +38,5 @@ class ParticipantConsent(models.Model):
         db_table = "mires_participant_consent"
         verbose_name = "Participant Consent"
         verbose_name_plural = "Participant Consents"
-        ordering = ["-consent_start_date"]
-        unique_together = [("study_participant", "consent_start_date", "consent_type")]
+        ordering = ["-consent_signed_date"]
+        unique_together = [("study_participant", "consent_signed_date", "consent_type")]

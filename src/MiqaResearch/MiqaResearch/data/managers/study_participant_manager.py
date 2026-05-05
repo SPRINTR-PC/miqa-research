@@ -1,6 +1,5 @@
 from django.db import models
 
-from MiqaResearch.data.models import StudyParticipant
 from helpers.db_fields import get_deterministic_hash
 
 
