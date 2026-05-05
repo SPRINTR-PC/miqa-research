@@ -1,0 +1,176 @@
+# OS Generated Files
+# =============================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# =============================================
+# Local Development Files and Directories
+# =============================================
+LocalOnly/
+static/css
+
+# DrawIO backup files
+*.drawio.bkp
+
+# =============================================
+# .NET / C#
+# =============================================
+# Build and release folders
+[Bb]in/
+[Oo]bj/
+[Tt]est[Rr]esults/
+[Bb]uild[Ll]og.*
+
+# NuGet Packages
+*.nupkg
+*.snupkg
+*.symbols.nupkg
+*.v2.nupkg
+*.sv2.nupkg
+[Pp]ackages/
+!packages/build/
+
+# .NET Core / .NET 10 specific
+project.lock.json
+project.assets.json
+global.json.user
+.store/
+
+# =============================================
+# Python
+# =============================================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+venv/
+.venv/
+env/
+.env/
+ENV/
+env.bak/
+venv.bak/
+
+# Testing and Logging
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+
+# ==============================================================================
+# Web Components (Lit / TypeScript / Node.js)
+# ==============================================================================
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# TypeScript
+*.tsbuildinfo
+
+# Build outputs
+# (Note: 'build/', 'dist/', and 'lib/' are already ignored in the Python section above)
+dist-ssr/
+out/
+.tscache/
+
+# Linter caches
+.eslintcache
+.stylelintcache
+.prettiercache
+
+# Testing and Coverage
+coverage/
+.nyc_output/
+logs/
+*.local
+
+# Package manager logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Framework-specific caches
+node_modules/.vite/
+
+# =============================================
+# IDEs and Editors
+# =============================================
+# JetBrains IDEs (e.g., PyCharm, IntelliJ, Rider)
+.idea/
+*.sln.iml
+*.DotSettings.user
+*.ReSharper.user
+_ReSharper.*/
+*resharper-host*/
+
+# Visual Studio
+.vs/
+*.user
+*.userosscache
+*.suo
+*.sln.docstates
+*.userprefs
+*.upf
+
+# Visual Studio Code
+.vscode/*
+# Re-enable if workspace settings should be shared
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# VS Code Local History extension
+.history/
+
+# =============================================
+# Environment Variables / Secrets
+# =============================================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+appsettings.Development.json
+appsettings.Local.json
