@@ -48,8 +48,8 @@ def run_ocr_on_prom_data(prom_data_id):
             "images": [encoded_file]
         }
 
-        async with httpx.AsyncClient() as client:
-            response = await client.post(ollama_url, json=payload, timeout=60.0)
+        with httpx.Client() as client:
+            response = client.post(ollama_url, json=payload, timeout=60.0)
             response.raise_for_status()
             result = response.json()
 
@@ -62,7 +62,7 @@ def run_ocr_on_prom_data(prom_data_id):
             parsed_data = {"raw_response": extracted_text}
 
         # Save the result to ParsedPromForm
-        await ParsedPromForm.objects.acreate(
+        ParsedPromForm.objects.create(
             data=parsed_data,
             prom_file=prom_data,
             # validated_by and validated_at are left blank for now
