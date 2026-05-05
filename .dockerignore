@@ -1,0 +1,73 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Django
+*.log
+db.sqlite3
+db.sqlite3-journal
+/staticfiles/
+/mediafiles/
+
+# Environment variables and secrets
+.env
+.env.*
+*.env
+
+# Version control
+.git/
+.gitignore
+.gitattributes
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+.junie/
+
+# Package manager
+# (keeping uv.lock in .dockerignore for builder stage is tricky, 
+# but builder uses its own copy. Dockerfile explicitly COPIES it)
+# We want to EXCLUDE local .venv from final stage COPY . .
+.venv/
+venv/
+ENV/
+env/
+
+# Development only
+LocalOnly/
+*.md
+README*
+
+# Cache
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Docker
+.dockerignore
+ollama.dockerfile
+docker-compose*.yml
+
+# Temporary files
+*.bak
+*.tmp
+*.temp
