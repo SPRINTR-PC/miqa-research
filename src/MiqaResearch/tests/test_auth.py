@@ -10,7 +10,7 @@ class AuthBearerTest(TestCase):
         self.factory = RequestFactory()
         self.user = User.objects.create_user(username="testuser", email="test@example.com", password="password")
         self.bearer_token = BearerToken.generate_token(self.user)
-        self.auth = ClientCredentialsAuth()
+        self.auth = ClientCredentialsAuth(required_scopes=["read"])
 
     def test_authenticate_success(self):
         request = self.factory.get("/")

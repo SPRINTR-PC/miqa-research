@@ -26,8 +26,6 @@ env = environ.Env(
     MIRES_DB_PORT=(str, None),
     MIRES_DB_SSL_MODE=(str, None),
     MIRES_LOGFILE_PATH=(Path, BASE_DIR / "LocalOnly/Logs/mires.log"),
-    MIRES_LOGGING_LEVEL=(str, "INFO"),
-    MIRES_LOGGING_DIR=(Path, BASE_DIR / "LocalOnly/Logs"),
     MIRES_BASEURL=(str, "http://localhost:8000"),
     MIRES_ALLOWED_HOSTS=(str, None),
     MIRES_CSRF_TRUSTED_ORIGINS=(str, None),
@@ -47,9 +45,11 @@ env = environ.Env(
     MIRES_EMAIL_HOST_PASSWORD=(str, None),
     MIRES_EMAIL_USE_TLS=(bool, True),
     MIRES_EMAIL_BACKEND=(str, "django.core.mail.backends.smtp.EmailBackend"),
-    MIRES_NOREPLY_SENDER_EMAIL=(str, "noreply@miqaresearch.se"),
+    MIRES_EMAIL_NOREPLY_SENDER=(str, "noreply@miqaresearch.se"),
     MIRES_EID_CLIENT_ID=(str, None),
     MIRES_EID_CLIENT_SECRET=(str, None),
+    MIRES_LOGGING_LEVEL=(str, "INFO"),
+    MIRES_LOGGING_DIR=(Path, BASE_DIR / "LocalOnly/Logs"),
     MIRES_OLLAMA_URL=(str, "http://localhost:11434"),
     MIRES_OLLAMA_MODEL=(str, "gemma4"),
     MIRES_OTLP_ENDPOINT=(str, "http://localhost:4318/v1/logs"),
@@ -104,7 +104,7 @@ INSTALLED_APPS = [
     'django_htmx',
     'django.contrib.sites',
     'MiqaResearch.data',
-    'documentation',
+    #'documentation',
 ]
 
 MIDDLEWARE = [
@@ -199,34 +199,35 @@ CACHES = {
     }
 }
 
+if env("MIRES_LOGGING_DIR") is not None and not env("MIRES_LOGGING_DIR").exists():
+    env("MIRES_LOGGING_DIR").mkdir(parents=True, exist_ok=True)
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
     "formatters": {
-        "opentelemetry": {
-            "format": "%(asctime)s %(levelname)s [%(name)s] [%(filename)s:%(lineno)d] [trace_id=%(otelTraceID)s span_id=%(otelSpanID)s resource.service.name=%(otelServiceName)s] - %(message)s",
+        "jsonlog": {
+            "format": '{"timestamp":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","file":"%(filename)s","line":%(lineno)d,"message":"%(message)s"}',
         },
+        "conventional":{
+            "format": "%(asctime)s | %(levelname)s | [%(name)s] [%(filename)s:%(lineno)d] | %(message)s",
+        }
     },
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
-            "formatter": "opentelemetry",
+            "formatter": "conventional",
         },
         "file": {
             "class": "logging.handlers.RotatingFileHandler",
             "filename": env("MIRES_LOGGING_DIR") / "miqa_research.log",
             "maxBytes": 1024 * 1024 * 5,  # 5 MB
             "backupCount": 5,
-            "formatter": "opentelemetry",
-        },
-        "elasticsearch": {
-            "class": "MiqaResearch.logging_handlers.OTelElasticsearchHandler",
-            "level": "INFO",
-            "formatter": "opentelemetry",
-        },
+            "formatter": "conventional",
+        }
     },
     "root": {
-        "handlers": ["console", "file", "elasticsearch"],
+        "handlers": ["console", "file"],
         "level": env("MIRES_LOGGING_LEVEL"),
     },
 }
@@ -275,7 +276,7 @@ EMAIL_HOST_USER = env("MIRES_EMAIL_HOST_USER")
 EMAIL_HOST_PASSWORD = env("MIRES_EMAIL_HOST_PASSWORD")
 EMAIL_USE_SSL = env("MIRES_EMAIL_USE_TLS")
 
-NO_REPLY_EMAIL_ADDRESS = env("MIRES_NOREPLY_SENDER_EMAIL")
+NO_REPLY_EMAIL_ADDRESS = env("MIRES_EMAIL_NOREPLY_SENDER")
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
@@ -289,6 +290,12 @@ STATICFILES_FINDERS = [
 ]
 
 STATIC_ROOT_IGNORES = ["less", "webcomponents"]
+
+# ==============================
+# SENSITIVE DATA ENCRYPTION
+# ==============================
+FERNET_KEY = b"EiGdHopiKZdBZwVCP4dVJitPrrDnOuGAd94W4EZpwQc="  # TODO: Change so that this key comes from Vault
+SENSITIVE_DATA_HASH_KEY = "H2QCB14temR-C2JnLORSE5TxPwLd8iy3YygNPQ-corA="  # TODO: Change so that this key comes from VAULT
 
 # ==============================
 # CELERY
@@ -337,10 +344,6 @@ TASK_CONSENT_FORM_COL_CLINIC = env("MIRES_TASK_CONSENT_FORM_COL_CLINIC", default
 TASK_CONSENT_FORM_COL_RESEARCH_PERSON_INFORMATION = env("MIRES_TASK_CONSENT_FORM_COL_RESEARCH_PERSON_INFORMATION", default="fpi")
 TASK_CONSENT_FORM_COL_READ_INFORMATION = env("MIRES_TASK_CONSENT_FORM_COL_READ_INFORMATION", default='Jag har läst och förstått "Information till forskningspersoner"')
 TASK_CONSENT_FORM_COL_COMMENT = env("MIRES_TASK_CONSENT_FORM_COL_COMMENT", default="Kommentar")
-TASK_CONSENT_FORM_CONSENTED_TRUE_VALUE = env("MIRES_TASK_CONSENT_FORM_COL_CONSENTED_TRUE_VALUE", default="Ja")
-
-# OTLP Settings
-OTLP_ENDPOINT = env("MIRES_OTLP_ENDPOINT")
-OTLP_PROTOCOL = env("MIRES_OTLP_PROTOCOL")
-OTLP_INSECURE = env("MIRES_OTLP_INSECURE")
-OTLP_SERVICE_NAME = "miqa-research"
+TASK_CONSENT_FORM_CONSENTED_TRUE_VALUES = [
+    val.strip() for val in env("MIRES_TASK_CONSENT_FORM_COL_CONSENTED_TRUE_VALUES", default="Ja,").split(",")]
+TASK_CONSENT_TIMEZONE: str = env("MIRES_TASK_CONSENT_TIMEZONE", default="Europe/Stockholm")

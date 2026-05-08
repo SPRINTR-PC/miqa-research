@@ -12,6 +12,7 @@ services:
       - MIRES_ALLOWED_HOSTS=*
       - MIRES_CACHE_BACKEND=django.core.cache.backends.db.DatabaseCache
       - MIRES_CACHE_LOCATION=miqa_research_cache
+      - MIRES_EMAIL_NOREPLY_SENDER_EMAIL=noreply@example.com
       - MIRES_EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend
       - MIRES_CSRF_TRUSTED_ORIGINS=http://localhost:8000,http://localhost:8080
       - MIRES_CELERY_BROKER_URL=amqp://guest:guest@miresrabbit:5672//
@@ -19,8 +20,6 @@ services:
       - mires_db
     ports:
       - "8080:8000"
-    volumes:
-      - .:/code
     networks:
       - mires
     restart: on-failure

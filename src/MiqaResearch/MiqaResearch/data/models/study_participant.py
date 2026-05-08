@@ -11,7 +11,7 @@ class StudyParticipant(models.Model):
     person_source_value = SearchableEncryptedCharField(
         blank=True, null=True, help_text="The original primary identifier of study participant")
     name = SearchableEncryptedCharField(blank=True, null=True, help_text="The full name of the participant")
-    study_id = models.CharField(max_length=100, blank=False, null=False)
+    alias1 = models.CharField(max_length=100, blank=False, null=False, unique=True)
     year_of_birth = models.IntegerField(blank=True, null=True)
     month_of_birth = models.IntegerField(blank=True, null=True)
     day_of_birth = models.IntegerField(blank=True, null=True)
@@ -24,8 +24,8 @@ class StudyParticipant(models.Model):
 
     class Meta:
         db_table = "mires_study_participant"
-        ordering = ["study_id"]
-        unique_together = [("study_id", "research_project")]
+        ordering = ["alias1"]
+        unique_together = [("alias1", "research_project")]
 
     def __str__(self):
-        return f"{self.study_id} ({self.gender})"
+        return f"{self.alias1} ({self.gender})"
