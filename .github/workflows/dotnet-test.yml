@@ -1,0 +1,26 @@
+name: .NET Test
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.0.x
+
+    - name: Restore MIQA Research .NET dependencies
+      run: dotnet restore MiqaResearch.slnx
+
+    - name: Build MIQA Research .NET solution
+      run: dotnet build MiqaResearch.slnx --no-restore
+
+    - name: Run tests for MIQA Research .NET solution
+      run: dotnet test MiqaResearch.slnx --no-build --verbosity normal

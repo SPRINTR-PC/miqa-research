@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/tests/" />
+  <Folder Name="/tests/dotnet/">
+    <Project Path="tests/dotnet/Miqa.Test.Integration/Miqa.Test.Integration.csproj" />
+    <Project Path="tests/dotnet/Miqa.Test.Unit/Miqa.Test.Unit.csproj" />
+  </Folder>
+  <Project Path="src/dotnet/Miqa.Core/Miqa.Core.csproj" />
+  <Project Path="src/dotnet/Miqa.Infrastructure/Miqa.Infrastructure.csproj" />
+  <Project Path="src/dotnet/Miqa.Service.DicomReceiver\Miqa.Service.DicomReceiver.csproj" />
+</Solution>
