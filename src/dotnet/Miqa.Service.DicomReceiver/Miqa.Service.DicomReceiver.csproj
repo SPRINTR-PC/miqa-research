@@ -8,7 +8,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <Content Include="../MIQA.Core/appsettings.json" Link="appsettings.json">
+        <Content Include="../Miqa.Core/appsettings.json" Link="appsettings.json">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </Content>
     </ItemGroup>
@@ -21,7 +21,7 @@
     </ItemGroup>
     
     <ItemGroup>
-      <ProjectReference Include="..\Miqa.Infrastructure\Miqa.Infrastructure.csproj" />
+      <ProjectReference Include="../Miqa.Infrastructure/Miqa.Infrastructure.csproj" />
     </ItemGroup>
 
 </Project>
