@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.14"
 dependencies = [
-    "django>=6.0.3",
+    "django>=6.0.5",
     "django-environ>=0.13.0",
     "django-htmx>=1.27.0",
     "django-oauth-toolkit",
@@ -28,6 +28,7 @@ dev = [
     "ruff>=0.15.11",
     "pytest>=9.0.3",
     "pytest-django>=4.12.0",
+    "pytest-html-plus>=1.0.1",
 ]
 
 [tool.ruff]
@@ -51,5 +52,12 @@ known-first-party = ["MiqaResearch", "data", "documentation"]
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "MiqaResearch.settings"
 python_files = ["tests.py", "test_*.py", "*_tests.py"]
-testpaths = ["MiqaResearch"]
+testpaths = ["MiqaResearch", "tests"]
 addopts = "--reuse-db"
+
+[tool.pytest-html-plus.profiles.ci]
+html-output = "tests/report/testresults"
+json-report = "testresults.json"
+capture-screenshots = "failed"
+generate-xml = true
+xml-report = "testresults.xml"

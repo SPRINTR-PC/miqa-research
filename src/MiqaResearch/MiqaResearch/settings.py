@@ -8,6 +8,7 @@ from contract.constants.scopes import (
     SCOPE_READ,
     SCOPE_UPSERT_CONSENT,
 )
+from helpers import vault
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -39,6 +40,8 @@ env = environ.Env(
     MIRES_CELERY_TIMEZONE=(str, "Europe/Stockholm"),
     MIRES_CELERY_TASK_TRACK_STARTED=(bool, True),
     MIRES_CELERY_TASK_TIME_LIMIT=(int, 30 * 60),
+    MIRES_CELERY_WORKER_ENABLE_REMOTE_CONTROL=(bool, False),
+    MIRES_CELERY_WORKER_PREFETCH_MULTIPLIER=(int, 1),
     MIRES_EMAIL_HOST=(str, None),
     MIRES_EMAIL_PORT=(int, 1234),
     MIRES_EMAIL_HOST_USER=(str, None),
@@ -60,7 +63,10 @@ env = environ.Env(
     MIRES_TASK_CONSENT_RESOURCE=(str, None),
     MIRES_TASK_CONSENT_CLIENT_ID=(str, None),
     MIRES_TASK_CONSENT_CLIENT_SECRET=(str, None),
+    MIRES_TASK_CONSENT_VAULT_PATH=(str, "mires/consent"),
     MIRES_TASK_CONSENT_BASE_URL=(str, None),
+    MIRES_VAULT_URL=(str, None),
+    MIRES_VAULT_TOKEN=(str, None),
 )
 
 environ.Env.read_env(BASE_DIR / ".env")
@@ -302,11 +308,15 @@ SENSITIVE_DATA_HASH_KEY = "H2QCB14temR-C2JnLORSE5TxPwLd8iy3YygNPQ-corA="  # TODO
 # ==============================
 CELERY_BROKER_URL = env("MIRES_CELERY_BROKER_URL", default="amqp://guest:guest@oqarabbit:5672//")
 CELERY_BROKER_RETRY_ON_STARTUP = True
+CELERY_BROKER_TRANSPORT_OPTIONS = {"confirm": True, "fanout_prefix": True}
 CELERY_RESULT_BACKEND = env("MIRES_CELERY_RESULT_BACKEND")
 CELERY_RESULT_EXTENDED = env("MIRES_CELERY_RESULT_EXTENDED")
-CELERY_TIMEZONE = env("MIRES_CELERY_TIMEZONE")
+CELERY_TASK_DEFAULT_QUEUE_TYPE = "quorum"
 CELERY_TASK_TRACK_STARTED = env("MIRES_CELERY_TASK_TRACK_STARTED")
 CELERY_TASK_TIME_LIMIT = env("MIRES_CELERY_TASK_TIME_LIMIT")
+CELERY_TIMEZONE = env("MIRES_CELERY_TIMEZONE")
+CELERY_WORKER_ENABLE_REMOTE_CONTROL = env("MIRES_CELERY_WORKER_ENABLE_REMOTE_CONTROL", default=False)
+CELERY_WORKER_PREFETCH_MULTIPLIER = env("MIRES_CELERY_WORKER_PREFETCH_MULTIPLIER", default=1)
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 
 
@@ -328,11 +338,26 @@ OAUTH2_PROVIDER = {
 OLLAMA_URL = env("MIRES_OLLAMA_URL")
 OLLAMA_MODEL = env("MIRES_OLLAMA_MODEL")
 
+
 # Participant consent settings
+def _get_consent_client_id_and_secret():
+    client_id = env("MIRES_TASK_CONSENT_CLIENT_ID")
+    client_secret = env("MIRES_TASK_CONSENT_CLIENT_SECRET")
+    if client_id is None or client_secret is None:
+        vault_client = vault.get_vault_client(
+            url=env("MIRES_VAULT_URL"),
+            token=env("MIRES_VAULT_TOKEN"),
+        )
+        return None, None
+        return (
+            vault.get_vault_secret(vault_client, env("MIRES_TASK_CONSENT_VAULT_PATH"), "ConsentClientId"),
+            vault.get_vault_secret(vault_client, env("MIRES_TASK_CONSENT_VAULT_PATH"), "ConsentClientSecret"),
+        )
+    return client_id, client_secret
+
 TASK_CONSENT_ADFS_TOKEN_URL = env("MIRES_TASK_CONSENT_ADFS_TOKEN_URL")
 TASK_CONSENT_RESOURCE = env("MIRES_TASK_CONSENT_RESOURCE")
-TASK_CONSENT_CLIENT_ID = env("MIRES_TASK_CONSENT_CLIENT_ID")
-TASK_CONSENT_CLIENT_SECRET = env("MIRES_TASK_CONSENT_CLIENT_SECRET")
+TASK_CONSENT_CLIENT_ID, TASK_CONSENT_CLIENT_SECRET = _get_consent_client_id_and_secret()
 TASK_CONSENT_BASE_URL = env("MIRES_TASK_CONSENT_BASE_URL")
 TASK_CONSENT_FORM_COL_NAME = env("MIRES_TASK_CONSENT_FORM_COL_NAME", default="Namn")
 TASK_CONSENT_FORM_COL_PID = env("MIRES_TASK_CONSENT_FORM_COL_PID", default="Personnummer")

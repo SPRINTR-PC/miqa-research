@@ -23,13 +23,15 @@ FROM python:3.14-slim-bookworm
 WORKDIR /app
 
 # Copy the virtual environment from the builder
-COPY --from=builder /app/.venv /app/.venv
+COPY --from=builder /app/.venv /venv
 
 # Copy the rest of the application
 COPY . .
+RUN chmod +x /app/tools/celery/start_flower.sh
+RUN chmod +x /app/tools/celery/start_worker_consent.sh
 
 # Set environment variables
-ENV PATH="/app/.venv/bin:$PATH"
+ENV PATH="/venv/bin:$PATH"
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV DJANGO_SETTINGS_MODULE=MiqaResearch.settings

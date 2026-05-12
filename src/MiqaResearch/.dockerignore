@@ -104,6 +104,5 @@ temp/
 # uv.lock is kept in the image
 
 # Development tools
-tools/
 
 LocalOnly/

@@ -15,8 +15,6 @@ from MiqaResearch.settings import (
     TASK_CONSENT_FORM_COL_LAST_UPDATED,
     TASK_CONSENT_FORM_COL_NAME,
     TASK_CONSENT_FORM_COL_PID,
-    TASK_CONSENT_FORM_COL_READ_INFORMATION,
-    TASK_CONSENT_FORM_COL_RESEARCH_PERSON_INFORMATION,
     TASK_CONSENT_FORM_COL_RETRACTED,
     TASK_CONSENT_FORM_COL_SIGNED,
     TASK_CONSENT_FORM_COL_STATUS,
@@ -90,6 +88,7 @@ def _get_access_token():
         raise Exception("Access token missing in ADFS response.")
 
     return access_token
+
 
 def _get_csv_data(
         access_token: str, from_date: str | None = None, to_date: str | None = None, separator: str = ",") -> Response:

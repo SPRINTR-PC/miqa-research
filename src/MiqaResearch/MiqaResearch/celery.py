@@ -10,10 +10,12 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'MiqaResearch.settings')
 app = Celery('MiqaResearch')
 app.config_from_object('django.conf:settings', namespace='CELERY')
 app.conf.task_default_queue = 'mires'
+app.conf.task_default_queue_type="quorum"
 app.conf.task_default_exchange_type = 'topic'
 app.conf.task_queues = (
-    Queue(QUEUE_EMAIL, routing_key="notification.email.#"),
-    Queue(QUEUE_GET_CONSENTS, routing_key="data.get.consent.#"),
-    Queue(QUEUE_OCR, routing_key="analysis.ocr.#"),
+    Queue(QUEUE_EMAIL, queue_arguments={"x-queue-type": "quorum"}, routing_key="notification.email.#"),
+    Queue(QUEUE_GET_CONSENTS, queue_arguments={"x-queue-type": "quorum"}, routing_key="data.get.consent.#"),
+    Queue(QUEUE_OCR, queue_arguments={"x-queue-type": "quorum"}, routing_key="analysis.ocr.#"),
 )
+app.conf.broker_transport_options = {'confirm_publish': True}
 app.autodiscover_tasks()

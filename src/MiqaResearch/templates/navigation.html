@@ -15,7 +15,7 @@
       <button class="btn icon-btn" aria-label="{% translate 'Notifications' %}" type="button" aria-haspopup="dialog">{% include 'components/icon.html' with icon_name='notification' %}</button>
       <button class="btn icon-btn" aria-label="{% translate 'Select language' %}" type="button" aria-haspopup="dialog">{% include 'components/icon.html' with icon_name='language' %}</button>
       <button class="btn icon-btn" aria-label="{% translate 'User manual' %}" type="button" aria-haspopup="dialog">{% include 'components/icon.html' with icon_name='user-manual' %}</button>
-      <button id="theme-toggle-btn" class="btn icon-btn" aria-label="{% translate 'Toggle theme' %}" type="button" aria-haspopup="dialog" data-icon-dark="dark-mode" data-icon-light="light-mode">
+      <button id="theme-toggle-btn" onclick="toggleTheme()" class="btn icon-btn" aria-label="{% translate 'Toggle theme' %}" type="button" aria-haspopup="dialog" data-icon-dark="dark-mode" data-icon-light="light-mode">
         {% include 'components/icon.html' with icon_name='dark-mode' %}
       </button>
 
