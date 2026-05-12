@@ -21,5 +21,19 @@
 <script src="{% static 'js/htmx/ext/head-support.js' %}" type="application/javascript"></script>
 <script src="{% static 'js/mires.js' %}" type="application/javascript"></script>
 <script src="{% static 'js/mireswc.js' %}" type="application/javascript"></script>
+<script>
+  {% if debug %}
+    if (typeof window.htmx !== "undefined") {
+      htmx.on("htmx:afterSettle", function(detail) {
+        if (
+          typeof window.djdt !== "undefined"
+          && detail.target instanceof HTMLBodyElement
+        ) {
+          djdt.show_toolbar();
+        }
+      });
+    }
+  {% endif %}
+</script>
 </body>
 </html>

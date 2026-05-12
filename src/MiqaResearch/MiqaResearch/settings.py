@@ -13,6 +13,7 @@ from helpers import vault
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 env = environ.Env(
+    MIRES_ADMIN_URL=(str, "/miresad"),
     MIRES_DEBUG=(bool, False),
     MIRES_SECRET_KEY=(str, None),
     MIRES_STATIC_URL=(str, "/static/"),
@@ -88,7 +89,7 @@ def get_allowed_hosts_list(allowed_hosts_env) -> list[str]:
 ALLOWED_HOSTS = get_allowed_hosts_list(env("MIRES_ALLOWED_HOSTS"))
 CSRF_TRUSTED_ORIGINS = get_allowed_hosts_list(env("MIRES_CSRF_TRUSTED_ORIGINS"))
 
-
+ADMIN_URL: str = f"{'/' if env('MIRES_ADMIN_URL') is None or not env('MIRES_ADMIN_URL').startswith('/') else ''}{env('MIRES_ADMIN_URL') or 'miresad'}"
 # Application definition
 
 INSTALLED_APPS = [
@@ -126,6 +127,16 @@ MIDDLEWARE = [
     'django_htmx.middleware.HtmxMiddleware',
 ]
 
+if DEBUG:
+    INSTALLED_APPS += ['debug_toolbar']
+    MIDDLEWARE += ["debug_toolbar.middleware.DebugToolbarMiddleware"]
+
+
+INTERNAL_IPS = [
+    '127.0.0.1',
+    'localhost',
+]
+
 ROOT_URLCONF = 'MiqaResearch.urls'
 
 TEMPLATES = [
@@ -138,6 +149,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'django.template.context_processors.debug',
             ],
             'builtins': [
                 'django.templatetags.i18n',

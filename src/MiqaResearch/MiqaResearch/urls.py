@@ -1,5 +1,8 @@
+from django.conf import settings
 from django.contrib import admin
 from django.urls import path, include
+
+from debug_toolbar.toolbar import debug_toolbar_urls
 
 from MiqaResearch.interfaces.http.api.urls import api
 from MiqaResearch.interfaces.http.views import (
@@ -27,4 +30,8 @@ urlpatterns = [
     path('accounts/', include('allauth.urls')),
     path('o/', include('oauth2_provider.urls', namespace='oauth2_provider')),
     path('api/', api.urls, name="api"),
+    path(settings.ADMIN_URL, admin.site.urls),
 ]
+
+if settings.DEBUG:
+    urlpatterns += + debug_toolbar_urls()
