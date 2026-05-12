@@ -52,7 +52,7 @@ known-first-party = ["MiqaResearch", "data", "documentation"]
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "MiqaResearch.settings"
 python_files = ["tests.py", "test_*.py", "*_tests.py"]
-testpaths = ["MiqaResearch", "tests"]
+testpaths = ["tests"]
 addopts = "--reuse-db"
 
 [tool.pytest-html-plus.profiles.ci]
