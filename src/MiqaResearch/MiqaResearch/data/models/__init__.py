@@ -1,7 +1,7 @@
 from .audit_log import AuditLog
 from .clinic import Clinic
 from .concept import Concept
-from .research_project import ResearchProject
+from .research_project import ResearchProject, ResearchProjectRole, ResearchProjectUserRoleMap
 from .study_participant import StudyParticipant
 from .consent import ParticipantConsentType, ParticipantConsent
 from .visit_occurrence import VisitOccurrence

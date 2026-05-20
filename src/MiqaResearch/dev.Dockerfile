@@ -12,8 +12,10 @@ RUN uv venv --python 3.14
 ENV PATH="/venv/bin/:$PATH"
 
 RUN mkdir -p /tools/celery
+COPY ./tools/celery/start_beat.sh /tools/celery/start_beat.sh
 COPY ./tools/celery/start_flower.sh /tools/celery/start_flower.sh
 COPY ./tools/celery/start_worker.sh /tools/celery/start_worker.sh
+RUN chmod +x /tools/celery/start_beat.sh
 RUN chmod +x /tools/celery/start_flower.sh
 RUN chmod +x /tools/celery/start_worker.sh
 COPY ./pyproject.toml /app/pyproject.toml

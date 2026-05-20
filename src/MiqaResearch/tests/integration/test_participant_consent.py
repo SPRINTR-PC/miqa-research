@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import polars as pl
 import pytest
@@ -47,3 +48,21 @@ def test__process_consent_data_should_reformat_consent_data_into_list_of_UploadC
             return False
 
     assert all(_is_valid_upload_consent_entry(entry) for entry in result)
+
+
+@pytest.mark.django_db
+def test__process_consent_data_should_replace_personal_identifiers_with_participant_study_ids(
+        participant_consent_data: pl.DataFrame):
+    # Arrange
+    def is_valid_uuid7(value: str) -> bool:
+        try:
+            _ = UUID(value, version=7)
+            return True
+        except Exception as e:
+            return False
+
+    # Act
+    result = _process_consent_data(participant_consent_data)
+
+    # Assert
+    assert all((pid := entry.get("participant_study_id")) is not None and is_valid_uuid7(str(pid)) for entry in result)

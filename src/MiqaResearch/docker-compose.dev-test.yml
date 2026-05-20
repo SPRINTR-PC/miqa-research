@@ -84,6 +84,8 @@ services:
       - MIRES_CELERY_BROKER_URL=amqp://miresRabmin:miresRabmin@miresrabbit:5672//
       - MIRES_AUTH_TOKEN=2ac83c66b6affe116e16efc51ef752f583b37c52
       - SET_CELERY_PYTHON_PATH=1
+      - MIRES_VAULT_URL=http://mires_vault:8200
+      - MIRES_VAULT_TOKEN=AVeryUnsecretSecret
     depends_on:
       - mires_web
       - mires_rabbit
@@ -103,6 +105,7 @@ services:
       - MIRES_SITE_URL=http://mires_web:8000
       - MIRES_CELERY_BROKER_URL=amqp://miresRabmin:miresRabmin@miresrabbit:5672//
       - MIRES_AUTH_TOKEN=2ac83c66b6affe116e16efc51ef752f583b37c52
+      - MIRES_TASK_CONSENT_SKIP_CLIENT=1
       - SET_CELERY_PYTHON_PATH=1
     depends_on:
       - mires_web
@@ -123,9 +126,33 @@ services:
       - MIRES_SITE_URL=http://mires_web:8000
       - MIRES_CELERY_BROKER_URL=amqp://miresRabmin:miresRabmin@miresrabbit:5672//
       - MIRES_AUTH_TOKEN=2ac83c66b6affe116e16efc51ef752f583b37c52
+      - MIRES_TASK_CONSENT_SKIP_CLIENT=1
       - SET_CELERY_PYTHON_PATH=1
     depends_on:
       - mires_web
+      - mires_rabbit
+    volumes:
+      - ./:/app
+    networks:
+      - mires
+    restart: unless-stopped
+
+  mires_beat:
+    build:
+      context: .
+      dockerfile: dev.Dockerfile
+    command: sh -c "/tools/celery/start_beat.sh"
+    environment:
+      - MIRES_DEBUG=1
+      - MIRES_SITE_URL=http://mires_web:8000
+      - MIRES_DATABASE_URL=psql://postgres:postgres@mires_db:5432/miqaresearch
+      - MIRES_CELERY_BROKER_URL=amqp://miresRabmin:miresRabmin@miresrabbit:5672//
+      - MIRES_AUTH_TOKEN=2ac83c66b6affe116e16efc51ef752f583b37c52
+      - MIRES_TASK_CONSENT_SKIP_CLIENT=1
+      - SET_CELERY_PYTHON_PATH=1
+    depends_on:
+      - mires_web
+      - mires_db
       - mires_rabbit
     volumes:
       - ./:/app
@@ -143,6 +170,7 @@ services:
       - MIRES_SITE_URL=http://mires_web:8000
       - MIRES_CELERY_BROKER_URL=amqp://miresRabmin:miresRabmin@miresrabbit:5672//
       - MIRES_AUTH_TOKEN=2ac83c66b6affe116e16efc51ef752f583b37c52
+      - MIRES_TASK_CONSENT_SKIP_CLIENT=1
       - SET_CELERY_PYTHON_PATH=1
     depends_on:
       - mires_web

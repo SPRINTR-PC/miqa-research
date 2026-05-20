@@ -21,12 +21,13 @@ from MiqaResearch.settings import (
     TASK_CONSENT_FORM_CONSENTED_TRUE_VALUES
 )
 from MiqaResearch.data.models import StudyParticipant
+from contract.constants.celery import QUEUE_GET_CONSENTS
 from helpers.study_participant_alias import generate_study_participant_alias1_list
 
 logger = logging.getLogger(__name__)
 
 
-@app.task()
+@app.task(queue=QUEUE_GET_CONSENTS)
 def fetch_participant_consent(form_id: str, separator: str = ",", from_date: str = None, to_date: str = None):
     """
     - Fetches participant consent from SamtyckenUmu API using ADFS M2M authentication

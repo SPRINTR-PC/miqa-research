@@ -34,4 +34,4 @@ urlpatterns = [
 ]
 
 if settings.DEBUG:
-    urlpatterns += + debug_toolbar_urls()
+    urlpatterns += debug_toolbar_urls()

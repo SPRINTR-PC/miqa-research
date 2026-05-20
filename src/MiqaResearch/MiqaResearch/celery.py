@@ -18,4 +18,6 @@ app.conf.task_queues = (
     Queue(QUEUE_OCR, queue_arguments={"x-queue-type": "quorum"}, routing_key="analysis.ocr.#"),
 )
 app.conf.broker_transport_options = {'confirm_publish': True}
-app.autodiscover_tasks()
+app.autodiscover_tasks([
+    "MiqaResearch.tasks"
+])

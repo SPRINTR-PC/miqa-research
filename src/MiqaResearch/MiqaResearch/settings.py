@@ -1,6 +1,8 @@
 from pathlib import Path
+from typing import Any
 
 import environ
+from more_itertools.more import lstrip
 
 from contract.constants.scopes import (
     SCOPE_ADMIN,
@@ -13,7 +15,14 @@ from helpers import vault
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 env = environ.Env(
-    MIRES_ADMIN_URL=(str, "/miresad"),
+    MIRES_ADMIN_URL=(str, "miresadm"),
+    MIRES_ADFS_SERVER=(str, "ADFS server URL"),
+    MIRES_ADFS_TENANT=(str, "adfs"),
+    MIRES_ADFS_CLIENT_ID=(str, "SomeClientId"),
+    MIRES_ADFS_RESOURCE=(str, None),
+    MIRES_ADFS_POST_LOGOUT_REDIRECT_URI=(str, "http://localhost:8000/loggedOut"),
+    MIRES_ADFS_CALLBACK_PATH=(str, "/signin-oidc"),
+    MIRES_AUTHENTICATION_FRAMEWORK=(str, "yubikey"),
     MIRES_DEBUG=(bool, False),
     MIRES_SECRET_KEY=(str, None),
     MIRES_STATIC_URL=(str, "/static/"),
@@ -62,6 +71,7 @@ env = environ.Env(
     MIRES_OTLP_SERVICE_NAME=(str, "miqa-research"),
     MIRES_TASK_CONSENT_ADFS_TOKEN_URL=(str, None),
     MIRES_TASK_CONSENT_RESOURCE=(str, None),
+    MIRES_TASK_CONSENT_SKIP_CLIENT=(bool, False),
     MIRES_TASK_CONSENT_CLIENT_ID=(str, None),
     MIRES_TASK_CONSENT_CLIENT_SECRET=(str, None),
     MIRES_TASK_CONSENT_VAULT_PATH=(str, "mires/consent"),
@@ -89,7 +99,8 @@ def get_allowed_hosts_list(allowed_hosts_env) -> list[str]:
 ALLOWED_HOSTS = get_allowed_hosts_list(env("MIRES_ALLOWED_HOSTS"))
 CSRF_TRUSTED_ORIGINS = get_allowed_hosts_list(env("MIRES_CSRF_TRUSTED_ORIGINS"))
 
-ADMIN_URL: str = f"{'/' if env('MIRES_ADMIN_URL') is None or not env('MIRES_ADMIN_URL').startswith('/') else ''}{env('MIRES_ADMIN_URL') or 'miresad'}"
+ADMIN_URL: str = f"{env('MIRES_ADMIN_URL').removeprefix("/") if env('MIRES_ADMIN_URL') else 'miresadm'}"
+
 # Application definition
 
 INSTALLED_APPS = [
@@ -168,6 +179,44 @@ AUTHENTICATION_BACKENDS = [
     'allauth.account.auth_backends.AuthenticationBackend',
 ]
 
+if env("MIRES_AUTHENTICATION_FRAMEWORK") == "adfs":
+    def _get_secrets_from_vault(secret_paths_and_name: list[tuple[str, str]]) -> list[Any]:
+        vault_client = vault.get_vault_client(
+            url=env("MIRES_VAULT_URL"),
+            token=env("MIRES_VAULT_TOKEN"),
+        )
+        return [
+            vault.get_vault_secret(vault_client, secret_path, secret_name)
+            for secret_path, secret_name in secret_paths_and_name
+        ]
+
+    INSTALLED_APPS.append("django_auth_adfs")
+    MIDDLEWARE.append("django_auth_adfs.middleware.LoginRequiredMiddleware")
+
+    AUTHENTICATION_BACKENDS.append("django_auth_adfs.backend.AdfsAuthCodeBackend")
+    AUTH_ADFS = {
+        "SERVER": env("MIRES_ADFS_AUTHORITY"),
+        "DISABLE_SSO": True,
+        "CLIENT_ID": _get_secrets_from_vault([("mires/adfs", "ClientId")])[0],
+        "TENANT": env("MIRES_ADFS_TENANT"),
+        "RELYING_PARTY_ID": env("MIRES_ADFS_RESOURCE"),
+        "AUDIENCE": env("MIRES_ADFS_RESOURCE"),
+        "LOGIN_EXEMPT_URLS": [
+            r"^admin/",
+            r"^static/",
+            r"^favicon\.ico$",
+        ],
+        "RESOURCE": env("MIRES_ADFS_RESOURCE"),
+        "POST_LOGOUT_REDIRECT_URI": env("MIRES_ADFS_POST_LOGOUT_REDIRECT_URI"),
+        "CALLBACK_PATH": env("MIRES_ADFS_CALLBACK_PATH"),
+        "LOGIN_CALLBACK_URL": env("MIRES_ADFS_CALLBACK_PATH"),
+        "CLAIM_MAPPING": {
+            "first_name": "given_name",
+            "last_name": "family_name",
+            "email": "email",
+        },
+    }
+
 SITE_ID = 1
 
 LOGIN_REDIRECT_URL = '/'
@@ -183,6 +232,8 @@ MFA_PASSKEY_LOGIN_ENABLED = True
 # Webauthn strictly requires HTTPS. During development when running on HTTP we need this to make, e.g.,
 # the fido2 library to not reject the origin
 MFA_WEBAUTHN_ALLOW_INSECURE_ORIGIN = DEBUG
+
+# ADFS OIDC authentication
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
@@ -353,6 +404,9 @@ OLLAMA_MODEL = env("MIRES_OLLAMA_MODEL")
 
 # Participant consent settings
 def _get_consent_client_id_and_secret():
+    if env("MIRES_TASK_CONSENT_SKIP_CLIENT"):
+        return None, None
+
     client_id = env("MIRES_TASK_CONSENT_CLIENT_ID")
     client_secret = env("MIRES_TASK_CONSENT_CLIENT_SECRET")
     if client_id is None or client_secret is None:
@@ -360,7 +414,6 @@ def _get_consent_client_id_and_secret():
             url=env("MIRES_VAULT_URL"),
             token=env("MIRES_VAULT_TOKEN"),
         )
-        return None, None
         return (
             vault.get_vault_secret(vault_client, env("MIRES_TASK_CONSENT_VAULT_PATH"), "ConsentClientId"),
             vault.get_vault_secret(vault_client, env("MIRES_TASK_CONSENT_VAULT_PATH"), "ConsentClientSecret"),

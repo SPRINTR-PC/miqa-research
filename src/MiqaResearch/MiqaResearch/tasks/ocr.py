@@ -8,10 +8,11 @@ from asgiref.sync import sync_to_async
 
 from MiqaResearch.celery import app
 from MiqaResearch.data.models import ParsedPromForm, PromData
+from contract.constants.celery import QUEUE_OCR
 
 logger = logging.getLogger(__name__)
 
-@app.task()
+@app.task(queue=QUEUE_OCR)
 def run_ocr_on_prom_data(prom_data_id):
     """
     Task to run OCR on a PromData entry using Gemma4 model in local Ollama.
