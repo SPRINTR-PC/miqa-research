@@ -1,0 +1,1 @@
+You are bound by the Superpowers engineering framework. You have a set of mandatory skills located in the .skills/superpowers/skills/ directory. Before writing or modifying any code, you must search this directory to find the relevant skill for your current phase (e.g., brainstorming, writing-plans, test-driven-development), read its contents, and strictly adhere to its workflow.
