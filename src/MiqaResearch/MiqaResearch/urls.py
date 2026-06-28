@@ -1,21 +1,19 @@
+from debug_toolbar.toolbar import debug_toolbar_urls
 from django.conf import settings
 from django.contrib import admin
-from django.urls import path, include
-
-from debug_toolbar.toolbar import debug_toolbar_urls
+from django.urls import include, path
 
 from MiqaResearch.interfaces.http.api.urls import api
 from MiqaResearch.interfaces.http.views import (
-    landing_page_index,
     UploadDataView,
     administration_index,
+    landing_page_index,
     monitor_index,
 )
-
 from MiqaResearch.interfaces.http.views.accounts.eid import (
-    siths_login_redirect,
     bankid_login_redirect,
     eid_callback,
+    siths_login_redirect,
 )
 
 urlpatterns = [

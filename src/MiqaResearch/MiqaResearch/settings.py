@@ -22,7 +22,11 @@ env = environ.Env(
     MIRES_ADFS_RESOURCE=(str, None),
     MIRES_ADFS_POST_LOGOUT_REDIRECT_URI=(str, "http://localhost:8000/loggedOut"),
     MIRES_ADFS_CALLBACK_PATH=(str, "/signin-oidc"),
+    MIRES_ADFS_AUTHORITY=(),
+    MIRES_AUTHENTICATION_EMAIL_CLAIM=(str, "email"),
     MIRES_AUTHENTICATION_FRAMEWORK=(str, "yubikey"),
+    MIRES_AUTHENTICATION_FIRST_NAME_CLAIM=(str, "givenname"),
+    MIRES_AUTHENTICATION_LAST_NAME_CLAIM=(str, "surname"),
     MIRES_DEBUG=(bool, False),
     MIRES_SECRET_KEY=(str, None),
     MIRES_STATIC_URL=(str, "/static/"),
@@ -63,6 +67,9 @@ env = environ.Env(
     MIRES_EID_CLIENT_SECRET=(str, None),
     MIRES_LOGGING_LEVEL=(str, "INFO"),
     MIRES_LOGGING_DIR=(Path, BASE_DIR / "LocalOnly/Logs"),
+    MIRES_OIDC_CLIENT_ID=(str, None),
+    MIRES_OIDC_CLIENT_SECRET=(str, None),
+    MIRES_OIDC_ROLES_CLAIM=(str, "role"),
     MIRES_OLLAMA_URL=(str, "http://localhost:11434"),
     MIRES_OLLAMA_MODEL=(str, "gemma4"),
     MIRES_OTLP_ENDPOINT=(str, "http://localhost:4318/v1/logs"),
@@ -211,11 +218,23 @@ if env("MIRES_AUTHENTICATION_FRAMEWORK") == "adfs":
         "CALLBACK_PATH": env("MIRES_ADFS_CALLBACK_PATH"),
         "LOGIN_CALLBACK_URL": env("MIRES_ADFS_CALLBACK_PATH"),
         "CLAIM_MAPPING": {
-            "first_name": "given_name",
-            "last_name": "family_name",
-            "email": "email",
+            "first_name": env("MIRES_AUTHENTICATION_FIRST_NAME_CLAIM"),
+            "last_name": env("MIRES_AUTHENTICATION_LAST_NAME_CLAIM"),
+            "email": env("MIRES_AUTHENTICATION_EMAIL_CLAIM"),
         },
     }
+
+elif env("MIRES_AUTHENTICATION_FRAMEWORK") == "oidc":
+    INSTALLED_APPS.append("mozilla_django_oidc")
+    AUTHENTICATION_BACKENDS.append("mozilla_django_oidc.auth.OIDCAuthenticationBackend")
+    OIDC_RP_CLIENT_ID = env("MIRES_OIDC_CLIENT_ID")
+    OIDC_RP_CLIENT_SECRET = env("MIRES_OIDC_CLIENT_SECRET")
+    OIDC_OP_JWKS_ENDPOINT = f"{env('MIRES_ADFS_AUTHORITY').rstrip('/')}/discovery/keys"
+    OIDC_OP_AUTHORIZATION_ENDPOINT = f"{env('MIRES_ADFS_AUTHORITY').rstrip('/')}/oauth2/authorize"
+    OIDC_OP_TOKEN_ENDPOINT = f"{env('MIRES_ADFS_AUTHORITY').rstrip('/')}/oauth2/token"
+    OIDC_OP_USER_ENDPOINT = f"{env('MIRES_ADFS_AUTHORITY').rstrip('/')}/oauth2/userinfo"
+    OIDC_RP_SIGN_ALGO = "RS256"
+    OIDC_ROLES_CLAIM = env("MIRES_OIDC_ROLES_CLAIM")
 
 SITE_ID = 1
 

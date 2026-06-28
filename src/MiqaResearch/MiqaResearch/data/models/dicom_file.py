@@ -35,3 +35,6 @@ class DicomFile(models.Model):
                 opclasses=['jsonb_path_ops'],
             )
         ]
+
+    def __str__(self):
+        return self.sop_instance_uid

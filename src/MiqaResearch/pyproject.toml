@@ -10,6 +10,7 @@ dependencies = [
     "django-htmx>=1.27.0",
     "django-oauth-toolkit",
     "django-allauth[mfa]>=65.16.1",
+    "mozilla-django-oidc",
     "django-rosetta>=0.10.3",
     "psycopg[binary]>=3.3.3",
     "django-ninja",
@@ -22,6 +23,7 @@ dependencies = [
     "flower",
     "requests",
     "polars>=1.40.1",
+    "numpy>=2.4.6",
 ]
 
 [dependency-groups]

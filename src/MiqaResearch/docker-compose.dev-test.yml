@@ -50,13 +50,13 @@ services:
     ports:
       - "9000:9000"
       - "9001:9001"
-    volumes:
-      - ./LocalOnly/rustfs:/data
     restart: on-failure
 
   mires_vault:
     image: hashicorp/vault:latest
     container_name: mires_vault
+    cap_add:
+      - IPC_LOCK
     environment:
       - VAULT_ADDR=http://0.0.0.0:8200
       - VAULT_DEV_ROOT_TOKEN_ID=AVeryUnsecretSecret
