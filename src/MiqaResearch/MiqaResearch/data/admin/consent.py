@@ -1,10 +1,11 @@
 from django.contrib import admin
+from unfold.admin import ModelAdmin
 
 from data.models import ParticipantConsent
 
 
 @admin.register(ParticipantConsent)
-class ParticipantConsentAdmin(admin.ModelAdmin):
+class ParticipantConsentAdmin(ModelAdmin):
     list_display = ("clinic", "consent_type", "study_participant", "status", "consent_signed_date", "consent_revoked_date")
     list_display_links = ("clinic", "consent_type", "study_participant", "status", "consent_signed_date", "consent_revoked_date")
     list_filter = ("consent_type", "clinic", "status")

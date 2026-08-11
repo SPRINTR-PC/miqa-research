@@ -12,3 +12,4 @@ class UploadConsentSchema(Schema):
     clinic: str
     comment: str
     consent_labels: list[str]
+    extra_info: dict[str, list[str]] | None
