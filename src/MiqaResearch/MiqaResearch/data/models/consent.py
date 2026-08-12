@@ -33,6 +33,8 @@ class ParticipantConsent(models.Model):
     consent_type = models.ForeignKey(ParticipantConsentType, on_delete=models.CASCADE, blank=False, null=False,
                                      related_name="consents", related_query_name="consent",
                                      db_index=True)
+    source = models.CharField(max_length=200, blank=True, null=True, help_text="Source of the consent")
+    extra_info = models.JSONField(blank=True, null=True, help_text="Extra information about the consent")
 
     class Meta:
         db_table = "mires_participant_consent"

@@ -11,6 +11,7 @@ from contract.constants.scopes import (
     SCOPE_UPSERT_CONSENT,
 )
 from helpers import vault
+from helpers.vault import get_data_encryption_keys
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -56,6 +57,8 @@ env = environ.Env(
     MIRES_CELERY_TASK_TIME_LIMIT=(int, 30 * 60),
     MIRES_CELERY_WORKER_ENABLE_REMOTE_CONTROL=(bool, False),
     MIRES_CELERY_WORKER_PREFETCH_MULTIPLIER=(int, 1),
+    MIRES_DATA_HASH_FERNET_KEY_ENCRYPTION=(str, "utf-8"),
+    MIRES_DATA_HASH_KEY_VAULT_PATH=(str, "mires/datahashing"),
     MIRES_EMAIL_HOST=(str, None),
     MIRES_EMAIL_PORT=(int, 1234),
     MIRES_EMAIL_HOST_USER=(str, None),
@@ -83,6 +86,7 @@ env = environ.Env(
     MIRES_TASK_CONSENT_CLIENT_SECRET=(str, None),
     MIRES_TASK_CONSENT_VAULT_PATH=(str, "mires/consent"),
     MIRES_TASK_CONSENT_BASE_URL=(str, None),
+    MIRES_TASK_CONSENT_SOURCE=(str, None),
     MIRES_VAULT_URL=(str, None),
     MIRES_VAULT_TOKEN=(str, None),
 )
@@ -111,7 +115,6 @@ ADMIN_URL: str = f"{env('MIRES_ADMIN_URL').removeprefix("/") if env('MIRES_ADMIN
 # Application definition
 
 INSTALLED_APPS = [
-    'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
@@ -130,6 +133,16 @@ INSTALLED_APPS = [
     'django.contrib.sites',
     'MiqaResearch.data',
     #'documentation',
+    # Unfold admin interface
+    'unfold',
+    # 'unfold.contrib.filters',
+    # 'unfold.contrib.forms',
+    # 'unfold.contrib.inlines',
+    # 'unfold.contrib.import_export',
+    # 'unfold.contrib.guardian',
+    # 'unfold.contrib.simple_history',
+    # 'unfold.contrib.location_field',
+    'django.contrib.admin',
 ]
 
 MIDDLEWARE = [
@@ -382,12 +395,17 @@ STATIC_ROOT_IGNORES = ["less", "webcomponents"]
 # ==============================
 # SENSITIVE DATA ENCRYPTION
 # ==============================
-FERNET_KEY = b"EiGdHopiKZdBZwVCP4dVJitPrrDnOuGAd94W4EZpwQc="  # TODO: Change so that this key comes from Vault
-SENSITIVE_DATA_HASH_KEY = "H2QCB14temR-C2JnLORSE5TxPwLd8iy3YygNPQ-corA="  # TODO: Change so that this key comes from VAULT
+FERNET_KEY, SENSITIVE_DATA_HASH_KEY = get_data_encryption_keys(env, env("MIRES_DATA_HASH_FERNET_KEY_ENCRYPTION"))
 
 # ==============================
-# CELERY
+# DJANGO TASKS & CELERY
 # ==============================
+TASKS = {
+    "default": {
+        "BACKEND": "django_tasks_celery.CeleryBackend",
+        # See: https://github.com/oliverhaas/django-tasks-celery
+    }
+}
 CELERY_BROKER_URL = env("MIRES_CELERY_BROKER_URL", default="amqp://guest:guest@oqarabbit:5672//")
 CELERY_BROKER_RETRY_ON_STARTUP = True
 CELERY_BROKER_TRANSPORT_OPTIONS = {"confirm": True, "fanout_prefix": True}
@@ -443,6 +461,7 @@ TASK_CONSENT_ADFS_TOKEN_URL = env("MIRES_TASK_CONSENT_ADFS_TOKEN_URL")
 TASK_CONSENT_RESOURCE = env("MIRES_TASK_CONSENT_RESOURCE")
 TASK_CONSENT_CLIENT_ID, TASK_CONSENT_CLIENT_SECRET = _get_consent_client_id_and_secret()
 TASK_CONSENT_BASE_URL = env("MIRES_TASK_CONSENT_BASE_URL")
+TASK_CONSENT_SOURCE: str = env("MIRES_TASK_CONSENT_SOURCE")
 TASK_CONSENT_FORM_COL_NAME = env("MIRES_TASK_CONSENT_FORM_COL_NAME", default="Namn")
 TASK_CONSENT_FORM_COL_PID = env("MIRES_TASK_CONSENT_FORM_COL_PID", default="Personnummer")
 TASK_CONSENT_FORM_COL_STATUS = env("MIRES_TASK_CONSENT_FORM_COL_STATUS", default="Status")
