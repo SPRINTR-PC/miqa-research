@@ -11,3 +11,4 @@ from .dicom_file import DicomFile
 from .measurement import Measurement
 from .prom_data import PromFormTemplate, PromData, ParsedPromForm
 from .auth import BearerToken
+from .oidc_role_mapping import OIDCRoleMapping
