@@ -5,6 +5,18 @@
     </div>
 
     <div class="grid gap-6">
+        {% if oidc_login_enabled %}
+        <div class="p-6 border rounded-xl shadow-sm hover:border-primary/50 transition-all bg-card text-card-foreground">
+            <h2 class="text-xl font-semibold mb-2 flex items-center gap-2">
+                {% include "components/icon.html" with icon_name="shield-check.svg" icon_classes="h-5 w-5 text-primary" %}
+                {% translate "Single Sign-On" %}
+            </h2>
+            <p class="text-sm text-muted-foreground mb-6">{% translate "Sign in using your organization account." %}</p>
+            <a href="{{ oidc_login_url }}" class="w-full inline-flex items-center justify-center h-10 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 font-medium transition-colors">
+                {% translate "Sign in with" %} {{ oidc_provider_display_name }}
+            </a>
+        </div>
+        {% endif %}
         <div class="p-6 border rounded-xl shadow-sm hover:border-primary/50 transition-all bg-card text-card-foreground">
             <h2 class="text-xl font-semibold mb-2 flex items-center gap-2">
                 {% include "components/icon.html" with icon_name="shield-check.svg" icon_classes="h-5 w-5 text-primary" %}
