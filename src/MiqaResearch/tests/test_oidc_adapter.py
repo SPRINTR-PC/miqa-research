@@ -8,6 +8,7 @@ from django.contrib.sessions.middleware import SessionMiddleware
 from django.test import RequestFactory
 
 from helpers.authentication.custom_oidc_backend import CustomSocialAccountAdapter
+from MiqaResearch.data.models import OIDCRoleMapping
 
 User = get_user_model()
 
@@ -30,10 +31,10 @@ def adapter():
 
 
 @pytest.mark.django_db
-def test_update_user_roles_maps_single_role_string_to_group(adapter, user, settings, monkeypatch):
+def test_update_user_roles_maps_single_role_string_to_group(adapter, user, settings):
     settings.OIDC_ROLES_CLAIM = "role"
-    monkeypatch.setenv("MIRES_OIDC_ROLE_MAPPING", '{"admin": "Administrators"}')
-    Group.objects.create(name="Administrators")
+    group = Group.objects.create(name="Administrators")
+    OIDCRoleMapping.objects.create(oidc_role="admin", group=group)
 
     adapter.update_user_roles(user, {"role": "admin"})
 
@@ -41,13 +42,12 @@ def test_update_user_roles_maps_single_role_string_to_group(adapter, user, setti
 
 
 @pytest.mark.django_db
-def test_update_user_roles_maps_multiple_roles(adapter, user, settings, monkeypatch):
+def test_update_user_roles_maps_multiple_roles(adapter, user, settings):
     settings.OIDC_ROLES_CLAIM = "role"
-    monkeypatch.setenv(
-        "MIRES_OIDC_ROLE_MAPPING", '{"admin": "Administrators", "viewer": "Viewers"}'
-    )
-    Group.objects.create(name="Administrators")
-    Group.objects.create(name="Viewers")
+    admin_group = Group.objects.create(name="Administrators")
+    viewer_group = Group.objects.create(name="Viewers")
+    OIDCRoleMapping.objects.create(oidc_role="admin", group=admin_group)
+    OIDCRoleMapping.objects.create(oidc_role="viewer", group=viewer_group)
 
     adapter.update_user_roles(user, {"role": ["admin", "viewer"]})
 
@@ -55,9 +55,8 @@ def test_update_user_roles_maps_multiple_roles(adapter, user, settings, monkeypa
 
 
 @pytest.mark.django_db
-def test_update_user_roles_clears_groups_when_no_roles_claim(adapter, user, settings, monkeypatch):
+def test_update_user_roles_clears_groups_when_no_roles_claim(adapter, user, settings):
     settings.OIDC_ROLES_CLAIM = "role"
-    monkeypatch.setenv("MIRES_OIDC_ROLE_MAPPING", "{}")
     existing_group = Group.objects.create(name="Stale")
     user.groups.add(existing_group)
 
@@ -67,10 +66,10 @@ def test_update_user_roles_clears_groups_when_no_roles_claim(adapter, user, sett
 
 
 @pytest.mark.django_db
-def test_pre_social_login_updates_roles_for_existing_user(adapter, user, settings, monkeypatch):
+def test_pre_social_login_updates_roles_for_existing_user(adapter, user, settings):
     settings.OIDC_ROLES_CLAIM = "role"
-    monkeypatch.setenv("MIRES_OIDC_ROLE_MAPPING", '{"admin": "Administrators"}')
-    Group.objects.create(name="Administrators")
+    group = Group.objects.create(name="Administrators")
+    OIDCRoleMapping.objects.create(oidc_role="admin", group=group)
     sociallogin = SimpleNamespace(
         is_existing=True,
         user=user,
@@ -91,10 +90,10 @@ def test_pre_social_login_does_nothing_for_new_user(adapter, settings):
 
 
 @pytest.mark.django_db
-def test_save_user_updates_roles_on_first_signup(adapter, settings, monkeypatch):
+def test_save_user_updates_roles_on_first_signup(adapter, settings):
     settings.OIDC_ROLES_CLAIM = "role"
-    monkeypatch.setenv("MIRES_OIDC_ROLE_MAPPING", '{"admin": "Administrators"}')
-    Group.objects.create(name="Administrators")
+    group = Group.objects.create(name="Administrators")
+    OIDCRoleMapping.objects.create(oidc_role="admin", group=group)
 
     new_user = User(username="new-oidc-user", email="new@example.com")
     account = SocialAccount(

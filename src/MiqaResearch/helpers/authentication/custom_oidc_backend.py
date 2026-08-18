@@ -1,6 +1,3 @@
-import json
-import os
-
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
 from django.conf import settings
 from django.contrib.auth.models import Group
@@ -27,8 +24,5 @@ class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
         if isinstance(oidc_roles, str):
             oidc_roles = [oidc_roles]
 
-        role_mapping = json.loads(os.getenv("MIRES_OIDC_ROLE_MAPPING", "{}"))
-
-        target_group_names = [role_mapping.get(role) for role in oidc_roles]
-        target_groups = Group.objects.filter(name__in=target_group_names)
+        target_groups = Group.objects.filter(oidc_role_mappings__oidc_role__in=oidc_roles)
         user.groups.set(target_groups)
