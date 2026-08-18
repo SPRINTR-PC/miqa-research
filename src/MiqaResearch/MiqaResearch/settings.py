@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Any
 
 import environ
 from more_itertools.more import lstrip
@@ -17,17 +16,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 env = environ.Env(
     MIRES_ADMIN_URL=(str, "miresadm"),
-    MIRES_ADFS_SERVER=(str, "ADFS server URL"),
-    MIRES_ADFS_TENANT=(str, "adfs"),
-    MIRES_ADFS_CLIENT_ID=(str, "SomeClientId"),
-    MIRES_ADFS_RESOURCE=(str, None),
-    MIRES_ADFS_POST_LOGOUT_REDIRECT_URI=(str, "http://localhost:8000/loggedOut"),
-    MIRES_ADFS_CALLBACK_PATH=(str, "/signin-oidc"),
-    MIRES_ADFS_AUTHORITY=(),
-    MIRES_AUTHENTICATION_EMAIL_CLAIM=(str, "email"),
+    MIRES_ADFS_AUTHORITY=(str, None),
     MIRES_AUTHENTICATION_FRAMEWORK=(str, "yubikey"),
-    MIRES_AUTHENTICATION_FIRST_NAME_CLAIM=(str, "givenname"),
-    MIRES_AUTHENTICATION_LAST_NAME_CLAIM=(str, "surname"),
     MIRES_DEBUG=(bool, False),
     MIRES_SECRET_KEY=(str, None),
     MIRES_STATIC_URL=(str, "/static/"),
@@ -72,6 +62,8 @@ env = environ.Env(
     MIRES_LOGGING_DIR=(Path, BASE_DIR / "LocalOnly/Logs"),
     MIRES_OIDC_CLIENT_ID=(str, None),
     MIRES_OIDC_CLIENT_SECRET=(str, None),
+    MIRES_OIDC_DISCOVERY_URL=(str, None),
+    MIRES_OIDC_PROVIDER_DISPLAY_NAME=(str, "SSO"),
     MIRES_OIDC_ROLES_CLAIM=(str, "role"),
     MIRES_OLLAMA_URL=(str, "http://localhost:11434"),
     MIRES_OLLAMA_MODEL=(str, "gemma4"),
@@ -125,6 +117,8 @@ INSTALLED_APPS = [
     'allauth',
     'allauth.account',
     'allauth.mfa',
+    'allauth.socialaccount',
+    'allauth.socialaccount.providers.openid_connect',
     'oauth2_provider',
     'ninja',
     'django_celery_beat',
@@ -181,6 +175,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'django.template.context_processors.debug',
+                'MiqaResearch.context_processors.auth_framework',
             ],
             'builtins': [
                 'django.templatetags.i18n',
@@ -199,55 +194,33 @@ AUTHENTICATION_BACKENDS = [
     'allauth.account.auth_backends.AuthenticationBackend',
 ]
 
-if env("MIRES_AUTHENTICATION_FRAMEWORK") == "adfs":
-    def _get_secrets_from_vault(secret_paths_and_name: list[tuple[str, str]]) -> list[Any]:
-        vault_client = vault.get_vault_client(
-            url=env("MIRES_VAULT_URL"),
-            token=env("MIRES_VAULT_TOKEN"),
-        )
-        return [
-            vault.get_vault_secret(vault_client, secret_path, secret_name)
-            for secret_path, secret_name in secret_paths_and_name
-        ]
+_AUTH_MODES = set(env("MIRES_AUTHENTICATION_FRAMEWORK").split(","))
 
-    INSTALLED_APPS.append("django_auth_adfs")
-    MIDDLEWARE.append("django_auth_adfs.middleware.LoginRequiredMiddleware")
+OIDC_PROVIDER_ID = "mires-oidc"
+OIDC_LOGIN_ENABLED = bool({"oidc", "adfs"} & _AUTH_MODES)
+OIDC_PROVIDER_DISPLAY_NAME = env("MIRES_OIDC_PROVIDER_DISPLAY_NAME")
+OIDC_ROLES_CLAIM = env("MIRES_OIDC_ROLES_CLAIM")
 
-    AUTHENTICATION_BACKENDS.append("django_auth_adfs.backend.AdfsAuthCodeBackend")
-    AUTH_ADFS = {
-        "SERVER": env("MIRES_ADFS_AUTHORITY"),
-        "DISABLE_SSO": True,
-        "CLIENT_ID": _get_secrets_from_vault([("mires/adfs", "ClientId")])[0],
-        "TENANT": env("MIRES_ADFS_TENANT"),
-        "RELYING_PARTY_ID": env("MIRES_ADFS_RESOURCE"),
-        "AUDIENCE": env("MIRES_ADFS_RESOURCE"),
-        "LOGIN_EXEMPT_URLS": [
-            r"^admin/",
-            r"^static/",
-            r"^favicon\.ico$",
-        ],
-        "RESOURCE": env("MIRES_ADFS_RESOURCE"),
-        "POST_LOGOUT_REDIRECT_URI": env("MIRES_ADFS_POST_LOGOUT_REDIRECT_URI"),
-        "CALLBACK_PATH": env("MIRES_ADFS_CALLBACK_PATH"),
-        "LOGIN_CALLBACK_URL": env("MIRES_ADFS_CALLBACK_PATH"),
-        "CLAIM_MAPPING": {
-            "first_name": env("MIRES_AUTHENTICATION_FIRST_NAME_CLAIM"),
-            "last_name": env("MIRES_AUTHENTICATION_LAST_NAME_CLAIM"),
-            "email": env("MIRES_AUTHENTICATION_EMAIL_CLAIM"),
-        },
+if OIDC_LOGIN_ENABLED:
+    if "adfs" in _AUTH_MODES:
+        _oidc_server_url = f"{env('MIRES_ADFS_AUTHORITY').rstrip('/')}/adfs/.well-known/openid-configuration"
+    else:
+        _oidc_server_url = env("MIRES_OIDC_DISCOVERY_URL")
+
+    SOCIALACCOUNT_PROVIDERS = {
+        "openid_connect": {
+            "APPS": [
+                {
+                    "provider_id": OIDC_PROVIDER_ID,
+                    "name": OIDC_PROVIDER_DISPLAY_NAME,
+                    "client_id": env("MIRES_OIDC_CLIENT_ID"),
+                    "secret": env("MIRES_OIDC_CLIENT_SECRET"),
+                    "settings": {"server_url": _oidc_server_url},
+                }
+            ]
+        }
     }
-
-elif env("MIRES_AUTHENTICATION_FRAMEWORK") == "oidc":
-    INSTALLED_APPS.append("mozilla_django_oidc")
-    AUTHENTICATION_BACKENDS.append("mozilla_django_oidc.auth.OIDCAuthenticationBackend")
-    OIDC_RP_CLIENT_ID = env("MIRES_OIDC_CLIENT_ID")
-    OIDC_RP_CLIENT_SECRET = env("MIRES_OIDC_CLIENT_SECRET")
-    OIDC_OP_JWKS_ENDPOINT = f"{env('MIRES_ADFS_AUTHORITY').rstrip('/')}/discovery/keys"
-    OIDC_OP_AUTHORIZATION_ENDPOINT = f"{env('MIRES_ADFS_AUTHORITY').rstrip('/')}/oauth2/authorize"
-    OIDC_OP_TOKEN_ENDPOINT = f"{env('MIRES_ADFS_AUTHORITY').rstrip('/')}/oauth2/token"
-    OIDC_OP_USER_ENDPOINT = f"{env('MIRES_ADFS_AUTHORITY').rstrip('/')}/oauth2/userinfo"
-    OIDC_RP_SIGN_ALGO = "RS256"
-    OIDC_ROLES_CLAIM = env("MIRES_OIDC_ROLES_CLAIM")
+    SOCIALACCOUNT_ADAPTER = "helpers.authentication.custom_oidc_backend.CustomSocialAccountAdapter"
 
 SITE_ID = 1
 
