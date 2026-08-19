@@ -104,5 +104,13 @@ temp/
 # uv.lock is kept in the image
 
 # Development tools
-
+AGENTS.md
+CONTEXT.md
+.agents/
+.claude/
+.skills/
+.superpowers/
+.junie/
 LocalOnly/
+docs/
+skills-lock.json

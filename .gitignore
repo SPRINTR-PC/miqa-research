@@ -94,6 +94,11 @@ coverage.xml
 .ruff_cache/
 .hypothesis/
 
+# =============================================
+# Testing
+# =============================================
+src/MiqaResearch/report_output/
+
 # ==============================================================================
 # Web Components (Lit / TypeScript / Node.js)
 # ==============================================================================
@@ -143,6 +148,8 @@ node_modules/.vite/
 _ReSharper.*/
 *resharper-host*/
 .junie/
+.mcp.json
+**/.mcp.json
 
 # Visual Studio
 .vs/
@@ -164,6 +171,15 @@ _ReSharper.*/
 
 # VS Code Local History extension
 .history/
+
+# =============================================
+# Agent docs and skills
+# =============================================
+.skills/
+.superpowers/
+.agents/
+.claude/
+skills-lock.json
 
 # =============================================
 # Environment Variables / Secrets
