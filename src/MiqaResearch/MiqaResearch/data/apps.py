@@ -6,6 +6,7 @@ class DataConfig(AppConfig):
     name = "MiqaResearch.data"
 
     def ready(self):
+        from MiqaResearch.data import signals  # noqa: F401
         from MiqaResearch.data.models import OIDCRoleMapping
 
         try:
