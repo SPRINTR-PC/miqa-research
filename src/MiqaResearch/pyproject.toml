@@ -4,13 +4,13 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.14"
 dependencies = [
-    "django>=6.0.5",
+    "django==6.0.*",
     "django-environ>=0.14.*",
     "django-debug-toolbar",
-    "django-htmx>=1.28.0",
+    "django-htmx>=1.29.0",
     "django-unfold",
     "django-oauth-toolkit",
-    "django-allauth[mfa]>=65.18.*",
+    "django-allauth[mfa]>=65.19.*",
     "django-rosetta>=0.10.3",
     "psycopg[binary]>=3.3.3",
     "django-ninja",
