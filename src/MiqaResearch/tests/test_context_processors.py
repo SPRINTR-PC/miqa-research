@@ -28,3 +28,35 @@ def test_auth_framework_enabled_exposes_login_url(request_, settings):
     assert context["oidc_login_enabled"] is True
     assert context["oidc_provider_display_name"] == "Acme SSO"
     assert context["oidc_login_url"] == "/accounts/oidc/mires-oidc/login/"
+
+
+def test_auth_framework_exposes_passkey_flag_when_yubikey_configured(request_, settings):
+    settings.MIRES_AUTHENTICATION_FRAMEWORK = "yubikey"
+
+    context = auth_framework(request_)
+
+    assert context["passkey_login_enabled"] is True
+    assert context["eid_login_enabled"] is False
+    assert context["siths_login_enabled"] is False
+    assert context["bankid_login_enabled"] is False
+
+
+def test_auth_framework_exposes_eid_flags_when_siths_and_bankid_configured(request_, settings):
+    settings.MIRES_AUTHENTICATION_FRAMEWORK = "siths,bankid"
+
+    context = auth_framework(request_)
+
+    assert context["passkey_login_enabled"] is False
+    assert context["eid_login_enabled"] is True
+    assert context["siths_login_enabled"] is True
+    assert context["bankid_login_enabled"] is True
+
+
+def test_auth_framework_exposes_only_configured_eid_method(request_, settings):
+    settings.MIRES_AUTHENTICATION_FRAMEWORK = "siths"
+
+    context = auth_framework(request_)
+
+    assert context["eid_login_enabled"] is True
+    assert context["siths_login_enabled"] is True
+    assert context["bankid_login_enabled"] is False

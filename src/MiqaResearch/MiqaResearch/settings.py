@@ -201,7 +201,8 @@ AUTHENTICATION_BACKENDS = [
     'allauth.account.auth_backends.AuthenticationBackend',
 ]
 
-_AUTH_MODES = set(env("MIRES_AUTHENTICATION_FRAMEWORK").split(","))
+MIRES_AUTHENTICATION_FRAMEWORK = env("MIRES_AUTHENTICATION_FRAMEWORK")
+_AUTH_MODES = set(MIRES_AUTHENTICATION_FRAMEWORK.split(","))
 
 OIDC_PROVIDER_ID = "mires-oidc"
 OIDC_LOGIN_ENABLED = bool({"oidc", "adfs"} & _AUTH_MODES)

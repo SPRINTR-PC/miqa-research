@@ -14,6 +14,7 @@ from MiqaResearch.interfaces.http.views.accounts.eid import (
     eid_callback,
     siths_login_redirect,
 )
+from MiqaResearch.interfaces.http.views.accounts.login import LoginView
 
 urlpatterns = [
     path('', landing_page_index, name='home'),
@@ -24,6 +25,7 @@ urlpatterns = [
     path('accounts/siths/login/', siths_login_redirect, name='siths_login'),
     path('accounts/bankid/login/', bankid_login_redirect, name='bankid_login'),
     path('accounts/eid/callback/', eid_callback, name='eid_callback'),
+    path('accounts/login/', LoginView.as_view(), name='account_login'),
     path('accounts/', include('allauth.urls')),
     path('o/', include('oauth2_provider.urls', namespace='oauth2_provider')),
     path('api/', api.urls, name="api"),
