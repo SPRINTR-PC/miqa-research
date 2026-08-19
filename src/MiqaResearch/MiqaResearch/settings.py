@@ -17,6 +17,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 env = environ.Env(
     MIRES_ADMIN_URL=(str, "miresadm"),
     MIRES_ADFS_AUTHORITY=(str, None),
+    MIRES_AUDIT_LOG_RETENTION_DAYS=(int, 90),
     MIRES_AUTHENTICATION_FRAMEWORK=(str, "yubikey"),
     MIRES_DEBUG=(bool, False),
     MIRES_SECRET_KEY=(str, None),
@@ -65,6 +66,8 @@ env = environ.Env(
     MIRES_OIDC_DISCOVERY_URL=(str, None),
     MIRES_OIDC_PROVIDER_DISPLAY_NAME=(str, "SSO"),
     MIRES_OIDC_ROLES_CLAIM=(str, "role"),
+    MIRES_SESSION_COOKIE_AGE=(int, 8 * 60 * 60),
+    MIRES_SESSION_IDLE_TIMEOUT=(int, 30 * 60),
     MIRES_OLLAMA_URL=(str, "http://localhost:11434"),
     MIRES_OLLAMA_MODEL=(str, "gemma4"),
     MIRES_OTLP_ENDPOINT=(str, "http://localhost:4318/v1/logs"),
@@ -91,6 +94,9 @@ DEBUG = env("MIRES_DEBUG")
 
 SESSION_COOKIE_SECURE = False if DEBUG else True
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False if DEBUG else True
+SESSION_COOKIE_AGE = env("MIRES_SESSION_COOKIE_AGE")
+SESSION_IDLE_TIMEOUT = env("MIRES_SESSION_IDLE_TIMEOUT")
+AUDIT_LOG_RETENTION_DAYS = env("MIRES_AUDIT_LOG_RETENTION_DAYS")
 
 
 def get_allowed_hosts_list(allowed_hosts_env) -> list[str]:
@@ -145,6 +151,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'MiqaResearch.middleware.SessionTimeoutMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'MiqaResearch.middleware.AsyncUserMiddleware',
