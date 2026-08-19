@@ -188,7 +188,7 @@ services:
 
   mires_rabbit:
     container_name: miresrabbit
-    image: rabbitmq:3.13-management
+    image: rabbitmq:4.3-management
     hostname: miresrabbit
     environment:
       RABBITMQ_DEFAULT_USER: miresRabmin
