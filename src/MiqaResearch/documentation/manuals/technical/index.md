@@ -10,6 +10,7 @@ src/*
 # Table of Contents
 
 * [Architecture](#heading-architecture)
+* [Configuration](#heading-configuration)
 
 # Indices and tables
 
