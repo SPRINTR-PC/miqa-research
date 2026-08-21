@@ -45,6 +45,11 @@ services:
 
   mires_fs:
     image: rustfs/rustfs:latest
+    environment:
+      - RUSTFS_ACCESS_KEY=MiresAccessKey
+      - RUSTFS_SECRET_KEY=MiresSecretKey
+      - RUSTFS_CONSOLE_ENABLED=true
+      - RUSTFS_CONSOLE_PORT=9001
     networks:
       - mires
     ports:
@@ -80,7 +85,7 @@ services:
     build:
       context: .
       dockerfile: dev.Dockerfile
-    command: sh -c "/tools/celery/start_worker.sh getConsent" getConsent
+    command: sh -c "/tools/celery/start_worker.sh getConsents" getConsents
     environment:
       - MIRES_DEBUG=1
       - MIRES_SITE_URL=http://mires_web:8000
@@ -92,6 +97,7 @@ services:
     depends_on:
       - mires_web
       - mires_rabbit
+      - mires_vault
     volumes:
       - ./:/app
     networks:
@@ -110,9 +116,12 @@ services:
       - MIRES_AUTH_TOKEN=2ac83c66b6affe116e16efc51ef752f583b37c52
       - MIRES_TASK_CONSENT_SKIP_CLIENT=1
       - SET_CELERY_PYTHON_PATH=1
+      - MIRES_VAULT_URL=http://mires_vault:8200
+      - MIRES_VAULT_TOKEN=AVeryUnsecretSecret
     depends_on:
       - mires_web
       - mires_rabbit
+      - mires_vault
     volumes:
       - ./:/app
     networks:
@@ -131,9 +140,12 @@ services:
       - MIRES_AUTH_TOKEN=2ac83c66b6affe116e16efc51ef752f583b37c52
       - MIRES_TASK_CONSENT_SKIP_CLIENT=1
       - SET_CELERY_PYTHON_PATH=1
+      - MIRES_VAULT_URL=http://mires_vault:8200
+      - MIRES_VAULT_TOKEN=AVeryUnsecretSecret
     depends_on:
       - mires_web
       - mires_rabbit
+      - mires_vault
     volumes:
       - ./:/app
     networks:
@@ -153,10 +165,13 @@ services:
       - MIRES_AUTH_TOKEN=2ac83c66b6affe116e16efc51ef752f583b37c52
       - MIRES_TASK_CONSENT_SKIP_CLIENT=1
       - SET_CELERY_PYTHON_PATH=1
+      - MIRES_VAULT_URL=http://mires_vault:8200
+      - MIRES_VAULT_TOKEN=AVeryUnsecretSecret
     depends_on:
       - mires_web
       - mires_db
       - mires_rabbit
+      - mires_vault
     volumes:
       - ./:/app
     networks:
@@ -175,9 +190,12 @@ services:
       - MIRES_AUTH_TOKEN=2ac83c66b6affe116e16efc51ef752f583b37c52
       - MIRES_TASK_CONSENT_SKIP_CLIENT=1
       - SET_CELERY_PYTHON_PATH=1
+      - MIRES_VAULT_URL=http://mires_vault:8200
+      - MIRES_VAULT_TOKEN=AVeryUnsecretSecret
     depends_on:
       - mires_web
       - mires_rabbit
+      - mires_vault
     ports:
       - "5555:5555"
     volumes:
@@ -196,8 +214,6 @@ services:
     ports:
       - "5671:5672"
       - "15671:15672"
-    volumes:
-      - ./tools/rabbitmq/config:/etc/rabbitmq
     networks:
       - mires
     restart: unless-stopped
@@ -221,6 +237,7 @@ services:
     depends_on:
       - mires_rabbit
       - mires_db
+      - mires_vault
     volumes:
       - ./:/app
 
