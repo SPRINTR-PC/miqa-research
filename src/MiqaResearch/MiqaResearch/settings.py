@@ -3,6 +3,7 @@ from pathlib import Path
 import environ
 from more_itertools.more import lstrip
 
+from contract.constants.celery import QUEUE_EMAIL, QUEUE_GET_CONSENTS, QUEUE_OCR
 from contract.constants.scopes import (
     SCOPE_ADMIN,
     SCOPE_MONITOR_CLIENT,
@@ -64,8 +65,12 @@ env = environ.Env(
     MIRES_OIDC_CLIENT_ID=(str, None),
     MIRES_OIDC_CLIENT_SECRET=(str, None),
     MIRES_OIDC_DISCOVERY_URL=(str, None),
+    MIRES_OIDC_LOG_CLAIMS=(bool, False),
     MIRES_OIDC_PROVIDER_DISPLAY_NAME=(str, "SSO"),
     MIRES_OIDC_ROLES_CLAIM=(str, "role"),
+    MIRES_OIDC_FETCH_USERINFO=(bool, False),
+    MIRES_OIDC_PKCE_ENABLED=(bool, False),
+    MIRES_OIDC_UID_FIELD=(str, None),
     MIRES_SESSION_COOKIE_AGE=(int, 8 * 60 * 60),
     MIRES_SESSION_IDLE_TIMEOUT=(int, 30 * 60),
     MIRES_OLLAMA_URL=(str, "http://localhost:11434"),
@@ -82,6 +87,7 @@ env = environ.Env(
     MIRES_TASK_CONSENT_VAULT_PATH=(str, "mires/consent"),
     MIRES_TASK_CONSENT_BASE_URL=(str, None),
     MIRES_TASK_CONSENT_SOURCE=(str, None),
+    MIRES_USE_VAULT=(bool, False),
     MIRES_VAULT_URL=(str, None),
     MIRES_VAULT_TOKEN=(str, None),
 )
@@ -206,8 +212,10 @@ _AUTH_MODES = set(MIRES_AUTHENTICATION_FRAMEWORK.split(","))
 
 OIDC_PROVIDER_ID = "mires-oidc"
 OIDC_LOGIN_ENABLED = bool({"oidc", "adfs"} & _AUTH_MODES)
+SSO_ONLY_LOGIN_ENABLED = OIDC_LOGIN_ENABLED and _AUTH_MODES <= {"oidc", "adfs"}
 OIDC_PROVIDER_DISPLAY_NAME = env("MIRES_OIDC_PROVIDER_DISPLAY_NAME")
 OIDC_ROLES_CLAIM = env("MIRES_OIDC_ROLES_CLAIM")
+OIDC_LOG_CLAIMS = env("MIRES_OIDC_LOG_CLAIMS", default=DEBUG)
 
 if OIDC_LOGIN_ENABLED:
     if "adfs" in _AUTH_MODES:
@@ -228,6 +236,16 @@ if OIDC_LOGIN_ENABLED:
             ]
         }
     }
+    if env("MIRES_OIDC_FETCH_USERINFO"):
+        SOCIALACCOUNT_PROVIDERS["openid_connect"]["APPS"][0]["settings"]["fetch_userinfo"] = True
+    if env("MIRES_OIDC_PKCE_ENABLED"):
+        SOCIALACCOUNT_PROVIDERS["openid_connect"]["APPS"][0]["settings"]["oauth_pkce_enabled"] = True
+    if env("MIRES_OIDC_UID_FIELD"):
+        SOCIALACCOUNT_PROVIDERS["openid_connect"]["APPS"][0]["settings"]["uid_field"] = env("MIRES_OIDC_UID_FIELD")
+    # ADFS/OIDC often omits a reliable `email_verified` claim; trust the IdP's
+    # email outright rather than depending on that claim being present.
+    SOCIALACCOUNT_PROVIDERS["openid_connect"]["APPS"][0]["settings"]["verified_email"] = True
+    SOCIALACCOUNT_PROVIDERS["openid_connect"]["APPS"][0]["settings"]["email_authentication"] = True
     SOCIALACCOUNT_ADAPTER = "helpers.authentication.custom_oidc_backend.CustomSocialAccountAdapter"
 
 SITE_ID = 1
@@ -238,6 +256,14 @@ LOGOUT_REDIRECT_URL = '/'
 ACCOUNT_LOGIN_METHODS = {'email'}
 ACCOUNT_SIGNUP_FIELDS = ['email*', 'password1*', 'password2*']
 ACCOUNT_EMAIL_VERIFICATION = 'optional'
+
+# Auto-link a first-time SSO login to an existing local account when the
+# claimed email matches, with no password-confirmation step. allauth's
+# wipe_password() safety net (fires only on the unverified-match fallback
+# path) is intentionally left in place as the defense against email-collision
+# account takeover.
+SOCIALACCOUNT_EMAIL_AUTHENTICATION = True
+SOCIALACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT = True
 
 MFA_SUPPORTED_TYPES = ["webauthn"]
 MFA_PASSKEY_LOGIN_ENABLED = True
@@ -376,20 +402,29 @@ STATIC_ROOT_IGNORES = ["less", "webcomponents"]
 # ==============================
 # SENSITIVE DATA ENCRYPTION
 # ==============================
-FERNET_KEY, SENSITIVE_DATA_HASH_KEY = get_data_encryption_keys(env, env("MIRES_DATA_HASH_FERNET_KEY_ENCRYPTION"))
+FERNET_KEY, SENSITIVE_DATA_HASH_KEY = (
+    get_data_encryption_keys(env, env("MIRES_DATA_HASH_FERNET_KEY_ENCRYPTION"))
+    if env("MIRES_USE_VAULT")
+    else (None, None)
+)
 
 # ==============================
 # DJANGO TASKS & CELERY
 # ==============================
 TASKS = {
     "default": {
-        "BACKEND": "django_tasks_celery.CeleryBackend",
-        # See: https://github.com/oliverhaas/django-tasks-celery
+        "BACKEND": "django_tasks_celery.CeleryBackend", # See: https://github.com/oliverhaas/django-tasks-celery
+        "QUEUES": ["default", QUEUE_OCR, QUEUE_EMAIL, QUEUE_GET_CONSENTS],
     }
 }
-CELERY_BROKER_URL = env("MIRES_CELERY_BROKER_URL", default="amqp://guest:guest@oqarabbit:5672//")
+CELERY_BROKER_URL = env("MIRES_CELERY_BROKER_URL", default="amqp://guest:guest@miresrabbit:5672//")
 CELERY_BROKER_RETRY_ON_STARTUP = True
 CELERY_BROKER_TRANSPORT_OPTIONS = {"confirm": True, "fanout_prefix": True}
+# RabbitMQ 4.x removed support for transient non-exclusive queues, which kombu's pidbox
+# (Mingle) and event (Gossip) queues use by default. Marking them exclusive keeps them
+# transient but makes RabbitMQ accept them again. See https://github.com/celery/kombu/issues/2338
+CELERY_CONTROL_QUEUE_EXCLUSIVE = True
+CELERY_EVENT_QUEUE_EXCLUSIVE = True
 CELERY_RESULT_BACKEND = env("MIRES_CELERY_RESULT_BACKEND")
 CELERY_RESULT_EXTENDED = env("MIRES_CELERY_RESULT_EXTENDED")
 CELERY_TASK_DEFAULT_QUEUE_TYPE = "quorum"
@@ -428,6 +463,9 @@ def _get_consent_client_id_and_secret():
     client_id = env("MIRES_TASK_CONSENT_CLIENT_ID")
     client_secret = env("MIRES_TASK_CONSENT_CLIENT_SECRET")
     if client_id is None or client_secret is None:
+        if env("MIRES_USE_VAULT") is False:
+            return None, None
+
         vault_client = vault.get_vault_client(
             url=env("MIRES_VAULT_URL"),
             token=env("MIRES_VAULT_TOKEN"),

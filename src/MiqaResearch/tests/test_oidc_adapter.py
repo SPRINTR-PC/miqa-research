@@ -90,6 +90,61 @@ def test_pre_social_login_does_nothing_for_new_user(adapter, settings):
 
 
 @pytest.mark.django_db
+def test_is_auto_signup_allowed_forces_true_when_user_has_email(adapter, settings):
+    settings.SOCIALACCOUNT_AUTO_SIGNUP = False
+    sociallogin = SimpleNamespace(
+        email_addresses=[],
+        user=User(username="new-oidc-user", email="new@example.com"),
+    )
+
+    assert adapter.is_auto_signup_allowed(request=None, sociallogin=sociallogin) is True
+
+
+@pytest.mark.django_db
+def test_is_auto_signup_allowed_falls_back_when_no_email(adapter, settings):
+    settings.SOCIALACCOUNT_AUTO_SIGNUP = False
+    sociallogin = SimpleNamespace(
+        email_addresses=[],
+        user=User(username="new-oidc-user", email=""),
+    )
+
+    assert adapter.is_auto_signup_allowed(request=None, sociallogin=sociallogin) is False
+
+
+@pytest.mark.django_db
+def test_update_user_roles_logs_unmatched_roles(adapter, user, settings, caplog):
+    settings.OIDC_ROLES_CLAIM = "role"
+
+    with caplog.at_level("WARNING"):
+        adapter.update_user_roles(user, {"role": ["admin", "ghost-role"]})
+
+    assert any("ghost-role" in record.message for record in caplog.records)
+    assert list(user.groups.all()) == []
+
+
+@pytest.mark.django_db
+def test_update_user_roles_logs_claims_when_enabled(adapter, user, settings, caplog):
+    settings.OIDC_ROLES_CLAIM = "role"
+    settings.OIDC_LOG_CLAIMS = True
+
+    with caplog.at_level("DEBUG"):
+        adapter.update_user_roles(user, {"role": "admin"})
+
+    assert any("Merged OIDC claims" in record.message for record in caplog.records)
+
+
+@pytest.mark.django_db
+def test_update_user_roles_does_not_log_claims_when_disabled(adapter, user, settings, caplog):
+    settings.OIDC_ROLES_CLAIM = "role"
+    settings.OIDC_LOG_CLAIMS = False
+
+    with caplog.at_level("DEBUG"):
+        adapter.update_user_roles(user, {"role": "admin"})
+
+    assert not any("Merged OIDC claims" in record.message for record in caplog.records)
+
+
+@pytest.mark.django_db
 def test_save_user_updates_roles_on_first_signup(adapter, settings):
     settings.OIDC_ROLES_CLAIM = "role"
     group = Group.objects.create(name="Administrators")
