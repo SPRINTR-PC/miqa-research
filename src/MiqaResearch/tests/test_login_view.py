@@ -74,31 +74,19 @@ def test_only_configured_auth_methods_are_rendered(client, settings):
     content = response.content.decode()
 
     assert "YubiKey / Passkey" in content
-    assert "SITHS / BankID" not in content
+    assert 'href="/accounts/bankid/login/"' not in content
 
 
 @pytest.mark.django_db
 def test_eid_methods_rendered_when_configured(client, settings):
-    settings.MIRES_AUTHENTICATION_FRAMEWORK = "siths,bankid"
+    settings.MIRES_AUTHENTICATION_FRAMEWORK = "bankid"
 
     response = client.get("/accounts/login/", HTTP_HX_REQUEST="true")
     content = response.content.decode()
 
     assert "YubiKey / Passkey" not in content
-    assert "SITHS / BankID" in content
-    assert 'href="/accounts/siths/login/"' in content
+    assert "BankID" in content
     assert 'href="/accounts/bankid/login/"' in content
-
-
-@pytest.mark.django_db
-def test_only_configured_eid_method_is_rendered(client, settings):
-    settings.MIRES_AUTHENTICATION_FRAMEWORK = "siths"
-
-    response = client.get("/accounts/login/", HTTP_HX_REQUEST="true")
-    content = response.content.decode()
-
-    assert 'href="/accounts/siths/login/"' in content
-    assert 'href="/accounts/bankid/login/"' not in content
 
 
 @pytest.mark.django_db

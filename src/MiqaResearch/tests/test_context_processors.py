@@ -37,26 +37,14 @@ def test_auth_framework_exposes_passkey_flag_when_yubikey_configured(request_, s
 
     assert context["passkey_login_enabled"] is True
     assert context["eid_login_enabled"] is False
-    assert context["siths_login_enabled"] is False
     assert context["bankid_login_enabled"] is False
 
 
-def test_auth_framework_exposes_eid_flags_when_siths_and_bankid_configured(request_, settings):
-    settings.MIRES_AUTHENTICATION_FRAMEWORK = "siths,bankid"
+def test_auth_framework_exposes_eid_flag_when_bankid_configured(request_, settings):
+    settings.MIRES_AUTHENTICATION_FRAMEWORK = "bankid"
 
     context = auth_framework(request_)
 
     assert context["passkey_login_enabled"] is False
     assert context["eid_login_enabled"] is True
-    assert context["siths_login_enabled"] is True
     assert context["bankid_login_enabled"] is True
-
-
-def test_auth_framework_exposes_only_configured_eid_method(request_, settings):
-    settings.MIRES_AUTHENTICATION_FRAMEWORK = "siths"
-
-    context = auth_framework(request_)
-
-    assert context["eid_login_enabled"] is True
-    assert context["siths_login_enabled"] is True
-    assert context["bankid_login_enabled"] is False
