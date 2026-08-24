@@ -2,6 +2,8 @@ import logging
 import random
 
 from MiqaResearch.data.models import StudyParticipant
+from MiqaResearch.readers.study_participant_reader import \
+    get_list_of_study_participants_with_alias1_in_list_of_aliases
 
 logger = logging.getLogger(__name__)
 
@@ -22,13 +24,14 @@ def generate_study_participant_alias1() -> str:
     return alias
 
 
-def generate_study_participant_alias1_list(alias_count: int) -> list[str]:
+async def generate_study_participant_alias1_list(alias_count: int) -> list[str]:
     aliases = [_get_study_participant_alias1() for _ in range(alias_count)]
     tries_count = 0
 
-    while any(existing_aliases := StudyParticipant.objects.filter(alias1__in=aliases).values_list("alias1", flat=True)):
+    while any(existing_aliases := await get_list_of_study_participants_with_alias1_in_list_of_aliases(aliases=aliases)):
         if tries_count > 1000:
-            logger.error(f"Failed to generate {alias_count} unique study participant alias1 after 1000 tries. Consider increasing the number of adjectives or animals to reduce collisions.")
+            logger.error(f"Failed to generate {alias_count} unique study participant alias1 after 1000 tries. Consider "
+                        "increasing the number of adjectives or animals to reduce collisions.")
             raise Exception(f"Failed to generate {alias_count} unique study participant alias1")
 
         new_aliases = [_get_study_participant_alias1() for _ in range(len(existing_aliases))]

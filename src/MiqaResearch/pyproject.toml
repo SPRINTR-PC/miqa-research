@@ -33,6 +33,7 @@ dependencies = [
 dev = [
     "ruff>=0.15.11",
     "pytest>=9.0.3",
+    "pytest-asyncio>=1.4.0",
     "pytest-django>=4.12.0",
     "pytest-html-plus>=1.0.1",
     "sphinx",
@@ -67,9 +68,10 @@ DJANGO_SETTINGS_MODULE = "MiqaResearch.settings"
 python_files = ["tests.py", "test_*.py", "*_tests.py"]
 testpaths = ["tests"]
 addopts = "--reuse-db"
+asyncio_mode = "auto"
 
 [tool.pytest-html-plus.profiles.ci]
-html-output = "tests/report/testresults"
+html-output = "report_output"
 json-report = "testresults.json"
 capture-screenshots = "failed"
 generate-xml = true

@@ -5,6 +5,7 @@ from typing import Any
 import httpx2
 import polars as pl
 import requests
+from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.tasks import task
 from httpx2 import AsyncClient
@@ -43,8 +44,7 @@ async def fetch_participant_consent(form_id: str, separator: str = ",", from_dat
     if (status_code := get_csv_data_response.status_code) == 200:
         csv_content = get_csv_data_response.text
         consent_data = pl.read_csv(StringIO(csv_content))
-        # TODO: Process the consent data to replace any participant ID with a study ID
-        processed_consent_data = _process_consent_data(consent_data)
+        processed_consent_data = await _process_consent_data(consent_data)
 
         # TODO: Saves the processed consent data to a database or file
         return csv_content
@@ -118,7 +118,7 @@ async def _get_csv_data(
     return await client.get(export_url, params=params, headers=headers)
 
 
-def _process_consent_data(consent_data: pl.DataFrame) -> list[dict[str, Any]]:
+async def _process_consent_data(consent_data: pl.DataFrame) -> list[dict[str, Any]]:
     """Processes the consent data to replace any participant ID with a study ID."""
     logger.info(f"Formatting consent data for API endpoint")
 
@@ -128,7 +128,7 @@ def _process_consent_data(consent_data: pl.DataFrame) -> list[dict[str, Any]]:
         pl.col(TASK_CONSENT_FORM_COL_RETRACTED).str.to_datetime(format="%Y-%m-%d %H:%M", time_zone=settings.TASK_CONSENT_TIMEZONE, strict=False),
     )
 
-    participants = _get_participant_db_ids(consent_data)
+    participants = await _get_participant_db_ids(consent_data)
 
     standard_columns = (
         TASK_CONSENT_FORM_COL_NAME, # Str
@@ -171,7 +171,7 @@ def _process_consent_data(consent_data: pl.DataFrame) -> list[dict[str, Any]]:
     return output
 
 
-def _get_participant_db_ids(consent_data: pl.DataFrame) -> dict[str, str]:
+async def _get_participant_db_ids(consent_data: pl.DataFrame) -> dict[str, str]:
     # Get list of normalised participant IDs
     pid_list = (
         consent_data.with_columns(
@@ -179,9 +179,9 @@ def _get_participant_db_ids(consent_data: pl.DataFrame) -> dict[str, str]:
         )).select(TASK_CONSENT_FORM_COL_PID).to_series().unique().to_list()
 
     existing_participants = {
-        entry[1]: entry[0]
-        for entry in StudyParticipant.objects.filter_by_person_source_value_list(person_source_values=pid_list)
-        .values_list("id", "person_source_value")
+        entry["person_source_value"]: entry["id"]
+        async for entry in StudyParticipant.objects.filter_by_person_source_value_list(person_source_values=pid_list)
+        .values("id", "person_source_value").aiterator()
     }
 
     new_participant_ids = [psv for psv in pid_list if psv not in existing_participants.keys()]
@@ -192,8 +192,8 @@ def _get_participant_db_ids(consent_data: pl.DataFrame) -> dict[str, str]:
         .select([TASK_CONSENT_FORM_COL_PID, TASK_CONSENT_FORM_COL_NAME])
         .rows()
     )
-    new_aliases = generate_study_participant_alias1_list(len(new_participant_ids))
-    new_participant_objects = StudyParticipant.objects.bulk_create([
+    new_aliases = await generate_study_participant_alias1_list(len(new_participant_ids))
+    new_participant_objects = await StudyParticipant.objects.abulk_create([
         StudyParticipant(person_source_value=pid, name=participant_name, alias1=alias)
         for (pid, participant_name), alias in zip(new_participant_list, new_aliases)
     ])
