@@ -94,6 +94,9 @@ coverage.xml
 .ruff_cache/
 .hypothesis/
 
+# Django specific
+src/MiqaResearch/db.sqlite3
+
 # =============================================
 # Testing
 # =============================================

@@ -1,7 +1,8 @@
 from allauth.account.views import LoginView as AllauthLoginView
+from allauth.socialaccount.adapter import get_adapter as get_social_adapter
+from allauth.socialaccount.models import SocialApp
 from django.conf import settings
-from django.http import HttpResponseRedirect
-from django.urls import reverse
+from django.http import Http404, HttpResponseRedirect
 from django_htmx.http import HttpResponseClientRedirect
 
 
@@ -16,7 +17,8 @@ class LoginView(AllauthLoginView):
     the full page template (account/login.html).
 
     When SSO is the only configured auth method, skips the chooser entirely
-    and redirects straight to the IdP.
+    and redirects straight to the IdP, bypassing allauth's own "you are
+    about to sign in via <provider>" confirmation page.
     """
 
     def get(self, request, *args, **kwargs):
@@ -25,14 +27,16 @@ class LoginView(AllauthLoginView):
         return super().get(request, *args, **kwargs)
 
     def _redirect_to_sso(self, request):
-        target = reverse("openid_connect_login", kwargs={"provider_id": settings.OIDC_PROVIDER_ID})
-        query = request.GET.urlencode()
-        if query:
-            target = f"{target}?{query}"
+        try:
+            provider = get_social_adapter(request).get_provider(request, provider=settings.OIDC_PROVIDER_ID)
+        except SocialApp.DoesNotExist:
+            raise Http404
 
-        if request.htmx:
-            return HttpResponseClientRedirect(target)
-        return HttpResponseRedirect(target)
+        response = provider.redirect_from_request(request)
+
+        if request.htmx and isinstance(response, HttpResponseRedirect):
+            return HttpResponseClientRedirect(response.url)
+        return response
 
     def get_template_names(self):
         """
