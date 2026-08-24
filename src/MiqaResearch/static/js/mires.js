@@ -61,7 +61,49 @@ function setDarkLightModeIcon() {
     .then(svg => { btn.innerHTML = svg; });
 }
 
+function initAppModal() {
+  const modal = document.getElementById('app-modal');
+  if (!modal) return;
+
+  let trigger = null;
+
+  document.body.addEventListener('htmx:afterSwap', function(evt) {
+    if (evt.detail.target.id !== 'app-modal-content') return;
+
+    trigger = evt.detail.elt;
+
+    const heading = modal.querySelector('#app-modal-title');
+    const description = modal.querySelector('#app-modal-description');
+    if (heading) {
+      modal.setAttribute('aria-labelledby', heading.id);
+    } else {
+      modal.removeAttribute('aria-labelledby');
+    }
+    if (description) {
+      modal.setAttribute('aria-describedby', description.id);
+    } else {
+      modal.removeAttribute('aria-describedby');
+    }
+
+    modal.showModal();
+  });
+
+  modal.addEventListener('click', function(evt) {
+    if (evt.target === modal || evt.target.closest('[data-modal-close]')) {
+      modal.close();
+    }
+  });
+
+  modal.addEventListener('close', function() {
+    if (trigger) {
+      trigger.focus();
+      trigger = null;
+    }
+  });
+}
+
 document.addEventListener('DOMContentLoaded', function() {
   setActiveMenuItem();
   setDarkLightModeIcon();
+  initAppModal();
 });

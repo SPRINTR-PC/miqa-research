@@ -26,6 +26,25 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
+dialog.modal {
+  background-color: var(--color-popover);
+  color: var(--color-popover-foreground);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  padding: 1.5rem;
+  max-width: 28rem;
+  width: 90%;
+}
+dialog.modal[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin: 4rem auto auto auto;
+}
+dialog.modal::backdrop {
+  background-color: hsla(0, 0%, 0%, 0.5);
+}
 .horizontal-tablist {
   border-radius: 10px;
 }

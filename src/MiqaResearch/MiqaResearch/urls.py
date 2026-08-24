@@ -12,9 +12,9 @@ from MiqaResearch.interfaces.http.views import (
 from MiqaResearch.interfaces.http.views.accounts.eid import (
     bankid_login_redirect,
     eid_callback,
-    siths_login_redirect,
 )
 from MiqaResearch.interfaces.http.views.accounts.login import LoginView
+from MiqaResearch.interfaces.http.views.accounts.logout import LogoutView
 
 urlpatterns = [
     path('', landing_page_index, name='home'),
@@ -22,10 +22,10 @@ urlpatterns = [
     path('upload/', UploadDataView.as_view(), name="upload_data"),
     path('mradmin/', admin.site.urls),
     path('monitor/', monitor_index, name='monitor'),
-    path('accounts/siths/login/', siths_login_redirect, name='siths_login'),
     path('accounts/bankid/login/', bankid_login_redirect, name='bankid_login'),
     path('accounts/eid/callback/', eid_callback, name='eid_callback'),
     path('accounts/login/', LoginView.as_view(), name='account_login'),
+    path('accounts/logout/', LogoutView.as_view(), name='account_logout'),
     path('accounts/', include('allauth.urls')),
     path('o/', include('oauth2_provider.urls', namespace='oauth2_provider')),
     path('api/', api.urls, name="api"),
