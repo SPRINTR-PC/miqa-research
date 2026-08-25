@@ -1,11 +1,9 @@
 import logging
 from io import StringIO
-from typing import Any
 
 import httpx2
 import polars as pl
 import requests
-from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.tasks import task
 from httpx2 import AsyncClient
@@ -13,7 +11,9 @@ from requests import Response
 
 from contract.constants.celery import QUEUE_GET_CONSENTS
 from helpers.study_participant_alias import generate_study_participant_alias1_list
+from MiqaResearch.actions.consents.participant_consents import create_participant_consents
 from MiqaResearch.data.models import StudyParticipant
+from MiqaResearch.data.serializers.participant_consent import UploadConsentSchema
 from MiqaResearch.settings import (
     TASK_CONSENT_FORM_COL_CLINIC,
     TASK_CONSENT_FORM_COL_COMMENT,
@@ -42,14 +42,10 @@ async def fetch_participant_consent(form_id: str, separator: str = ",", from_dat
         get_csv_data_response = await _get_csv_data(client=client, access_token=access_token, form_id=form_id)
 
     if (status_code := get_csv_data_response.status_code) == 200:
-        csv_content = get_csv_data_response.text
-        consent_data = pl.read_csv(StringIO(csv_content))
-        processed_consent_data = await _process_consent_data(consent_data)
-
-        # TODO: Saves the processed consent data to a database or file
-        return csv_content
+        logger.info("Successfully fetched participant consent CSV data from API")
+        return await _handle_fetched_data(get_csv_data_response.text)
     elif status_code == 400:
-        msg = "Invalid parameters for CSV export (HTTP 400)."
+        msg = "Invalid parameters for CSV fetch (HTTP 400)."
         logger.error(msg)
         raise Exception(msg)
     elif status_code == 401:
@@ -61,7 +57,7 @@ async def fetch_participant_consent(form_id: str, separator: str = ",", from_dat
         logger.error(msg)
         raise Exception(msg)
     else:
-        msg = f"Unexpected response from CSV export: HTTP {status_code}"
+        msg = f"Unexpected response from CSV fetch: HTTP {status_code}"
         logger.error(msg)
         raise Exception(msg)
 
@@ -118,7 +114,24 @@ async def _get_csv_data(
     return await client.get(export_url, params=params, headers=headers)
 
 
-async def _process_consent_data(consent_data: pl.DataFrame) -> list[dict[str, Any]]:
+async def _handle_fetched_data(csv_content: str) -> str:
+    """Handles the fetched consent data by processing and storing it."""
+    try:
+        logger.info("Converting fetched participant consent data to polars DataFrame for processing")
+        consent_data = pl.read_csv(StringIO(csv_content))
+        processed_consent_data: list[UploadConsentSchema] = await _process_consent_data(consent_data)
+
+        logger.info("Storing processed participant consent data to db")
+        created_count, updated_count = await create_participant_consents(new_consents=processed_consent_data)
+        logger.info(f"Successfully stored processed participant consent data to db. Created {created_count} new "
+                    f"consents, updated {updated_count} existing consents.")
+    except Exception:
+        logger.error("Failed to handle fetched participant consent data", exc_info=True)
+        raise
+
+    return f"Created {created_count} new consents, updated {updated_count} existing consents."
+
+async def _process_consent_data(consent_data: pl.DataFrame) -> list[UploadConsentSchema]:
     """Processes the consent data to replace any participant ID with a study ID."""
     logger.info(f"Formatting consent data for API endpoint")
 
@@ -150,7 +163,7 @@ async def _process_consent_data(consent_data: pl.DataFrame) -> list[dict[str, An
         "extra_info": {}
     }
 
-    output = [
+    output = [UploadConsentSchema(**(
         {
             "participant_study_id": str(participants[row[TASK_CONSENT_FORM_COL_PID].replace("-", "")]),
             "signed_date": row[TASK_CONSENT_FORM_COL_SIGNED],
@@ -164,7 +177,7 @@ async def _process_consent_data(consent_data: pl.DataFrame) -> list[dict[str, An
                 for col in consent_data.columns
                 if col not in standard_columns and row[col] in TASK_CONSENT_FORM_CONSENTED_TRUE_VALUES
             ],
-        } | extra_info_data
+        } | extra_info_data))
         for row in consent_data.iter_rows(named=True)
     ]
 
