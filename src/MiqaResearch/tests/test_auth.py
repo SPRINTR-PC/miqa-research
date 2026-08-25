@@ -1,10 +1,12 @@
+from datetime import timedelta
+
 import pytest
+from django.contrib.auth import get_user_model
+from django.test import RequestFactory
 from django.utils import timezone
 from ninja.errors import HttpError
 from oauth2_provider.models import AccessToken, Application
 
-from django.test import RequestFactory
-from django.contrib.auth import get_user_model
 from MiqaResearch.interfaces.http.api.auth_types import ClientCredentialsAuth
 
 User = get_user_model()
@@ -36,7 +38,7 @@ def access_token(user, application):
         application=application,
         token="valid-token",
         scope="read",
-        expires=timezone.now() + timezone.timedelta(hours=1),
+        expires=timezone.now() + timedelta(hours=1),
     )
 
 
@@ -45,39 +47,43 @@ def auth():
     return ClientCredentialsAuth(required_scopes=["read"])
 
 
-@pytest.mark.django_db
-def test_authenticate_success(factory, auth, application, access_token):
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+async def test_authenticate_success(factory, auth: ClientCredentialsAuth, application, access_token):
     request = factory.get("/")
-    authenticated_application = auth.authenticate(request, access_token.token)
+    authenticated_application = await auth.authenticate(request, access_token.token)
     assert authenticated_application == application
     assert request.application == application
     assert request.access_token == access_token
 
 
+@pytest.mark.asyncio
 @pytest.mark.django_db
-def test_authenticate_invalid_token(factory, auth):
+async def test_authenticate_invalid_token(factory, auth: ClientCredentialsAuth):
     request = factory.get("/")
-    authenticated_user = auth.authenticate(request, "invalid-token")
+    authenticated_user = await auth.authenticate(request, "invalid-token")
     assert authenticated_user is None
 
 
-@pytest.mark.django_db
-def test_authenticate_expired_token(factory, auth, access_token):
-    access_token.expires = timezone.now() - timezone.timedelta(minutes=1)
-    access_token.save(update_fields=["expires"])
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+async def test_authenticate_expired_token(factory, auth: ClientCredentialsAuth, access_token):
+    access_token.expires = timezone.now() - timedelta(minutes=1)
+    await access_token.asave(update_fields=["expires"])
 
     request = factory.get("/")
-    authenticated_user = auth.authenticate(request, access_token.token)
+    authenticated_user = await auth.authenticate(request, access_token.token)
     assert authenticated_user is None
 
 
-@pytest.mark.django_db
-def test_authenticate_insufficient_scope(factory, application, access_token):
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+async def test_authenticate_insufficient_scope(factory, application, access_token):
     auth = ClientCredentialsAuth(required_scopes=["write"])
     request = factory.get("/")
 
     with pytest.raises(HttpError) as exc_info:
-        auth.authenticate(request, access_token.token)
+        await auth.authenticate(request, access_token.token)
 
     assert exc_info.value.status_code == 403
     assert exc_info.value.message == "Insufficient scope"
