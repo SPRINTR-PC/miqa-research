@@ -1,3 +1,4 @@
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -152,6 +153,79 @@ async def test__process_consent_data_should_replace_personal_identifiers_with_pa
 
     # Assert
     assert all((pid := entry.participant_study_id) is not None and is_valid_uuid7(str(pid)) for entry in result)
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+@patch("MiqaResearch.tasks.participant_consent._get_access_token")
+@patch("MiqaResearch.tasks.participant_consent._get_csv_data")
+async def test_fetch_participant_consent_should_handle_reconsented_participants_getting_a_new_consent_record(
+    mock_get_csv_data, mock_get_access_token):
+    # Arrange: one participant that consents, retracts it five days later, then re-consents one day after the
+    # retraction. The source system keeps one CSV row per signing event, so the second fetch (the update) exports
+    # both the retracted row and the new re-consent row.
+    mock_get_access_token.return_value = "fake-token"
+
+    pid = "19900101-1234"
+    consent_label_col = "Jag samtycker till att delta i studien"
+
+    def consent_rows(status: str, signed: str, last_updated: str, retracted: str) -> pl.DataFrame:
+        return pl.DataFrame({
+            settings.TASK_CONSENT_FORM_COL_NAME: ["Rea Consent"],
+            settings.TASK_CONSENT_FORM_COL_PID: [pid],
+            settings.TASK_CONSENT_FORM_COL_STATUS: [status],
+            settings.TASK_CONSENT_FORM_COL_SIGNED: [signed],
+            settings.TASK_CONSENT_FORM_COL_LAST_UPDATED: [last_updated],
+            settings.TASK_CONSENT_FORM_COL_RETRACTED: [retracted],
+            settings.TASK_CONSENT_FORM_COL_CLINIC: ["64001"],
+            settings.TASK_CONSENT_FORM_COL_COMMENT: [""],
+            consent_label_col: ["Ja"],
+        })
+
+    retracted_row = consent_rows("Återtaget", "2026-01-01 09:00", "2026-01-05 10:00", "2026-01-05 10:00")
+    reconsent_row = consent_rows("Signerat", "2026-01-06 09:00", "2026-01-06 09:00", "")
+
+    def mock_response_for(csv_content: str) -> MagicMock:
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = csv_content
+        return mock_response
+
+    # Act: first fetch stores the retracted consent
+    mock_get_csv_data.return_value = mock_response_for(retracted_row.write_csv())
+    await fetch_participant_consent.acall(form_id="test-form")
+
+    [retracted_consent] = [consent async for consent in ParticipantConsent.objects.all()]
+    assert retracted_consent.status == "Återtaget"
+    assert retracted_consent.consent_signed_date.date() == date(2026, 1, 1)
+    assert retracted_consent.consent_revoked_date is not None
+    assert retracted_consent.consent_revoked_date.date() == date(2026, 1, 5)
+
+    # Act: second fetch simulates the update where the participant re-consented one day after retracting
+    mock_get_csv_data.return_value = mock_response_for(pl.concat([retracted_row, reconsent_row]).write_csv())
+    result = await fetch_participant_consent.acall(form_id="test-form")
+
+    # Assert: the retracted consent record was not updated, a new record was created for the re-consent event
+    consents = sorted(
+        [consent async for consent in
+         ParticipantConsent.objects.filter(study_participant_id=retracted_consent.study_participant_id)],
+        key=lambda consent: consent.consent_signed_date,
+    )
+    assert len(consents) == 2
+
+    previous_consent, reconsent = consents
+    assert previous_consent.id == retracted_consent.id
+    assert previous_consent.status == "Återtaget"
+    assert previous_consent.consent_signed_date.date() == date(2026, 1, 1)
+    assert previous_consent.consent_revoked_date is not None
+    assert previous_consent.consent_revoked_date.date() == date(2026, 1, 5)
+
+    assert reconsent.id != retracted_consent.id
+    assert reconsent.status == "Signerat"
+    assert reconsent.consent_signed_date.date() == date(2026, 1, 6)
+    assert reconsent.consent_revoked_date is None
+
+    assert result == "Created 1 new consents, updated 1 existing consents."
 
 
 def _non_standard_columns(consent_data: pl.DataFrame) -> list[str]:
