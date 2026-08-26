@@ -1,6 +1,7 @@
 @import "./buttons";
 @import "./card";
 @import "./media-query";
+@import "./modal";
 @import "./tabs";
 @import "./topBar";
 
@@ -12,36 +13,36 @@
   --color-card-foreground-parts: 0 0% 9%;
   --color-popover-parts: 0 0% 89%;
   --color-popover-foreground-parts: 0 0% 9%;
-  --color-primary-parts: 161 93% 30%;
+  --color-primary-parts: 277 100% 75%;
   --color-primary-foreground-parts: 151 80% 95%;
   --color-secondary-parts: 0 0% 32%;
   --color-secondary-foreground-parts: 0 0% 98%;
   --color-muted-parts: 0 0% 63%;
   --color-muted-foreground-parts: 0 0% 9%;
-  --color-accent-parts: 166 76% 96%;
-  --color-accent-foreground-parts: 173 80% 40%;
+  --color-accent-parts: 297 100% 15%;
+  --color-accent-foreground-parts: 291 100% 84%;
   --color-destructive-parts: 0 72% 50%;
   --color-destructive-foreground-parts: 0 85% 97%;
   --color-border-parts: 0 0% 83%;
   --color-input-parts: 0 0% 83%;
-  --color-ring-parts: 161 93% 30%;
+  --color-ring-parts: 277 100% 75%;
   --color-sidebar-background-parts: 0 0% 98%;
   --color-sidebar-foreground-parts: 0 0% 9%;
-  --color-sidebar-primary-parts: 161 93% 30%;
+  --color-sidebar-primary-parts: 277 100% 75%;
   --color-sidebar-primary-foreground-parts: 151 80% 95%;
   --color-sidebar-accent-parts: 0 0% 32%;
   --color-sidebar-accent-foreground-parts: 0 0% 98%;
   --color-sidebar-border-parts: 0 0% 83%;
-  --color-sidebar-ring-parts: 161 93% 30%;
+  --color-sidebar-ring-parts: 277 100% 75%;
   --color-surface-elevated-parts: 0 0% 100%;
   --color-surface-sunken-parts: 234 6% 95%;
   --color-chart-error-parts: 0, 84%, 60%;
   --color-chart-success-parts: 148 40% 50%;
   --color-chart-warning-parts: 38 92% 50%;
   --color-chart-info-parts: 210 70% 55%;
-  --color-chart-1-parts: 158 64% 51%;
+  --color-chart-1-parts: 277 100% 75%;
   --color-chart-2-parts: 141 69% 58%;
-  --color-chart-3-parts: 172 66% 50%;
+  --color-chart-3-parts: 291 100% 84%;
   --color-chart-4-parts: 82 77% 55%;
   --color-chart-5-parts: 0 0% 45%;
   --color-sidebar-parts: 0 0% 98%;
@@ -69,19 +70,19 @@
   --color-card-foreground-parts: 0 0% 98%;
   --color-popover-parts: 0 0% 25%;
   --color-popover-foreground-parts: 0 0% 98%;
-  --color-primary-parts: 158 64% 51%;
+  --color-primary-parts: 277 100% 75%;
   --color-primary-foreground-parts: 165 91% 9%;
   --color-secondary-parts: 0 0% 45%;
   --color-secondary-foreground-parts: 0 0% 98%;
   --color-muted-parts: 0 0% 45%;
   --color-muted-foreground-parts: 0 0% 98%;
-  --color-accent-parts: 178 84% 10%;
-  --color-accent-foreground-parts: 172 66% 50%;
+  --color-accent-parts: 297 100% 15%;
+  --color-accent-foreground-parts: 291 100% 84%;
   --color-destructive-parts: 0 84% 60%;
   --color-destructive-foreground-parts: 0 85% 97%;
   --color-border-parts: 0 0% 32%;
   --color-input-parts: 0 0% 32%;
-  --color-ring-parts: 158 64% 51%;
+  --color-ring-parts: 277 100% 75%;
   --color-surface-elevated-parts: 232 12% 19%;
   --color-surface-sunken-parts: 232 12% 10%;
   --color-chart-success-parts: 148 50% 55%;
@@ -89,12 +90,12 @@
   --color-chart-info-parts: 210 80% 60%;
   --color-sidebar-background-parts: 232 12% 10%;
   --color-sidebar-foreground-parts: 0 0% 98%;
-  --color-sidebar-primary-parts: 158 64% 51%;
+  --color-sidebar-primary-parts: 277 100% 75%;
   --color-sidebar-primary-foreground-parts: 165 91% 9%;
-  --color-sidebar-accent-parts: 172 66% 50%;
-  --color-sidebar-accent-foreground-parts: 178 84% 10%;
+  --color-sidebar-accent-parts: 291 100% 84%;
+  --color-sidebar-accent-foreground-parts: 297 100% 15%;
   --color-sidebar-border-parts: 0 0% 32%;
-  --color-sidebar-ring-parts: 158 64% 51%;
+  --color-sidebar-ring-parts: 277 100% 75%;
   --color-chart-1-parts: 156 71% 66%;
   --color-chart-2-parts: 141 76% 73%;
   --color-chart-3-parts: 170 76% 64%;
@@ -172,6 +173,7 @@ html {
 
 body {
   min-height: 100svh;
+  color: var(--color-text);
 }
 
 img, picture, svg, video { display: block; max-width: 100%; }

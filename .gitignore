@@ -14,6 +14,7 @@ Desktop.ini
 # =============================================
 LocalOnly/
 static/css
+src/MiqaResearch/.scratch
 
 # DrawIO backup files
 *.drawio.bkp
@@ -94,6 +95,14 @@ coverage.xml
 .ruff_cache/
 .hypothesis/
 
+# Django specific
+src/MiqaResearch/db.sqlite3
+
+# =============================================
+# Testing
+# =============================================
+src/MiqaResearch/report_output/
+
 # ==============================================================================
 # Web Components (Lit / TypeScript / Node.js)
 # ==============================================================================
@@ -142,6 +151,9 @@ node_modules/.vite/
 *.ReSharper.user
 _ReSharper.*/
 *resharper-host*/
+.junie/
+.mcp.json
+**/.mcp.json
 
 # Visual Studio
 .vs/
@@ -163,6 +175,14 @@ _ReSharper.*/
 
 # VS Code Local History extension
 .history/
+
+# =============================================
+# Agent docs and skills
+# =============================================
+.skills/
+.superpowers/
+.claude/
+skills-lock.json
 
 # =============================================
 # Environment Variables / Secrets

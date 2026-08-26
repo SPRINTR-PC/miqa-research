@@ -1,0 +1,4 @@
+SCOPE_READ="read"
+SCOPE_UPSERT_CONSENT="upsertConsent"
+SCOPE_MONITOR_CLIENT="monitorClient"
+SCOPE_ADMIN="admin"

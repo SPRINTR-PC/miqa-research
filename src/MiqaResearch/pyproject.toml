@@ -4,22 +4,45 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.14"
 dependencies = [
-    "django>=6.0.3",
-    "django-environ>=0.13.0",
-    "django-htmx>=1.27.0",
-    "django-allauth[mfa]>=65.16.1",
+    "django==6.0.*",
+    "django-environ>=0.14.*",
+    "django-debug-toolbar",
+    "django-htmx>=1.29.0",
+    "django-unfold",
+    "django-oauth-toolkit",
+    "django-allauth[mfa,socialaccount]>=65.19.*",
     "django-rosetta>=0.10.3",
     "psycopg[binary]>=3.3.3",
     "django-ninja",
+    "django-sphinx-view==26.*",
+    "hvac",
     "httpx",
     "pydicom",
+    "celery>=5.6.3",
+    "django-celery-beat>=2.9.0",
+    "django-celery-results",
+    "django-tasks-celery",
+    "flower",
+    "requests",
+    "polars>=1.40.1",
+    "numpy>=2.4.6",
+    "httpx2>=2.7.0",
 ]
 
 [dependency-groups]
 dev = [
     "ruff>=0.15.11",
     "pytest>=9.0.3",
+    "pytest-asyncio>=1.4.0",
     "pytest-django>=4.12.0",
+    "pytest-html-plus>=1.0.1",
+    "sphinx",
+    "myst-parser",
+    "sphinx-autobuild>=2025.8.25",
+    "recommonmark>=0.7.1",
+    "markdown>=3.10.2",
+    "sphinxcontrib-mermaid>=2.0.3",
+    "sphinx-rtd-theme>=3.1.0",
 ]
 
 [tool.ruff]
@@ -43,5 +66,13 @@ known-first-party = ["MiqaResearch", "data", "documentation"]
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "MiqaResearch.settings"
 python_files = ["tests.py", "test_*.py", "*_tests.py"]
-testpaths = ["MiqaResearch"]
+testpaths = ["tests"]
 addopts = "--reuse-db"
+asyncio_mode = "auto"
+
+[tool.pytest-html-plus.profiles.ci]
+html-output = "report_output"
+json-report = "testresults.json"
+capture-screenshots = "failed"
+generate-xml = true
+xml-report = "testresults.xml"

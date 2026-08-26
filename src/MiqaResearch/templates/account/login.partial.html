@@ -5,6 +5,22 @@
     </div>
 
     <div class="grid gap-6">
+        {% if oidc_login_enabled %}
+        <div class="p-6 border rounded-xl shadow-sm hover:border-primary/50 transition-all bg-card text-card-foreground">
+            <h2 class="text-xl font-semibold mb-2 flex items-center gap-2">
+                {% include "components/icon.html" with icon_name="shield-check.svg" icon_classes="h-5 w-5 text-primary" %}
+                {% translate "Single Sign-On" %}
+            </h2>
+            <p class="text-sm text-muted-foreground mb-6">{% translate "Sign in using your organization account." %}</p>
+            <form method="post" action="{{ oidc_login_url }}">
+                {% csrf_token %}
+                <button type="submit" class="w-full inline-flex items-center justify-center h-10 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 font-medium transition-colors">
+                    {% translate "Sign in with" %} {{ oidc_provider_display_name }}
+                </button>
+            </form>
+        </div>
+        {% endif %}
+        {% if passkey_login_enabled %}
         <div class="p-6 border rounded-xl shadow-sm hover:border-primary/50 transition-all bg-card text-card-foreground">
             <h2 class="text-xl font-semibold mb-2 flex items-center gap-2">
                 {% include "components/icon.html" with icon_name="shield-check.svg" icon_classes="h-5 w-5 text-primary" %}
@@ -15,22 +31,22 @@
                 {% translate "Sign in with Passkey" %}
             </a>
         </div>
+        {% endif %}
 
+        {% if eid_login_enabled %}
         <div class="p-6 border rounded-xl shadow-sm hover:border-primary/50 transition-all bg-card text-card-foreground">
             <h2 class="text-xl font-semibold mb-2 flex items-center gap-2">
                 {% include "components/icon.html" with icon_name="users.svg" icon_classes="h-5 w-5 text-primary" %}
-                {% translate "SITHS / BankID" %}
+                {% translate "BankID" %}
             </h2>
             <p class="text-sm text-muted-foreground mb-6">{% translate "Authenticate using official Swedish identification services via Svensk E-identitet." %}</p>
-            <div class="grid grid-cols-2 gap-4">
-                <a href="{% url 'siths_login' %}" class="inline-flex items-center justify-center h-10 px-4 py-2 border border-input rounded-md hover:bg-accent hover:text-accent-foreground font-medium transition-colors">
-                    {% translate "SITHS" %}
-                </a>
-                <a href="{% url 'bankid_login' %}" class="inline-flex items-center justify-center h-10 px-4 py-2 border border-input rounded-md hover:bg-accent hover:text-accent-foreground font-medium transition-colors">
-                    {% translate "BankID" %}
-                </a>
-            </div>
+            {% if bankid_login_enabled %}
+            <a href="{% url 'bankid_login' %}" class="w-full inline-flex items-center justify-center h-10 px-4 py-2 border border-input rounded-md hover:bg-accent hover:text-accent-foreground font-medium transition-colors">
+                {% translate "BankID" %}
+            </a>
+            {% endif %}
         </div>
+        {% endif %}
     </div>
 
     <div class="relative py-4">

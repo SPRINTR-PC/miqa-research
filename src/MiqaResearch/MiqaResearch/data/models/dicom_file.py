@@ -2,6 +2,7 @@ from datetime import datetime
 from uuid import uuid7
 
 from django.contrib.postgres.fields import ArrayField
+from django.contrib.postgres.indexes import GinIndex
 from django.db import models
 
 from .research_project import ResearchProject
@@ -22,7 +23,18 @@ class DicomFile(models.Model):
     image_orientation_patient = ArrayField(models.FloatField(), size=6, blank=True, null=True)
     frame_of_reference_uid = models.CharField(max_length=128, blank=True, null=True)
     pixel_spacing = ArrayField(models.FloatField(), size=2, blank=True, null=True)
+    metadata = models.JSONField(blank=True, null=True)
 
     class Meta:
         db_table = "mires_dicom_file"
         ordering = ["series", "-id"]
+        indexes = [
+            GinIndex(
+                fields=['metadata'],
+                name='metadata_gin_idx',
+                opclasses=['jsonb_path_ops'],
+            )
+        ]
+
+    def __str__(self):
+        return self.sop_instance_uid

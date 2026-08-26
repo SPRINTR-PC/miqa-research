@@ -1,0 +1,254 @@
+{
+  "patient_id": {
+    "system": "SE",
+    "value": "xxxxxx-xxxx"
+  },
+  "record_id": "xx",
+  "clinic": {
+    "system": "inca/position",
+    "value": "1 - 891"
+  },
+  "payload": {
+    "protocol": {
+      "area": "prostata",
+      "name": "mellannal",
+      "version": "1"
+    },
+    "data": {
+      "biopsi": {
+        "provtagningsdatum": "xxxx-xx-xx",
+        "biopserande_lakare": "xxxx",
+        "prostatavolym_mr": 35.0,
+        "metod": "transperineal",
+        "psa": 5.4,
+        "psadensitet": 0.16,
+        "tstadium": "T1c"
+      },
+      "mottagningsdatum": "xxxx",
+      "svarsdatum": "xxxx",
+      "patologiavdelning": "xxx",
+      "padar": 0000,
+      "padnummer": "xxxx",
+      "remisstyp": "AB",
+      "ansvariga_patologer": [
+        {
+          "typ": "huvudansvarig",
+          "namn": "xxxx"
+        }
+      ],
+      "prover": [
+        {
+          "prepnr": 1,
+          "sektorer": [
+            "2Cv"
+          ],
+          "diagnoser": [
+            "ps_acinart_adenocarcinom",
+            "ps_acinart_adenocarcinom"
+          ],
+          "sammanlagd_langd": 14.0,
+          "cancerlangd_sammanlagd": 3.0,
+          "grad4_procent": 20,
+          "kribriform_grad4": false,
+          "pni": true,
+          "epe": null,
+          "ext_ves_sem_duct_ejac": null,
+          "lvi": null,
+          "gleason": {
+            "obestambar": false,
+            "ett": 3,
+            "tva": 4
+          },
+          "systematisk": false,
+          "lesion": 1
+        },
+        {
+          "prepnr": 2,
+          "sektorer": [
+            "2Cv"
+          ],
+          "diagnoser": [
+            "ps_acinart_adenocarcinom",
+            "ps_acinart_adenocarcinom"
+          ],
+          "sammanlagd_langd": 15.0,
+          "cancerlangd_sammanlagd": 8.0,
+          "grad4_procent": 20,
+          "kribriform_grad4": false,
+          "pni": null,
+          "epe": null,
+          "ext_ves_sem_duct_ejac": null,
+          "lvi": null,
+          "gleason": {
+            "obestambar": false,
+            "ett": 3,
+            "tva": 4
+          },
+          "systematisk": false,
+          "lesion": 1
+        },
+        {
+          "prepnr": 3,
+          "sektorer": [
+            "2Cv"
+          ],
+          "diagnoser": [
+            "ps_acinart_adenocarcinom",
+            "ps_acinart_adenocarcinom"
+          ],
+          "sammanlagd_langd": 14.0,
+          "cancerlangd_sammanlagd": 10.0,
+          "grad4_procent": 20,
+          "kribriform_grad4": false,
+          "pni": true,
+          "epe": null,
+          "ext_ves_sem_duct_ejac": null,
+          "lvi": null,
+          "gleason": {
+            "obestambar": false,
+            "ett": 3,
+            "tva": 4
+          },
+          "systematisk": false,
+          "lesion": 1
+        },
+        {
+          "prepnr": 4,
+          "sektorer": [
+            "2Cv"
+          ],
+          "diagnoser": [
+            "ps_acinart_adenocarcinom",
+            "ps_acinart_adenocarcinom"
+          ],
+          "sammanlagd_langd": 12.0,
+          "cancerlangd_sammanlagd": 8.0,
+          "grad4_procent": 10,
+          "kribriform_grad4": false,
+          "pni": null,
+          "epe": null,
+          "ext_ves_sem_duct_ejac": null,
+          "lvi": null,
+          "gleason": {
+            "obestambar": false,
+            "ett": 3,
+            "tva": 4
+          },
+          "systematisk": false,
+          "lesion": 1
+        },
+        {
+          "prepnr": 5,
+          "sektorer": [
+            "3Av"
+          ],
+          "diagnoser": [
+            "ps_benign"
+          ],
+          "sammanlagd_langd": 15.0,
+          "cancerlangd_sammanlagd": null,
+          "grad4_procent": null,
+          "kribriform_grad4": false,
+          "pni": null,
+          "epe": null,
+          "ext_ves_sem_duct_ejac": null,
+          "lvi": null,
+          "systematisk": false,
+          "lesion": 2
+        },
+        {
+          "prepnr": 6,
+          "sektorer": [
+            "3Av"
+          ],
+          "diagnoser": [
+            "ps_cancermisstankt_kortelatypi"
+          ],
+          "sammanlagd_langd": 15.0,
+          "cancerlangd_sammanlagd": null,
+          "grad4_procent": null,
+          "kribriform_grad4": false,
+          "pni": null,
+          "epe": null,
+          "ext_ves_sem_duct_ejac": null,
+          "lvi": null,
+          "systematisk": false,
+          "lesion": 2
+        },
+        {
+          "prepnr": 7,
+          "sektorer": [
+            "3Av"
+          ],
+          "diagnoser": [
+            "ps_benign"
+          ],
+          "sammanlagd_langd": 16.0,
+          "cancerlangd_sammanlagd": null,
+          "grad4_procent": null,
+          "kribriform_grad4": false,
+          "pni": null,
+          "epe": null,
+          "ext_ves_sem_duct_ejac": null,
+          "lvi": null,
+          "systematisk": false,
+          "lesion": 2
+        },
+        {
+          "prepnr": 8,
+          "sektorer": [
+            "3Av"
+          ],
+          "diagnoser": [
+            "ps_acinart_adenocarcinom",
+            "ps_acinart_adenocarcinom"
+          ],
+          "sammanlagd_langd": 14.0,
+          "cancerlangd_sammanlagd": 0.5,
+          "grad4_procent": null,
+          "kribriform_grad4": false,
+          "pni": null,
+          "epe": null,
+          "ext_ves_sem_duct_ejac": null,
+          "lvi": null,
+          "gleason": {
+            "obestambar": false,
+            "ett": 3,
+            "tva": 3
+          },
+          "systematisk": false,
+          "lesion": 2
+        }
+      ],
+      "lesioner": [
+        {
+          "nummer": 1,
+          "pirads": "4",
+          "sammanfattning": {
+            "global_gleason": {
+              "obestambar": false,
+              "ett": 3,
+              "tva": 4
+            },
+            "isup": 2,
+            "storsta_enskilda_cancerlangd": 10.0
+          }
+        },
+        {
+          "nummer": 2,
+          "pirads": "4",
+          "sammanfattning": {
+            "global_gleason": {
+              "obestambar": false,
+              "ett": 3,
+              "tva": 3
+            },
+            "isup": 1,
+            "storsta_enskilda_cancerlangd": 0.5
+          }
+        }
+      ],
+      "kommentar_utlatande": "SVF: Ja\nOPT: Nej"
+    }
+  }
+}

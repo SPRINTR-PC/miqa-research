@@ -1,0 +1,255 @@
+services:
+  mires_web:
+    build:
+      context: .
+      dockerfile: dev.Dockerfile
+    command: sh -c "uv run --no-sync manage.py migrate && uv run --no-sync manage.py createcachetable && uv run --no-sync manage.py runserver 0.0.0.0:8000"
+    environment:
+      - MIRES_DEBUG=1
+      - MIRES_LOGGING_LEVEL=DEBUG
+      - MIRES_SECRET_KEY=pf*3@8!@!8dtx%p)51_*sl*-5+fk)8ei^pq)j1$tcr$qm(j#q!
+      - MIRES_DATABASE_URL=psql://postgres:postgres@mires_db:5432/miqaresearch
+      - MIRES_SU_EMAIL=root@root.com
+      - MIRES_SU_PASSWORD=root
+      - MIRES_FRONTEND_URL=http://localhost:8000
+      - MIRES_ALLOWED_HOSTS=*
+      - MIRES_CACHE_BACKEND=django.core.cache.backends.db.DatabaseCache
+      - MIRES_CACHE_LOCATION=miqa_research_cache
+      - MIRES_EMAIL_NOREPLY_SENDER_EMAIL=noreply@example.com
+      - MIRES_EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend
+      - MIRES_CSRF_TRUSTED_ORIGINS=http://localhost:8000,http://localhost:8080
+      - MIRES_CELERY_BROKER_URL=amqp://miresRabmin:miresRabmin@miresrabbit:5672//
+      - MIRES_USE_VAULT=1
+      - MIRES_VAULT_URL=http://mires_vault:8200
+      - MIRES_VAULT_TOKEN=AVeryUnsecretSecret
+      - MIRES_AUTHENTICATION_FRAMEWORK=adfs,local
+      - MIRES_ADFS_AUTHORITY=https://adfs.test.umu.se
+      - MIRES_OIDC_CLIENT_ID=1c3de344-d6d8-43b9-9b6c-61aa8ce33419
+    depends_on:
+      - mires_db
+      - mires_vault
+    ports:
+      - "8080:8000"
+    networks:
+      - mires
+    volumes:
+      - ./:/app
+    restart: unless-stopped
+
+  mires_db:
+    image: postgres:latest
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=miqaresearch
+    networks:
+      - mires
+    ports:
+      - "5434:5432"
+    restart: on-failure
+
+  mires_fs:
+    image: rustfs/rustfs:latest
+    environment:
+      - RUSTFS_ACCESS_KEY=MiresAccessKey
+      - RUSTFS_SECRET_KEY=MiresSecretKey
+      - RUSTFS_CONSOLE_ENABLED=true
+      - RUSTFS_CONSOLE_PORT=9001
+    networks:
+      - mires
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    restart: on-failure
+
+  mires_vault:
+    image: hashicorp/vault:latest
+    container_name: mires_vault
+    cap_add:
+      - IPC_LOCK
+    environment:
+      - VAULT_ADDR=http://0.0.0.0:8200
+      - VAULT_DEV_ROOT_TOKEN_ID=AVeryUnsecretSecret
+      - CONSENT_CLIENT_ID=replace-me-client-id
+      - CONSENT_CLIENT_SECRET=replace-me-client-secret
+      - FERNET_KEY=EiGdHopiKZdBZwVCP4dVJitPrrDnOuGAd94W4EZpwQc=
+      - SENSITIVE_DATA_HASH_KEY=H2QCB14temR-C2JnLORSE5TxPwLd8iy3YygNPQ-corA=
+    command: >
+      sh -c "vault server -dev -dev-root-token-id=$$VAULT_DEV_ROOT_TOKEN_ID -dev-listen-address=0.0.0.0:8200 &
+      until vault status >/dev/null 2>&1; do sleep 1; done;
+      vault kv put secret/mires/consent ConsentClientId=$$CONSENT_CLIENT_ID ConsentClientSecret=$$CONSENT_CLIENT_SECRET;
+      vault kv put secret/mires/datahashing FernetKey=$$FERNET_KEY SensitiveDataHashKey=$$SENSITIVE_DATA_HASH_KEY;
+      wait"
+    networks:
+      - mires
+    ports:
+      - "8200:8200"
+    restart: on-failure
+
+  mires_worker_consent:
+    build:
+      context: .
+      dockerfile: dev.Dockerfile
+    command: sh -c "/tools/celery/start_worker.sh getConsents" getConsents
+    environment:
+      - MIRES_DEBUG=1
+      - MIRES_SITE_URL=http://mires_web:8000
+      - MIRES_CELERY_BROKER_URL=amqp://miresRabmin:miresRabmin@miresrabbit:5672//
+      - MIRES_AUTH_TOKEN=2ac83c66b6affe116e16efc51ef752f583b37c52
+      - SET_CELERY_PYTHON_PATH=1
+      - MIRES_VAULT_URL=http://mires_vault:8200
+      - MIRES_VAULT_TOKEN=AVeryUnsecretSecret
+    depends_on:
+      - mires_web
+      - mires_rabbit
+      - mires_vault
+    volumes:
+      - ./:/app
+    networks:
+      - mires
+    restart: unless-stopped
+
+  mires_worker_email:
+    build:
+      context: .
+      dockerfile: dev.Dockerfile
+    command: sh -c "/tools/celery/start_worker.sh email"
+    environment:
+      - MIRES_DEBUG=1
+      - MIRES_SITE_URL=http://mires_web:8000
+      - MIRES_CELERY_BROKER_URL=amqp://miresRabmin:miresRabmin@miresrabbit:5672//
+      - MIRES_AUTH_TOKEN=2ac83c66b6affe116e16efc51ef752f583b37c52
+      - MIRES_TASK_CONSENT_SKIP_CLIENT=1
+      - SET_CELERY_PYTHON_PATH=1
+      - MIRES_VAULT_URL=http://mires_vault:8200
+      - MIRES_VAULT_TOKEN=AVeryUnsecretSecret
+    depends_on:
+      - mires_web
+      - mires_rabbit
+      - mires_vault
+    volumes:
+      - ./:/app
+    networks:
+      - mires
+    restart: unless-stopped
+
+  mires_worker_ocr:
+    build:
+      context: .
+      dockerfile: dev.Dockerfile
+    command: sh -c "/tools/celery/start_worker.sh ocr"
+    environment:
+      - MIRES_DEBUG=1
+      - MIRES_SITE_URL=http://mires_web:8000
+      - MIRES_CELERY_BROKER_URL=amqp://miresRabmin:miresRabmin@miresrabbit:5672//
+      - MIRES_AUTH_TOKEN=2ac83c66b6affe116e16efc51ef752f583b37c52
+      - MIRES_TASK_CONSENT_SKIP_CLIENT=1
+      - SET_CELERY_PYTHON_PATH=1
+      - MIRES_VAULT_URL=http://mires_vault:8200
+      - MIRES_VAULT_TOKEN=AVeryUnsecretSecret
+    depends_on:
+      - mires_web
+      - mires_rabbit
+      - mires_vault
+    volumes:
+      - ./:/app
+    networks:
+      - mires
+    restart: unless-stopped
+
+  mires_beat:
+    build:
+      context: .
+      dockerfile: dev.Dockerfile
+    command: sh -c "/tools/celery/start_beat.sh"
+    environment:
+      - MIRES_DEBUG=1
+      - MIRES_SITE_URL=http://mires_web:8000
+      - MIRES_DATABASE_URL=psql://postgres:postgres@mires_db:5432/miqaresearch
+      - MIRES_CELERY_BROKER_URL=amqp://miresRabmin:miresRabmin@miresrabbit:5672//
+      - MIRES_AUTH_TOKEN=2ac83c66b6affe116e16efc51ef752f583b37c52
+      - MIRES_TASK_CONSENT_SKIP_CLIENT=1
+      - SET_CELERY_PYTHON_PATH=1
+      - MIRES_VAULT_URL=http://mires_vault:8200
+      - MIRES_VAULT_TOKEN=AVeryUnsecretSecret
+    depends_on:
+      - mires_web
+      - mires_db
+      - mires_rabbit
+      - mires_vault
+    volumes:
+      - ./:/app
+    networks:
+      - mires
+    restart: unless-stopped
+
+  mires_flower:
+    build:
+      context: .
+      dockerfile: dev.Dockerfile
+    command: sh -c "/tools/celery/start_flower.sh"
+    environment:
+      - MIRES_DEBUG=1
+      - MIRES_SITE_URL=http://mires_web:8000
+      - MIRES_CELERY_BROKER_URL=amqp://miresRabmin:miresRabmin@miresrabbit:5672//
+      - MIRES_AUTH_TOKEN=2ac83c66b6affe116e16efc51ef752f583b37c52
+      - MIRES_TASK_CONSENT_SKIP_CLIENT=1
+      - SET_CELERY_PYTHON_PATH=1
+      - MIRES_VAULT_URL=http://mires_vault:8200
+      - MIRES_VAULT_TOKEN=AVeryUnsecretSecret
+    depends_on:
+      - mires_web
+      - mires_rabbit
+      - mires_vault
+    ports:
+      - "5555:5555"
+    volumes:
+      - ./:/app
+    networks:
+      - mires
+    restart: unless-stopped
+
+  mires_rabbit:
+    container_name: miresrabbit
+    image: rabbitmq:4.3-management
+    hostname: miresrabbit
+    environment:
+      RABBITMQ_DEFAULT_USER: miresRabmin
+      RABBITMQ_DEFAULT_PASS: miresRabmin
+    ports:
+      - "5671:5672"
+      - "15671:15672"
+    networks:
+      - mires
+    restart: unless-stopped
+
+  mires_testrunner:
+    build:
+      context: .
+      dockerfile: dev.Dockerfile
+    container_name: mires_testrunner
+    environment:
+      - MIRES_DEBUG=1
+      - MIRES_SECRET_KEY=pf*3@8!@!8dtx%p)51_*sl*-5+fk)8ei^pq)j1$tcr$qm(j#q!
+      - MIRES_DATABASE_URL=psql://postgres:postgres@mires_db:5432/miqaresearch
+      - MIRES_ALLOWED_HOSTS=*
+      - MIRES_CELERY_BROKER_URL=amqp://miresRabmin:miresRabmin@miresrabbit:5672//
+      - MIRES_USE_VAULT=1
+      - MIRES_VAULT_URL=http://mires_vault:8200
+      - MIRES_VAULT_TOKEN=AVeryUnsecretSecret
+    command: sh -c "pytest --plus-profile=ci"
+    networks:
+      - mires
+    depends_on:
+      - mires_rabbit
+      - mires_db
+      - mires_vault
+    volumes:
+      - ./:/app
+
+
+networks:
+  mires:
+
+volumes:
+  mires_vault_data:

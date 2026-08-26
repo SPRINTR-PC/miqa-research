@@ -6,18 +6,20 @@ import httpx
 from django.conf import settings
 from asgiref.sync import sync_to_async
 
+from MiqaResearch.celery import app
 from MiqaResearch.data.models import ParsedPromForm, PromData
+from contract.constants.celery import QUEUE_OCR
 
 logger = logging.getLogger(__name__)
 
-
-async def run_ocr_on_prom_data(prom_data_id):
+@app.task(queue=QUEUE_OCR)
+def run_ocr_on_prom_data(prom_data_id):
     """
-    Task to run OCR on a PromData entry using Gemma3 model in local Ollama.
+    Task to run OCR on a PromData entry using Gemma4 model in local Ollama.
     """
     try:
         # Django 5.0+ supports aget for ORM
-        prom_data = await PromData.objects.aget(id=prom_data_id)
+        prom_data = PromData.objects.aget(id=prom_data_id)
     except PromData.DoesNotExist:
         logger.error(f"PromData with id {prom_data_id} does not exist.")
         return
@@ -28,7 +30,7 @@ async def run_ocr_on_prom_data(prom_data_id):
             with prom_data.prom_form_file.open("rb") as f:
                 return base64.b64encode(f.read()).decode("utf-8")
 
-        encoded_file = await sync_to_async(read_file)()
+        encoded_file = sync_to_async(read_file)()
 
         # Prepare the prompt for Gemma3
         prompt = (
@@ -47,8 +49,8 @@ async def run_ocr_on_prom_data(prom_data_id):
             "images": [encoded_file]
         }
 
-        async with httpx.AsyncClient() as client:
-            response = await client.post(ollama_url, json=payload, timeout=60.0)
+        with httpx.Client() as client:
+            response = client.post(ollama_url, json=payload, timeout=60.0)
             response.raise_for_status()
             result = response.json()
 
@@ -61,7 +63,7 @@ async def run_ocr_on_prom_data(prom_data_id):
             parsed_data = {"raw_response": extracted_text}
 
         # Save the result to ParsedPromForm
-        await ParsedPromForm.objects.acreate(
+        ParsedPromForm.objects.create(
             data=parsed_data,
             prom_file=prom_data,
             # validated_by and validated_at are left blank for now

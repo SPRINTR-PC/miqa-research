@@ -1,0 +1,16 @@
+{% load i18n %}
+<div class="max-w-md mx-auto space-y-6 py-2">
+    <div class="space-y-2">
+        <h2 id="app-modal-title" class="text-xl font-semibold">{% translate "Sign Out" %}</h2>
+        <p id="app-modal-description" class="text-sm text-muted-foreground">{% translate "Are you sure you want to sign out?" %}</p>
+    </div>
+    <form method="post" action="{% url 'account_logout' %}" class="flex justify-end gap-3">
+        {% csrf_token %}
+        <button type="button" data-modal-close class="inline-flex items-center justify-center h-10 px-4 py-2 rounded-md border border-input hover:bg-accent hover:text-accent-foreground font-medium transition-colors">
+            {% translate "Cancel" %}
+        </button>
+        <button type="submit" class="inline-flex items-center justify-center h-10 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 font-medium transition-colors">
+            {% translate "Sign Out" %}
+        </button>
+    </form>
+</div>

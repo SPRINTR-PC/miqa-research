@@ -1,7 +1,14 @@
 from .audit_log import AuditLog
-from .research_project import ResearchProject
-from .patient import Patient
+from .clinic import Clinic
+from .concept import Concept
+from .research_project import ResearchProject, ResearchProjectRole, ResearchProjectUserRoleMap
+from .study_participant import StudyParticipant
+from .consent import ParticipantConsentType, ParticipantConsent
+from .visit_occurrence import VisitOccurrence
 from .dicom_study import DicomStudy
 from .dicom_series import DicomSeries
 from .dicom_file import DicomFile
+from .measurement import Measurement
 from .prom_data import PromFormTemplate, PromData, ParsedPromForm
+from .auth import BearerToken
+from .oidc_role_mapping import OIDCRoleMapping

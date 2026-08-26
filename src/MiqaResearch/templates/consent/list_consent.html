@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block main %}
+  <table>
+  <thead><tr>
+  {% for header in consent_headers %}
+      <th>{{ header }}</th>
+  {% endfor %}
+  </tr></thead>
+  <tbody>
+  {% for consent in consents %}
+    <tr>
+      {% for field in consent %}
+        <td>{{ field }}</td>
+      {% endfor %}
+    </tr>
+  {% endfor %}
+  </tbody>
+  </table>
+{% endblock main %}

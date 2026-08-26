@@ -1,0 +1,111 @@
+import pytest
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AnonymousUser
+from django.contrib.sessions.middleware import SessionMiddleware
+from django.test import RequestFactory
+from django.utils import timezone
+
+from contract.constants.audit_log import EVENT_TYPE_SESSION_EXPIRED
+from MiqaResearch.data.models import AuditLog
+from MiqaResearch.middleware import SessionTimeoutMiddleware
+
+User = get_user_model()
+
+
+def _request_with_session():
+    request = RequestFactory().get("/")
+    SessionMiddleware(lambda r: None).process_request(request)
+    request.session.save()
+    return request
+
+
+@pytest.fixture
+def user(db):
+    return User.objects.create_user(username="timeoutuser", email="timeout@example.com")
+
+
+@pytest.mark.django_db
+def test_skips_enforcement_for_anonymous_user(settings):
+    settings.DEBUG = False
+    request = _request_with_session()
+    request.user = AnonymousUser()
+
+    result = SessionTimeoutMiddleware(lambda r: "response")(request)
+
+    assert result == "response"
+
+
+@pytest.mark.django_db
+def test_skips_enforcement_when_debug_true(user, settings):
+    settings.DEBUG = True
+    request = _request_with_session()
+    request.user = user
+    request.session["_mires_session_created_at"] = 0
+
+    SessionTimeoutMiddleware(lambda r: "response")(request)
+
+    assert request.user == user
+
+
+@pytest.mark.django_db
+def test_initializes_timestamps_on_first_request(user, settings):
+    settings.DEBUG = False
+    request = _request_with_session()
+    request.user = user
+
+    SessionTimeoutMiddleware(lambda r: "response")(request)
+
+    assert "_mires_session_created_at" in request.session
+    assert "_mires_session_last_activity" in request.session
+    assert request.user == user
+
+
+@pytest.mark.django_db
+def test_updates_last_activity_when_within_limits(user, settings):
+    settings.DEBUG = False
+    request = _request_with_session()
+    request.user = user
+    now = timezone.now().timestamp()
+    request.session["_mires_session_created_at"] = now
+    request.session["_mires_session_last_activity"] = now - 10
+
+    SessionTimeoutMiddleware(lambda r: "response")(request)
+
+    assert request.user == user
+    assert request.session["_mires_session_last_activity"] > now - 10
+
+
+@pytest.mark.django_db
+def test_logs_out_and_records_audit_log_on_idle_timeout(user, settings):
+    settings.DEBUG = False
+    settings.SESSION_IDLE_TIMEOUT = 1800
+    settings.SESSION_COOKIE_AGE = 28800
+    request = _request_with_session()
+    request.user = user
+    now = timezone.now().timestamp()
+    request.session["_mires_session_created_at"] = now
+    request.session["_mires_session_last_activity"] = now - 1801
+
+    SessionTimeoutMiddleware(lambda r: "response")(request)
+
+    assert request.user.is_authenticated is False
+    entry = AuditLog.objects.get(event_type=EVENT_TYPE_SESSION_EXPIRED)
+    assert entry.user == user
+    assert entry.metadata["reason"] == "idle_timeout"
+
+
+@pytest.mark.django_db
+def test_logs_out_on_max_lifetime_exceeded(user, settings):
+    settings.DEBUG = False
+    settings.SESSION_IDLE_TIMEOUT = 1800
+    settings.SESSION_COOKIE_AGE = 28800
+    request = _request_with_session()
+    request.user = user
+    now = timezone.now().timestamp()
+    request.session["_mires_session_created_at"] = now - 28801
+    request.session["_mires_session_last_activity"] = now
+
+    SessionTimeoutMiddleware(lambda r: "response")(request)
+
+    entry = AuditLog.objects.get(event_type=EVENT_TYPE_SESSION_EXPIRED)
+    assert entry.metadata["reason"] == "max_lifetime"
