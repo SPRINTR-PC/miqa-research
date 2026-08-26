@@ -331,9 +331,9 @@ class Migration(migrations.Migration):
             fields=[
                 ('id', models.UUIDField(default=uuid.uuid7, editable=False, primary_key=True, serialize=False)),
                 ('status', models.CharField(blank=True, max_length=200, null=True)),
-                ('consent_signed_date', models.DateField(help_text='Date when the consent was granted')),
-                ('last_updated', models.DateTimeField(auto_now=True, help_text='Date when the consent was last updated')),
-                ('consent_revoked_date', models.DateField(blank=True, help_text='Date when the consent was revoked', null=True)),
+                ('consent_signed_date', models.DateTimeField(help_text='Date and time when the consent was granted')),
+                ('last_updated', models.DateTimeField(auto_now=True, help_text='Date and time when the consent was last updated')),
+                ('consent_revoked_date', models.DateTimeField(blank=True, help_text='Date and time when the consent was revoked', null=True)),
                 ('clinic', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to='data.clinic')),
                 ('consent_type', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='consents', related_query_name='consent', to='data.participantconsenttype')),
                 ('study_participant', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='data.studyparticipant')),

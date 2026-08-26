@@ -133,13 +133,33 @@ async def _handle_fetched_data(csv_content: str) -> str:
 
 async def _process_consent_data(consent_data: pl.DataFrame) -> list[UploadConsentSchema]:
     """Processes the consent data to replace any participant ID with a study ID."""
-    logger.info(f"Formatting consent data for API endpoint")
+    logger.info("Formatting consent data for API endpoint")
 
-    consent_data = consent_data.with_columns(
-        pl.col(TASK_CONSENT_FORM_COL_SIGNED).str.to_datetime(format="%Y-%m-%d %H:%M", time_zone=settings.TASK_CONSENT_TIMEZONE),
-        pl.col(TASK_CONSENT_FORM_COL_LAST_UPDATED).str.to_datetime(format="%Y-%m-%d %H:%M", time_zone=settings.TASK_CONSENT_TIMEZONE),
-        pl.col(TASK_CONSENT_FORM_COL_RETRACTED).str.to_datetime(format="%Y-%m-%d %H:%M", time_zone=settings.TASK_CONSENT_TIMEZONE, strict=False),
-    )
+    try:
+        consent_data = consent_data.with_columns(
+            pl.col(TASK_CONSENT_FORM_COL_SIGNED).str.to_datetime(
+                format="%Y-%m-%d %H:%M:%S", time_zone=settings.TASK_CONSENT_TIMEZONE),
+            pl.col(TASK_CONSENT_FORM_COL_LAST_UPDATED).str.to_datetime(
+                format="%Y-%m-%d %H:%M:%S", time_zone=settings.TASK_CONSENT_TIMEZONE),
+            pl.col(TASK_CONSENT_FORM_COL_RETRACTED).str.to_datetime(
+                format="%Y-%m-%d %H:%M:%S", time_zone=settings.TASK_CONSENT_TIMEZONE, strict=False),
+        )
+    except pl.exceptions.InvalidOperationError:
+        # Try the conversion again but assume there are no seconds in the datetime strings
+        consent_data = consent_data.with_columns(
+            pl.col(TASK_CONSENT_FORM_COL_SIGNED).str.to_datetime(
+                format="%Y-%m-%d %H:%M", time_zone=settings.TASK_CONSENT_TIMEZONE
+            ),
+            pl.col(TASK_CONSENT_FORM_COL_LAST_UPDATED).str.to_datetime(
+                format="%Y-%m-%d %H:%M", time_zone=settings.TASK_CONSENT_TIMEZONE
+            ),
+            pl.col(TASK_CONSENT_FORM_COL_RETRACTED).str.to_datetime(
+                format="%Y-%m-%d %H:%M", time_zone=settings.TASK_CONSENT_TIMEZONE, strict=False
+            ),
+        )
+    except Exception:
+        logger.error("Failed to convert date columns in consent data", exc_info=True)
+        raise
 
     participants = await _get_participant_db_ids(consent_data)
 
@@ -147,9 +167,9 @@ async def _process_consent_data(consent_data: pl.DataFrame) -> list[UploadConsen
         TASK_CONSENT_FORM_COL_NAME, # Str
         TASK_CONSENT_FORM_COL_PID, # Str
         TASK_CONSENT_FORM_COL_STATUS,  # Str
-        TASK_CONSENT_FORM_COL_SIGNED,  # Date Y-m-d H:M
-        TASK_CONSENT_FORM_COL_LAST_UPDATED,  # Date Y-m-d H:M
-        TASK_CONSENT_FORM_COL_RETRACTED,  # # Date Y-m-d H:M | None
+        TASK_CONSENT_FORM_COL_SIGNED,  # Date Y-m-d H:M:S or Y-m-d H:M
+        TASK_CONSENT_FORM_COL_LAST_UPDATED,  # Date Y-m-d H:M:S or Y-m-d H:M
+        TASK_CONSENT_FORM_COL_RETRACTED,  # # Date Y-m-d H:M:S | Y-m-d H:M | None
         TASK_CONSENT_FORM_COL_CLINIC,  # Str (id nummer)
         TASK_CONSENT_FORM_COL_COMMENT  # Str
     )

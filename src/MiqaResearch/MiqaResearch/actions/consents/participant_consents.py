@@ -42,11 +42,11 @@ async def create_participant_consents(new_consents: list[UploadConsentSchema]) -
             _, created = await ParticipantConsent.objects.aget_or_create(
                 study_participant_id=consent.participant_study_id,
                 consent_type=participant_consent_types[consent_label],
-                consent_signed_date=consent.signed_date.date(),
+                consent_signed_date=consent.signed_date,
                 defaults={
                     "status": consent.status,
                     "clinic": clinic,
-                    "consent_revoked_date": consent.retracted.date() if consent.retracted else None,
+                    "consent_revoked_date": consent.retracted if consent.retracted else None,
                     "extra_info": consent.extra_info,
                 },
             )
