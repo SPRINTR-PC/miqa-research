@@ -1,5 +1,5 @@
 <div style="width: 100%;">
-<img src="src/MiqaResearch/static/icons/miqa-research-logo-full.svg" alt="MIQA Research" style="width: 100%; max-width: 50rem;"/>
+<img src="src/MiqaResearch/static/icons/miqa-research-logo.svg" alt="MIQA Research" style="width: 100%; max-width: 50rem;"/>
 </div>
 
 [![.NET Test](https://github.com/josef/miqa-research/actions/workflows/dotnet-test.yml/badge.svg)](https://github.com/josef/miqa-research/actions/workflows/dotnet-test.yml)
