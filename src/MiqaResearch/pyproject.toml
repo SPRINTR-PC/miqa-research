@@ -8,7 +8,7 @@ dependencies = [
     "django-environ>=0.14.*",
     "django-debug-toolbar",
     "django-htmx>=1.29.0",
-    "django-unfold",
+    "django-unfold>=0.104.1",
     "django-oauth-toolkit",
     "django-allauth[mfa,socialaccount]>=65.19.*",
     "django-rosetta>=0.10.3",
