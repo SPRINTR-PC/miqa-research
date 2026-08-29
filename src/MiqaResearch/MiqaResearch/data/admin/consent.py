@@ -1,7 +1,7 @@
 from django.contrib import admin
 from unfold.admin import ModelAdmin
 
-from data.models import ParticipantConsent
+from MiqaResearch.data.models import ParticipantConsent
 
 
 @admin.register(ParticipantConsent)
