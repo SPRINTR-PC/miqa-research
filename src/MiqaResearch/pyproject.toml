@@ -27,6 +27,7 @@ dependencies = [
     "polars>=1.40.1",
     "numpy>=2.4.6",
     "httpx2>=2.7.0",
+    "django-kpforms>=0.1.27",
     "pymupdf>=1.27.2.3",
 ]
 

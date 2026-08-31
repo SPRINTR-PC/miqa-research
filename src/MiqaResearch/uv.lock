@@ -543,6 +543,18 @@ wheels = [
 ]
 
 [[package]]
+name = "django-kpforms"
+version = "0.1.27"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "django" },
+    { name = "pydantic" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8c/87/3f503e316616b9dd3a3654406dadd3ed5a2222aff8a486d81a43c1f9c6d4/django_kpforms-0.1.27-py3-none-any.whl", hash = "sha256:5bd22e2821c6af38dd250bbae840b0d21b2f81f51e961553a61f4110cc54e468", size = 2194265, upload-time = "2026-08-14T07:45:03.918Z" },
+]
+
+[[package]]
 name = "django-ninja"
 version = "1.6.3"
 source = { registry = "https://pypi.org/simple" }
@@ -1060,6 +1072,7 @@ dependencies = [
     { name = "django-debug-toolbar" },
     { name = "django-environ" },
     { name = "django-htmx" },
+    { name = "django-kpforms" },
     { name = "django-ninja" },
     { name = "django-oauth-toolkit" },
     { name = "django-rosetta" },
@@ -1104,12 +1117,13 @@ requires-dist = [
     { name = "django-debug-toolbar" },
     { name = "django-environ", specifier = ">=0.14" },
     { name = "django-htmx", specifier = ">=1.29.0" },
+    { name = "django-kpforms", specifier = ">=0.1.27" },
     { name = "django-ninja" },
     { name = "django-oauth-toolkit" },
     { name = "django-rosetta", specifier = ">=0.10.3" },
     { name = "django-sphinx-view", specifier = "==26.*" },
     { name = "django-tasks-celery" },
-    { name = "django-unfold" },
+    { name = "django-unfold", specifier = ">=0.104.1" },
     { name = "flower" },
     { name = "httpx" },
     { name = "httpx2", specifier = ">=2.7.0" },
