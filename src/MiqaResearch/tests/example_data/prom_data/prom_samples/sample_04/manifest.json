@@ -1,0 +1,20 @@
+{
+  "sample_id": "sample_04",
+  "form": "PROM_1_PRO_GI_GU_SWE",
+  "source_type": "phone_photo_scan",
+  "device_note": "iOS document-scanner PDF (Quartz PDFContext producer) — same as all 10 samples in this fixture set, no further device metadata available in the file",
+  "page_count": 4,
+  "quality_notes": {
+    "skew": "minimal",
+    "glare": "none visible",
+    "pen_pressure": "heavy, scribbled marks (crosshatching, filled boxes) rather than clean X's — this respondent's answers read as a deliberate stress-test of odd mark shapes (initials 'ÅÄÖ', date '12345678', free text 'Testar och kollar' / 'Mera text att försöka tyda! En fråga?')",
+    "half_checks_or_ambiguous_marks": [
+      "prom101_q11_tillfalle: 'Annat tillfälle' checkbox itself is unmarked, but its free-text line is filled in ('Umeå kommun') anyway — text kept in ground truth, option omitted from the checkbox list",
+      "prom101_q12_hur_ofta: 'Annat tillfälle' box contains a handwritten '0' rather than a check mark — treated as not selected",
+      "prom101_q13_medicin_mot_los_avforing: 'Ja, Predclysma' checkbox is unmarked but its Antal/vecka box is filled in ('26') anyway — number kept in ground truth, option omitted from the checkbox list",
+      "prom101_q15_livskvalitet: both 'Nöjd' (diagonal hatch) and 'Förfärligt' (X) are marked — single-select field with two marks; took the X as authoritative",
+      "prom101_q22_urinlackage: both '2' (checkmark) and '3' (a small cross/plus) are marked — took the checkmark at 2 as authoritative",
+      "prom101_q24_livskvalitet: both 'Nöjd' (diagonal hatch) and 'Förfärligt' (X) are marked — same pattern as Q15, took the X as authoritative"
+    ]
+  }
+}

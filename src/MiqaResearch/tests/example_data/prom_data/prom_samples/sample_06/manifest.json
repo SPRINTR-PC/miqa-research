@@ -1,0 +1,17 @@
+{
+  "sample_id": "sample_06",
+  "form": "PROM_1_PRO_GI_GU_SWE",
+  "source_type": "phone_photo_scan",
+  "device_note": "iOS document-scanner PDF (Quartz PDFContext producer) — same as all 10 samples in this fixture set, no further device metadata available in the file",
+  "page_count": 4,
+  "quality_notes": {
+    "skew": "minimal",
+    "glare": "none visible",
+    "pen_pressure": "consistent, clear ballpoint marks; circles used instead of X's for questions 17-23",
+    "half_checks_or_ambiguous_marks": [
+      "prom101_q4_avforingslackage: no box marked at all — left genuinely blank, omitted from ground truth",
+      "prom101_q11_tillfalle: 'Inget läckage alls' (no leakage at all) is checked simultaneously with 'Lyfter tungt', 'Vid gasavgång', and 'Annat tillfälle' — internally contradictory but all four marks are clearly checked, kept as-is",
+      "prom101_q13_imodium_antal_per_vecka: the digit in the Antal/vecka box is a stylised loop, read as '2' with moderate confidence"
+    ]
+  }
+}

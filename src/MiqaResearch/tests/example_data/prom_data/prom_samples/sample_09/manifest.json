@@ -1,0 +1,17 @@
+{
+  "sample_id": "sample_09",
+  "form": "PROM_1_PRO_GI_GU_SWE",
+  "source_type": "phone_photo_scan",
+  "device_note": "iOS document-scanner PDF (Quartz PDFContext producer) — same as all 10 samples in this fixture set, no further device metadata available in the file",
+  "page_count": 4,
+  "quality_notes": {
+    "skew": "minimal",
+    "glare": "none visible",
+    "pen_pressure": "consistent, clear ballpoint X's on Q1-Q11; circles used for Q17-Q23",
+    "page_order": "physical pages 3 and 4 are SWAPPED relative to every other sample: page 3 in scan.pdf contains the 'Vattenkastningsbesvär (17-25)' section, page 4 contains 'Besvara frågor... (12-16)' — a realistic scanning artifact (pages photographed out of sequence). Field extraction must not assume a fixed page-to-section mapping.",
+    "half_checks_or_ambiguous_marks": [
+      "prom101_q8_slem: two boxes are marked, at both '2' and '8' — took '2' as the primary value; '8' is an equally plausible reading",
+      "prom101_q16_storsta_problem: left entirely blank, omitted from ground truth"
+    ]
+  }
+}
