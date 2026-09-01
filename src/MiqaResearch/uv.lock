@@ -544,14 +544,14 @@ wheels = [
 
 [[package]]
 name = "django-kpforms"
-version = "0.1.27"
+version = "0.1.28"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "django" },
     { name = "pydantic" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8c/87/3f503e316616b9dd3a3654406dadd3ed5a2222aff8a486d81a43c1f9c6d4/django_kpforms-0.1.27-py3-none-any.whl", hash = "sha256:5bd22e2821c6af38dd250bbae840b0d21b2f81f51e961553a61f4110cc54e468", size = 2194265, upload-time = "2026-08-14T07:45:03.918Z" },
+    { url = "https://files.pythonhosted.org/packages/08/71/1f98a6a3787ecc693cf2b532b3af117d536d14c1edb145d9ecce9e924a10/django_kpforms-0.1.28-py3-none-any.whl", hash = "sha256:199fd697cc3a715108e7c1837e24e0ce539632044d330a7af876a358553cfc5e", size = 2194195, upload-time = "2026-09-01T05:40:33.201Z" },
 ]
 
 [[package]]
@@ -1117,7 +1117,7 @@ requires-dist = [
     { name = "django-debug-toolbar" },
     { name = "django-environ", specifier = ">=0.14" },
     { name = "django-htmx", specifier = ">=1.29.0" },
-    { name = "django-kpforms", specifier = ">=0.1.27" },
+    { name = "django-kpforms", specifier = ">=0.1.28" },
     { name = "django-ninja" },
     { name = "django-oauth-toolkit" },
     { name = "django-rosetta", specifier = ">=0.10.3" },
