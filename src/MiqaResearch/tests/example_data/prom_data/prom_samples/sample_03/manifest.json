@@ -1,0 +1,16 @@
+{
+  "sample_id": "sample_03",
+  "form": "PROM_1_PRO_GI_GU_SWE",
+  "source_type": "phone_photo_scan",
+  "device_note": "iOS document-scanner PDF (Quartz PDFContext producer) — same as all 10 samples in this fixture set, no further device metadata available in the file",
+  "page_count": 4,
+  "quality_notes": {
+    "skew": "minimal, pages are well-aligned and squared to the frame",
+    "glare": "none",
+    "pen_pressure": "consistent, dark ballpoint marks, easy to read; handwriting is clear cursive",
+    "ambiguous_marks": [
+      "prom101_q14_annat_text: handwritten diet note is unusual/hard to parse with confidence, transcribed as 'Paltrik kost' but could plausibly be a different word",
+      "prom101_q13_medicin_mot_los_avforing: the 'Ja, Imodium' checkbox mark looks like a diagonal scribble rather than a clean X, but placement is unambiguous"
+    ]
+  }
+}

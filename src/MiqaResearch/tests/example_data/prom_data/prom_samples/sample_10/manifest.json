@@ -1,0 +1,15 @@
+{
+  "sample_id": "sample_10",
+  "form": "PROM_1_PRO_GI_GU_SWE",
+  "source_type": "phone_photo_scan",
+  "device_note": "iOS document-scanner PDF (Quartz PDFContext producer) — same as all 10 samples in this fixture set, no further device metadata available in the file",
+  "page_count": 4,
+  "quality_notes": {
+    "skew": "minimal",
+    "glare": "none visible",
+    "pen_pressure": "distinctive: this respondent marks boxes with a check/'Y'-shaped tick rather than an X or filled square throughout questions 1-15 and 24 — free text (Q16) explicitly calls this out ('Prövar annan stil' — 'trying a different style')",
+    "half_checks_or_ambiguous_marks": [
+      "prom101_q25_storsta_problem: last word is ambiguous cursive, read as 'toa' (bathroom) given the section's subject matter; could alternatively be read as 'tåg' (train)"
+    ]
+  }
+}

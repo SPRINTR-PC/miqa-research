@@ -1,0 +1,17 @@
+{
+  "sample_id": "sample_02",
+  "form": "PROM_1_PRO_GI_GU_SWE",
+  "source_type": "phone_photo_scan",
+  "device_note": "iOS document-scanner PDF (Quartz PDFContext producer) — same as all 10 samples in this fixture set, no further device metadata available in the file",
+  "page_count": 4,
+  "quality_notes": {
+    "skew": "minimal; pages are near-square to the frame with only slight camera-perspective keystoning typical of a phone document scan",
+    "glare": "none significant",
+    "pen_pressure": "consistent, legible ballpoint marks throughout; handwritten free-text answers (q11 'Promenad', q14 'Blåbär', q16 'Kan inte cykla', q25 'Gå upp på natten') are clear cursive/print mix, readable with high confidence",
+    "ambiguous_marks": [
+      "prom101_q12_anvander_bloja: only 'Nej' is checked and no antal/vecka or hur-ofta sub-fields are filled, so treated unambiguously as 'nej' despite the box mark looking like a stray corner tick",
+      "prom101_q13_medicin_mot_los_avforing: respondent checked BOTH 'Ja, Imodium' and 'Ja, Predclysma' with distinct antal/vecka values (7 and 24) — genuine multi-select answer, not an OCR ambiguity, kept as both",
+      "prom101_q14_kostvanor: respondent checked BOTH 'Ja, fettsnål kost' and 'Ja, annat' (text 'Blåbär') — genuine multi-select answer, kept as both"
+    ]
+  }
+}

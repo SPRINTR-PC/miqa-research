@@ -1,0 +1,16 @@
+{
+  "sample_id": "sample_05",
+  "form": "PROM_1_PRO_GI_GU_SWE",
+  "source_type": "phone_photo_scan",
+  "device_note": "iOS document-scanner PDF (Quartz PDFContext producer) — same as all 10 samples in this fixture set, no further device metadata available in the file",
+  "page_count": 4,
+  "quality_notes": {
+    "skew": "minimal; page edges near-rectangular, slight perspective keystoning typical of a handheld phone scan",
+    "glare": "none visible",
+    "pen_pressure": "consistent, dark ballpoint, fully legible throughout; this respondent writes in capital letters",
+    "ambiguous_marks": [
+      "prom101_q7_kramper: mark at '4' is a plain checkmark rather than an X, but unambiguous",
+      "prom101_q20_somnproblem_pga_urinering: circle around '4' is loosely drawn/open but clearly encircles only that digit"
+    ]
+  }
+}

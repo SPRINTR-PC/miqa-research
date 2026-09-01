@@ -1,0 +1,20 @@
+{
+  "sample_id": "sample_07",
+  "form": "PROM_1_PRO_GI_GU_SWE",
+  "source_type": "phone_photo_scan",
+  "device_note": "iOS document-scanner PDF (Quartz PDFContext producer) — same as all 10 samples in this fixture set, no further device metadata available in the file",
+  "page_count": 4,
+  "quality_notes": {
+    "skew": "minimal",
+    "glare": "none visible",
+    "pen_pressure": "mixed — clean X's on questions 1-10, heavier scribbled/looping marks on 12-15 and one heavy scribble on Q21",
+    "half_checks_or_ambiguous_marks": [
+      "prom101_q12_anvander_bloja: 'Nej' is checked, but 'Hur ofta?'/'Annat tillfälle' and the Antal/vecka boxes are filled in anyway ('72', 'Då och då') — kept literally as written despite the inconsistency",
+      "prom101_q13_medicin_mot_los_avforing: 'Nej' is checked simultaneously with 'Ja, Predclysma' and 'Ja, annan' (with numbers/text filled in for both) — same inconsistency pattern as Q12, kept literally",
+      "prom101_q13_annan_text: handwriting reads roughly 'Valtu' — low confidence, could be a different word",
+      "prom101_q15_livskvalitet: both 'Mycket nöjd' (clear X) and 'Nöjd' (loose scribble) are marked — took 'Mycket nöjd' as authoritative",
+      "prom101_q21_besvarligt_ga_hemifran: a small circle around '1' and a heavy scribble over '4' are both present — took the heavier scribble at '4' as authoritative",
+      "prom101_studie_id: last character in the Id box is drawn as a '#'/hash symbol rather than a letter or digit"
+    ]
+  }
+}

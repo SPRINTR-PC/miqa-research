@@ -1,0 +1,17 @@
+{
+  "sample_id": "sample_01",
+  "form": "PROM_1_PRO_GI_GU_SWE",
+  "source_type": "phone_photo_scan",
+  "device_note": "iOS document-scanner PDF (Quartz PDFContext producer) — same as all 10 samples in this fixture set, no further device metadata available in the file; this is the same filled form used to author the template in issue #12",
+  "page_count": 4,
+  "quality_notes": {
+    "skew": "minimal",
+    "glare": "none visible",
+    "pen_pressure": "moderate, consistent ballpoint pressure, generally legible",
+    "ambiguous_marks": [
+      "prom101_q7_kramper: mark is a checkmark/tick rather than an X, positioned at 4 — read as 4",
+      "prom101_q15_livskvalitet (Missbelåten): mark is a filled/boxed style differing slightly from other X marks on the page, read as checked",
+      "prom101_q16_storsta_problem: handwriting reads 'ont i magen' but the first word could be misread as 'out'"
+    ]
+  }
+}

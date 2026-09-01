@@ -1,0 +1,17 @@
+{
+  "sample_id": "sample_08",
+  "form": "PROM_1_PRO_GI_GU_SWE",
+  "source_type": "phone_photo_scan",
+  "device_note": "iOS document-scanner PDF (Quartz PDFContext producer) — same as all 10 samples in this fixture set, no further device metadata available in the file",
+  "page_count": 4,
+  "quality_notes": {
+    "skew": "minimal",
+    "glare": "none visible",
+    "pen_pressure": "light-to-moderate, small angular check marks (more like a caret than an X) on questions 1-11",
+    "half_checks_or_ambiguous_marks": [
+      "prom101_q12_hur_ofta / prom101_q12_annat_tillfalle_text: 'Annat tillfälle' checkbox is unmarked but its text line is filled in ('Köra bil') anyway — text kept, option omitted from the checkbox list",
+      "prom101_q13_imodium_antal_per_vecka: Antal/vecka box next to 'Ja, Imodium' is present but empty, and 'Ja, Imodium' itself is unchecked — omitted entirely",
+      "prom101_q24_livskvalitet: 'Nöjd' has a faint dot mark in addition to the clearly hatched 'Blandade känslor' box — took 'Blandade känslor' as authoritative since it's the unambiguous mark"
+    ]
+  }
+}

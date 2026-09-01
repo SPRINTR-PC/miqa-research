@@ -1,0 +1,33 @@
+{
+  "data": [
+    { "fieldId": "prom101_initialer", "value": "LÖK" },
+    { "fieldId": "prom101_dagens_datum", "value": "20260428" },
+    { "fieldId": "prom101_q1_avforingsproblem", "value": "2" },
+    { "fieldId": "prom101_q2_avforingar_per_dygn", "value": "2" },
+    { "fieldId": "prom101_q3_skynda_till_toaletten", "value": "4" },
+    { "fieldId": "prom101_q4_avforingslackage", "value": "4" },
+    { "fieldId": "prom101_q5_planerar_toalettbesok", "value": "7" },
+    { "fieldId": "prom101_q6_gasavgang", "value": "7" },
+    { "fieldId": "prom101_q7_kramper", "value": "3" },
+    { "fieldId": "prom101_q8_slem", "value": "5" },
+    { "fieldId": "prom101_q9_blod", "value": "10" },
+    { "fieldId": "prom101_q10_paverkan_daglig_aktivitet", "value": "5" },
+    { "fieldId": "prom101_q11_tillfalle", "value": ["reser_sig_sittande_till_staende", "vid_gasavgang"] },
+    { "fieldId": "prom101_q12_anvander_bloja", "value": "nej" },
+    { "fieldId": "prom101_q13_medicin_mot_los_avforing", "value": ["ja_annan"] },
+    { "fieldId": "prom101_q13_annan_text", "value": "Glömt namn" },
+    { "fieldId": "prom101_q14_kostvanor", "value": ["ja_fettsnal_kost", "ja_fiberrik_kost", "ja_annat"] },
+    { "fieldId": "prom101_q14_annat_text", "value": "Mycket vatten" },
+    { "fieldId": "prom101_q15_livskvalitet", "value": "blandade_kanslor" },
+    { "fieldId": "prom101_q16_storsta_problem", "value": "Provar annan stil" },
+    { "fieldId": "prom101_q17_urinera_ofta_dagen", "value": "3" },
+    { "fieldId": "prom101_q18_urinera_ofta_natten", "value": "3" },
+    { "fieldId": "prom101_q19_skynda_till_toaletten", "value": "2" },
+    { "fieldId": "prom101_q20_somnproblem_pga_urinering", "value": "4" },
+    { "fieldId": "prom101_q21_besvarligt_ga_hemifran", "value": "1" },
+    { "fieldId": "prom101_q22_urinlackage", "value": "2" },
+    { "fieldId": "prom101_q23_smarta_sveda_urinering", "value": "4" },
+    { "fieldId": "prom101_q24_livskvalitet", "value": "olycklig" },
+    { "fieldId": "prom101_q25_storsta_problem", "value": "Oro att inte hinna till toa" }
+  ]
+}
