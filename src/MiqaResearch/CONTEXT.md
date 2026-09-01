@@ -147,6 +147,42 @@ sections based on configuration:
 - **Local email/password section**: Always shown when `DEBUG=True` or when
   `MIRES_AUTHENTICATION_FRAMEWORK=local`. Hidden in production otherwise.
 
+### Research Project
+A study being run in MiqaResearch, represented by the `ResearchProject` model
+(`name`, `description`). A user's involvement in a Research Project is recorded
+per-role via `ResearchProjectUserRoleMap` (Admin, PI, Investigator, Data Manager,
+Contributor, Annotator).
+
+### Site
+A physical location where study participants are recruited and consented,
+represented in code by the `Clinic` model. Domain language and UI should say
+"Site"; the `Clinic` model name is a historical artifact of the model
+predating this term. Which Sites participate in which Research Project is
+recorded explicitly — see Project Site.
+_Avoid_: Clinic (in prose/UI — keep it only as the existing model/table name)
+
+### Project Site
+The explicit link between a Research Project and a Site that participates in
+it, configured by an Admin or PI independent of whether any consent data for
+that Site exists yet. A Research Project with more than one Project Site is a
+**multi-site** project. See ADR 0019.
+
+### Data Collection Goal
+A configurable, quantitative target for data gathering on a Research Project —
+a project may define several at once, each independently typed by metric
+(consent-based, enrollment-based, or imaging-completeness-based) and optionally
+scoped to a single Site rather than the whole project. See ADR 0018. Does not
+exist in the codebase yet; introduced by the Dashboard feature.
+_Avoid_: Target, quota
+
+### Site Assignment
+The association between a User and a Site within the context of a specific
+Research Project, used to determine which Site(s)' status to show that user
+on their project dashboard alongside the project-wide view. A User may hold
+more than one Site Assignment on the same project. Does not exist in the
+codebase yet; introduced by the Dashboard feature. See ADR 0019.
+_Avoid_: Site membership, clinic membership
+
 ## Decisions (ADRs)
 
 | ADR | Title | Status |
@@ -168,6 +204,98 @@ sections based on configuration:
 | 0015 | Unit tests for adapter/model + responses-mocked integration tests | Accepted |
 | 0016 | MIRES_AUTHENTICATION_FRAMEWORK retains mode selector (local/oidc/adfs/yubikey) | Accepted |
 | 0017 | YubiKey/WebAuthn MFA as combinable second factor with OIDC | Accepted |
+| 0018 | Data Collection Goal as a multi-valued, metric-typed, optionally site-scoped concept | Accepted |
+| 0019 | Explicit Project Site linkage and many-valued Site Assignment | Accepted |
+
+### ADR 0019 — Explicit Project Site linkage and many-valued Site Assignment
+
+**Context**: The Dashboard feature needs to know which Sites (clinics)
+participate in a Research Project, and which Site a given User should see
+status for. Today, `Clinic` is a global, unscoped model created ad-hoc
+whenever consent data is imported (`participant_consents.py`); nothing links
+a `Clinic` to a `ResearchProject`, and nothing links a `User` to a `Clinic` at
+all. Two shapes were considered for the project-to-site relationship: infer it
+from whatever `Clinic` values already appear on the project's
+`ParticipantConsent` records, or make it an explicit, admin-configured link.
+
+**Decision**: A Research Project's Sites are explicit (**Project Site**), not
+inferred from consent data — an Admin or PI configures which Sites
+participate in a project independent of whether any consent data referencing
+that Site exists yet, because real multi-site studies agree on their sites
+before data collection starts. A project is **multi-site** exactly when it
+has more than one Project Site.
+
+Separately, **Site Assignment** (User × Research Project × Site) is
+many-valued: a User can hold assignments to more than one Site on the same
+project, rather than being limited to one. Assignment applies uniformly
+regardless of `ResearchProjectRole` — no role is restricted from holding one.
+Only Admin and PI may create or edit Site Assignments, mirroring Data
+Collection Goal's edit rights (ADR 0018). A User with zero Site Assignments
+sees project-level dashboard information only; a User with one or more sees
+every assigned Site's status alongside the project-wide view, not just one
+"primary" site.
+
+**Consequences**:
+- Setting up a multi-site project now requires an explicit admin step
+  (configuring its Project Sites) before Goals or Site Assignments can
+  reference a Site — there's no automatic bootstrapping from uploaded data.
+- The admin UI (ticket #25) needs two related but distinct forms: configuring
+  a project's Project Sites, and assigning Users to Sites.
+- The Goals tab (ticket #24) must be able to render more than one assigned
+  Site's status for a single User, not just one.
+- `Clinic` itself is unchanged and stays a global, unscoped model; only its
+  participation in a given project is now tracked explicitly via Project
+  Site.
+
+### ADR 0018 — Data Collection Goal as a multi-valued, metric-typed, optionally site-scoped concept
+
+**Context**: The Dashboard feature (wayfinder map: Dashboard feature spec) needs
+a way to show a Research Project's data-gathering progress. The obvious minimal
+shape — one target number per project — didn't survive contact with the actual
+requirement: research projects here track progress along genuinely different
+axes (consent for a specific form, raw enrollment, and imaging completeness
+against `DicomStudy`/`DicomSeries`), and a multi-site project needs to see both
+its overall standing and its own site's standing side by side.
+
+**Decision**: A Research Project may define **zero or more** Data Collection
+Goals rather than exactly one. Each Goal independently picks a metric type —
+participants holding a specific `ParticipantConsentType`, raw enrolled
+`StudyParticipant` count, or participants with a configured set of DICOM
+modalities present (with the goal choosing ALL-required vs. ANY-suffices
+matching, checked across any of the participant's `DicomStudy` records) — and
+may optionally scope itself to a single Site instead of the whole project.
+A Goal may also carry an explicit start date and target date (both optional,
+independent); only when both are present does status include an on-track/
+behind-schedule pace judgment, otherwise status is plain percent-complete. The
+start date is explicit rather than inferred, because neither `ResearchProject`
+nor `StudyParticipant` carries a creation timestamp in this codebase today.
+Only the Admin and PI project roles may create or edit Goals.
+
+**Consequences**:
+- The study-picker card can no longer name "the" goal — with an unbounded
+  number of Goals per project, the card shows an aggregate rollup (e.g. "2 of
+  3 goals on track") instead of one goal's progress.
+- The Goals tab renders as a list, one row per Goal, rather than a single
+  status block.
+- The Goals tab now depends on the imaging pipeline (`DicomStudy`,
+  `DicomSeries`) in addition to consent data — a broader dependency than its
+  original "consent progress" framing.
+- Pace status (on-track/behind) is opt-in per Goal and silently absent
+  whenever an Admin/PI leaves the start date blank.
+
+**Amendment (wayfinder ticket #25)**: A DICOM modality-set Goal additionally
+picks how it **counts**: **participants** (the original behavior above —
+one count per distinct `StudyParticipant`, however many qualifying
+`DicomStudy` records they have, matched across any of that participant's
+studies) or **imaging sets** — counting each qualifying `DicomStudy`
+separately, so a participant with several qualifying studies contributes
+several toward the target rather than one. Under imaging-set counting, "one
+set" requires the modalities to co-occur within a single `DicomStudy`; the
+original scattering-across-studies allowance only applies to participant
+counting. The ALL-required/ANY-suffices matching choice applies unchanged
+under either counting mode.
+- Site scoping lives on Goal itself; the sibling Site & Site Assignment
+  design only needs to define what a Site is, not how goals attach to one.
 
 ### ADR 0017 — YubiKey/WebAuthn MFA as combinable second factor with OIDC
 

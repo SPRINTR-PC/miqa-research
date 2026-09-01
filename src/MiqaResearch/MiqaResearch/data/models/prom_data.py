@@ -2,25 +2,34 @@ from uuid import uuid7
 
 from django.contrib.auth import get_user_model
 from django.db import models
+from kpforms.models import FormTemplate
 
 from .research_project import ResearchProject
 
 User = get_user_model()
 
+
 class PromFormTemplate(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid7, editable=False)
-    name = models.CharField(max_length=100, blank=False, null=False)
-    template = models.JSONField(blank=False, null=False)
-    version = models.CharField(max_length=10, blank=False, null=False)
+    name = models.CharField(max_length=100, blank=False, null=False, unique=True)
+    template = models.ForeignKey(FormTemplate, on_delete=models.PROTECT, blank=False, null=False)
+    project_specific = models.ForeignKey(ResearchProject, on_delete=models.CASCADE, blank=True, null=True)
+    published = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     deleted_at = models.DateTimeField(blank=True, null=True)
 
     class Meta:
         db_table = "mires_prom_form_template"
-        ordering = ["name", "-version", "-created_at", ]
-        unique_together = [("name", "version")]
-        indexes = [models.Index(fields=["name", "version", "created_at",], name="idx_prom_form_template_ver")]
+        ordering = ["name", "-created_at", ]
+        unique_together = [("name", "project_specific")]
+        indexes = [
+            models.Index(fields=["published"], name="idx_prom_form_template_pub"),
+            models.Index(fields=["name", "created_at",], name="idx_prom_form_template_ver")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name} {'' if self.published else ''} {self.updated_at:Y-m-d H:i:s}"
 
 
 def upload_to(instance, filename):
@@ -52,3 +61,6 @@ class ParsedPromForm(models.Model):
     class Meta:
         db_table = "mires_parsed_prom_form"
         ordering = ["-validated_at"]
+
+    def __str__(self) -> str:
+        return f"ParsedPromForm {self.id} validated at {self.validated_at} by {self.validated_by}"

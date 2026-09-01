@@ -134,22 +134,23 @@ INSTALLED_APPS = [
     'allauth.socialaccount.providers.openid_connect',
     'oauth2_provider',
     'ninja',
-    'django_celery_beat',
-    'django_celery_results',
     'django_htmx',
     'django.contrib.sites',
-    'MiqaResearch.data',
     #'documentation',
     # Unfold admin interface
     'unfold',
-    # 'unfold.contrib.filters',
-    # 'unfold.contrib.forms',
+    'unfold.contrib.filters',
+    'unfold.contrib.forms',
     # 'unfold.contrib.inlines',
     # 'unfold.contrib.import_export',
     # 'unfold.contrib.guardian',
     # 'unfold.contrib.simple_history',
     # 'unfold.contrib.location_field',
     'django.contrib.admin',
+    'django_celery_beat',
+    'django_celery_results',
+    'MiqaResearch.data',
+    'kpforms',
 ]
 
 MIDDLEWARE = [

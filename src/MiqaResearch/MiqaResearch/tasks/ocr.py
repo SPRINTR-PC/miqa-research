@@ -1,10 +1,12 @@
 import base64
 import json
 import logging
+from pathlib import Path
 
 import httpx
-from django.conf import settings
+import pymupdf
 from asgiref.sync import sync_to_async
+from django.conf import settings
 
 from MiqaResearch.celery import app
 from MiqaResearch.data.models import ParsedPromForm, PromData
@@ -73,3 +75,11 @@ def run_ocr_on_prom_data(prom_data_id):
 
     except Exception as e:
         logger.exception(f"Error running OCR on PromData {prom_data_id}: {e}")
+
+
+def convert_pdf_to_image(pdf_path: Path):
+    """
+    Converts a PDF file to a list of image files
+    """
+    doc = pymupdf.open(pdf_path)
+    return [page.get_pixmap(dpi=300) for page in doc]
