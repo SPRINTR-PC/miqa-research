@@ -45,10 +45,10 @@ def download_file(url, target_path):
 def main():
     # Create target directory if it doesn't exist
     TARGET_DIR.mkdir(parents=True, exist_ok=True)
-    
+
     # Download main htmx file
     download_file(f"{BASE_URL}htmx.min.js", TARGET_DIR / "htmx.min.js")
-    
+
     # Create extensions directory within htmx directory
     ext_dir = TARGET_DIR / "ext"
     ext_dir.mkdir(exist_ok=True)
