@@ -6,6 +6,10 @@ from MiqaResearch.interfaces.http.api.urls import api
 from MiqaResearch.interfaces.http.views import (
     UploadDataView,
     administration_index,
+    dashboard_index,
+    dashboard_project,
+    dashboard_tab_consent_statistics,
+    dashboard_tab_goals,
     landing_page_index,
     monitor_index,
 )
@@ -20,6 +24,14 @@ urlpatterns = [
     path('', landing_page_index, name='home'),
     path('administration/', administration_index, name='administration'),
     path('upload/', UploadDataView.as_view(), name="upload_data"),
+    path('dashboard/', dashboard_index, name='dashboard'),
+    path('dashboard/<uuid:project_id>/', dashboard_project, name='dashboard_project'),
+    path(
+        'dashboard/<uuid:project_id>/tabs/consent-statistics/',
+        dashboard_tab_consent_statistics,
+        name='dashboard_tab_consent_statistics',
+    ),
+    path('dashboard/<uuid:project_id>/tabs/goals/', dashboard_tab_goals, name='dashboard_tab_goals'),
     path(settings.ADMIN_URL, admin.site.urls),
     path('monitor/', monitor_index, name='monitor'),
     path('accounts/bankid/login/', bankid_login_redirect, name='bankid_login'),
