@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% load static %}
+{% get_current_language as LANGUAGE_CODE %}
+{% block main %}
+<div class="container space-y-4">
+  <div>
+    <h1 class="font-bold text-3xl tracking-tight">{% translate "Dashboard" %}</h1>
+    <p class="text-muted-foreground mt-1">{% translate "Research projects you are part of." %}</p>
+  </div>
+  {% if projects %}
+  <div class="grid sm:grid-cols-3 gap-4">
+    {% for project in projects %}
+    <a href="{% url 'dashboard_project' project.id %}" style="display:block;text-decoration:none;color:inherit;" class="rounded-lg border bg-card text-card-foreground shadow-sm">
+      <div class="flex flex-col space-y-1.5 p-6">
+        <h3 class="font-semibold tracking-tight text-lg">{{ project.name }}</h3>
+        <p class="text-sm text-muted-foreground">{{ project.description }}</p>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="rounded-lg border bg-card text-card-foreground shadow-sm" style="min-height:220px;display:flex;align-items:center;justify-content:center;text-align:center;">
+    <div class="text-muted-foreground space-y-2 p-6">
+      <p class="font-medium">{% translate "You are not yet part of any research project" %}</p>
+      <p class="text-sm">{% translate "Once an administrator adds you to a project, it will appear here." %}</p>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock main %}

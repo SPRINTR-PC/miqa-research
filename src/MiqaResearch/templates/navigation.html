@@ -5,7 +5,7 @@
       <span class="inline text-lg">{% translate 'MIQA Research' %}</span>
     </a>
     <nav id="top-nav" class="flex items-center gap-1">
-      <a id="nav-dashboard" class="navlink" href="/dashboard">{% translate "Dashboard" %}</a>
+      <a id="nav-dashboard" class="navlink" href="{% url 'dashboard' %}">{% translate "Dashboard" %}</a>
       <a id="nav-administration" class="navlink" href="/administration">{% translate "Administration" %}</a>
       <a id="nav-monitor" class="navlink" href="/monitor">{% translate "Monitor" %}</a>
       <a id="nav-upload-data" class="navlink" href="{% url 'upload_data' %}">{% translate "Upload Data" %}</a>
