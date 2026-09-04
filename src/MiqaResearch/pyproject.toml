@@ -30,6 +30,9 @@ dependencies = [
     "django-kpforms>=0.1.28",
     "pymupdf>=1.27.2.3",
     "granian>=2.8.2",
+    "pytesseract>=0.3.13",
+    "opencv-python-headless>=4.12.0.88",
+    "pillow>=12.0.0",
 ]
 
 [dependency-groups]
