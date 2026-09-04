@@ -3,7 +3,8 @@ import logging
 from contract.constants.celery import QUEUE_OCR
 from MiqaResearch.celery import app
 from MiqaResearch.data.models import ParsedPromForm, PromData
-from MiqaResearch.ocr.pipeline import run_pipeline
+
+from .pipeline import run_pipeline
 
 logger = logging.getLogger(__name__)
 
