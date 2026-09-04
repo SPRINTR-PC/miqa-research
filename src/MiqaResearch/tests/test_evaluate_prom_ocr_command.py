@@ -6,6 +6,7 @@ from django.conf import settings
 from django.core.management import CommandError, call_command
 
 from MiqaResearch.data.management.commands.evaluate_prom_ocr import DEFAULT_FIXTURES_DIR, normalize_value, score_sample
+from MiqaResearch.tasks.ocr import vlm_fallback
 
 FIXTURES_DIR = settings.BASE_DIR / "tests" / "example_data" / "prom_data" / "prom_samples"
 
@@ -46,7 +47,14 @@ def test_ground_truth_field_counts_match_17s_reported_325_across_all_samples():
 
 
 @pytest.mark.django_db
-def test_evaluate_prom_ocr_runs_all_ten_fixtures_and_reports_near_zero_baseline_accuracy():
+def test_evaluate_prom_ocr_runs_all_ten_fixtures_and_reports_near_zero_baseline_accuracy(monkeypatch):
+    # Real field_matching/mark_detection (#47/#48) run for real here -- that's
+    # the point, exercising the actual classic path. VLM calls are mocked out:
+    # #49's own tests cover VLM behavior, and merge.py is still a stub (#50),
+    # so escalated fields' real VLM answers would be computed only to be
+    # discarded -- an expensive no-op that used to make this single test run
+    # for hours once vlm_fallback stopped being a free stub.
+    monkeypatch.setattr(vlm_fallback, "run_vlm_fallback", lambda *args, **kwargs: {})
     out = io.StringIO()
 
     with pytest.raises(CommandError, match="accuracy"):
@@ -55,7 +63,7 @@ def test_evaluate_prom_ocr_runs_all_ten_fixtures_and_reports_near_zero_baseline_
     report = out.getvalue()
     assert report.count("sample_") == 10
     assert "overall" in report
-    assert "0.0%" in report  # #44's stub pipeline produces no field values yet
+    assert "0.0%" in report  # merge.py (#50) is still a stub, so no field values reach the final output yet
 
 
 @pytest.mark.django_db
