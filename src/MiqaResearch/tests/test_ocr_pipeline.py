@@ -5,6 +5,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
+from kpforms.models import FormSubmission
 
 from MiqaResearch.data.management.commands.import_prom_form_template import DEFAULT_TEMPLATE_NAME
 from MiqaResearch.data.models import ParsedPromForm, PromData, PromFormTemplate, ResearchProject
@@ -36,17 +37,47 @@ def prom_data(db, tmp_path, settings):
 
 @pytest.mark.django_db
 def test_run_ocr_on_prom_data_stores_a_schema_valid_parsed_prom_form(prom_data, monkeypatch):
-    # Real field_matching/mark_detection (#47/#48) run for real here. VLM
-    # calls are mocked out: merge.py is still a stub (#50), so any escalated
-    # field's real VLM answer would be computed only to be discarded -- an
-    # expensive no-op once vlm_fallback (#49) stopped being a free stub.
+    # Real field_matching/mark_detection/merge (#47/#48/#50) run for real
+    # here. VLM calls are mocked out: #49's own tests cover VLM behavior, and
+    # a real call here would just be an expensive, redundant round trip.
     monkeypatch.setattr(vlm_fallback, "run_vlm_fallback", lambda *args, **kwargs: {})
 
     run_ocr_on_prom_data(prom_data.id)
 
     parsed = ParsedPromForm.objects.get(prom_file=prom_data)
-    # merge.py (#50) is still a stub, so no field values reach the final output yet.
-    assert parsed.data == {"data": [], "fieldsOutOfTolerance": []}
+    assert isinstance(parsed.data["data"], list)
+    assert isinstance(parsed.data["fieldsOutOfTolerance"], list)
+    # Every template field gets a provenance entry, whether or not it produced a value.
+    assert len(parsed.extraction_flags) == 37
+    assert all(flag["source"] in ("classic", "vlm", "failed") for flag in parsed.extraction_flags.values())
+    # Every field actually in the merged data has a real, non-null value.
+    assert all(entry["value"] is not None for entry in parsed.data["data"])
+
+
+@pytest.mark.django_db
+def test_run_ocr_on_prom_data_never_creates_a_kpforms_form_submission(prom_data, monkeypatch):
+    monkeypatch.setattr(vlm_fallback, "run_vlm_fallback", lambda *args, **kwargs: {})
+
+    run_ocr_on_prom_data(prom_data.id)
+
+    # OCR output is a machine-drafted candidate reading, not a real patient
+    # submission -- validation.py calls kpforms' validator directly and never
+    # goes through submit_form_data (#11/#13/#50).
+    assert not FormSubmission.objects.exists()
+
+
+@pytest.mark.django_db
+def test_running_ocr_twice_appends_a_new_parsed_prom_form_row_rather_than_overwriting(prom_data, monkeypatch):
+    monkeypatch.setattr(vlm_fallback, "run_vlm_fallback", lambda *args, **kwargs: {})
+
+    run_ocr_on_prom_data(prom_data.id)
+    first = ParsedPromForm.objects.get(prom_file=prom_data)
+
+    run_ocr_on_prom_data(prom_data.id)
+
+    rows = ParsedPromForm.objects.filter(prom_file=prom_data)
+    assert rows.count() == 2
+    assert first in rows  # the original row is untouched, not upserted
 
 
 @pytest.mark.django_db
