@@ -1,10 +1,13 @@
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpResponse
-from django.views import View
 from django.shortcuts import render
+from django.views import View
 
-class UploadData(LoginRequiredMixin, View):
-    def get(self, request, *args, **kwargs):
+from helpers.authentication.async_mixins import AsyncLoginRequiredMixin
+
+
+class UploadData(AsyncLoginRequiredMixin, View):
+    async def get(self, request, *args, **kwargs):
         context = {
             "projects": [
                 { "id": "1", "name": "PROTECT-RT"},
@@ -14,5 +17,5 @@ class UploadData(LoginRequiredMixin, View):
         }
         return render(request, '02_upload_data/index.html', context=context)
 
-    def post(self, request, *args, **kwargs):
+    async def post(self, request, *args, **kwargs):
         return HttpResponse(status=201)

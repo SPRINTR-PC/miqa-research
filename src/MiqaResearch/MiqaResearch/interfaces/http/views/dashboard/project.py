@@ -5,8 +5,9 @@ from MiqaResearch.data.models import ResearchProject
 
 
 async def get_user_project_or_404(request, project_id):
+    user = await request.auser()
     return await aget_object_or_404(
-        ResearchProject.objects.filter(researchprojectuserrolemap__user=request.user).distinct(),
+        ResearchProject.objects.filter(researchprojectuserrolemap__user=user).distinct(),
         id=project_id,
     )
 

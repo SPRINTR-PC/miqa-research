@@ -1,4 +1,4 @@
-from asgiref.sync import iscoroutinefunction
+from asgiref.sync import async_to_sync, iscoroutinefunction, markcoroutinefunction
 from django.conf import settings
 from django.contrib.auth import logout
 from django.utils import timezone
@@ -63,8 +63,17 @@ class SessionTimeoutMiddleware:
 
 class AsyncUserMiddleware:
     """
-    Middleware to automatically resolve request.auser() in async views
-    so templates don't throw a SynchronousOnlyOperation error.
+    Middleware to automatically resolve request.auser() so templates and
+    views don't throw a SynchronousOnlyOperation error when they touch
+    request.user from inside an async view.
+
+    Whether get_response ends up sync or async depends on the *handler*
+    serving the request (ASGI vs WSGI), not on whether the matched view is
+    async — under WSGI, Django presents the whole middleware chain as
+    synchronous even though an async view is invoked further down via
+    async_to_sync. So both branches below resolve request.user explicitly,
+    rather than skipping it whenever this middleware happens to run in sync
+    mode.
     """
     sync_capable = True
     async_capable = True
@@ -73,13 +82,25 @@ class AsyncUserMiddleware:
         self.get_response = get_response
         # Determine if the subsequent view/middleware is async
         self.is_async = iscoroutinefunction(self.get_response)
+        if self.is_async:
+            # __call__ is a plain (non-async-def) method that only *returns*
+            # a coroutine conditionally, so Django/asgiref can't infer
+            # async-ness from its signature. Whatever middleware wraps us
+            # next (e.g. Django's MiddlewareMixin-based ones) checks
+            # iscoroutinefunction(self) directly, so mark it explicitly -
+            # otherwise it misdetects us as sync and calls us without
+            # awaiting, blowing up with "'coroutine' object has no
+            # attribute ..." under a real ASGI server.
+            markcoroutinefunction(self)
 
     def __call__(self, request):
         if self.is_async:
             # If it's an async request path, route to the async handler
             return self.__acall__(request)
 
-        # If it's a standard synchronous request, do nothing and pass it along
+        if hasattr(request, 'auser'):
+            request.user = async_to_sync(request.auser)()
+
         return self.get_response(request)
 
     async def __acall__(self, request):

@@ -14,7 +14,7 @@ def htmx_login_required(view_func):
 
     @wraps(view_func)
     async def wrapped(request, *args, **kwargs):
-        if request.user.is_authenticated:
+        if (await request.auser()).is_authenticated:
             return await view_func(request, *args, **kwargs)
         if request.htmx:
             return HttpResponseClientRedirect(settings.LOGIN_URL)

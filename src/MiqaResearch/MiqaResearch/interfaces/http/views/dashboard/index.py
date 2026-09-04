@@ -6,11 +6,12 @@ from MiqaResearch.data.models import ResearchProject
 
 @login_required
 async def index(request):
+    user = await request.auser()
     projects = [
         project
         async for project in ResearchProject.objects.filter(
-            researchprojectuserrolemap__user=request.user
-        ).distinct()
+            researchprojectuserrolemap__user=user
+        ).distinct().aiterator()
     ]
 
     if len(projects) == 1:
