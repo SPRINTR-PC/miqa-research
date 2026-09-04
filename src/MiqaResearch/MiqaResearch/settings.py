@@ -74,7 +74,9 @@ env = environ.Env(
     MIRES_SESSION_COOKIE_AGE=(int, 8 * 60 * 60),
     MIRES_SESSION_IDLE_TIMEOUT=(int, 30 * 60),
     MIRES_OLLAMA_URL=(str, "http://localhost:11434"),
-    MIRES_OLLAMA_MODEL=(str, "gemma4"),
+    MIRES_OLLAMA_MODEL=(str, "qwen3-vl:8b-instruct-q8_0"),
+    MIRES_OCR_VLM_PAGE_TIMEOUT_SECONDS=(int, 900),
+    MIRES_OCR_VLM_FORM_TIMEOUT_SECONDS=(int, 2700),
     MIRES_OTLP_ENDPOINT=(str, "http://localhost:4318/v1/logs"),
     MIRES_OTLP_PROTOCOL=(str, "http"),
     MIRES_OTLP_INSECURE=(bool, False),
@@ -455,6 +457,11 @@ OAUTH2_PROVIDER = {
 # Ollama Settings
 OLLAMA_URL = env("MIRES_OLLAMA_URL")
 OLLAMA_MODEL = env("MIRES_OLLAMA_MODEL")
+
+# PROM OCR VLM fallback budgets (docs/prom-ocr-handoff.md §2 -- optimistic pending
+# real-hardware validation, see #17's M5 Max caveat)
+OCR_VLM_PAGE_TIMEOUT_SECONDS = env("MIRES_OCR_VLM_PAGE_TIMEOUT_SECONDS")
+OCR_VLM_FORM_TIMEOUT_SECONDS = env("MIRES_OCR_VLM_FORM_TIMEOUT_SECONDS")
 
 
 # Participant consent settings

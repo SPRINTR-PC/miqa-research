@@ -19,6 +19,11 @@ RUN uv sync --frozen --no-dev --no-install-project
 # Final stage
 FROM python:3.14-slim-bookworm
 
+# Tesseract OCR + Swedish language data (swe, NOT swa -- swa is Swahili) for the PROM OCR pipeline
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-swe \
+    && rm -rf /var/lib/apt/lists/*
+
 # Set working directory
 WORKDIR /app
 
@@ -28,7 +33,7 @@ COPY --from=builder /app/.venv /venv
 # Copy the rest of the application
 COPY . .
 RUN chmod +x /app/tools/celery/start_flower.sh
-RUN chmod +x /app/tools/celery/start_worker_consent.sh
+RUN chmod +x /app/tools/celery/start_worker.sh
 
 # Set environment variables
 ENV PATH="/venv/bin:$PATH"
