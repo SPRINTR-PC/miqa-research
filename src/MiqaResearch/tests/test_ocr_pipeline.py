@@ -8,7 +8,7 @@ from django.core.management import call_command
 
 from MiqaResearch.data.management.commands.import_prom_form_template import DEFAULT_TEMPLATE_NAME
 from MiqaResearch.data.models import ParsedPromForm, PromData, PromFormTemplate, ResearchProject
-from MiqaResearch.tasks.ocr import run_ocr_on_prom_data
+from MiqaResearch.tasks.ocr import run_ocr_on_prom_data, vlm_fallback
 
 User = get_user_model()
 
@@ -35,12 +35,17 @@ def prom_data(db, tmp_path, settings):
 
 
 @pytest.mark.django_db
-def test_run_ocr_on_prom_data_stores_a_schema_valid_parsed_prom_form(prom_data):
+def test_run_ocr_on_prom_data_stores_a_schema_valid_parsed_prom_form(prom_data, monkeypatch):
+    # Real field_matching/mark_detection (#47/#48) run for real here. VLM
+    # calls are mocked out: merge.py is still a stub (#50), so any escalated
+    # field's real VLM answer would be computed only to be discarded -- an
+    # expensive no-op once vlm_fallback (#49) stopped being a free stub.
+    monkeypatch.setattr(vlm_fallback, "run_vlm_fallback", lambda *args, **kwargs: {})
+
     run_ocr_on_prom_data(prom_data.id)
 
     parsed = ParsedPromForm.objects.get(prom_file=prom_data)
-    # Stage bodies are still stubs (#47-#50 fill them in) -- this only proves the
-    # pipeline runs end to end and produces a schema-valid (if empty) result.
+    # merge.py (#50) is still a stub, so no field values reach the final output yet.
     assert parsed.data == {"data": [], "fieldsOutOfTolerance": []}
 
 
