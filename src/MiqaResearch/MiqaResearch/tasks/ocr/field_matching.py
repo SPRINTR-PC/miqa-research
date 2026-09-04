@@ -14,7 +14,7 @@ this stage locates.
 
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 
 import cv2
@@ -22,6 +22,8 @@ import numpy as np
 import pymupdf
 import pytesseract
 from kpforms.form_schema import FormTemplateSchema
+
+from .preprocessing import pixmap_to_gray
 
 # #16's measured thresholds/margins -- do not re-tune without new data.
 MIN_ANCHOR_SCORE = 0.55
@@ -46,6 +48,17 @@ class FieldMatch:
     label_match_score: float = 0.0
     text_value: str | None = None
     tesseract_word_confidence: float = 0.0
+    # (value, label) pairs for checkbox/radio/ranged-radio fields, in template
+    # order -- #48 zips these against the boxes/digits it discovers, so it
+    # never needs to re-flatten the template itself.
+    options: list[tuple[str, str]] = field(default_factory=list)
+    # The label anchor's own bbox (native page coords, same space as `region`).
+    # On this form, a mark-type field's option boxes sit level with the
+    # label's own (possibly multi-line) span, not below it -- #48 searches
+    # this span, not `region` (which is carved for the *next* field's anchor
+    # and is the wrong span for these fields; #47's own text_value extraction
+    # for non-mark fields still uses `region`, unaffected).
+    anchor_bbox: tuple[int, int, int, int] | None = None
 
 
 @dataclass
@@ -54,6 +67,7 @@ class _FlatField:
     label: str
     type: str
     order: int
+    options: list[tuple[str, str]] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -94,6 +108,14 @@ def _tokenize(text: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+def _field_options(input_field) -> list[tuple[str, str]]:
+    if input_field.type in ("checkbox", "radio"):
+        return [(o.value, o.label) for o in input_field.options]
+    if input_field.type == "ranged-radio":
+        return sorted(((o.value, o.label) for o in input_field.optionLabelsAndIndices), key=lambda t: int(t[0]))
+    return []
+
+
 def _flatten_template(template_schema: FormTemplateSchema) -> list[_FlatField]:
     """Document order is the "section/group ordering as a prior" #16 asks for --
     it's literally the order fields appear in the template, which mirrors the
@@ -104,7 +126,13 @@ def _flatten_template(template_schema: FormTemplateSchema) -> list[_FlatField]:
         for group in section.inputGroups:
             for input_field in group.fields:
                 fields.append(
-                    _FlatField(id=input_field.id, label=input_field.label, type=input_field.type, order=order)
+                    _FlatField(
+                        id=input_field.id,
+                        label=input_field.label,
+                        type=input_field.type,
+                        order=order,
+                        options=_field_options(input_field),
+                    )
                 )
                 order += 1
     return fields
@@ -114,13 +142,6 @@ def _flatten_template(template_schema: FormTemplateSchema) -> list[_FlatField]:
 # OCR (prototype/issue-16-field-matching's ocr_engine.py, plus deskew/Otsu
 # preprocessing per docs/prom-ocr-handoff.md §4[2], which that prototype didn't do)
 # ---------------------------------------------------------------------------
-
-
-def _pixmap_to_gray(pixmap: pymupdf.Pixmap) -> np.ndarray:
-    array = np.frombuffer(pixmap.samples, dtype=np.uint8).reshape(pixmap.height, pixmap.width, pixmap.n)
-    if pixmap.n >= 3:
-        return cv2.cvtColor(array[:, :, :3], cv2.COLOR_RGB2GRAY)
-    return array[:, :, 0]
 
 
 def _deskew_angle(gray: np.ndarray) -> float:
@@ -155,7 +176,7 @@ def _preprocess_for_ocr(gray: np.ndarray) -> np.ndarray:
 def _ocr_words(pixmap: pymupdf.Pixmap) -> list[dict]:
     """Word-level Tesseract OCR, grouped into reading order (block/par/line,
     then top, then left within a line)."""
-    processed = _preprocess_for_ocr(_pixmap_to_gray(pixmap))
+    processed = _preprocess_for_ocr(pixmap_to_gray(pixmap))
     data = pytesseract.image_to_data(processed, lang="swe+eng", config="--psm 6", output_type=pytesseract.Output.DICT)
 
     words = []
@@ -346,7 +367,7 @@ def match_fields(pages: list[pymupdf.Pixmap], template_schema: FormTemplateSchem
 
     matches = []
     for f in fields:
-        score, page_idx, _ = anchors[f.id]
+        score, page_idx, anchor_bbox = anchors[f.id]
         region = regions.get(f.id)
 
         text_value, confidence = None, 0.0
@@ -364,6 +385,8 @@ def match_fields(pages: list[pymupdf.Pixmap], template_schema: FormTemplateSchem
                 label_match_score=score,
                 text_value=text_value,
                 tesseract_word_confidence=confidence,
+                options=f.options,
+                anchor_bbox=anchor_bbox if region is not None else None,
             )
         )
     return matches
