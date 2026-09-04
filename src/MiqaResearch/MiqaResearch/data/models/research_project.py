@@ -27,12 +27,12 @@ class ResearchProjectRole(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     deleted_at = models.DateTimeField(blank=True, null=True)
 
-    def __str__(self):
-        return self.name
-
     class Meta:
         db_table = "mires_research_project_role"
         ordering = ["name"]
+
+    def __str__(self):
+        return self.name
 
 
 class ResearchProjectUserRoleMap(models.Model):
