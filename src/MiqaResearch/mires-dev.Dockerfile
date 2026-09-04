@@ -39,4 +39,4 @@ ENV DJANGO_SETTINGS_MODULE=MiqaResearch.settings
 EXPOSE 8000
 
 # Default command
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+CMD ["granian", "--interface", "asgi", "--host", "0.0.0.0", "--port", "8000", "--reload", "MiqaResearch.asgi:application"]
