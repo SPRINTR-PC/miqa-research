@@ -2,7 +2,10 @@
 
 Per-field escalation trigger (#18 §4[5]), batched into one VLM call per page
 that has at least one escalated field (not one call per field), plus
-post-processing guards on the response (#18 §4[2]).
+post-processing guards on the response (#18 §4[2]). Resilient to Celery's
+soft time limit firing mid-loop: stops immediately (rather than retrying a
+doomed call) and returns whatever pages already completed, so run_pipeline
+still has time to reach merge/validation/save before the hard kill (#51).
 """
 
 import base64
@@ -15,6 +18,7 @@ from dataclasses import dataclass
 
 import httpx
 import pymupdf
+from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
 from kpforms.form_schema import FormTemplateSchema
 from PIL import Image
@@ -292,31 +296,47 @@ def run_vlm_fallback(
     elapsed_seconds = 0.0
 
     results: dict[str, VlmResult] = {}
-    for page_index, escalated_matches in escalated_by_page.items():
-        if elapsed_seconds >= form_budget:
-            break  # per-form ceiling hit -- stop escalating further pages, never raise
+    try:
+        for page_index, escalated_matches in escalated_by_page.items():
+            if elapsed_seconds >= form_budget:
+                break  # per-form ceiling hit -- stop escalating further pages, never raise
 
-        fields_on_page = [m for m in field_matches if m.page_index == page_index]
-        page_template_fields = [template_fields[m.field_id] for m in fields_on_page if m.field_id in template_fields]
-        prompt = _build_prompt(page_template_fields)
-        image_b64 = _encode_page_for_vlm(pages[page_index])
+            fields_on_page = [m for m in field_matches if m.page_index == page_index]
+            page_template_fields = [
+                template_fields[m.field_id] for m in fields_on_page if m.field_id in template_fields
+            ]
+            prompt = _build_prompt(page_template_fields)
+            image_b64 = _encode_page_for_vlm(pages[page_index])
 
-        start = time.monotonic()
-        try:
-            raw = _call_ollama(prompt, image_b64, timeout=page_timeout)
-        except Exception:
+            start = time.monotonic()
+            try:
+                raw = _call_ollama(prompt, image_b64, timeout=page_timeout)
+            except SoftTimeLimitExceeded:
+                # Celery's hard kill is imminent -- don't retry/continue to
+                # another slow call, stop immediately (re-raise to the outer
+                # handler below) so run_pipeline still has time to reach
+                # merge/validation/save with whatever's accumulated (#51).
+                raise
+            except Exception:
+                elapsed_seconds += time.monotonic() - start
+                continue  # a failed/timed-out call leaves these fields unresolved for #50 to flag as failed
             elapsed_seconds += time.monotonic() - start
-            continue  # a failed/timed-out call leaves these fields unresolved for #50 to flag as failed
-        elapsed_seconds += time.monotonic() - start
 
-        cleaned = _apply_guards(raw.get("data", []), fields_on_page, template_fields)
+            cleaned = _apply_guards(raw.get("data", []), fields_on_page, template_fields)
 
-        for match in escalated_matches:
-            if match.field_id not in cleaned:
-                continue
-            confidence = "low" if match.field_type == "text" else "high"
-            results[match.field_id] = VlmResult(
-                field_id=match.field_id, value=cleaned[match.field_id], confidence=confidence
-            )
+            for match in escalated_matches:
+                if match.field_id not in cleaned:
+                    continue
+                confidence = "low" if match.field_type == "text" else "high"
+                results[match.field_id] = VlmResult(
+                    field_id=match.field_id, value=cleaned[match.field_id], confidence=confidence
+                )
+    except SoftTimeLimitExceeded:
+        # Whatever pages completed before the interrupt keep their real VLM
+        # answers (`results` was populated incrementally above); fields on
+        # pages not reached yet simply aren't in `results` -- merge.py (#50)
+        # already falls back to their classic value, or flags them "failed"
+        # if that's missing too, exactly like any other unresolved field.
+        pass
 
     return results

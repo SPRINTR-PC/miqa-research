@@ -2,6 +2,7 @@ import json
 
 import pymupdf
 import pytest
+from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
 from kpforms.form_schema import ChoiceOption, FormSection, FormTemplateSchema, InputFieldCheckbox, InputGroup
 
@@ -242,6 +243,44 @@ def test_exceeding_the_per_form_timeout_ceiling_stops_further_calls_without_rais
 def test_a_failing_call_does_not_raise_and_leaves_the_field_unresolved(monkeypatch, settings):
     def boom(*args, **kwargs):
         raise RuntimeError("network exploded")
+
+    monkeypatch.setattr(vlm_fallback, "_call_ollama", boom)
+    match = _match(field_id="f1", field_type="string", label_match_score=0.1, page_index=0)
+
+    results = vlm_fallback.run_vlm_fallback([_pixmap()], [match], {}, _template_schema())
+
+    assert results == {}
+
+
+def test_a_soft_time_limit_mid_loop_stops_immediately_and_keeps_completed_pages(monkeypatch, settings):
+    calls = []
+
+    def flaky_call_ollama(prompt, image_b64, timeout):
+        calls.append(1)
+        if len(calls) == 2:
+            raise SoftTimeLimitExceeded()
+        return {"data": [{"fieldId": f"f{len(calls)}", "value": "answer"}]}
+
+    monkeypatch.setattr(vlm_fallback, "_call_ollama", flaky_call_ollama)
+    matches = [
+        _match(field_id="f1", field_type="string", label_match_score=0.1, page_index=0),
+        _match(field_id="f2", field_type="string", label_match_score=0.1, page_index=1),
+        _match(field_id="f3", field_type="string", label_match_score=0.1, page_index=2),
+    ]
+
+    results = vlm_fallback.run_vlm_fallback([_pixmap(), _pixmap(), _pixmap()], matches, {}, _template_schema())
+
+    # No exception propagates; page 0 (processed before the interrupt on
+    # page 1) kept its real answer; pages 1/2 (interrupted/never reached)
+    # are simply absent, left for merge.py (#50) to handle.
+    assert len(calls) == 2
+    assert results.keys() == {"f1"}
+    assert results["f1"].value == "answer"
+
+
+def test_a_soft_time_limit_on_the_first_call_returns_cleanly_with_no_results(monkeypatch, settings):
+    def boom(*args, **kwargs):
+        raise SoftTimeLimitExceeded()
 
     monkeypatch.setattr(vlm_fallback, "_call_ollama", boom)
     match = _match(field_id="f1", field_type="string", label_match_score=0.1, page_index=0)
