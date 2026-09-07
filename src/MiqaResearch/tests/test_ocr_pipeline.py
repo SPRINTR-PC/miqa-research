@@ -1,6 +1,7 @@
 import uuid
 
 import pytest
+from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -51,6 +52,32 @@ def test_run_ocr_on_prom_data_stores_a_schema_valid_parsed_prom_form(prom_data, 
     assert len(parsed.extraction_flags) == 37
     assert all(flag["source"] in ("classic", "vlm", "failed") for flag in parsed.extraction_flags.values())
     # Every field actually in the merged data has a real, non-null value.
+    assert all(entry["value"] is not None for entry in parsed.data["data"])
+
+
+@pytest.mark.django_db
+def test_a_soft_time_limit_mid_escalation_still_saves_a_parsed_prom_form(prom_data, monkeypatch):
+    """sample_01 (#48/#49's own measurements) escalates fields across
+    multiple pages -- real field_matching/mark_detection run for real here,
+    and _call_ollama (not run_vlm_fallback) is mocked so vlm_fallback's own
+    per-page loop and its SoftTimeLimitExceeded handling (#51) actually run."""
+    calls = []
+
+    def flaky_call_ollama(prompt, image_b64, timeout):
+        calls.append(1)
+        if len(calls) == 1:
+            return {"data": []}
+        raise SoftTimeLimitExceeded()
+
+    monkeypatch.setattr(vlm_fallback, "_call_ollama", flaky_call_ollama)
+
+    run_ocr_on_prom_data(prom_data.id)  # must not raise
+
+    assert len(calls) >= 2  # proves the interrupt fired mid-loop, after at least one page completed
+    parsed = ParsedPromForm.objects.get(prom_file=prom_data)
+    assert isinstance(parsed.data["data"], list)
+    assert len(parsed.extraction_flags) == 37
+    assert all(flag["source"] in ("classic", "vlm", "failed") for flag in parsed.extraction_flags.values())
     assert all(entry["value"] is not None for entry in parsed.data["data"])
 
 
