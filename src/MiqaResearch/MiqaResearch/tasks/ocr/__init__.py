@@ -36,6 +36,7 @@ def run_ocr_on_prom_data(prom_data_id):
 
     ParsedPromForm.objects.create(
         data={"data": result.data, "fieldsOutOfTolerance": result.fields_out_of_tolerance},
+        extraction_flags=result.extraction_flags,
         prom_file=prom_data,
         # validated_by and validated_at are left blank until a human reviews it
     )

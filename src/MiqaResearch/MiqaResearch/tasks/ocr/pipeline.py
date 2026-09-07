@@ -1,9 +1,8 @@
 """Orchestrates the full classic-OCR + VLM-fallback pipeline for one
 PromData upload (docs/prom-ocr-handoff.md).
 
-As of #44 this only wires the stages together end to end; #47-#50 fill in
-the stage bodies with real logic. Until then every run produces an empty
-(but schema-valid) result.
+Every stage (#44/#47-#50) is real as of #50: field matching, mark detection,
+VLM escalation, merge, and kpforms validation.
 """
 
 import time
