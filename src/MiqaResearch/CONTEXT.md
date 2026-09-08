@@ -147,6 +147,45 @@ sections based on configuration:
 - **Local email/password section**: Always shown when `DEBUG=True` or when
   `MIRES_AUTHENTICATION_FRAMEWORK=local`. Hidden in production otherwise.
 
+### Classic Path
+The Tesseract-OCR-based half of the PROM OCR pipeline (`field_matching.py` +
+`mark_detection.py`): fuzzy label-anchor search locates each field's region
+across all pages, then ink-density thresholding reads checkbox/radio/
+ranged-radio marks. Distinguished from the VLM Fallback, which reads a page
+image directly via a vision-language model. See `docs/prom-ocr-handoff.md`.
+
+### VLM Fallback / Escalation
+The second half of the PROM OCR pipeline: a field the Classic Path couldn't
+confidently resolve is **escalated** — batched with other escalated fields on
+the same page into one call to a vision-language model (Ollama). Which
+fields escalate is governed by the **escalation contract** (`should_escalate`
+in `vlm_fallback.py`): confidence thresholds per field type, tuned in issue
+#18. See `docs/prom-ocr-handoff.md`.
+
+### OCR Pipeline Mode
+A global, deployment-level setting selecting how the PROM OCR pipeline
+combines the Classic Path and the VLM Fallback. Two modes:
+- **Hybrid Mode** (default, the pipeline shipped by epic #10): Classic Path
+  runs in full, and only fields the escalation contract flags are sent to
+  the VLM Fallback.
+- **VLM-Only Mode** (opt-in, for installations with capable-enough
+  hardware): field-matching still runs (page localization, and text
+  fallback for non-mark fields), but mark detection is skipped and every
+  field is escalated unconditionally — the VLM Fallback becomes the
+  pipeline's primary source of truth rather than a fallback for the
+  minority of low-confidence fields. Chosen because a benchmark (issue #17)
+  measured a full-page VLM pass as more accurate (90.2%) than Hybrid Mode's
+  measured end-to-end accuracy (68.3%, issue #50) — at the cost of
+  substantially higher latency, since every page now requires a VLM call
+  rather than only the escalated minority.
+_Avoid_: "VLM-primary" (use VLM-Only Mode)
+
+### GPU Acceleration (OCR)
+A separate opt-in setting for the Ollama backend used by the VLM Fallback,
+independent of OCR Pipeline Mode (though most relevant to VLM-Only Mode,
+where every page requires a VLM call). Relaxes epic #10's original
+"CPU-only, no GPU" hard server requirement for installations that opt in.
+
 ### Research Project
 A study being run in MiqaResearch, represented by the `ResearchProject` model
 (`name`, `description`). A user's involvement in a Research Project is recorded

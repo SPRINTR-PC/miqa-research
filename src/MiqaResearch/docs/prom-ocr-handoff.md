@@ -1,6 +1,8 @@
 # PROM OCR pipeline — handoff spec
 
-Destination artifact for #19. Consolidates every decision made across #10–#18 into one buildable spec for `run_ocr_on_prom_data`. This whole epic is plan-don't-do (#10): nothing in this doc is implemented yet except where explicitly noted as "already shipped." The implementing session should not need to re-open any of #11–#18 — open questions that remain are called out at the end.
+Destination artifact for #19. Consolidates every decision made across #10–#18 into one buildable spec for `run_ocr_on_prom_data`. This whole epic was plan-don't-do (#10) when written — **§1–§9 below are now fully shipped** (#44–#51; the actual module lives at `MiqaResearch/tasks/ocr/`, not the `MiqaResearch/ocr/` layout §3 originally proposed — everything else in §1–§9 matches what shipped). Treat §1–§9 as a design record of the Hybrid Mode pipeline running in production today, not an open implementation task.
+
+**§10 is new, unshipped design** — wayfinder map #60 (VLM-Only OCR mode: design + benchmark), added after the base pipeline shipped, to add two opt-in settings on top of it. The implementing session for §10 should not need to re-open #61–#63.
 
 Scope reminder from #10: one PROM form template in scope (`PROM_1_PRO_GI_GU_SWE`), CPU-only, acceptance = ≥95% field-level accuracy and ≤2 min/page for the **classic path** on modest CPU (4 cores). The VLM fallback is exempt from the 2 min/page bar (#18) but must never hang the task.
 
@@ -237,3 +239,66 @@ New management command, `evaluate_prom_ocr` (same style as `import_prom_form_tem
 - Non-mark field types' (`text`/`numeric`/`string`/`datetime`) escalation thresholds (§4[5]) are reasoned by analogy to #16's contract, not measured — this form has few such fields. Revisit once the harness (§7) has real numbers.
 - All latency figures (#17) were measured on an Apple M5 Max pinned to 4 threads, `num_gpu: 0` — explicitly flagged there as optimistic vs. the actual target server CPU. The timeout budgets in §2 carry that same uncertainty forward; re-measure on real target hardware and adjust `MIRES_OCR_VLM_*_TIMEOUT_SECONDS` before relying on them in production.
 - `MiqaResearch/interfaces/http/api/views/upload_data/upload_prom_data.py` is currently an empty stub (`from django.views import View`) — wiring the upload endpoint to actually enqueue `run_ocr_on_prom_data` is outside this epic's sub-issues and isn't specified here.
+
+## 10. OCR Pipeline Mode & GPU Acceleration (wayfinder map #60, unshipped)
+
+Two opt-in, deployment-level settings layered on top of the shipped Hybrid Mode pipeline (§1–§9), for installations with capable-enough hardware. Neither is implemented yet; this section is the buildable spec, mirroring how §1–§9 handed off #10's original design. Domain terms (**Classic Path**, **VLM Fallback / Escalation**, **OCR Pipeline Mode**, **GPU Acceleration (OCR)**) are in `CONTEXT.md`.
+
+### 10.1 Why
+
+A benchmark (#17) measured a full-page VLM pass — no Classic Path involvement at all — at 90.2% field-level accuracy, well above Hybrid Mode's own measured end-to-end 68.3% (#50). For installations with hardware good enough to make heavier VLM usage practical, an opt-in mode that leans on the VLM as primary rather than fallback is worth offering. #61 re-measured this against the pipeline's *actual* prompt shape (see §10.4) before this was designed — the number to plan around is **82.8%**, not #17's original 90.2% (measured with a different, wider prompt shape — §10.5).
+
+### 10.2 OCR Pipeline Mode setting (#62)
+
+New setting, same `django-environ` pattern as every setting in §2:
+
+- `MIRES_OCR_MODE` (str, default `"hybrid"`) — accepted values `"hybrid"` and `"vlm_only"`. Default preserves every existing installation's current behavior with zero config changes.
+- `OCR_MODE = env("MIRES_OCR_MODE")` in `settings.py`, next to `OLLAMA_URL`/`OLLAMA_MODEL`.
+
+**VLM-Only Mode** (`OCR_MODE == "vlm_only"`) changes two things relative to Hybrid Mode:
+
+1. **`pipeline.py`'s `run_pipeline` skips calling `mark_detection.detect_marks` entirely** (`mark_results = {}` passed onward to `vlm_fallback`/`merge` instead) — not called-and-discarded, actually skipped, saving the ~3s/page cost. `field_matching` still runs in full: page localization (needed for per-page VLM batching, §4[5]) and non-mark-field `text_value` extraction (kept as a fallback — see below) are both still needed.
+2. **`vlm_fallback.should_escalate` gets a mode-aware early return**:
+
+```python
+def should_escalate(match: FieldMatch, mark_result: MarkResult | None) -> bool:
+    if settings.OCR_MODE == "vlm_only":
+        return True
+    if match.label_match_score < MIN_ANCHOR_SCORE:
+        ...  # rest of §4[5]'s contract, unchanged for Hybrid Mode
+```
+
+**Why the mode check lives inside `should_escalate` itself, not just in `run_vlm_fallback`'s batching loop** (found while designing this, not assumed): `merge.py`'s `merge_results` independently calls `vlm_fallback.should_escalate(match, mark_result)` a second time, to compute `extraction_flags[fieldId]["attempted"]`. Making only `run_vlm_fallback`'s loop mode-aware would leave that second call site out of sync — a confident non-mark field would still get a real VLM answer (non-mark escalation logic depends only on `tesseract_word_confidence`/format-parsing, never on `mark_result`, so skipping `mark_detection` alone doesn't force it to escalate), but `merge.py`'s own recomputed `should_escalate` would say `False` for it, producing a wrong `"attempted": ["classic"]` even though VLM was genuinely called and answered. Putting the check inside `should_escalate` itself means both call sites agree by construction.
+
+For mark-type fields specifically, skipping `mark_detection` (an empty `mark_results` dict) is *already* sufficient on its own to force their escalation, via `should_escalate`'s existing `if mark_result is None: return True` branch (§4[5]) — the explicit mode check above is what's needed for non-mark fields, whose escalation decision never depended on `mark_result` at all.
+
+**`merge.py` needs zero code changes** (verified by reading it, not asserted): `_classic_value` already returns `None` gracefully when `mark_result is None`, and the existing fallback chain — VLM value if present, else classic value if present, else `"failed"` — already does exactly what VLM-Only Mode needs. In VLM-Only Mode, `vlm_results` simply contains far more entries (in the limit, all of them) and `mark_results` is empty; non-mark fields still get their classic `text_value` as a fallback if VLM fails on them, unchanged from Hybrid Mode's behavior.
+
+### 10.3 GPU Acceleration setting (#63)
+
+New setting, independent of OCR Pipeline Mode (useful for Hybrid Mode's escalated-fraction VLM calls too, though most relevant to VLM-Only Mode where every page needs one):
+
+- `MIRES_OCR_VLM_NUM_GPU` (int, default `0`) — passed straight through as Ollama's own `num_gpu` request option (`-1` = full GPU offload, `0` = CPU-only, `N` = partial layer offload for VRAM-constrained hardware). Raw passthrough rather than a boolean, matching Ollama's own parameter shape exactly and allowing partial offload. Default `0` preserves #10's original "CPU-only, no GPU" hard constraint for every existing installation.
+- `OCR_VLM_NUM_GPU = env("MIRES_OCR_VLM_NUM_GPU")` in `settings.py`, next to `OCR_VLM_PAGE_TIMEOUT_SECONDS`/`OCR_VLM_FORM_TIMEOUT_SECONDS`.
+- `vlm_fallback.py`'s `_call_ollama` changes its hardcoded `"num_gpu": 0` (§4[5]'s prompt spec) to `"num_gpu": settings.OCR_VLM_NUM_GPU`. One-line change, nothing else in `_call_ollama` moves.
+
+**Operational gotcha (#61's finding, must be documented for operators, not just noted here)**: Ollama does **not** reload a model's GPU/CPU layer placement on a per-request `options.num_gpu` change if the model is already warm from a prior request with a different setting — it silently keeps the old placement until the model is explicitly unloaded (`ollama stop <model>`) or its `keep_alive` expires. Since `OCR_VLM_NUM_GPU` is read once at Django startup and fixed for the process's lifetime, this only bites an operator who changes the env var and restarts Django without also restarting/unloading Ollama's own warm model — not handled in application code (deliberately: would couple Django startup to Ollama's availability, which isn't guaranteed in every deployment topology), so **whoever writes deployment docs for this setting must call out the restart/unload step explicitly**, or a flipped setting could silently have no effect.
+
+### 10.4 Measured numbers & the ship decision
+
+#61 benchmarked both settings against all 10 real fixtures, using the *actual* shipped prompt-building code (not a reimplementation) with `mark_detection` skipped and `should_escalate` forced to always return `True`:
+
+| Configuration | Accuracy | Source |
+|---|---|---|
+| Classic Path alone | 10.2% (33/325) | #50 |
+| Hybrid Mode (shipped, real Ollama) | 68.3% (222/325) | #50 |
+| VLM-Only Mode, page-scoped prompt (this spec) | **82.8% (269/325)**, GPU | #61 |
+| #17's original full-field-list-per-page shape (not what ships — see §10.5) | 90.2% (293/325) | #17 |
+
+Latency: **~13.4s/page with GPU acceleration** (`num_gpu: -1`) vs **~166s/page CPU-only** (`num_gpu: 0`) on identical hardware — roughly 12x, with no measured accuracy cost (one sample scored identically both ways). CPU-only VLM-Only Mode latency lands close to Hybrid Mode's own already-measured 170–206s/page range (§4[5], PR #58) — forcing 100% escalation didn't multiply latency, because Hybrid Mode was already escalating 80.3% of fields, and `run_vlm_fallback`'s per-page prompt already includes every field anchored to that page, not just the ones that individually escalated. **No changes are needed to `MIRES_OCR_VLM_*_TIMEOUT_SECONDS` or the Celery task limits (§2) for either mode** — both are comfortably covered by these numbers.
+
+**Ship decision** (charting explicitly set no fixed accuracy target — the benchmark produces the number, that informs the call): ship VLM-Only Mode as currently designed, around the measured 82.8% page-scoped number. 82.8% is a validated, real improvement over what's shipped today; #17's 90.2% was measured under a different, untested-in-this-shape prompt design (§10.5) and isn't a number this spec promises.
+
+### 10.5 Follow-up, explicitly non-blocking
+
+#61 flagged, but did not test, an alternative: use the full template field list per page (matching #17's original benchmark design) instead of `field_matching`'s page-scoped subset, specifically for VLM-Only Mode's prompts. The likely mechanism for the 82.8-vs-90.2 gap is that `field_matching`'s own localization misses (or mis-anchors a field to the wrong page) silently exclude that field from ever reaching the VLM under the page-scoped design — #17's full-list design has no such gate, so a field the classic path mislocates can still be read correctly. This is a real, plausible follow-up (a new research ticket re-benchmarking the full-list shape for VLM-Only Mode specifically) but was explicitly decided **not** to block this handoff — see wayfinder map #60's charting notes. The benchmark harness at branch `research/vlm-only-benchmark` (`tools/research/vlm_only_benchmark.py`) is reusable for that follow-up without rebuilding it from scratch.
