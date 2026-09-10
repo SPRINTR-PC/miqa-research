@@ -8,6 +8,13 @@ from MiqaResearch.data.serializers.charts.bar import (
     BarSeriesSchema,
 )
 from MiqaResearch.data.serializers.charts.base import ChartResponseSchema
+from MiqaResearch.data.serializers.charts.box import (
+    BoxChartConfigSchema,
+    BoxChartDataSchema,
+    BoxChartResponseSchema,
+    BoxEntrySchema,
+    BoxStatsSchema,
+)
 from MiqaResearch.data.serializers.charts.histogram import (
     HistogramBinsSchema,
     HistogramChartDataSchema,
@@ -465,3 +472,159 @@ def test_pie_chart_response_schema_json_schema_generation_does_not_error():
 
     assert "properties" in schema
     assert "groupings" in schema["properties"]
+
+
+def test_box_stats_schema_validates_optional_fields_default_to_none():
+    stats = BoxStatsSchema.model_validate({"q1": 1, "median": 2, "q3": 3})
+
+    assert stats.lower_fence is None
+    assert stats.upper_fence is None
+    assert stats.mean is None
+    assert stats.sd is None
+
+
+def test_box_entry_schema_requires_exactly_one_of_values_or_stats():
+    with pytest.raises(ValidationError):
+        BoxEntrySchema.model_validate({"name": "A"})
+
+
+def test_box_entry_schema_rejects_both_values_and_stats():
+    with pytest.raises(ValidationError):
+        BoxEntrySchema.model_validate(
+            {"name": "A", "values": [1, 2, 3], "stats": {"q1": 1, "median": 2, "q3": 3}}
+        )
+
+
+def test_box_entry_schema_accepts_raw_values_only():
+    entry = BoxEntrySchema.model_validate({"name": "A", "values": [1, 2, 3]})
+
+    assert entry.values == [1.0, 2.0, 3.0]
+    assert entry.stats is None
+
+
+def test_box_entry_schema_accepts_precomputed_stats_only():
+    entry = BoxEntrySchema.model_validate(
+        {"name": "A", "stats": {"q1": 1, "median": 2, "q3": 3, "lower_fence": 0, "upper_fence": 4}}
+    )
+
+    assert entry.values is None
+    assert entry.stats.q1 == 1.0
+    assert entry.stats.lower_fence == 0.0
+
+
+def test_box_chart_data_schema_supports_a_flat_list_of_named_boxes_with_raw_values():
+    data = BoxChartDataSchema.model_validate(
+        {
+            "boxes": [
+                {"name": "A", "values": [1, 2, 3]},
+                {"name": "B", "values": [4, 5]},
+            ]
+        }
+    )
+
+    assert len(data.boxes) == 2
+    assert data.boxes[0].name == "A"
+    assert data.boxes[0].group is None
+
+
+def test_box_chart_data_schema_supports_a_grouped_multi_dimension_case():
+    data = BoxChartDataSchema.model_validate(
+        {
+            "boxes": [
+                {"name": "Q1", "group": "Site A", "values": [1, 2]},
+                {"name": "Q1", "group": "Site B", "values": [3, 4]},
+            ]
+        }
+    )
+
+    assert data.boxes[0].group == "Site A"
+    assert data.boxes[1].group == "Site B"
+
+
+def test_box_chart_data_schema_supports_precomputed_stats():
+    data = BoxChartDataSchema.model_validate(
+        {
+            "boxes": [
+                {"name": "A", "stats": {"q1": 1, "median": 2, "q3": 3}},
+            ]
+        }
+    )
+
+    assert data.boxes[0].stats.median == 2.0
+    assert data.boxes[0].values is None
+
+
+def test_box_chart_config_schema_defaults_to_none():
+    payload = {
+        "config": {},
+        "groupings": [
+            {"name": "only", "label": "Only", "data": {"boxes": []}},
+        ],
+    }
+
+    parsed = BoxChartResponseSchema.model_validate(payload)
+
+    assert parsed.config.quartile_method is None
+    assert parsed.config.orientation is None
+
+
+def test_box_chart_config_schema_respects_quartile_method_and_orientation():
+    payload = {
+        "config": {"quartile_method": "inclusive", "orientation": "h"},
+        "groupings": [
+            {"name": "only", "label": "Only", "data": {"boxes": []}},
+        ],
+    }
+
+    parsed = BoxChartResponseSchema.model_validate(payload)
+
+    assert parsed.config.quartile_method == "inclusive"
+    assert parsed.config.orientation == "h"
+
+
+def test_box_chart_response_schema_config_is_optional():
+    payload = {
+        "groupings": [
+            {"name": "only", "label": "Only", "data": {"boxes": []}},
+        ],
+    }
+
+    parsed = BoxChartResponseSchema.model_validate(payload)
+
+    assert parsed.config is None
+
+
+def test_box_chart_response_schema_validates_full_payload_with_mixed_entries():
+    payload = {
+        "config": {"quartile_method": "exclusive", "orientation": "v"},
+        "groupings": [
+            {
+                "name": "by_site",
+                "label": "By Site",
+                "data": {
+                    "boxes": [
+                        {"name": "A", "group": "Site A", "values": [1, 2, 3]},
+                        {"name": "B", "group": "Site B", "stats": {"q1": 1, "median": 2, "q3": 3}},
+                    ]
+                },
+            }
+        ],
+    }
+
+    parsed = BoxChartResponseSchema.model_validate(payload)
+
+    assert parsed.config.quartile_method == "exclusive"
+    assert parsed.groupings[0].data.boxes[0].values == [1.0, 2.0, 3.0]
+    assert parsed.groupings[0].data.boxes[1].stats.median == 2.0
+
+
+def test_box_chart_response_schema_json_schema_generation_does_not_error():
+    schema = BoxChartResponseSchema.model_json_schema()
+
+    assert "properties" in schema
+    assert "groupings" in schema["properties"]
+
+
+def test_box_chart_config_schema_rejects_invalid_quartile_method():
+    with pytest.raises(ValidationError):
+        BoxChartConfigSchema.model_validate({"quartile_method": "median"})
