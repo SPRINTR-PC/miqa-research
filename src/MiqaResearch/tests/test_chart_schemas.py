@@ -1,4 +1,6 @@
+import pytest
 from ninja import Schema
+from pydantic import ValidationError
 
 from MiqaResearch.data.serializers.charts.bar import (
     BarChartDataSchema,
@@ -11,6 +13,11 @@ from MiqaResearch.data.serializers.charts.histogram import (
     HistogramChartDataSchema,
     HistogramChartResponseSchema,
     HistogramSeriesSchema,
+)
+from MiqaResearch.data.serializers.charts.pie import (
+    PieChartConfigSchema,
+    PieChartDataSchema,
+    PieChartResponseSchema,
 )
 from MiqaResearch.data.serializers.charts.xy import (
     LineChartResponseSchema,
@@ -345,6 +352,116 @@ def test_histogram_chart_response_schema_supports_both_orientations():
 
 def test_histogram_chart_response_schema_json_schema_generation_does_not_error():
     schema = HistogramChartResponseSchema.model_json_schema()
+
+    assert "properties" in schema
+    assert "groupings" in schema["properties"]
+
+
+def test_pie_chart_data_schema_is_flat_with_no_series_wrapper():
+    data = PieChartDataSchema.model_validate({"labels": ["A", "B", "C"], "values": [4, 9, 2]})
+
+    assert data.labels == ["A", "B", "C"]
+    assert data.values == [4.0, 9.0, 2.0]
+
+
+def test_pie_chart_config_schema_defaults_to_none():
+    payload = {
+        "config": {},
+        "groupings": [
+            {"name": "only", "label": "Only", "data": {"labels": [], "values": []}},
+        ],
+    }
+
+    parsed = PieChartResponseSchema.model_validate(payload)
+
+    assert parsed.config.hole is None
+    assert parsed.config.sort is None
+    assert parsed.config.textinfo is None
+
+
+def test_pie_chart_config_schema_accepts_hole_within_bounds():
+    payload = {
+        "config": {"hole": 0.6},
+        "groupings": [
+            {"name": "only", "label": "Only", "data": {"labels": [], "values": []}},
+        ],
+    }
+
+    parsed = PieChartResponseSchema.model_validate(payload)
+
+    assert parsed.config.hole == 0.6
+
+
+@pytest.mark.parametrize("hole", [-0.1, 1.1])
+def test_pie_chart_config_schema_rejects_hole_outside_0_to_1(hole):
+    with pytest.raises(ValidationError):
+        PieChartConfigSchema.model_validate({"hole": hole})
+
+
+def test_pie_chart_config_schema_respects_sort_and_textinfo():
+    payload = {
+        "config": {"sort": False, "textinfo": "value+percent"},
+        "groupings": [
+            {"name": "only", "label": "Only", "data": {"labels": [], "values": []}},
+        ],
+    }
+
+    parsed = PieChartResponseSchema.model_validate(payload)
+
+    assert parsed.config.sort is False
+    assert parsed.config.textinfo == "value+percent"
+
+
+def test_pie_chart_response_schema_validates_plain_pie_payload():
+    payload = {
+        "groupings": [
+            {
+                "name": "by_site",
+                "label": "By Site",
+                "data": {"labels": ["A", "B"], "values": [4, 9]},
+            }
+        ],
+    }
+
+    parsed = PieChartResponseSchema.model_validate(payload)
+
+    assert parsed.config is None
+    assert parsed.groupings[0].data.labels == ["A", "B"]
+
+
+def test_pie_chart_response_schema_validates_donut_payload():
+    payload = {
+        "config": {"hole": 0.5, "sort": False, "textinfo": "label"},
+        "groupings": [
+            {
+                "name": "by_site",
+                "label": "By Site",
+                "data": {"labels": ["A", "B"], "values": [4, 9]},
+            }
+        ],
+    }
+
+    parsed = PieChartResponseSchema.model_validate(payload)
+
+    assert parsed.config.hole == 0.5
+    assert parsed.config.sort is False
+    assert parsed.config.textinfo == "label"
+
+
+def test_pie_chart_response_schema_config_is_optional():
+    payload = {
+        "groupings": [
+            {"name": "only", "label": "Only", "data": {"labels": [], "values": []}},
+        ],
+    }
+
+    parsed = PieChartResponseSchema.model_validate(payload)
+
+    assert parsed.config is None
+
+
+def test_pie_chart_response_schema_json_schema_generation_does_not_error():
+    schema = PieChartResponseSchema.model_json_schema()
 
     assert "properties" in schema
     assert "groupings" in schema["properties"]
