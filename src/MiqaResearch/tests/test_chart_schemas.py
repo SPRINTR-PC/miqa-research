@@ -1,5 +1,10 @@
 from ninja import Schema
 
+from MiqaResearch.data.serializers.charts.bar import (
+    BarChartDataSchema,
+    BarChartResponseSchema,
+    BarSeriesSchema,
+)
 from MiqaResearch.data.serializers.charts.base import ChartResponseSchema
 from MiqaResearch.data.serializers.charts.xy import (
     LineChartResponseSchema,
@@ -108,3 +113,93 @@ def test_xy_chart_data_schema_x_accepts_mixed_json_scalars():
     )
 
     assert data.series[0].x == ["2024-01-01", "2024-01-02"]
+
+
+def test_bar_series_schema_validates_values():
+    series = BarSeriesSchema.model_validate({"name": "Site A", "values": [1, 2, 3]})
+
+    assert series.name == "Site A"
+    assert series.values == [1.0, 2.0, 3.0]
+
+
+def test_bar_chart_data_schema_supports_single_series():
+    data = BarChartDataSchema.model_validate(
+        {"categories": ["A", "B"], "series": [{"name": "Consents", "values": [4, 9]}]}
+    )
+
+    assert data.categories == ["A", "B"]
+    assert len(data.series) == 1
+
+
+def test_bar_chart_data_schema_supports_multiple_series():
+    data = BarChartDataSchema.model_validate(
+        {
+            "categories": ["A", "B"],
+            "series": [
+                {"name": "Site A", "values": [1, 2]},
+                {"name": "Site B", "values": [3, 4]},
+            ],
+        }
+    )
+
+    assert len(data.series) == 2
+    assert data.series[1].name == "Site B"
+
+
+def test_bar_chart_response_schema_validates_full_payload():
+    payload = {
+        "config": {"bar_mode": "stack", "orientation": "h"},
+        "groupings": [
+            {
+                "name": "by_site",
+                "label": "By Site",
+                "data": {
+                    "categories": ["A", "B"],
+                    "series": [{"name": "Site A", "values": [1, 2]}],
+                },
+            }
+        ],
+    }
+
+    parsed = BarChartResponseSchema.model_validate(payload)
+
+    assert parsed.config.bar_mode == "stack"
+    assert parsed.config.orientation == "h"
+    assert parsed.groupings[0].data.categories == ["A", "B"]
+
+
+def test_bar_chart_response_schema_config_is_optional():
+    payload = {
+        "groupings": [
+            {"name": "only", "label": "Only", "data": {"categories": [], "series": []}},
+        ],
+    }
+
+    parsed = BarChartResponseSchema.model_validate(payload)
+
+    assert parsed.config is None
+
+
+def test_bar_chart_config_schema_bar_mode_and_orientation_default_to_none():
+    payload = {
+        "groupings": [
+            {
+                "name": "only",
+                "label": "Only",
+                "data": {"categories": ["A"], "series": [{"name": "S", "values": [1]}]},
+            }
+        ],
+        "config": {},
+    }
+
+    parsed = BarChartResponseSchema.model_validate(payload)
+
+    assert parsed.config.bar_mode is None
+    assert parsed.config.orientation is None
+
+
+def test_bar_chart_response_schema_json_schema_generation_does_not_error():
+    schema = BarChartResponseSchema.model_json_schema()
+
+    assert "properties" in schema
+    assert "groupings" in schema["properties"]
