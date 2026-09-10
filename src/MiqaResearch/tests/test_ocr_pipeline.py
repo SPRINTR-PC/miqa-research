@@ -10,7 +10,7 @@ from kpforms.models import FormSubmission
 
 from MiqaResearch.data.management.commands.import_prom_form_template import DEFAULT_TEMPLATE_NAME
 from MiqaResearch.data.models import ParsedPromForm, PromData, PromFormTemplate, ResearchProject
-from MiqaResearch.tasks.ocr import run_ocr_on_prom_data, vlm_fallback
+from MiqaResearch.tasks.ocr import mark_detection, run_ocr_on_prom_data, vlm_fallback
 
 User = get_user_model()
 
@@ -79,6 +79,31 @@ def test_a_soft_time_limit_mid_escalation_still_saves_a_parsed_prom_form(prom_da
     assert len(parsed.extraction_flags) == 37
     assert all(flag["source"] in ("classic", "vlm", "failed") for flag in parsed.extraction_flags.values())
     assert all(entry["value"] is not None for entry in parsed.data["data"])
+
+
+@pytest.mark.django_db
+def test_vlm_only_mode_skips_mark_detection_and_stores_a_valid_parsed_prom_form(prom_data, monkeypatch, settings):
+    # #67, docs/prom-ocr-handoff.md §10.2 -- VLM-Only Mode skips mark_detection
+    # entirely and forces every field to escalate. Real field_matching runs for
+    # real here; mark_detection is asserted un-called rather than mocked-and-discarded,
+    # and _call_ollama (not run_vlm_fallback) is mocked so should_escalate's mode
+    # branch actually drives real escalation-gated batching.
+    settings.OCR_MODE = "vlm_only"
+
+    def unexpected_call(*args, **kwargs):
+        raise AssertionError("mark_detection.detect_marks must not be called in VLM-Only Mode")
+
+    monkeypatch.setattr(mark_detection, "detect_marks", unexpected_call)
+    monkeypatch.setattr(vlm_fallback, "_call_ollama", lambda *args, **kwargs: {"data": []})
+
+    run_ocr_on_prom_data(prom_data.id)
+
+    parsed = ParsedPromForm.objects.get(prom_file=prom_data)
+    assert isinstance(parsed.data["data"], list)
+    assert len(parsed.extraction_flags) == 37
+    # Every field was escalated (attempted VLM), even mark-type fields that
+    # Hybrid Mode's own mark_detection would otherwise have resolved classically.
+    assert all("vlm" in flag["attempted"] for flag in parsed.extraction_flags.values())
 
 
 @pytest.mark.django_db
