@@ -4,13 +4,15 @@ Destination artifact for wayfinder map #70 ("Charting web components (Plotly.js)
 
 Domain terms used throughout (**Chart Grouping**, **Chart Config**, **Chart Data**, **WebGL Threshold**, **Chart Event Callback**, **Chart Palette**, **Chart Grid**) are defined in `CONTEXT.md`, along with ADRs 0020–0023 recording the cross-cutting decisions summarized here.
 
-Lives in `.dev-data/webcomponents` (Lit + TS + Vite; `plotly.js` `^4.1.0` already a dependency, entry point `src/mireswc-charts.ts`, source under `src/charts/`) and `MiqaResearch/data/serializers/charts/` (DRF).
+Lives in `.dev-data/webcomponents` (Lit + TS + Vite; `plotly.js` `^4.1.0` already a dependency, entry point `src/mireswc-charts.ts`, source under `src/charts/`) and `MiqaResearch/data/serializers/charts/` (django-ninja `Schema`, matching the existing convention already used by `MiqaResearch/data/serializers/participant_consent.py`).
 
-**Out of scope** (ruled out on the map, not deferred): dashboard pages/views that consume these components, chart export/download, real-time/streaming chart updates (`dataUrl` is fetch-once-per-Grouping-change only), migrating any existing table/UI to use these charts, and a demo DRF view/URL route for manual testing (this spec covers serializer *classes*, not routing for a specific real dataset).
+**Out of scope** (ruled out on the map, not deferred): dashboard pages/views that consume these components, chart export/download, real-time/streaming chart updates (`dataUrl` is fetch-once-per-Grouping-change only), migrating any existing table/UI to use these charts, and a demo API view/URL route for manual testing (this spec covers Schema *classes*, not routing for a specific real dataset).
+
+**Correction to the map's original design** (found while writing this spec, before any code existed — see `CONTEXT.md` ADR 0020's amendment): the wayfinder map's grilling sessions assumed Django REST Framework (`serializers.Serializer`) for the Python side and a camelCase-rendering mixin at the wire boundary. Neither matches this codebase: every existing serializer module (`participant_consent.py`) already uses django-ninja's `Schema` (Pydantic-based), and no endpoint anywhere renders camelCase — wire format is plain snake_case JSON throughout the app. Both are corrected below; the TS-side interfaces and the overall architecture (§1, §3–§6, §8) are unaffected, since neither correction touches anything except the Python schema classes and where the snake↔camel conversion happens.
 
 ## 1. Architecture
 
-**N independent Lit custom elements, one per chart type**, sharing an abstract base class — matches this package's existing one-element-per-concept style (`miqa-monitor`, `miqa-monitor-table`, `miqa-monitor-filter` are all separate elements already). A `<mires-chart-bar>` tag is self-documenting in markup in a way a single `<mires-chart type="bar">` element wouldn't be. Python mirrors this: a shared base serializer/mixin, one concrete serializer per chart type.
+**N independent Lit custom elements, one per chart type**, sharing an abstract base class — matches this package's existing one-element-per-concept style (`miqa-monitor`, `miqa-monitor-table`, `miqa-monitor-filter` are all separate elements already). A `<mires-chart-bar>` tag is self-documenting in markup in a way a single `<mires-chart type="bar">` element wouldn't be. Python mirrors this: a shared generic base `Schema` hierarchy (§2), one concrete `Schema` per chart type.
 
 | Element | Chart type(s) | Contract | Ticket |
 |---|---|---|---|
@@ -27,7 +29,7 @@ Lives in `.dev-data/webcomponents` (Lit + TS + Vite; `plotly.js` `^4.1.0` alread
 | `<mires-chart-sankey>` | Sankey | §7.8 | #84 |
 | `<mires-chart-grid>` | Mixed-type subplots of any of the above | §8 | #75 |
 
-Wire format is **camelCase end-to-end** — Python serializer fields stay idiomatic snake_case; a shared camelCase-rendering mixin (e.g. `djangorestframework-camel-case`, confirmed available during implementation) converts only at the wire boundary. Aggregation is **raw-values-by-default** — serializers send raw per-record values and let plotly.js bin/aggregate client-side (histogram, box, 2D density); server-side pre-aggregation is a documented opt-in escape hatch per type, never the default.
+Wire format is **plain snake_case JSON**, matching every other django-ninja endpoint in this codebase — no per-component rendering mixin, no new Pydantic aliasing convention introduced just for charts. `MiresChartBase` does one small snake_case→camelCase key conversion when it parses a fetched response (§3), so TS-side interfaces and property names stay camelCase internally without the wire format needing to be. Aggregation is **raw-values-by-default** — serializers send raw per-record values and let plotly.js bin/aggregate client-side (histogram, box, 2D density); server-side pre-aggregation is a documented opt-in escape hatch per type, never the default.
 
 ## 2. API contract: envelope, Chart Config vs. Chart Data (#74, ADR 0020)
 
@@ -62,42 +64,49 @@ interface ChartConfig {
 }
 ```
 
-### Python base serializers (`MiqaResearch/data/serializers/charts/base.py`)
+### Python base schemas (`MiqaResearch/data/serializers/charts/base.py`)
+
+django-ninja `Schema` is a Pydantic model, which gives the base/per-type relationship a cleaner mechanism than DRF's 3-class-per-type subclassing would have needed: **Pydantic generics**. A concrete chart type only has to define its own `<Type>ChartDataSchema` and parametrize the shared generics — no per-type Grouping/Response subclass boilerplate.
 
 ```python
-from rest_framework import serializers
+from typing import Generic, Literal, TypeVar
+from ninja import Schema
 
-class ChartEventCallbacksSerializer(serializers.Serializer):
-    click = serializers.CharField(required=False, allow_null=True)
-    zoom = serializers.CharField(required=False, allow_null=True)
+TData = TypeVar("TData")
 
-class ChartConfigSerializer(serializers.Serializer):
-    webgl_threshold = serializers.IntegerField(required=False)
-    force_renderer = serializers.ChoiceField(choices=["svg", "webgl", "auto"], required=False)
-    event_callbacks = ChartEventCallbacksSerializer(required=False)
-    subplot = serializers.DictField(required=False)  # only meaningful on the Chart Grid response — §8
+class ChartEventCallbacksSchema(Schema):
+    click: str | None = None
+    zoom: str | None = None
 
-class ChartGroupingLabelsSerializer(serializers.Serializer):
-    x_axis_title = serializers.CharField(required=False)
-    y_axis_title = serializers.CharField(required=False)
-    legend_title = serializers.CharField(required=False)
+class ChartConfigSchema(Schema):
+    webgl_threshold: int | None = None
+    force_renderer: Literal["svg", "webgl", "auto"] | None = None
+    event_callbacks: ChartEventCallbacksSchema | None = None
+    subplot: dict | None = None  # only meaningful on the Chart Grid response — §8
 
-class ChartGroupingSerializer(serializers.Serializer):
-    """Base for one Chart Grouping. Concrete chart-type serializers subclass this and override `data`."""
-    name = serializers.CharField()
-    label = serializers.CharField()
-    labels = ChartGroupingLabelsSerializer(required=False)
-    data = serializers.DictField()  # overridden per concrete chart type
+class ChartGroupingLabelsSchema(Schema):
+    x_axis_title: str | None = None
+    y_axis_title: str | None = None
+    legend_title: str | None = None
 
-class ChartResponseSerializer(serializers.Serializer):
-    """Base for a chart dataUrl endpoint's response. Concrete chart-type serializers subclass this and override `groupings`."""
-    config = ChartConfigSerializer(required=False)
-    groupings = ChartGroupingSerializer(many=True)
+class ChartGroupingSchema(Schema, Generic[TData]):
+    """Base for one Chart Grouping. Concrete chart-type response types parametrize this with their own Data schema."""
+    name: str
+    label: str
+    labels: ChartGroupingLabelsSchema | None = None
+    data: TData
+
+class ChartResponseSchema(Schema, Generic[TData]):
+    """Base for a chart dataUrl endpoint's response. Concrete chart-type response types parametrize this with their own Data schema."""
+    config: ChartConfigSchema | None = None
+    groupings: list[ChartGroupingSchema[TData]]
 ```
 
-Every concrete chart-type serializer follows the same subclassing pattern (shown fully per type in §7): a `<Type>ChartDataSerializer`, a `<Type>ChartGroupingSerializer(ChartGroupingSerializer)` overriding `data`, and a `<Type>ChartResponseSerializer(ChartResponseSerializer)` overriding `groupings` (and `config`, where the type has its own Config fields).
+A concrete chart type (shown fully per type in §7) needs only its own `<Type>ChartDataSchema`, then either `<Type>ChartResponseSchema = ChartResponseSchema[<Type>ChartDataSchema]` (a plain type alias, for types with no Config fields of their own) or a small subclass overriding `config` with a `<Type>ChartConfigSchema(ChartConfigSchema)` (for types that need their own Config fields, e.g. bar's `bar_mode`).
 
-Apply the shared camelCase-rendering mixin to every chart view/serializer so the wire format matches the TS interfaces above exactly, with no per-component transform code.
+No camelCase rendering step — schemas render as plain snake_case JSON like every other ninja endpoint (see the wire-format correction in §1); `MiresChartBase` (§3) converts snake_case keys to camelCase once when it parses the fetched response.
+
+**Open item, flagged not resolved here**: confirm django-ninja correctly resolves a parametrized generic `Schema` (e.g. `ChartResponseSchema[BarChartDataSchema]`) when used as a route's `response=` type — this pattern is valid Pydantic and should work since ninja's response serialization is Pydantic-based, but isn't exercised anywhere else in this codebase today, so verify it during implementation before relying on it across all 11 types.
 
 ## 3. Shared base class: `MiresChartBase` (#76)
 
@@ -138,7 +147,7 @@ export abstract class MiresChartBase<TData = unknown> extends LitElement {
   disconnectedCallback() { /* tear all of the above down */ }
   updated(changed: PropertyValues) { if (changed.has('dataUrl')) this.fetchData(); }
 
-  private async fetchData() { /* fetch → parsed ChartResponse (already camelCase, per §2) → renderPlot() */ }
+  private async fetchData() { /* fetch → JSON.parse → snakeToCamelDeep() (wire format is snake_case, per §2) → ChartResponse → renderPlot() */ }
   private onGroupingChange(i: number) { this.selectedGroupingIndex = i; this.renderPlot(); } // no refetch
 
   private resolvedWebglThreshold() { return this.webglThreshold ?? this.response?.config?.webglThreshold ?? 100; }
@@ -333,26 +342,25 @@ export abstract class XYChartBase extends MiresChartBase<XYChartData> {
 
 WebGL: all 4 route through `scattergl` above threshold — confirmed no exception (§5).
 
-Serializers — one shared Data serializer, 4 thin response wrappers:
+Schemas — one shared Data schema, 4 thin response aliases:
 
 ```python
-class XYSeriesSerializer(serializers.Serializer):
-    name = serializers.CharField()
-    x = serializers.ListField(child=serializers.JSONField())
-    y = serializers.ListField(child=serializers.FloatField())
-    size = serializers.ListField(child=serializers.FloatField(), required=False)
-    fill = serializers.ChoiceField(choices=["none", "tozeroy", "tonexty"], required=False)
+class XYSeriesSchema(Schema):
+    name: str
+    x: list[int | float | str]
+    y: list[float]
+    size: list[float] | None = None
+    fill: Literal["none", "tozeroy", "tonexty"] | None = None
 
-class XYChartDataSerializer(serializers.Serializer):
-    series = XYSeriesSerializer(many=True)
+class XYChartDataSchema(Schema):
+    series: list[XYSeriesSchema]
 
-class LineChartGroupingSerializer(ChartGroupingSerializer):
-    data = XYChartDataSerializer()
-class LineChartResponseSerializer(ChartResponseSerializer):
-    groupings = LineChartGroupingSerializer(many=True)
-# ScatterChartResponseSerializer / BubbleChartResponseSerializer / FilledAreaChartResponseSerializer:
-# identical shape, reusing XYChartDataSerializer/XYSeriesSerializer — 4 distinct classes for symmetry
-# with the 4 distinct Lit elements, not because the underlying shape differs.
+LineChartResponseSchema = ChartResponseSchema[XYChartDataSchema]
+ScatterChartResponseSchema = ChartResponseSchema[XYChartDataSchema]
+BubbleChartResponseSchema = ChartResponseSchema[XYChartDataSchema]
+FilledAreaChartResponseSchema = ChartResponseSchema[XYChartDataSchema]
+# 4 distinct aliases over the same XYChartDataSchema — for symmetry with the 4 distinct Lit
+# elements and 4 distinct routes, not because the underlying shape differs.
 ```
 
 ### 7.2 Bar (#78)
@@ -385,23 +393,20 @@ class MiresChartBar extends MiresChartBase<BarChartData> {
 WebGL: no-op (no gl variant for bar).
 
 ```python
-class BarSeriesSerializer(serializers.Serializer):
-    name = serializers.CharField()
-    values = serializers.ListField(child=serializers.FloatField())
-class BarChartDataSerializer(serializers.Serializer):
-    categories = serializers.ListField(child=serializers.CharField())
-    series = BarSeriesSerializer(many=True)
-class BarChartConfigSerializer(ChartConfigSerializer):
-    bar_mode = serializers.ChoiceField(choices=["group", "stack"], required=False)
-    orientation = serializers.ChoiceField(choices=["v", "h"], required=False)
-class BarChartGroupingSerializer(ChartGroupingSerializer):
-    data = BarChartDataSerializer()
-class BarChartResponseSerializer(ChartResponseSerializer):
-    config = BarChartConfigSerializer(required=False)
-    groupings = BarChartGroupingSerializer(many=True)
+class BarSeriesSchema(Schema):
+    name: str
+    values: list[float]
+class BarChartDataSchema(Schema):
+    categories: list[str]
+    series: list[BarSeriesSchema]
+class BarChartConfigSchema(ChartConfigSchema):
+    bar_mode: Literal["group", "stack"] | None = None
+    orientation: Literal["v", "h"] | None = None
+class BarChartResponseSchema(ChartResponseSchema[BarChartDataSchema]):
+    config: BarChartConfigSchema | None = None
 ```
 
-(This ticket established the per-type `ChartConfigSerializer` subclass pattern every later type follows.)
+(This ticket established the per-type `ChartConfigSchema` subclass pattern every later type follows — a type with its own Config fields overrides `config` on top of `ChartResponseSchema[<Type>ChartDataSchema]`.)
 
 ### 7.3 Histogram (#79)
 
@@ -435,24 +440,23 @@ export function buildHistogramTraces(data: HistogramChartData, config?: Histogra
 WebGL: no-op. Raw per-record values, no server pre-aggregation (no exception to §1's default).
 
 ```python
-class HistogramBinsSerializer(serializers.Serializer):
-    nbinsx = serializers.IntegerField(required=False)
-    start = serializers.FloatField(required=False); end = serializers.FloatField(required=False); size = serializers.FloatField(required=False)
-class HistogramSeriesSerializer(serializers.Serializer):
-    name = serializers.CharField()
-    values = serializers.ListField(child=serializers.FloatField())
-    bins = HistogramBinsSerializer(required=False)
-class HistogramChartDataSerializer(serializers.Serializer):
-    series = HistogramSeriesSerializer(many=True)
-class HistogramChartConfigSerializer(ChartConfigSerializer):
-    histogram_bins = HistogramBinsSerializer(required=False)
-    orientation = serializers.ChoiceField(choices=["v", "h"], required=False)
-    histnorm = serializers.ChoiceField(choices=["", "percent", "probability", "density", "probability density"], required=False)
-class HistogramChartGroupingSerializer(ChartGroupingSerializer):
-    data = HistogramChartDataSerializer()
-class HistogramChartResponseSerializer(ChartResponseSerializer):
-    config = HistogramChartConfigSerializer(required=False)
-    groupings = HistogramChartGroupingSerializer(many=True)
+class HistogramBinsSchema(Schema):
+    nbinsx: int | None = None
+    start: float | None = None
+    end: float | None = None
+    size: float | None = None
+class HistogramSeriesSchema(Schema):
+    name: str
+    values: list[float]
+    bins: HistogramBinsSchema | None = None
+class HistogramChartDataSchema(Schema):
+    series: list[HistogramSeriesSchema]
+class HistogramChartConfigSchema(ChartConfigSchema):
+    histogram_bins: HistogramBinsSchema | None = None
+    orientation: Literal["v", "h"] | None = None
+    histnorm: Literal["", "percent", "probability", "density", "probability density"] | None = None
+class HistogramChartResponseSchema(ChartResponseSchema[HistogramChartDataSchema]):
+    config: HistogramChartConfigSchema | None = None
 ```
 
 ### 7.4 Pie / donut (#80)
@@ -478,18 +482,17 @@ export function buildPieTraces(data: PieChartData, config?: PieChartConfig): Par
 WebGL: no-op. Slice colors come from the categorical colorway (one per label, in order) — no per-slice override.
 
 ```python
-class PieChartDataSerializer(serializers.Serializer):
-    labels = serializers.ListField(child=serializers.CharField())
-    values = serializers.ListField(child=serializers.FloatField())
-class PieChartConfigSerializer(ChartConfigSerializer):
-    hole = serializers.FloatField(required=False, min_value=0, max_value=1)
-    sort = serializers.BooleanField(required=False)
-    textinfo = serializers.ChoiceField(choices=["label", "value", "percent", "label+percent", "label+value", "value+percent", "label+value+percent", "none"], required=False)
-class PieChartGroupingSerializer(ChartGroupingSerializer):
-    data = PieChartDataSerializer()
-class PieChartResponseSerializer(ChartResponseSerializer):
-    config = PieChartConfigSerializer(required=False)
-    groupings = PieChartGroupingSerializer(many=True)
+from pydantic import Field
+
+class PieChartDataSchema(Schema):
+    labels: list[str]
+    values: list[float]
+class PieChartConfigSchema(ChartConfigSchema):
+    hole: float | None = Field(default=None, ge=0, le=1)  # 0 (default) = plain pie; 0.4-0.7 = donut
+    sort: bool | None = None
+    textinfo: Literal["label", "value", "percent", "label+percent", "label+value", "value+percent", "label+value+percent", "none"] | None = None
+class PieChartResponseSchema(ChartResponseSchema[PieChartDataSchema]):
+    config: PieChartConfigSchema | None = None
 ```
 
 ### 7.5 Box plot (#81)
@@ -527,29 +530,34 @@ export function buildBoxTraces(data: BoxChartData, config?: BoxChartConfig): Par
 Mixing precomputed and raw boxes *within the same group* isn't supported cleanly by plotly's trace model — all boxes in a group should consistently use one or the other. WebGL: no-op.
 
 ```python
-class BoxStatsSerializer(serializers.Serializer):
-    q1 = serializers.FloatField(); median = serializers.FloatField(); q3 = serializers.FloatField()
-    lower_fence = serializers.FloatField(required=False); upper_fence = serializers.FloatField(required=False)
-    mean = serializers.FloatField(required=False); sd = serializers.FloatField(required=False)
-class BoxEntrySerializer(serializers.Serializer):
-    name = serializers.CharField()
-    group = serializers.CharField(required=False, allow_null=True)
-    values = serializers.ListField(child=serializers.FloatField(), required=False)
-    stats = BoxStatsSerializer(required=False)
-    def validate(self, attrs):
-        if bool(attrs.get("values")) == bool(attrs.get("stats")):
-            raise serializers.ValidationError("Exactly one of `values` or `stats` is required.")
-        return attrs
-class BoxChartDataSerializer(serializers.Serializer):
-    boxes = BoxEntrySerializer(many=True)
-class BoxChartConfigSerializer(ChartConfigSerializer):
-    quartile_method = serializers.ChoiceField(choices=["linear", "exclusive", "inclusive"], required=False)
-    orientation = serializers.ChoiceField(choices=["v", "h"], required=False)
-class BoxChartGroupingSerializer(ChartGroupingSerializer):
-    data = BoxChartDataSerializer()
-class BoxChartResponseSerializer(ChartResponseSerializer):
-    config = BoxChartConfigSerializer(required=False)
-    groupings = BoxChartGroupingSerializer(many=True)
+from pydantic import model_validator
+
+class BoxStatsSchema(Schema):
+    q1: float
+    median: float
+    q3: float
+    lower_fence: float | None = None
+    upper_fence: float | None = None
+    mean: float | None = None
+    sd: float | None = None
+class BoxEntrySchema(Schema):
+    name: str
+    group: str | None = None
+    values: list[float] | None = None
+    stats: BoxStatsSchema | None = None
+
+    @model_validator(mode="after")
+    def exactly_one_of_values_or_stats(self):
+        if bool(self.values) == bool(self.stats):
+            raise ValueError("Exactly one of `values` or `stats` is required.")
+        return self
+class BoxChartDataSchema(Schema):
+    boxes: list[BoxEntrySchema]
+class BoxChartConfigSchema(ChartConfigSchema):
+    quartile_method: Literal["linear", "exclusive", "inclusive"] | None = None
+    orientation: Literal["v", "h"] | None = None
+class BoxChartResponseSchema(ChartResponseSchema[BoxChartDataSchema]):
+    config: BoxChartConfigSchema | None = None
 ```
 
 ### 7.6 Heatmap (#82)
@@ -572,18 +580,15 @@ export function buildHeatmapTraces(data: HeatmapChartData, config: HeatmapChartC
 Cell text/annotations are left out of scope — hover tooltips (plotly.js default) already surface exact values, and in-cell text on a large matrix gets unreadable fast. Payload size for large matrices is documented advisory guidance for API authors, not a server-side downsampling mechanism (unlike histogram/box, a heatmap's `z` is inherently already a chosen resolution — there's no raw-records layer underneath to aggregate). WebGL: no-op (`heatmapgl` removed in plotly.js v3.0.0).
 
 ```python
-class HeatmapChartDataSerializer(serializers.Serializer):
-    z = serializers.ListField(child=serializers.ListField(child=serializers.FloatField()))
-    x = serializers.ListField(child=serializers.JSONField(), required=False)
-    y = serializers.ListField(child=serializers.JSONField(), required=False)
-class HeatmapChartConfigSerializer(ChartConfigSerializer):
-    color_scale = serializers.ChoiceField(choices=["sequential", "diverging"], required=False)
-    z_mid = serializers.FloatField(required=False)
-class HeatmapChartGroupingSerializer(ChartGroupingSerializer):
-    data = HeatmapChartDataSerializer()
-class HeatmapChartResponseSerializer(ChartResponseSerializer):
-    config = HeatmapChartConfigSerializer(required=False)
-    groupings = HeatmapChartGroupingSerializer(many=True)
+class HeatmapChartDataSchema(Schema):
+    z: list[list[float]]
+    x: list[int | float | str] | None = None
+    y: list[int | float | str] | None = None
+class HeatmapChartConfigSchema(ChartConfigSchema):
+    color_scale: Literal["sequential", "diverging"] | None = None
+    z_mid: float | None = None
+class HeatmapChartResponseSchema(ChartResponseSchema[HeatmapChartDataSchema]):
+    config: HeatmapChartConfigSchema | None = None
 ```
 
 ### 7.7 2D density (#83)
@@ -610,24 +615,23 @@ export function buildDensity2DTraces(data: Density2DChartData, config?: Density2
 Colorscale is **sequential only** — unlike heatmap, density has no natural polarity concept (always a magnitude/count). Boundary with heatmap: heatmap takes a pre-binned `z` matrix (server already decided bins); density takes raw scattered points and lets plotly.js bin them, consistent with raw-values-by-default. WebGL: no-op for either `histogram2d` or `histogram2dcontour`.
 
 ```python
-class Density2DBinsSerializer(serializers.Serializer):
-    nbinsx = serializers.IntegerField(required=False); nbinsy = serializers.IntegerField(required=False)
-    xbins = serializers.DictField(required=False); ybins = serializers.DictField(required=False)
-class Density2DSeriesSerializer(serializers.Serializer):
-    name = serializers.CharField()
-    x = serializers.ListField(child=serializers.FloatField())
-    y = serializers.ListField(child=serializers.FloatField())
-    bins = Density2DBinsSerializer(required=False)
-class Density2DChartDataSerializer(serializers.Serializer):
-    series = Density2DSeriesSerializer(many=True)
-class Density2DChartConfigSerializer(ChartConfigSerializer):
-    style = serializers.ChoiceField(choices=["heatmap", "contour"], required=False)
-    density_bins = Density2DBinsSerializer(required=False)
-class Density2DChartGroupingSerializer(ChartGroupingSerializer):
-    data = Density2DChartDataSerializer()
-class Density2DChartResponseSerializer(ChartResponseSerializer):
-    config = Density2DChartConfigSerializer(required=False)
-    groupings = Density2DChartGroupingSerializer(many=True)
+class Density2DBinsSchema(Schema):
+    nbinsx: int | None = None
+    nbinsy: int | None = None
+    xbins: dict | None = None
+    ybins: dict | None = None
+class Density2DSeriesSchema(Schema):
+    name: str
+    x: list[float]
+    y: list[float]
+    bins: Density2DBinsSchema | None = None
+class Density2DChartDataSchema(Schema):
+    series: list[Density2DSeriesSchema]
+class Density2DChartConfigSchema(ChartConfigSchema):
+    style: Literal["heatmap", "contour"] | None = None
+    density_bins: Density2DBinsSchema | None = None
+class Density2DChartResponseSchema(ChartResponseSchema[Density2DChartDataSchema]):
+    config: Density2DChartConfigSchema | None = None
 ```
 
 ### 7.8 Sankey (#84)
@@ -658,23 +662,22 @@ export function buildSankeyTraces(data: SankeyChartData, config: SankeyChartConf
 (`withAlpha` is a small color-utility helper applying opacity to a resolved color string.) **Sankey is the one documented exception** to the "no per-item color override" policy (§4/§7.1) — its node count is open-ended, so per-node identity was never the "small fixed set of series" case that policy protects. Config/Data split fits without amendment (Config was always "layout/behavior fixed across the response," never literally axis-only). No gl variant exists at all for Sankey — not even routed through `maybeUpgradeTraceType`.
 
 ```python
-class SankeyNodeSerializer(serializers.Serializer):
-    label = serializers.CharField()
-    color = serializers.CharField(required=False, allow_null=True)
-class SankeyLinkSerializer(serializers.Serializer):
-    source = serializers.IntegerField(); target = serializers.IntegerField(); value = serializers.FloatField()
-    color = serializers.CharField(required=False, allow_null=True)
-class SankeyChartDataSerializer(serializers.Serializer):
-    nodes = SankeyNodeSerializer(many=True)
-    links = SankeyLinkSerializer(many=True)
-class SankeyChartConfigSerializer(ChartConfigSerializer):
-    orientation = serializers.ChoiceField(choices=["h", "v"], required=False)
-    arrangement = serializers.ChoiceField(choices=["snap", "perpendicular", "freeform", "fixed"], required=False)
-class SankeyChartGroupingSerializer(ChartGroupingSerializer):
-    data = SankeyChartDataSerializer()
-class SankeyChartResponseSerializer(ChartResponseSerializer):
-    config = SankeyChartConfigSerializer(required=False)
-    groupings = SankeyChartGroupingSerializer(many=True)
+class SankeyNodeSchema(Schema):
+    label: str
+    color: str | None = None
+class SankeyLinkSchema(Schema):
+    source: int
+    target: int
+    value: float
+    color: str | None = None
+class SankeyChartDataSchema(Schema):
+    nodes: list[SankeyNodeSchema]
+    links: list[SankeyLinkSchema]
+class SankeyChartConfigSchema(ChartConfigSchema):
+    orientation: Literal["h", "v"] | None = None
+    arrangement: Literal["snap", "perpendicular", "freeform", "fixed"] | None = None
+class SankeyChartResponseSchema(ChartResponseSchema[SankeyChartDataSchema]):
+    config: SankeyChartConfigSchema | None = None
 ```
 
 ## 8. Mixed-type subplots: `<mires-chart-grid>` (#75, ADR 0023)
@@ -723,21 +726,21 @@ export class MiresChartGrid extends MiresChartBase<ChartGridData> {
 A mixed-subplot chart cannot mix Chart Groupings across its subplots — two subplots needing genuinely independent grouping selection belong in two separate chart instances, not one Chart Grid.
 
 ```python
-class ChartGridSubplotSpecSerializer(serializers.Serializer):
-    type = serializers.CharField(); row = serializers.IntegerField(); col = serializers.IntegerField()
-    config = serializers.JSONField(required=False)
-class ChartGridConfigSerializer(ChartConfigSerializer):
-    rows = serializers.IntegerField(); cols = serializers.IntegerField()
-    subplots = ChartGridSubplotSpecSerializer(many=True)
-class ChartGridDataSerializer(serializers.Serializer):
-    subplots = serializers.ListField(child=serializers.JSONField())
+class ChartGridSubplotSpecSchema(Schema):
+    type: str
+    row: int
+    col: int
+    config: dict | None = None
+class ChartGridConfigSchema(ChartConfigSchema):
+    rows: int
+    cols: int
+    subplots: list[ChartGridSubplotSpecSchema]
+class ChartGridDataSchema(Schema):
+    subplots: list[dict]
     # each entry validated loosely here; a view-level check can cross-validate entry i against
-    # the concrete DataSerializer for config.subplots[i].type (e.g. BarChartDataSerializer) if stricter validation is wanted
-class ChartGridGroupingSerializer(ChartGroupingSerializer):
-    data = ChartGridDataSerializer()
-class ChartGridResponseSerializer(ChartResponseSerializer):
-    config = ChartGridConfigSerializer(required=False)
-    groupings = ChartGridGroupingSerializer(many=True)
+    # the concrete DataSchema for config.subplots[i].type (e.g. BarChartDataSchema) if stricter validation is wanted
+class ChartGridResponseSchema(ChartResponseSchema[ChartGridDataSchema]):
+    config: ChartGridConfigSchema | None = None
 ```
 
 ## 9. Testing strategy (#85)
@@ -745,11 +748,12 @@ class ChartGridResponseSerializer(ChartResponseSerializer):
 - **Per-type trace-builder functions** (§7, §8): unit-tested in isolation, no DOM at all — each takes Chart Data (+ Config, + resolved colors where relevant) and asserts the returned Plotly trace objects against fixture input.
 - **Base-class behaviors** (§3): integration-tested via a minimal test-only concrete subclass (e.g. `class TestChart extends MiresChartBase { protected buildTraces() { return FIXTURE_TRACES; } }`) mounted with `happy-dom` — decouples these tests from any real chart type's contract. Covers Grouping switching without refetch, WebGL threshold precedence, event-callback firing/guarding, re-theming triggers, and the subplot-attribution override.
 - **`plotly.js` is mocked** in tests — assert `Plotly.react`/`newPlot` were called with the expected arguments, not that pixels rendered. `happy-dom` has no real canvas/WebGL context. **Real-browser visual verification (e.g. Playwright) is explicitly out of scope for this map** — a separate initiative.
-- **Python serializers**: per-type serializers (§7) follow ordinary Django/DRF test conventions already used elsewhere in this codebase. The shared base serializers and camelCase mixin (§2) get their own dedicated test module, verifying the envelope shape and the snake_case↔camelCase conversion, since every other serializer's correctness depends on that shared layer.
+- **Python schemas**: per-type schemas (§7) follow ordinary Django/ninja test conventions already used elsewhere in this codebase. The shared base schemas (§2) get their own dedicated test module, verifying the envelope shape and the generic-parametrization pattern (`ChartResponseSchema[SomeDataSchema]`), since every concrete type's correctness depends on that shared layer resolving correctly. On the TS side, the `snakeToCamelDeep` conversion utility (§3) gets its own focused unit tests (nested objects, arrays, already-camelCase keys left alone) since every fetch response passes through it.
 
 ## 10. Open items for the implementing session
 
 - The `dataviz` skill's `validate_palette.js` should be re-run once (§4) as a sanity check when implementation actually wires the CSS variables to a Plotly config, to confirm nothing about the resolved hex values drifted from the documented defaults.
-- Confirm `djangorestframework-camel-case` (or an equivalent) is an acceptable new dependency during implementation, or whether a small house-written camelCase mixin is preferred instead — this spec assumes one exists but doesn't mandate the specific package.
+- Confirm django-ninja correctly resolves a parametrized generic `Schema` (§2) as a route's `response=` type — flagged there as unverified against this codebase's actual ninja version.
 - `gridCellDomain` (§8) and `resolveSubplotIndexFromEvent` (§8) are named but not derived in this spec — small utility functions the implementing session will need to write (mapping a grid row/col to a Plotly `domain` fraction, and mapping a Plotly click/relayout event back to a subplot index via `curveNumber`/subplot axis id).
 - `withAlpha` (§7.8) is likewise a named-but-undefined small color utility (apply opacity to a resolved CSS color string).
+- `snakeToCamelDeep` (§3) is likewise named but not derived — a small recursive key-conversion utility applied once per fetched response, before it's treated as a `ChartResponse`.
