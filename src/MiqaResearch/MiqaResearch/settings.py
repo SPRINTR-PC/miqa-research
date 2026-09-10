@@ -77,6 +77,7 @@ env = environ.Env(
     MIRES_OLLAMA_MODEL=(str, "qwen3-vl:8b-instruct-q8_0"),
     MIRES_OCR_VLM_PAGE_TIMEOUT_SECONDS=(int, 900),
     MIRES_OCR_VLM_FORM_TIMEOUT_SECONDS=(int, 2700),
+    MIRES_OCR_VLM_NUM_GPU=(int, 0),
     MIRES_OTLP_ENDPOINT=(str, "http://localhost:4318/v1/logs"),
     MIRES_OTLP_PROTOCOL=(str, "http"),
     MIRES_OTLP_INSECURE=(bool, False),
@@ -462,6 +463,7 @@ OLLAMA_MODEL = env("MIRES_OLLAMA_MODEL")
 # real-hardware validation, see #17's M5 Max caveat)
 OCR_VLM_PAGE_TIMEOUT_SECONDS = env("MIRES_OCR_VLM_PAGE_TIMEOUT_SECONDS")
 OCR_VLM_FORM_TIMEOUT_SECONDS = env("MIRES_OCR_VLM_FORM_TIMEOUT_SECONDS")
+OCR_VLM_NUM_GPU = env("MIRES_OCR_VLM_NUM_GPU")
 
 
 # Participant consent settings

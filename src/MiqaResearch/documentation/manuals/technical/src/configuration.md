@@ -185,6 +185,7 @@ Optical character recognition of uploaded PROM forms is performed by a local
 |---|---|---|
 | `MIRES_OLLAMA_URL` | `http://localhost:11434` | Base URL of the Ollama API. |
 | `MIRES_OLLAMA_MODEL` | `gemma4` | Name of the Ollama model used to perform OCR extraction. |
+| `MIRES_OCR_VLM_NUM_GPU` | `0` | Passed straight through as Ollama's `num_gpu` request option: `0` runs CPU-only, `-1` offloads the full model to GPU, and a positive value offloads that many layers for VRAM-constrained hardware. Changing this on a deployment where Ollama already has the model loaded requires restarting or unloading it (`ollama stop <model>`) — Ollama does not re-place a warm model's layers on a per-request option change alone. |
 
 (heading-configuration-consent)=
 ## Participant consent

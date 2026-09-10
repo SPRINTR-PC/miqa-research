@@ -163,7 +163,7 @@ def _call_ollama(prompt: str, image_b64: str, timeout: float) -> dict:
             "images": [image_b64],
             "stream": False,
             "format": "json",
-            "options": {"num_ctx": 16384, "num_gpu": 0},
+            "options": {"num_ctx": 16384, "num_gpu": settings.OCR_VLM_NUM_GPU},
         },
         timeout=timeout,
     )
