@@ -97,6 +97,30 @@ def test_escalates_numeric_field_with_no_digits_found():
 
 
 # ---------------------------------------------------------------------------
+# VLM-Only Mode forces every field to escalate (#67, docs/prom-ocr-handoff.md §10.2)
+# ---------------------------------------------------------------------------
+
+
+def test_vlm_only_mode_escalates_a_confident_non_mark_field(settings):
+    settings.OCR_MODE = "vlm_only"
+    match = _match(field_type="string", label_match_score=0.9, tesseract_word_confidence=90.0, text_value="TD")
+    assert vlm_fallback.should_escalate(match, None) is True
+
+
+def test_vlm_only_mode_escalates_a_confident_mark_field(settings):
+    settings.OCR_MODE = "vlm_only"
+    match = _match(field_type="ranged-radio", label_match_score=0.9, options=[(str(i), str(i)) for i in range(11)])
+    confident = _mark_result(option_localization=1.0, mark_margin_ratio=2.0)
+    assert vlm_fallback.should_escalate(match, confident) is True
+
+
+def test_hybrid_mode_is_unaffected_by_the_mode_check(settings):
+    settings.OCR_MODE = "hybrid"
+    match = _match(field_type="string", label_match_score=0.9, tesseract_word_confidence=90.0, text_value="TD")
+    assert vlm_fallback.should_escalate(match, None) is False
+
+
+# ---------------------------------------------------------------------------
 # Post-processing guards (#18 §4[2])
 # ---------------------------------------------------------------------------
 

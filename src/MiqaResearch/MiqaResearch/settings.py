@@ -75,6 +75,7 @@ env = environ.Env(
     MIRES_SESSION_IDLE_TIMEOUT=(int, 30 * 60),
     MIRES_OLLAMA_URL=(str, "http://localhost:11434"),
     MIRES_OLLAMA_MODEL=(str, "qwen3-vl:8b-instruct-q8_0"),
+    MIRES_OCR_MODE=(str, "hybrid"),
     MIRES_OCR_VLM_PAGE_TIMEOUT_SECONDS=(int, 900),
     MIRES_OCR_VLM_FORM_TIMEOUT_SECONDS=(int, 2700),
     MIRES_OCR_VLM_NUM_GPU=(int, 0),
@@ -458,6 +459,10 @@ OAUTH2_PROVIDER = {
 # Ollama Settings
 OLLAMA_URL = env("MIRES_OLLAMA_URL")
 OLLAMA_MODEL = env("MIRES_OLLAMA_MODEL")
+
+# PROM OCR pipeline mode: "hybrid" (Classic Path + VLM escalation, default) or
+# "vlm_only" (docs/prom-ocr-handoff.md §10.2, wayfinder map #60, #62)
+OCR_MODE = env("MIRES_OCR_MODE")
 
 # PROM OCR VLM fallback budgets (docs/prom-ocr-handoff.md §2 -- optimistic pending
 # real-hardware validation, see #17's M5 Max caveat)

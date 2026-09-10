@@ -8,6 +8,7 @@ VLM escalation, merge, and kpforms validation.
 import time
 from dataclasses import dataclass, field
 
+from django.conf import settings
 from kpforms.helpers import get_form_by_template_id_and_version
 
 from MiqaResearch.data.models import PromData
@@ -44,7 +45,13 @@ def run_pipeline(prom_data: PromData) -> PipelineResult:
     )
     pages = timed("preprocessing", preprocessing.load_pages, prom_data)
     matches = timed("field_matching", field_matching.match_fields, pages, template_schema)
-    mark_results = timed("mark_detection", mark_detection.detect_marks, pages, matches)
+    # VLM-Only Mode (#62, docs/prom-ocr-handoff.md §10.2) skips mark_detection
+    # entirely -- should_escalate is mode-forced to always fire regardless, so
+    # its output would only be discarded.
+    if settings.OCR_MODE == "vlm_only":
+        mark_results = {}
+    else:
+        mark_results = timed("mark_detection", mark_detection.detect_marks, pages, matches)
     vlm_results = timed("vlm_fallback", vlm_fallback.run_vlm_fallback, pages, matches, mark_results, template_schema)
     data, extraction_flags = timed("merge", merge.merge_results, matches, mark_results, vlm_results)
     validated_data, fields_out_of_tolerance = timed("validation", validation.validate_submission, data, template_schema)

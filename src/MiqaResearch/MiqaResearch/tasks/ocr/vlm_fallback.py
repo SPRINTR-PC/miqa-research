@@ -69,6 +69,9 @@ def _parses_as_expected_format(match: FieldMatch) -> bool:
 
 
 def should_escalate(match: FieldMatch, mark_result: MarkResult | None) -> bool:
+    if settings.OCR_MODE == "vlm_only":
+        return True  # every field escalates -- #62's mode design (docs/prom-ocr-handoff.md §10.2)
+
     if match.label_match_score < MIN_ANCHOR_SCORE:
         return True  # anchor not found -- nothing downstream is usable
 
