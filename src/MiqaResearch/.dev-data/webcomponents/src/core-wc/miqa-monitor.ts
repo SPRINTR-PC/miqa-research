@@ -1,7 +1,7 @@
 import { css, html, LitElement } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { MiqaMonitorColumn, MiqaMonitorFilter, MiqaMonitorTableData } from "./miqa-monitor-interfaces.ts";
-import { globalStyles } from "./styles.ts";
+import { globalStyles } from "../styles.ts";
 
 @customElement('miqa-monitor')
 export class MiqaMonitor extends LitElement {

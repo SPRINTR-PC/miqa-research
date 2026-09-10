@@ -222,6 +222,105 @@ more than one Site Assignment on the same project. Does not exist in the
 codebase yet; introduced by the Dashboard feature. See ADR 0019.
 _Avoid_: Site membership, clinic membership
 
+### Chart Grouping
+One of possibly several alternative groupings of the same underlying dataset
+that a chart web component's `dataUrl` endpoint can return in a single
+response. The viewer switches between Groupings via a dropdown (the existing
+`kp-select` component); switching re-renders the chart from the
+already-fetched response with no refetch. A response's `groupings` array is
+always non-empty — a chart with only one Grouping (length 1) renders without
+showing the dropdown at all, rather than the API using a distinct top-level
+shape for that case. See ADR 0020. Does not exist in the codebase yet;
+introduced by the charting web components effort (wayfinder map: Charting web
+components (Plotly.js) + serializers: architecture & API contract spec).
+
+### Chart Config
+The layout/behaviour settings in a chart API response that are fixed across
+every Chart Grouping in that response: the WebGL Threshold override
+(`webglThreshold`/`forceRenderer`), Chart Event Callback names
+(`eventCallbacks`), and mixed-type subplot layout. Distinct from Chart Data,
+which varies per Grouping. See ADR 0020.
+_Avoid_: "chart options", "chart settings" (ambiguous with Chart Data's
+per-Grouping `labels`)
+
+### Chart Data
+The actual trace values inside one Chart Grouping — the per-chart-type
+payload (e.g. x/y arrays, categories, node/link lists) plus an optional
+`labels` sub-object (axis/legend titles) that can differ from one Grouping to
+the next, unlike Chart Config which is fixed for the whole response. See ADR
+0020.
+
+### WebGL Threshold
+The datapoint-count threshold (`webglThreshold`, default 100) above which a
+chart component selects a chart type's WebGL-accelerated Plotly trace variant
+instead of the SVG-based default; a `forceRenderer` value of `"svg"`,
+`"webgl"`, or `"auto"` bypasses the threshold entirely. Only 4 of the 11
+chart types have a WebGL-accelerated trace in the pinned plotly.js version
+(line, scatter, bubble, filled area — all via `scattergl`); on the other 7
+(pie, bar, histogram, box, heatmap, sankey, 2D density) the property is a
+documented no-op rather than being absent from the component's interface, so
+every chart type exposes the same config surface. See ADR 0020 and the
+[WebGL trace variant research](docs/research/webgl-threshold-plotly-4.1.md).
+
+### Chart Event Callback
+A named external JavaScript function, specified in a chart's `dataUrl`
+response (`config.eventCallbacks.click` / `.zoom`), that a chart component
+invokes on a `plotly_click` or `plotly_relayout` (zoom/pan/reset) event.
+Resolution is against a client-side registry (`window.mires.registerChartCallback(name, fn)`,
+also available as a module export), never a raw `window[name]` lookup or
+`eval` — the host page must explicitly register a name before a component
+will call it. A name the API supplies but nobody registered logs one
+`console.warn` and no-ops; it never throws. This is the security boundary: a
+server-supplied name can at most reference an unregistered no-op or a
+function the host page already chose to expose, never make the browser run
+code the page didn't opt into. See ADR 0021.
+_Avoid_: "chart click handler" (the callback isn't wired per-component in
+code — it's named by the API response and resolved at event-fire time)
+
+### Chart Palette
+The color/typography system a chart web component resolves from CSS custom
+properties into a Plotly layout object at render time (plotly.js has no
+native CSS-variable support, so a wrapper reads them via `getComputedStyle`).
+Background, text color, and font family come directly from the existing
+`--mires-color-background`, `--mires-form-color-text`, and `--form-font-family`
+variables. The **categorical** series colors (`--mires-chart-series-1`
+through `-8`) are a fixed, pre-validated 8-hue set (the `dataviz` skill's
+reference palette) rather than derived at runtime from the two brand hue
+variables — colorblind-safety depends on specific hue/lightness combinations
+that an arbitrary site-configured brand hue can't be assumed to preserve
+(confirmed by running the skill's validator: forcing MiqaResearch's own
+primary/secondary hues adjacent in the categorical order fails the dark-mode
+CVD floor). The **sequential** ramp (`--mires-chart-sequential-0` through
+`-5`, used by heatmap/2D-density), by contrast, is computed live from
+`--mires-color-primary-parts` via CSS relative-color syntax — safe because a
+single-hue lightness ramp carries no cross-hue CVD risk, unlike the
+categorical set. A **diverging** ramp (`--mires-chart-diverging-negative`,
+`-neutral`, `-positive` — fixed blue↔red↔gray, per the `dataviz` skill's
+diverging-pair guidance) was added for polarity data (e.g. a correlation
+heatmap) where a single-hue sequential ramp would hide which side of a
+meaningful zero a cell falls on; a chart type opts into it explicitly (e.g.
+heatmap's `config.colorScale`) rather than it being a default. **Sankey is a
+documented exception** to the "no per-item color override" rule the other
+chart types follow (#77's XY series, pie's slices): a Sankey's node count is
+open-ended (routinely beyond the categorical set's 8 safe slots), so node
+identity was never the "small fixed set of series" case the categorical
+palette protects — nodes/links may carry an explicit `color`, defaulting to a
+neutral tone (nodes) or a translucent tint of their source node's color
+(links) when omitted. See ADR 0022.
+
+### Chart Grid
+A single chart web component (`<mires-chart-grid>`) that renders a mix of
+different chart types as subplots of one plotly.js figure (one native
+subplot/grid layout — never several independently-mounted per-type elements
+composited client-side, since plotly.js doesn't support that). Its `dataUrl`
+returns one combined response covering every subplot at once: `config`
+carries the fixed grid layout (`rows`, `cols`, and each subplot's `type`,
+position, and own type-specific config), while each Chart Grouping's `data`
+carries one entry per subplot, shaped exactly like that subplot's own
+standalone Chart Data (e.g. a `"bar"` subplot's entry matches
+`BarChartData`). One Grouping dropdown switches every subplot together —
+there is no per-subplot Grouping concept. See ADR 0023.
+
 ## Decisions (ADRs)
 
 | ADR | Title | Status |
@@ -245,6 +344,240 @@ _Avoid_: Site membership, clinic membership
 | 0017 | YubiKey/WebAuthn MFA as combinable second factor with OIDC | Accepted |
 | 0018 | Data Collection Goal as a multi-valued, metric-typed, optionally site-scoped concept | Accepted |
 | 0019 | Explicit Project Site linkage and many-valued Site Assignment | Accepted |
+| 0020 | Chart API response envelope: Config/Data split, per-Grouping labels, always-array Groupings | Accepted |
+| 0021 | Chart Event Callback resolution: client-side registry, lazy fire-time lookup | Accepted |
+| 0022 | Chart Palette: fixed categorical set, brand-anchoring rejected; live-derived sequential ramp | Accepted |
+| 0023 | Chart Grid: combined dataUrl, shared per-type trace-builder functions, subplot-attributed events | Accepted |
+
+### ADR 0023 — Chart Grid: combined dataUrl, shared per-type trace-builder functions, subplot-attributed events
+
+**Context**: The charting web components effort (wayfinder map: Charting web
+components (Plotly.js) + serializers: architecture & API contract spec,
+issue #75) needs to support mixed-type subplots — e.g. a bar chart beside a
+line chart in one figure. plotly.js only composes subplots within one
+figure/DOM node (its own native `grid` layout), so this can't be built by
+mounting several of the already-specified per-type elements (#77–#84) side by
+side; one new wrapper element has to build one Plotly figure from a mix of
+types. Three sub-decisions followed from that: how the wrapper fetches data
+for potentially several unrelated-looking subplots at once; how it builds
+each subplot's traces without duplicating the trace-construction logic
+already specified per type; and how a click/zoom event — which the base
+class (#76) normally attributes to "the one chart type this element is" —
+gets attributed to whichever specific subplot the user actually interacted
+with.
+
+**Decision**: `<mires-chart-grid>` fetches **one combined `dataUrl`**,
+reusing the standard envelope from #74 unchanged
+(`{config, groupings: [...]}`) — `config` carries the fixed grid layout
+(`rows`, `cols`, and an ordered `subplots: [{type, row, col, config?}]`
+list), and each Grouping's `data.subplots` carries one entry per subplot,
+shaped exactly like that subplot type's own standalone Chart Data. One
+Grouping dropdown drives every subplot in lockstep, matching Chart
+Grouping's existing meaning ("switch between related views of the same
+dataset"). Each of #77–#84's `buildTraces` method is refactored into an
+**exported pure function** (e.g. `buildBarTraces(data, config)`) that the
+standalone element's `buildTraces` now just calls — the grid wrapper imports
+and calls the same functions, keyed by `type`, so there is exactly one
+implementation of each chart type's trace-construction logic, never two
+copies that can drift. The base class's event-firing method (#76) gains an
+optional context-override parameter so a subclass can attribute a fired
+event to something other than its own single `chartType`; the grid overrides
+it to resolve which subplot a Plotly click/relayout event actually landed on
+and enriches the normalized callback payload with that subplot's own type
+before delegating to the shared registry-resolution logic from #73.
+
+**Consequences**:
+- #77–#84 are amended: each ships an exported pure trace-builder function
+  alongside its Lit element, not trace-building logic embedded only inside
+  the element's method body.
+- #76 is amended a second time (after #78's `extraLayout` addition): its
+  event-firing method takes an optional override so grid-style wrappers can
+  attribute events correctly; the single-chart case is unaffected (no
+  override supplied, behavior unchanged).
+- A mixed-subplot chart cannot mix Chart Groupings across its subplots — if
+  two subplots need genuinely independent grouping selection, they belong in
+  two separate chart instances, not one Chart Grid.
+- Non-axis chart types (pie, sankey) are positioned within the grid via
+  Plotly's `domain` fractions rather than shared `xaxis`/`yaxis` references,
+  since they have no axes to assign.
+- A trace-builder function that needs resolved Chart Palette colors (heatmap,
+  sankey) takes them as a parameter rather than calling `getComputedStyle`
+  itself, so the function stays a pure mapping from data+config(+colors) to
+  Plotly traces regardless of which element — standalone or grid — is
+  calling it.
+
+### ADR 0022 — Chart Palette: fixed categorical set, brand-anchoring rejected; live-derived sequential ramp
+
+**Context**: The charting web components effort (wayfinder map: Charting web
+components (Plotly.js) + serializers: architecture & API contract spec,
+issue #71) needs a default color/typography scheme derived from MiqaResearch's
+existing CSS custom properties, since plotly.js cannot read CSS variables
+natively. MiqaResearch's brand is only two HSL hues
+(`--mires-color-primary-parts`, a violet, and `--mires-color-secondary-parts`,
+a blue) — not enough to safely produce an 8-series categorical palette by
+formula. The `dataviz` skill's method requires a categorical palette to pass
+six checks (lightness band, chroma floor, colorblind-vision separation,
+contrast, a fixed documented set) that are calibrated to *specific* validated
+hue/lightness combinations, not to arbitrary runtime hues. To test whether
+MiqaResearch's own brand hues could be worked into the categorical set's
+opening slots, the skill's own `validate_palette.js` was run against a
+brand-anchored reordering placing primary (violet) and secondary (blue)
+adjacent to each other: it **failed** the dark-mode normal-vision floor
+(ΔE 9.8, below the 15 floor) and the CVD check (ΔE 1.9) — the two brand hues
+are simply too close once stepped for the dark surface.
+
+**Decision**: The categorical colorway ships as the `dataviz` skill's own
+documented 8-hue default, **unmodified** (`--mires-chart-series-1` through
+`-8`, individually overridable per site, each defaulting to the skill's
+validated hex value) — already proven to clear every gate in both light and
+dark mode, and its slot 1 (blue) and slot 7 (violet) happen to already sit in
+MiqaResearch's brand hue families, so no further brand-matching work was
+judged worth the risk of re-breaking a validated set. The sequential ramp
+(heatmap, 2D density — magnitude, not identity) is the opposite case:
+computed **live** from `--mires-color-primary-parts` via CSS relative-color
+syntax (matching the existing `--mires-color-background-darker` pattern
+already in `styles.ts`) at six fixed lightness steps
+(`--mires-chart-sequential-0` through `-5`), because a single-hue lightness
+ramp only needs monotonicity, not pairwise colorblind separation, so it *is*
+safe to derive from an arbitrary brand hue. Background, text, and font
+continue to come directly from the existing `--mires-color-background`,
+`--mires-form-color-text`, and `--form-font-family` variables — no new
+variables needed there.
+
+**Amendment (from #82)**: A third, **diverging** ramp was added —
+`--mires-chart-diverging-negative`/`-neutral`/`-positive`, a fixed
+blue↔gray↔red set per the `dataviz` skill's diverging-pair guidance, not
+derived from any brand hue (same reasoning as the categorical set: polarity
+color needs specific validated hue pairing, not an arbitrary runtime hue).
+Heatmap (#82) is the first type to use it, opting in per-chart via
+`config.colorScale: "sequential" | "diverging"` for data with a meaningful
+zero (e.g. a correlation matrix), where the single-hue sequential ramp would
+hide which side of zero a cell falls on.
+
+**Amendment (from #84)**: Sankey is a **documented exception** to the
+"colors always come from the fixed palette, no per-item override" rule
+established for XY series (#77) and pie slices (#80). A Sankey's node count
+is open-ended — routinely beyond the categorical set's 8 safe slots — so
+per-node identity was never the case the categorical-palette restriction was
+protecting (a small, fixed number of overlaid series). `SankeyNode.color`
+and `SankeyLink.color` are therefore optional explicit overrides: a node
+without one defaults to a neutral tone, a link without one defaults to a
+translucent tint of its source node's resolved color (the standard Sankey
+convention for making flow direction traceable).
+
+**Consequences**:
+- A site that wants closer brand-matched categorical colors must override the
+  8 `--mires-chart-series-*` variables individually and re-validate its own
+  choice with the `dataviz` skill's script — the chart components do not
+  attempt to auto-derive or auto-validate a categorical palette from
+  whatever hues a site sets.
+- If a future site's rebrand makes the stock categorical hues feel visually
+  off, revisiting this means re-running the skill's enumeration-and-validate
+  procedure by hand — not a quick formula change — because reordering or
+  re-stepping is exactly what already failed once here.
+- The sequential ramp automatically follows a site's primary hue with zero
+  extra configuration, unlike the categorical set.
+- Chart components must resolve all of these via `getComputedStyle` at
+  render time (and again on the OS/`data-theme` re-theming triggers decided
+  in this same ticket), since Plotly's layout/colorway config is a plain JS
+  object, not something CSS can feed it directly.
+
+### ADR 0021 — Chart Event Callback resolution: client-side registry, lazy fire-time lookup
+
+**Context**: The charting web components effort (wayfinder map: Charting web
+components (Plotly.js) + serializers: architecture & API contract spec) lets
+a `dataUrl` API response name an external JS function to call on chart
+click/zoom (`config.eventCallbacks`, locked by ADR 0020). Because that name
+is server-supplied data, resolving it directly against the global scope
+(`window[name]`) or via `eval` would let a compromised or malicious API
+response execute arbitrary code already present on the page — a real,
+if same-origin, trust-boundary concern (wayfinder issue #73). A registration
+model needed a resolution-timing answer too: registering before a component
+merely *renders* is a stricter, more failure-prone requirement than
+registering before the user actually *interacts* with it.
+
+**Decision**: Chart Event Callbacks resolve only against an explicit,
+client-side registry — `window.mires.registerChartCallback(name, fn)`
+(also exported as a module function from the charts bundle for consumers who
+import it) — never a raw global-scope lookup. Resolution is lazy: a
+component looks the name up in the registry only at the moment a
+`plotly_click` or `plotly_relayout` event actually fires, not at
+connect-time or data-fetch time, so the host page only needs to have
+registered the name before the user interacts, not before the chart first
+renders — eliminating most script-load-order races without needing a
+"wait for late registration" mechanism. An unresolved name logs one
+`console.warn` and no-ops; it never throws, so a misconfigured or optional
+callback degrades gracefully instead of breaking the chart's data display.
+Zoom is backed by `plotly_relayout` only (which already covers
+double-click-to-reset-axes); legend clicks are excluded from both "click"
+and "zoom". The callback receives a normalized `{chartId, chartType,
+groupingName, event, raw}` payload rather than the bare Plotly event, with
+`raw` kept as an escape hatch for callback authors who need the underlying
+Plotly event data.
+
+**Consequences**:
+- A malicious or buggy API response can at worst name a callback nobody
+  registered (harmless no-op) or one the host page already explicitly chose
+  to expose — it can never make the browser run code the page didn't opt
+  into. This is the load-bearing security property of the whole mechanism.
+- The shared base class (wayfinder ticket #76) must guard its own
+  `Plotly.Plots.resize()` calls (used for container-resize responsiveness)
+  so they don't also trigger the registered "zoom" callback — a
+  component-internal reflow is not a user zoom.
+- Callback authors write against the normalized payload shape for the common
+  case (which chart, which Grouping, which event) without needing to learn
+  Plotly's raw event shapes, while `raw` still supports advanced use.
+- Because resolution happens at event-fire time rather than connect-time,
+  there is no compile-time or connect-time way to catch a typo'd callback
+  name — the `console.warn` at first fire is the only signal.
+
+### ADR 0020 — Chart API response envelope: Config/Data split, per-Grouping labels, always-array Groupings
+
+**Context**: The charting web components effort (wayfinder map: Charting web
+components (Plotly.js) + serializers: architecture & API contract spec) needs
+one JSON contract that every `dataUrl` endpoint returns, consumed by both the
+shared Lit base class (wayfinder ticket #76) and 8 chart-type-specific
+serializer tickets (#77–#84). Three shapes were genuinely open: whether a
+chart with only one Chart Grouping gets a simplified top-level response or the
+same shape as a multi-Grouping one; whether axis/legend titles are fixed for
+a whole response or can vary per Grouping; and how the WebGL Threshold
+override is expressed now that research (issue #72) confirmed only 4 of 11
+chart types have a WebGL-accelerated trace at all.
+
+**Decision**: The response envelope is always `{config, groupings}`, where
+`groupings` is a non-empty array even when there is exactly one Grouping (the
+component simply skips rendering the dropdown at `groupings.length === 1`) —
+one parsing path, no distinct single-Grouping shape. Chart Config carries
+what's fixed across every Grouping in a response: `webglThreshold` (default
+100) plus a `forceRenderer: "svg" | "webgl" | "auto"` escape hatch,
+`eventCallbacks: {click?, zoom?}` (Chart Event Callback names — resolution
+mechanism is wayfinder ticket #73), and the mixed-subplot layout (internals
+deferred to ticket #75). Chart Data — the per-Grouping trace values — may
+also carry an optional `labels` sub-object (`xAxisTitle`, `yAxisTitle`,
+`legendTitle`) that overrides Config's defaults, because switching Grouping
+can change what's being measured, not only how it's sliced. On the Django
+side, serializer fields stay idiomatic Python snake_case
+(`webgl_threshold`, `event_callbacks`, `x_axis_title`, …); a single shared
+camelCase-rendering mixin (applied to every chart serializer/view) converts
+to/from camelCase only at the wire boundary, matching the rest of the
+codebase's Python naming convention.
+
+**Consequences**:
+- Every chart-type serializer subclasses a shared `ChartResponseSerializer` /
+  `ChartGroupingSerializer` base (analogous to the shared Lit base class) and
+  only overrides the inner `data` shape — see the handoff spec for the full
+  base-class skeleton once written.
+- A chart type with no WebGL trace (7 of 11, per issue #72) still exposes
+  `webglThreshold`/`forceRenderer` on its Config; the base class documents
+  this as a no-op rather than omitting the fields, keeping one consistent
+  Config shape across all 11 components.
+- Because `labels` lives on Chart Data, a Grouping switch can change axis
+  titles without a distinct API shape for that case — the base class must
+  apply `labels` (if present) on every Grouping-switch render, not only on
+  initial load.
+- Wayfinder tickets #75 (mixed-subplot component shape) and #76 (shared base
+  class) consume this envelope directly; the 8 per-chart-type tickets
+  (#77–#84) define what goes inside each `data` object.
 
 ### ADR 0019 — Explicit Project Site linkage and many-valued Site Assignment
 
