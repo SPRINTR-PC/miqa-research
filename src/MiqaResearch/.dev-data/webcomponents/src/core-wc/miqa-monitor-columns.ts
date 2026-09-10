@@ -1,8 +1,8 @@
 import { customElement, property, state } from "lit/decorators.js";
 import {LitElement, html, css, type PropertyValues} from "lit";
 import type { MiqaMonitorColumn } from "./miqa-monitor-interfaces.ts";
-import { globalStyles } from "./styles.ts";
-import { PanelRightOpen } from "../icons.ts";
+import { globalStyles } from "../styles.ts";
+import { PanelRightOpen } from "../../icons.ts";
 
 
 @customElement('miqa-monitor-columns')

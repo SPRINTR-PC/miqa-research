@@ -2,7 +2,7 @@ import { css, html, LitElement, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { repeat } from 'lit/directives/repeat.js';
 import type { MiqaMonitorColumn, MiqaMonitorTableData } from "./miqa-monitor-interfaces.ts";
-import { globalStyles } from "./styles.ts";
+import { globalStyles } from "../styles.ts";
 
 @customElement('miqa-monitor-table')
 export class MiqaMonitorTable extends LitElement {

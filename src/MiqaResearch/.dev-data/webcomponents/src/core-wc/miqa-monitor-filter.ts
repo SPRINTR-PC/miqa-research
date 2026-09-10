@@ -1,8 +1,8 @@
 import { customElement, property, state } from "lit/decorators.js";
 import { LitElement, html, css } from "lit";
 import type { MiqaMonitorColumn } from "./miqa-monitor-interfaces.ts";
-import { globalStyles } from "./styles.ts";
-import {KeyboardArrowDown, KeyboardArrowRight, Plus} from "../icons.ts";
+import { globalStyles } from "../styles.ts";
+import {KeyboardArrowDown, KeyboardArrowRight, Plus} from "../../icons.ts";
 
 @customElement('miqa-monitor-filter')
 export class MiqaMonitorFilter extends LitElement {
