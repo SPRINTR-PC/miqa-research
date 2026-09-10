@@ -12,12 +12,154 @@
     <script type="module" src="/src/miqa-monitor-columns.ts"></script>
     <script type="module" src="/src/miqa-monitor-filter.ts"></script>
     <script type="module" src="/src/miqa-monitor-table.ts"></script>
+    <script>
+      // Fixture-data mock for the chart demo below — a classic (synchronous)
+      // script, so it patches window.fetch before any deferred module script
+      // (including the chart elements below) can call the real fetch().
+      // Intercepts /fixtures/*.json only; everything else goes to real fetch.
+      window.__chartFixtures = {
+        "/fixtures/line-single.json": {
+          groupings: [
+            {
+              name: "trend",
+              label: "Trend",
+              labels: { x_axis_title: "Day", y_axis_title: "Count" },
+              data: {
+                series: [{ name: "Consents", x: [1, 2, 3, 4, 5], y: [3, 7, 4, 9, 12] }],
+              },
+            },
+          ],
+        },
+        "/fixtures/scatter-groupings.json": {
+          groupings: [
+            {
+              name: "by_site",
+              label: "By Site",
+              data: {
+                series: [
+                  { name: "Site A", x: [1, 2, 3, 4], y: [10, 14, 9, 18] },
+                  { name: "Site B", x: [1, 2, 3, 4], y: [6, 8, 11, 7] },
+                ],
+              },
+            },
+            {
+              name: "by_consent_type",
+              label: "By Consent Type",
+              data: {
+                series: [{ name: "General", x: [1, 2, 3, 4], y: [20, 22, 19, 25] }],
+              },
+            },
+          ],
+        },
+        "/fixtures/bubble.json": {
+          groupings: [
+            {
+              name: "n",
+              label: "N",
+              data: {
+                series: [
+                  { name: "Studies", x: [1, 2, 3, 4], y: [5, 9, 4, 12], size: [10, 30, 15, 40] },
+                ],
+              },
+            },
+          ],
+        },
+        "/fixtures/filled-area.json": {
+          groupings: [
+            {
+              name: "n",
+              label: "N",
+              data: {
+                series: [{ name: "Cumulative", x: [1, 2, 3, 4, 5], y: [2, 5, 9, 12, 20] }],
+              },
+            },
+          ],
+        },
+        "/fixtures/line-many-points.json": {
+          config: { event_callbacks: { click: "webglDemoClick" } },
+          groupings: [
+            {
+              name: "n",
+              label: "N",
+              data: {
+                series: [
+                  {
+                    name: "Many points",
+                    x: Array.from({ length: 200 }, (_, i) => i),
+                    y: Array.from({ length: 200 }, (_, i) => Math.sin(i / 10) * 50 + 50),
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      };
+
+      const realFetch = window.fetch.bind(window);
+      window.fetch = async (input, init) => {
+        const url = typeof input === "string" ? input : input.url;
+        if (Object.prototype.hasOwnProperty.call(window.__chartFixtures, url)) {
+          return new Response(JSON.stringify(window.__chartFixtures[url]), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return realFetch(input, init);
+      };
+    </script>
+    <script type="module" src="/src/mireswc-charts.ts"></script>
+    <script type="module">
+      // Runs after mireswc-charts.ts, so window.mires.registerChartCallback exists.
+      window.mires.registerChartCallback("webglDemoClick", (payload) => {
+        document.getElementById("webgl-demo-callback-output").textContent =
+          "Chart Event Callback fired: " + JSON.stringify(payload, null, 2).slice(0, 200);
+      });
+    </script>
   </head>
   <body>
     <div id="app" style="width: 960px; padding: 20px;">
       <miqa-monitor
         columnListApiUri="http://localhost:8000/api/v1/monitor/columnlist"
       ></miqa-monitor>
+
+      <div style="margin-top: 40px; border-top: 1px solid #ccc; padding-top: 20px;">
+        <h3>Chart components demo (fixture data, wayfinder ticket #88)</h3>
+        <p>
+          <code>dataUrl</code> points at fixture URLs intercepted by the inline
+          <code>fetch</code> mock below — no real backend needed for this demo.
+        </p>
+
+        <h4>Line (single Grouping, no dropdown)</h4>
+        <div style="width: 480px; height: 320px;">
+          <mires-chart-line data-url="/fixtures/line-single.json"></mires-chart-line>
+        </div>
+
+        <h4>Scatter (two Groupings — dropdown appears)</h4>
+        <div style="width: 480px; height: 320px;">
+          <mires-chart-scatter data-url="/fixtures/scatter-groupings.json"></mires-chart-scatter>
+        </div>
+
+        <h4>Bubble</h4>
+        <div style="width: 480px; height: 320px;">
+          <mires-chart-bubble data-url="/fixtures/bubble.json"></mires-chart-bubble>
+        </div>
+
+        <h4>Filled area (multi-series)</h4>
+        <div style="width: 480px; height: 320px;">
+          <mires-chart-filled-area data-url="/fixtures/filled-area.json"></mires-chart-filled-area>
+        </div>
+
+        <h4>Line above the WebGL threshold (forced, click to fire a registered callback)</h4>
+        <div style="width: 480px; height: 320px;">
+          <mires-chart-line
+            id="webgl-demo"
+            data-url="/fixtures/line-many-points.json"
+            webgl-threshold="50"
+          ></mires-chart-line>
+        </div>
+        <p id="webgl-demo-callback-output">Click a point above to see the Chart Event Callback fire.</p>
+      </div>
+
       <!--
       <prom-upload language="en" uploadurl="/static/prom_data"></prom-upload>
       
@@ -48,5 +190,6 @@
       });
     </script>
   -->
+
   </body>
 </html>
