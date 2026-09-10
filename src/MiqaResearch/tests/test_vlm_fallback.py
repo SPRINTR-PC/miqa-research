@@ -302,6 +302,33 @@ def test_free_text_results_are_always_tagged_low_confidence(monkeypatch, setting
 
 
 # ---------------------------------------------------------------------------
+# _call_ollama request construction (#66)
+# ---------------------------------------------------------------------------
+
+
+def test_call_ollama_passes_num_gpu_through_from_settings(monkeypatch, settings):
+    settings.OCR_VLM_NUM_GPU = -1
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"response": "{}"}
+
+    def fake_post(url, json, timeout):
+        captured["options"] = json["options"]
+        return FakeResponse()
+
+    monkeypatch.setattr(vlm_fallback.httpx, "post", fake_post)
+
+    vlm_fallback._call_ollama(prompt="prompt", image_b64="", timeout=1)
+
+    assert captured["options"]["num_gpu"] == -1
+
+
+# ---------------------------------------------------------------------------
 # Real integration test -- hits the actual local Ollama server (the fixture
 # environment has qwen3-vl:8b-instruct-q8_0 pulled). Everything above is
 # mocked/synthetic on purpose to stay fast; this one proves the real HTTP
