@@ -6,6 +6,12 @@ from MiqaResearch.data.serializers.charts.bar import (
     BarSeriesSchema,
 )
 from MiqaResearch.data.serializers.charts.base import ChartResponseSchema
+from MiqaResearch.data.serializers.charts.histogram import (
+    HistogramBinsSchema,
+    HistogramChartDataSchema,
+    HistogramChartResponseSchema,
+    HistogramSeriesSchema,
+)
 from MiqaResearch.data.serializers.charts.xy import (
     LineChartResponseSchema,
     XYChartDataSchema,
@@ -200,6 +206,145 @@ def test_bar_chart_config_schema_bar_mode_and_orientation_default_to_none():
 
 def test_bar_chart_response_schema_json_schema_generation_does_not_error():
     schema = BarChartResponseSchema.model_json_schema()
+
+    assert "properties" in schema
+    assert "groupings" in schema["properties"]
+
+
+def test_histogram_series_schema_optional_fields_default_to_none():
+    series = HistogramSeriesSchema(name="s", values=[1.0, 2.0, 3.0])
+
+    assert series.bins is None
+
+
+def test_histogram_bins_schema_validates_all_fields():
+    bins = HistogramBinsSchema.model_validate({"nbinsx": 10, "start": 0, "end": 100, "size": 10})
+
+    assert bins.nbinsx == 10
+    assert bins.start == 0
+    assert bins.end == 100
+    assert bins.size == 10
+
+
+def test_histogram_chart_data_schema_supports_single_series_with_no_bins():
+    data = HistogramChartDataSchema.model_validate(
+        {"series": [{"name": "Ages", "values": [1, 2, 2, 3, 3, 3]}]}
+    )
+
+    assert len(data.series) == 1
+    assert data.series[0].bins is None
+
+
+def test_histogram_chart_data_schema_supports_per_series_bins_override():
+    data = HistogramChartDataSchema.model_validate(
+        {
+            "series": [
+                {"name": "Ages", "values": [1, 2, 3], "bins": {"nbinsx": 5}},
+                {"name": "Weights", "values": [10, 20, 30]},
+            ]
+        }
+    )
+
+    assert data.series[0].bins.nbinsx == 5
+    assert data.series[1].bins is None
+
+
+def test_histogram_chart_response_schema_validates_chart_wide_default_binning():
+    payload = {
+        "config": {"histogram_bins": {"nbinsx": 20}},
+        "groupings": [
+            {
+                "name": "by_site",
+                "label": "By Site",
+                "data": {"series": [{"name": "Ages", "values": [1, 2, 3]}]},
+            }
+        ],
+    }
+
+    parsed = HistogramChartResponseSchema.model_validate(payload)
+
+    assert parsed.config.histogram_bins.nbinsx == 20
+    assert parsed.groupings[0].data.series[0].bins is None
+
+
+def test_histogram_chart_response_schema_per_series_bins_override_chart_wide_default():
+    payload = {
+        "config": {"histogram_bins": {"nbinsx": 20}},
+        "groupings": [
+            {
+                "name": "by_site",
+                "label": "By Site",
+                "data": {
+                    "series": [
+                        {"name": "Ages", "values": [1, 2, 3], "bins": {"nbinsx": 5}},
+                    ]
+                },
+            }
+        ],
+    }
+
+    parsed = HistogramChartResponseSchema.model_validate(payload)
+
+    assert parsed.config.histogram_bins.nbinsx == 20
+    assert parsed.groupings[0].data.series[0].bins.nbinsx == 5
+
+
+def test_histogram_chart_config_schema_respects_histnorm():
+    payload = {
+        "config": {"histnorm": "percent"},
+        "groupings": [
+            {"name": "only", "label": "Only", "data": {"series": []}},
+        ],
+    }
+
+    parsed = HistogramChartResponseSchema.model_validate(payload)
+
+    assert parsed.config.histnorm == "percent"
+
+
+def test_histogram_chart_config_schema_defaults_to_none():
+    payload = {
+        "config": {},
+        "groupings": [
+            {"name": "only", "label": "Only", "data": {"series": []}},
+        ],
+    }
+
+    parsed = HistogramChartResponseSchema.model_validate(payload)
+
+    assert parsed.config.histogram_bins is None
+    assert parsed.config.orientation is None
+    assert parsed.config.histnorm is None
+
+
+def test_histogram_chart_response_schema_config_is_optional():
+    payload = {
+        "groupings": [
+            {"name": "only", "label": "Only", "data": {"series": []}},
+        ],
+    }
+
+    parsed = HistogramChartResponseSchema.model_validate(payload)
+
+    assert parsed.config is None
+
+
+def test_histogram_chart_response_schema_supports_both_orientations():
+    for orientation in ("v", "h"):
+        payload = {
+            "config": {"orientation": orientation},
+            "groupings": [
+                {"name": "only", "label": "Only", "data": {"series": [{"name": "S", "values": [1]}]}},
+            ],
+        }
+
+        parsed = HistogramChartResponseSchema.model_validate(payload)
+
+        assert parsed.config.orientation == orientation
+
+
+def test_histogram_chart_response_schema_json_schema_generation_does_not_error():
+    schema = HistogramChartResponseSchema.model_json_schema()
 
     assert "properties" in schema
     assert "groupings" in schema["properties"]

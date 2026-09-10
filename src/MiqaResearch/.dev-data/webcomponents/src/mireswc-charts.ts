@@ -3,6 +3,7 @@ import "./charts/mires-chart-scatter.js";
 import "./charts/mires-chart-bubble.js";
 import "./charts/mires-chart-filled-area.js";
 import "./charts/mires-chart-bar.js";
+import "./charts/mires-chart-histogram.js";
 
 export * from "./charts/mires-chart-base.js";
 export * from "./charts/xy-chart-base.js";
@@ -11,6 +12,7 @@ export * from "./charts/mires-chart-scatter.js";
 export * from "./charts/mires-chart-bubble.js";
 export * from "./charts/mires-chart-filled-area.js";
 export * from "./charts/mires-chart-bar.js";
+export * from "./charts/mires-chart-histogram.js";
 export * from "./charts/chart-callback-registry.js";
 export * from "./charts/chart-types.js";
 export * from "./charts/snake-to-camel.js";
