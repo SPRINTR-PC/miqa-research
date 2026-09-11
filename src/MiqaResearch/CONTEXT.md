@@ -230,9 +230,10 @@ response. The viewer switches between Groupings via a dropdown (the existing
 already-fetched response with no refetch. A response's `groupings` array is
 always non-empty — a chart with only one Grouping (length 1) renders without
 showing the dropdown at all, rather than the API using a distinct top-level
-shape for that case. See ADR 0020. Does not exist in the codebase yet;
-introduced by the charting web components effort (wayfinder map: Charting web
-components (Plotly.js) + serializers: architecture & API contract spec).
+shape for that case. See ADR 0020. Introduced by the charting web components
+effort (wayfinder map: Charting web components (Plotly.js) + serializers:
+architecture & API contract spec, #87) — shipped in full, see
+`docs/charts-handoff.md`.
 
 ### Chart Config
 The layout/behaviour settings in a chart API response that are fixed across
