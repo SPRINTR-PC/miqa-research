@@ -556,17 +556,32 @@ deferred to ticket #75). Chart Data — the per-Grouping trace values — may
 also carry an optional `labels` sub-object (`xAxisTitle`, `yAxisTitle`,
 `legendTitle`) that overrides Config's defaults, because switching Grouping
 can change what's being measured, not only how it's sliced. On the Django
-side, serializer fields stay idiomatic Python snake_case
-(`webgl_threshold`, `event_callbacks`, `x_axis_title`, …); a single shared
-camelCase-rendering mixin (applied to every chart serializer/view) converts
-to/from camelCase only at the wire boundary, matching the rest of the
-codebase's Python naming convention.
+side, schema fields stay idiomatic Python snake_case
+(`webgl_threshold`, `event_callbacks`, `x_axis_title`, …).
+
+**Amendment (found while writing the handoff spec, before any code
+existed)**: this ADR originally specified Django REST Framework
+(`serializers.Serializer`) plus a shared camelCase-rendering mixin
+("djangorestframework-camel-case") converting to/from camelCase at the wire
+boundary. Neither matches this codebase: every existing serializer module
+(`MiqaResearch/data/serializers/participant_consent.py`) already uses
+**django-ninja's `Schema`** (Pydantic-based), and **no endpoint anywhere
+renders camelCase** — wire format is plain snake_case JSON throughout the
+app. Corrected: chart schemas are `ninja.Schema` classes, wire format is
+plain snake_case matching every other endpoint, and the Lit base class
+(`MiresChartBase`) does one small snake_case→camelCase key conversion when
+it parses a fetched response, so TS-side field names stay camelCase
+internally without the wire format needing to be. The envelope shape itself
+(`{config, groupings}`, the Config/Data split, always-array Groupings) is
+unaffected by this correction.
 
 **Consequences**:
-- Every chart-type serializer subclasses a shared `ChartResponseSerializer` /
-  `ChartGroupingSerializer` base (analogous to the shared Lit base class) and
-  only overrides the inner `data` shape — see the handoff spec for the full
-  base-class skeleton once written.
+- Every chart-type schema parametrizes a shared generic
+  `ChartResponseSchema[TData]` / `ChartGroupingSchema[TData]` base (Pydantic
+  generics — analogous to the shared Lit base class) with its own Data
+  schema, and overrides `config` only when it has its own Config fields —
+  see the handoff spec (`docs/charts-handoff.md`) for the full schema
+  hierarchy.
 - A chart type with no WebGL trace (7 of 11, per issue #72) still exposes
   `webglThreshold`/`forceRenderer` on its Config; the base class documents
   this as a no-op rather than omitting the fields, keeping one consistent
