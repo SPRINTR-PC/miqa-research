@@ -15,6 +15,11 @@ from MiqaResearch.data.serializers.charts.box import (
     BoxEntrySchema,
     BoxStatsSchema,
 )
+from MiqaResearch.data.serializers.charts.heatmap import (
+    HeatmapChartConfigSchema,
+    HeatmapChartDataSchema,
+    HeatmapChartResponseSchema,
+)
 from MiqaResearch.data.serializers.charts.histogram import (
     HistogramBinsSchema,
     HistogramChartDataSchema,
@@ -628,3 +633,85 @@ def test_box_chart_response_schema_json_schema_generation_does_not_error():
 def test_box_chart_config_schema_rejects_invalid_quartile_method():
     with pytest.raises(ValidationError):
         BoxChartConfigSchema.model_validate({"quartile_method": "median"})
+
+
+def test_heatmap_chart_data_schema_validates_a_z_matrix_with_no_axis_labels():
+    data = HeatmapChartDataSchema.model_validate({"z": [[1, 2], [3, 4]]})
+
+    assert data.z == [[1.0, 2.0], [3.0, 4.0]]
+    assert data.x is None
+    assert data.y is None
+
+
+def test_heatmap_chart_data_schema_accepts_explicit_x_and_y_labels():
+    data = HeatmapChartDataSchema.model_validate(
+        {"z": [[1, 2]], "x": ["a", "b"], "y": ["row1"]}
+    )
+
+    assert data.x == ["a", "b"]
+    assert data.y == ["row1"]
+
+
+def test_heatmap_chart_config_schema_defaults_to_none():
+    payload = {
+        "config": {},
+        "groupings": [{"name": "only", "label": "Only", "data": {"z": [[1]]}}],
+    }
+
+    parsed = HeatmapChartResponseSchema.model_validate(payload)
+
+    assert parsed.config.color_scale is None
+    assert parsed.config.z_mid is None
+
+
+def test_heatmap_chart_config_schema_respects_color_scale_and_z_mid():
+    payload = {
+        "config": {"color_scale": "diverging", "z_mid": 5},
+        "groupings": [{"name": "only", "label": "Only", "data": {"z": [[-1, 1]]}}],
+    }
+
+    parsed = HeatmapChartResponseSchema.model_validate(payload)
+
+    assert parsed.config.color_scale == "diverging"
+    assert parsed.config.z_mid == 5.0
+
+
+def test_heatmap_chart_config_schema_rejects_invalid_color_scale():
+    with pytest.raises(ValidationError):
+        HeatmapChartConfigSchema.model_validate({"color_scale": "invalid"})
+
+
+def test_heatmap_chart_response_schema_config_is_optional():
+    payload = {
+        "groupings": [{"name": "only", "label": "Only", "data": {"z": [[1]]}}],
+    }
+
+    parsed = HeatmapChartResponseSchema.model_validate(payload)
+
+    assert parsed.config is None
+
+
+def test_heatmap_chart_response_schema_validates_full_payload():
+    payload = {
+        "config": {"color_scale": "sequential"},
+        "groupings": [
+            {
+                "name": "correlation",
+                "label": "Correlation",
+                "data": {"z": [[1, 0.5], [0.5, 1]], "x": ["A", "B"], "y": ["A", "B"]},
+            }
+        ],
+    }
+
+    parsed = HeatmapChartResponseSchema.model_validate(payload)
+
+    assert parsed.config.color_scale == "sequential"
+    assert parsed.groupings[0].data.z == [[1.0, 0.5], [0.5, 1.0]]
+    assert parsed.groupings[0].data.x == ["A", "B"]
+
+
+def test_heatmap_chart_response_schema_json_schema_generation_does_not_error():
+    schema = HeatmapChartResponseSchema.model_json_schema()
+
+    assert "properties" in schema
+    assert "groupings" in schema["properties"]

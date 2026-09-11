@@ -14,6 +14,12 @@ import { css } from "lit";
  * onto itself (see MiresChartBase) so `:host([data-theme="dark"])` below can
  * react to an explicit theme toggle even when the surrounding page has no dark
  * theme of its own yet.
+ *
+ * The diverging ramp (negative/neutral/positive, ADR 0022 amendment from #82)
+ * is likewise fixed rather than brand-derived, and — like the categorical set
+ * — has distinct light/dark hex values rather than being computed live: its
+ * poles reuse the categorical set's blue (slot 1) and red (slot 8) hues, with
+ * a neutral gray midpoint, per the `dataviz` skill's diverging-pair guidance.
  */
 export const chartPaletteStyles = css`
   :host {
@@ -35,6 +41,11 @@ export const chartPaletteStyles = css`
     --mires-chart-sequential-4: var(--chart-sequential-4, hsl(from var(--mires-color-primary-parts) h s 35%));
     --mires-chart-sequential-5: var(--chart-sequential-5, hsl(from var(--mires-color-primary-parts) h s 20%));
 
+    /* Chart Palette — diverging (fixed blue/gray/red, ADR 0022 amendment) */
+    --mires-chart-diverging-negative: var(--chart-diverging-negative, #2a78d6);
+    --mires-chart-diverging-neutral: var(--chart-diverging-neutral, #f0efec);
+    --mires-chart-diverging-positive: var(--chart-diverging-positive, #e34948);
+
     /* Chart Palette — gridlines / axis, derived from the existing text color */
     --mires-chart-gridline: var(--chart-gridline, hsl(from var(--mires-color-text-parts) h s l / 0.12));
     --mires-chart-axis: var(--chart-axis, hsl(from var(--mires-color-text-parts) h s l / 0.35));
@@ -50,6 +61,10 @@ export const chartPaletteStyles = css`
       --mires-chart-series-6: var(--chart-series-6, #008300);
       --mires-chart-series-7: var(--chart-series-7, #9085e9);
       --mires-chart-series-8: var(--chart-series-8, #e66767);
+
+      --mires-chart-diverging-negative: var(--chart-diverging-negative, #3987e5);
+      --mires-chart-diverging-neutral: var(--chart-diverging-neutral, #383835);
+      --mires-chart-diverging-positive: var(--chart-diverging-positive, #e66767);
     }
   }
 
@@ -62,5 +77,9 @@ export const chartPaletteStyles = css`
     --mires-chart-series-6: var(--chart-series-6, #008300);
     --mires-chart-series-7: var(--chart-series-7, #9085e9);
     --mires-chart-series-8: var(--chart-series-8, #e66767);
+
+    --mires-chart-diverging-negative: var(--chart-diverging-negative, #3987e5);
+    --mires-chart-diverging-neutral: var(--chart-diverging-neutral, #383835);
+    --mires-chart-diverging-positive: var(--chart-diverging-positive, #e66767);
   }
 `;

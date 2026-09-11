@@ -179,8 +179,13 @@ export abstract class MiresChartBase<TData = unknown> extends LitElement {
    * references, they don't evaluate color functions. Assigning the raw value
    * to a real color property on a throwaway probe element forces the browser
    * to fully resolve it.
+   *
+   * Protected rather than private: a concrete element whose trace-builder
+   * needs resolved Chart Palette colors (heatmap, sankey — §7.6/§7.8) reads
+   * them here rather than the base class hardcoding every type's own palette
+   * subset.
    */
-  private resolveThemeColor(varName: string): string {
+  protected resolveThemeColor(varName: string): string {
     const raw = getComputedStyle(this).getPropertyValue(varName).trim();
     if (!raw) {
       return "";
