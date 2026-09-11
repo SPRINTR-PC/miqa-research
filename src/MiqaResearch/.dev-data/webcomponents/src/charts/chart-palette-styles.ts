@@ -20,6 +20,12 @@ import { css } from "lit";
  * — has distinct light/dark hex values rather than being computed live: its
  * poles reuse the categorical set's blue (slot 1) and red (slot 8) hues, with
  * a neutral gray midpoint, per the `dataviz` skill's diverging-pair guidance.
+ *
+ * `--mires-chart-sankey-node` (added by #84) is the neutral tone a Sankey
+ * node falls back to when its `SankeyNode.color` override is omitted — the
+ * one chart type where the API may set an arbitrary per-item color at all
+ * (ADR 0022 amendment), so unlike the categorical/sequential/diverging sets
+ * above it's a single fallback color, not a ramp.
  */
 export const chartPaletteStyles = css`
   :host {
@@ -49,6 +55,9 @@ export const chartPaletteStyles = css`
     /* Chart Palette — gridlines / axis, derived from the existing text color */
     --mires-chart-gridline: var(--chart-gridline, hsl(from var(--mires-color-text-parts) h s l / 0.12));
     --mires-chart-axis: var(--chart-axis, hsl(from var(--mires-color-text-parts) h s l / 0.35));
+
+    /* Chart Palette — sankey node default (neutral tone, ADR 0022 amendment) */
+    --mires-chart-sankey-node: var(--chart-sankey-node, #9a9a94);
   }
 
   @media (prefers-color-scheme: dark) {
@@ -65,6 +74,8 @@ export const chartPaletteStyles = css`
       --mires-chart-diverging-negative: var(--chart-diverging-negative, #3987e5);
       --mires-chart-diverging-neutral: var(--chart-diverging-neutral, #383835);
       --mires-chart-diverging-positive: var(--chart-diverging-positive, #e66767);
+
+      --mires-chart-sankey-node: var(--chart-sankey-node, #6f6f68);
     }
   }
 
@@ -81,5 +92,7 @@ export const chartPaletteStyles = css`
     --mires-chart-diverging-negative: var(--chart-diverging-negative, #3987e5);
     --mires-chart-diverging-neutral: var(--chart-diverging-neutral, #383835);
     --mires-chart-diverging-positive: var(--chart-diverging-positive, #e66767);
+
+    --mires-chart-sankey-node: var(--chart-sankey-node, #6f6f68);
   }
 `;

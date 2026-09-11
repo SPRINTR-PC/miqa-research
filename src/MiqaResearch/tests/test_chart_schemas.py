@@ -38,6 +38,13 @@ from MiqaResearch.data.serializers.charts.pie import (
     PieChartDataSchema,
     PieChartResponseSchema,
 )
+from MiqaResearch.data.serializers.charts.sankey import (
+    SankeyChartConfigSchema,
+    SankeyChartDataSchema,
+    SankeyChartResponseSchema,
+    SankeyLinkSchema,
+    SankeyNodeSchema,
+)
 from MiqaResearch.data.serializers.charts.xy import (
     LineChartResponseSchema,
     XYChartDataSchema,
@@ -837,6 +844,125 @@ def test_density_2d_chart_response_schema_validates_full_payload_for_both_styles
 
 def test_density_2d_chart_response_schema_json_schema_generation_does_not_error():
     schema = Density2DChartResponseSchema.model_json_schema()
+
+    assert "properties" in schema
+    assert "groupings" in schema["properties"]
+
+
+def test_sankey_node_schema_color_defaults_to_none():
+    node = SankeyNodeSchema.model_validate({"label": "A"})
+
+    assert node.label == "A"
+    assert node.color is None
+
+
+def test_sankey_node_schema_accepts_explicit_color_override():
+    node = SankeyNodeSchema.model_validate({"label": "A", "color": "#2a78d6"})
+
+    assert node.color == "#2a78d6"
+
+
+def test_sankey_link_schema_color_defaults_to_none():
+    link = SankeyLinkSchema.model_validate({"source": 0, "target": 1, "value": 4})
+
+    assert link.source == 0
+    assert link.target == 1
+    assert link.value == 4.0
+    assert link.color is None
+
+
+def test_sankey_link_schema_accepts_explicit_color_override():
+    link = SankeyLinkSchema.model_validate(
+        {"source": 0, "target": 1, "value": 4, "color": "#e34948"}
+    )
+
+    assert link.color == "#e34948"
+
+
+def test_sankey_chart_data_schema_validates_a_nodes_and_links_graph():
+    data = SankeyChartDataSchema.model_validate(
+        {
+            "nodes": [{"label": "A"}, {"label": "B"}, {"label": "C"}],
+            "links": [
+                {"source": 0, "target": 1, "value": 4},
+                {"source": 1, "target": 2, "value": 2},
+            ],
+        }
+    )
+
+    assert len(data.nodes) == 3
+    assert data.links[0].value == 4.0
+    assert data.links[1].target == 2
+
+
+def test_sankey_chart_config_schema_defaults_to_none():
+    payload = {
+        "config": {},
+        "groupings": [{"name": "only", "label": "Only", "data": {"nodes": [], "links": []}}],
+    }
+
+    parsed = SankeyChartResponseSchema.model_validate(payload)
+
+    assert parsed.config.orientation is None
+    assert parsed.config.arrangement is None
+
+
+def test_sankey_chart_config_schema_respects_orientation_and_arrangement():
+    payload = {
+        "config": {"orientation": "v", "arrangement": "freeform"},
+        "groupings": [{"name": "only", "label": "Only", "data": {"nodes": [], "links": []}}],
+    }
+
+    parsed = SankeyChartResponseSchema.model_validate(payload)
+
+    assert parsed.config.orientation == "v"
+    assert parsed.config.arrangement == "freeform"
+
+
+def test_sankey_chart_config_schema_rejects_invalid_orientation():
+    with pytest.raises(ValidationError):
+        SankeyChartConfigSchema.model_validate({"orientation": "diagonal"})
+
+
+def test_sankey_chart_config_schema_rejects_invalid_arrangement():
+    with pytest.raises(ValidationError):
+        SankeyChartConfigSchema.model_validate({"arrangement": "chaotic"})
+
+
+def test_sankey_chart_response_schema_config_is_optional():
+    payload = {
+        "groupings": [{"name": "only", "label": "Only", "data": {"nodes": [], "links": []}}],
+    }
+
+    parsed = SankeyChartResponseSchema.model_validate(payload)
+
+    assert parsed.config is None
+
+
+def test_sankey_chart_response_schema_validates_full_payload_with_color_overrides():
+    payload = {
+        "config": {"orientation": "h", "arrangement": "snap"},
+        "groupings": [
+            {
+                "name": "by_site",
+                "label": "By Site",
+                "data": {
+                    "nodes": [{"label": "A", "color": "#2a78d6"}, {"label": "B"}],
+                    "links": [{"source": 0, "target": 1, "value": 4, "color": "#e34948"}],
+                },
+            }
+        ],
+    }
+
+    parsed = SankeyChartResponseSchema.model_validate(payload)
+
+    assert parsed.config.orientation == "h"
+    assert parsed.groupings[0].data.nodes[0].color == "#2a78d6"
+    assert parsed.groupings[0].data.links[0].color == "#e34948"
+
+
+def test_sankey_chart_response_schema_json_schema_generation_does_not_error():
+    schema = SankeyChartResponseSchema.model_json_schema()
 
     assert "properties" in schema
     assert "groupings" in schema["properties"]
