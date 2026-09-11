@@ -22,6 +22,12 @@ from MiqaResearch.data.serializers.charts.density_2d import (
     Density2DChartResponseSchema,
     Density2DSeriesSchema,
 )
+from MiqaResearch.data.serializers.charts.grid import (
+    ChartGridConfigSchema,
+    ChartGridDataSchema,
+    ChartGridResponseSchema,
+    ChartGridSubplotSpecSchema,
+)
 from MiqaResearch.data.serializers.charts.heatmap import (
     HeatmapChartConfigSchema,
     HeatmapChartDataSchema,
@@ -963,6 +969,128 @@ def test_sankey_chart_response_schema_validates_full_payload_with_color_override
 
 def test_sankey_chart_response_schema_json_schema_generation_does_not_error():
     schema = SankeyChartResponseSchema.model_json_schema()
+
+    assert "properties" in schema
+    assert "groupings" in schema["properties"]
+
+
+def test_chart_grid_subplot_spec_schema_validates_position_and_type():
+    spec = ChartGridSubplotSpecSchema.model_validate({"type": "bar", "row": 0, "col": 1})
+
+    assert spec.type == "bar"
+    assert spec.row == 0
+    assert spec.col == 1
+    assert spec.config is None
+
+
+def test_chart_grid_subplot_spec_schema_accepts_a_per_subplot_config():
+    spec = ChartGridSubplotSpecSchema.model_validate(
+        {"type": "pie", "row": 0, "col": 0, "config": {"hole": 0.5}}
+    )
+
+    assert spec.config == {"hole": 0.5}
+
+
+def test_chart_grid_config_schema_validates_rows_cols_and_subplots():
+    config = ChartGridConfigSchema.model_validate(
+        {
+            "rows": 1,
+            "cols": 2,
+            "subplots": [
+                {"type": "bar", "row": 0, "col": 0},
+                {"type": "pie", "row": 0, "col": 1},
+            ],
+        }
+    )
+
+    assert config.rows == 1
+    assert config.cols == 2
+    assert len(config.subplots) == 2
+    assert config.subplots[1].type == "pie"
+
+
+def test_chart_grid_config_schema_inherits_base_config_fields():
+    config = ChartGridConfigSchema.model_validate(
+        {
+            "rows": 1,
+            "cols": 1,
+            "subplots": [{"type": "bar", "row": 0, "col": 0}],
+            "webgl_threshold": 50,
+            "event_callbacks": {"click": "on_click"},
+        }
+    )
+
+    assert config.webgl_threshold == 50
+    assert config.event_callbacks.click == "on_click"
+
+
+def test_chart_grid_data_schema_holds_one_loosely_validated_entry_per_subplot():
+    data = ChartGridDataSchema.model_validate(
+        {
+            "subplots": [
+                {"categories": ["A"], "series": [{"name": "S", "values": [1]}]},
+                {"labels": ["X"], "values": [1]},
+            ]
+        }
+    )
+
+    assert len(data.subplots) == 2
+    assert data.subplots[0] == {"categories": ["A"], "series": [{"name": "S", "values": [1]}]}
+    assert data.subplots[1] == {"labels": ["X"], "values": [1]}
+
+
+def test_chart_grid_response_schema_validates_a_mixed_type_payload():
+    payload = {
+        "config": {
+            "rows": 1,
+            "cols": 3,
+            "subplots": [
+                {"type": "bar", "row": 0, "col": 0},
+                {"type": "pie", "row": 0, "col": 1},
+                {"type": "sankey", "row": 0, "col": 2},
+            ],
+        },
+        "groupings": [
+            {
+                "name": "by_site",
+                "label": "By Site",
+                "data": {
+                    "subplots": [
+                        {"categories": ["A"], "series": [{"name": "S", "values": [1]}]},
+                        {"labels": ["X"], "values": [1]},
+                        {
+                            "nodes": [{"label": "A"}, {"label": "B"}],
+                            "links": [{"source": 0, "target": 1, "value": 1}],
+                        },
+                    ]
+                },
+            }
+        ],
+    }
+
+    parsed = ChartGridResponseSchema.model_validate(payload)
+
+    assert parsed.config.rows == 1
+    assert parsed.config.cols == 3
+    assert len(parsed.config.subplots) == 3
+    assert parsed.groupings[0].data.subplots[2] == {
+        "nodes": [{"label": "A"}, {"label": "B"}],
+        "links": [{"source": 0, "target": 1, "value": 1}],
+    }
+
+
+def test_chart_grid_response_schema_config_is_optional():
+    payload = {
+        "groupings": [{"name": "only", "label": "Only", "data": {"subplots": []}}],
+    }
+
+    parsed = ChartGridResponseSchema.model_validate(payload)
+
+    assert parsed.config is None
+
+
+def test_chart_grid_response_schema_json_schema_generation_does_not_error():
+    schema = ChartGridResponseSchema.model_json_schema()
 
     assert "properties" in schema
     assert "groupings" in schema["properties"]

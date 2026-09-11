@@ -9,6 +9,7 @@ import "./charts/mires-chart-box.js";
 import "./charts/mires-chart-heatmap.js";
 import "./charts/mires-chart-density-2d.js";
 import "./charts/mires-chart-sankey.js";
+import "./charts/mires-chart-grid.js";
 
 export * from "./charts/mires-chart-base.js";
 export * from "./charts/xy-chart-base.js";
@@ -23,7 +24,9 @@ export * from "./charts/mires-chart-box.js";
 export * from "./charts/mires-chart-heatmap.js";
 export * from "./charts/mires-chart-density-2d.js";
 export * from "./charts/mires-chart-sankey.js";
+export * from "./charts/mires-chart-grid.js";
 export * from "./charts/chart-color-utils.js";
 export * from "./charts/chart-callback-registry.js";
+export * from "./charts/chart-grid-utils.js";
 export * from "./charts/chart-types.js";
 export * from "./charts/snake-to-camel.js";
