@@ -15,6 +15,13 @@ from MiqaResearch.data.serializers.charts.box import (
     BoxEntrySchema,
     BoxStatsSchema,
 )
+from MiqaResearch.data.serializers.charts.density_2d import (
+    Density2DBinsSchema,
+    Density2DChartConfigSchema,
+    Density2DChartDataSchema,
+    Density2DChartResponseSchema,
+    Density2DSeriesSchema,
+)
 from MiqaResearch.data.serializers.charts.heatmap import (
     HeatmapChartConfigSchema,
     HeatmapChartDataSchema,
@@ -712,6 +719,124 @@ def test_heatmap_chart_response_schema_validates_full_payload():
 
 def test_heatmap_chart_response_schema_json_schema_generation_does_not_error():
     schema = HeatmapChartResponseSchema.model_json_schema()
+
+    assert "properties" in schema
+    assert "groupings" in schema["properties"]
+
+
+def test_density_2d_series_schema_optional_fields_default_to_none():
+    series = Density2DSeriesSchema(name="All", x=[1.0, 2.0], y=[3.0, 4.0])
+
+    assert series.bins is None
+
+
+def test_density_2d_bins_schema_validates_all_fields():
+    bins = Density2DBinsSchema.model_validate(
+        {"nbinsx": 10, "nbinsy": 20, "xbins": {"start": 0, "end": 100, "size": 10}}
+    )
+
+    assert bins.nbinsx == 10
+    assert bins.nbinsy == 20
+    assert bins.xbins == {"start": 0, "end": 100, "size": 10}
+
+
+def test_density_2d_chart_data_schema_supports_a_single_series_with_no_bins():
+    data = Density2DChartDataSchema.model_validate(
+        {"series": [{"name": "All", "x": [1, 2, 3], "y": [4, 5, 6]}]}
+    )
+
+    assert len(data.series) == 1
+    assert data.series[0].bins is None
+
+
+def test_density_2d_chart_data_schema_supports_multiple_overlaid_series():
+    data = Density2DChartDataSchema.model_validate(
+        {
+            "series": [
+                {"name": "Site A", "x": [1, 2], "y": [1, 2]},
+                {"name": "Site B", "x": [3, 4], "y": [3, 4]},
+            ]
+        }
+    )
+
+    assert len(data.series) == 2
+    assert data.series[1].name == "Site B"
+
+
+def test_density_2d_chart_data_schema_supports_per_series_bins_override():
+    data = Density2DChartDataSchema.model_validate(
+        {
+            "series": [
+                {"name": "Site A", "x": [1, 2], "y": [1, 2], "bins": {"nbinsx": 5}},
+                {"name": "Site B", "x": [3, 4], "y": [3, 4]},
+            ]
+        }
+    )
+
+    assert data.series[0].bins.nbinsx == 5
+    assert data.series[1].bins is None
+
+
+def test_density_2d_chart_config_schema_defaults_to_none():
+    payload = {
+        "config": {},
+        "groupings": [{"name": "only", "label": "Only", "data": {"series": []}}],
+    }
+
+    parsed = Density2DChartResponseSchema.model_validate(payload)
+
+    assert parsed.config.style is None
+    assert parsed.config.density_bins is None
+
+
+def test_density_2d_chart_config_schema_respects_style_and_density_bins():
+    payload = {
+        "config": {"style": "contour", "density_bins": {"nbinsx": 20, "nbinsy": 20}},
+        "groupings": [{"name": "only", "label": "Only", "data": {"series": []}}],
+    }
+
+    parsed = Density2DChartResponseSchema.model_validate(payload)
+
+    assert parsed.config.style == "contour"
+    assert parsed.config.density_bins.nbinsx == 20
+
+
+def test_density_2d_chart_config_schema_rejects_invalid_style():
+    with pytest.raises(ValidationError):
+        Density2DChartConfigSchema.model_validate({"style": "invalid"})
+
+
+def test_density_2d_chart_response_schema_config_is_optional():
+    payload = {
+        "groupings": [{"name": "only", "label": "Only", "data": {"series": []}}],
+    }
+
+    parsed = Density2DChartResponseSchema.model_validate(payload)
+
+    assert parsed.config is None
+
+
+def test_density_2d_chart_response_schema_validates_full_payload_for_both_styles():
+    for style in ("heatmap", "contour"):
+        payload = {
+            "config": {"style": style},
+            "groupings": [
+                {
+                    "name": "by_site",
+                    "label": "By Site",
+                    "data": {"series": [{"name": "All", "x": [1, 2], "y": [3, 4]}]},
+                }
+            ],
+        }
+
+        parsed = Density2DChartResponseSchema.model_validate(payload)
+
+        assert parsed.config.style == style
+        assert parsed.groupings[0].data.series[0].x == [1.0, 2.0]
+
+
+def test_density_2d_chart_response_schema_json_schema_generation_does_not_error():
+    schema = Density2DChartResponseSchema.model_json_schema()
 
     assert "properties" in schema
     assert "groupings" in schema["properties"]

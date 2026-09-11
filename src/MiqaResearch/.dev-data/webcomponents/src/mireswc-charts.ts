@@ -7,6 +7,7 @@ import "./charts/mires-chart-histogram.js";
 import "./charts/mires-chart-pie.js";
 import "./charts/mires-chart-box.js";
 import "./charts/mires-chart-heatmap.js";
+import "./charts/mires-chart-density-2d.js";
 
 export * from "./charts/mires-chart-base.js";
 export * from "./charts/xy-chart-base.js";
@@ -19,6 +20,7 @@ export * from "./charts/mires-chart-histogram.js";
 export * from "./charts/mires-chart-pie.js";
 export * from "./charts/mires-chart-box.js";
 export * from "./charts/mires-chart-heatmap.js";
+export * from "./charts/mires-chart-density-2d.js";
 export * from "./charts/chart-callback-registry.js";
 export * from "./charts/chart-types.js";
 export * from "./charts/snake-to-camel.js";
