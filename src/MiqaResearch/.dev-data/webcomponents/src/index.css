@@ -5,6 +5,10 @@
   --color-text-parts: 0 0% 9%;
   --color-primary-parts: 273 74% 53%;
   --color-border: #e5e4e7;
+  --mires-color-background: #ffffff;
+  --mires-chart-axis: #ffffff;
+  --mires-chart-gridline: #3e3e3e;
+  --mires-form-color-text: #1e1e1e;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -12,6 +16,10 @@
     background-color: #3e3e3e;
     --color-text-parts: 0 0% 98%;
     --color-background-parts: 0 0% 9%;
+    --mires-color-background: #3e3e3e;
+    --mires-chart-gridline: #fff;
+    --mires-chart-axis: #ffffff;
+    --mires-form-color-text: #ffffff;
   }
 }
 

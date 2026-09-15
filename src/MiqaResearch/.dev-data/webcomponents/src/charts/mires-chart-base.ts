@@ -91,7 +91,9 @@ export abstract class MiresChartBase<TData = unknown> extends LitElement {
 
   /** A type's own layout fields beyond trace construction (e.g. bar's `barmode`). Default: none. */
   protected extraLayout(): Partial<Layout> {
-    return {};
+    return {
+
+    };
   }
 
   public override connectedCallback(): void {
@@ -198,6 +200,16 @@ export abstract class MiresChartBase<TData = unknown> extends LitElement {
     return resolved || raw;
   }
 
+  /** Reads a numeric (pixel) CSS custom property — e.g. a `--mires-chart-padding-*` var — falling back when unset or unparsable. */
+  private resolveThemeNumber(varName: string, fallback: number): number {
+    const raw = getComputedStyle(this).getPropertyValue(varName).trim();
+    if (!raw) {
+      return fallback;
+    }
+    const parsed = Number.parseFloat(raw);
+    return Number.isNaN(parsed) ? fallback : parsed;
+  }
+
   private buildLayout(labels?: ChartGroupingLabels): Partial<Layout> {
     const style = getComputedStyle(this);
     const background = this.resolveThemeColor("--mires-color-background");
@@ -207,22 +219,32 @@ export abstract class MiresChartBase<TData = unknown> extends LitElement {
     const colorway = [1, 2, 3, 4, 5, 6, 7, 8].map((i) => this.resolveThemeColor(`--mires-chart-series-${i}`));
     const fontFamily = style.getPropertyValue("--form-font-family").trim() || undefined;
 
+    const topPadding = this.resolveThemeNumber("--mires-chart-padding-top", 16);
+    const leftPadding = this.resolveThemeNumber("--mires-chart-padding-left", labels?.yAxisTitle ? 80 : 40);
+    const bottomPadding = this.resolveThemeNumber("--mires-chart-padding-bottom", labels?.xAxisTitle ? 80 : 20);
+
     return {
       paper_bgcolor: background || undefined,
       plot_bgcolor: background || undefined,
       font: { family: fontFamily, color: textColor || undefined },
       colorway,
+      margin: { t: topPadding, b: bottomPadding, l: leftPadding, r: 20 },
       xaxis: {
         title: labels?.xAxisTitle ? { text: labels.xAxisTitle } : undefined,
+        color: axisColor || '#e1e1e1',
         gridcolor: gridColor || undefined,
         linecolor: axisColor || undefined,
       },
       yaxis: {
         title: labels?.yAxisTitle ? { text: labels.yAxisTitle } : undefined,
+        color: axisColor || '#e1e1e1',
         gridcolor: gridColor || undefined,
         linecolor: axisColor || undefined,
       },
-      legend: labels?.legendTitle ? { title: { text: labels.legendTitle } } : undefined,
+      legend: {
+        font: { family: fontFamily, color: textColor || undefined },
+        title: labels?.legendTitle ? { text: labels.legendTitle } : undefined,
+      },
       ...this.extraLayout(),
     };
   }
@@ -234,10 +256,43 @@ export abstract class MiresChartBase<TData = unknown> extends LitElement {
     const grouping = this.response.groupings[this.selectedGroupingIndex];
     const traces = this.buildTraces(grouping.data, grouping.labels);
     const layout = this.buildLayout(grouping.labels);
-    const graphDiv = await Plotly.react(this.plotEl, traces as Data[], layout, { responsive: true });
+    const graphDiv = await Plotly.react(this.plotEl, traces as Data[], layout, { displaylogo: false, displayModeBar: false, responsive: true });
+    this.syncPlotlyGlobalStyles();
     if (!this.eventsWired) {
       this.wireEvents(graphDiv);
       this.eventsWired = true;
+    }
+  }
+
+  /**
+   * plotly.js draws its own hover labels, select-box outline, and drag/hover
+   * pointer-events rules (e.g. `.main-svg { pointer-events: none }` /
+   * `.main-svg .draglayer { pointer-events: all }`) via a single stylesheet
+   * it lazily appends to `document.head` (`Lib.addStyleRule`,
+   * `#plotly.js-style-global`) — rules scoped to `.js-plotly-plot ...`
+   * selectors, added to as more plotly.js features are first used. A
+   * shadow root doesn't inherit `document.head` styles, so without a local
+   * copy inside each chart's own shadow root, none of that interaction CSS
+   * ever applies: hover never fires and drag-select never draws its
+   * outline, even though the underlying event handling still runs. Re-synced
+   * after every render since plotly.js can append more rules over time.
+   */
+  private syncPlotlyGlobalStyles(): void {
+    const globalStyle = document.getElementById("plotly.js-style-global");
+    if (!(globalStyle instanceof HTMLStyleElement) || !globalStyle.sheet) {
+      return;
+    }
+    const cssText = Array.from(globalStyle.sheet.cssRules)
+      .map((rule) => rule.cssText)
+      .join("\n");
+    let mirror = this.renderRoot.querySelector<HTMLStyleElement>("style[data-plotly-style-mirror]");
+    if (!mirror) {
+      mirror = document.createElement("style");
+      mirror.dataset.plotlyStyleMirror = "";
+      this.renderRoot.appendChild(mirror);
+    }
+    if (mirror.textContent !== cssText) {
+      mirror.textContent = cssText;
     }
   }
 
@@ -341,6 +396,12 @@ export abstract class MiresChartBase<TData = unknown> extends LitElement {
         width: 100%;
         height: 100%;
         min-height: 240px;
+
+        /* Plot padding — the space reserved around the plot when the
+           corresponding axis/plot title isn't present (see buildLayout()). */
+        --mires-chart-padding-top: var(--chart-padding-top, 16);
+        --mires-chart-padding-left: var(--chart-padding-left, 40);
+        --mires-chart-padding-bottom: var(--chart-padding-bottom, 20);
       }
       .grouping-select {
         position: absolute;

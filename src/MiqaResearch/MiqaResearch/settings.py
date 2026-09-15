@@ -403,8 +403,6 @@ STATICFILES_FINDERS = [
     "django.contrib.staticfiles.finders.AppDirectoriesFinder",
 ]
 
-STATIC_ROOT_IGNORES = ["less", "webcomponents"]
-
 # ==============================
 # SENSITIVE DATA ENCRYPTION
 # ==============================

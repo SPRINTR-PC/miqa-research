@@ -45,6 +45,15 @@ dialog.modal[open] {
 dialog.modal::backdrop {
   background-color: hsla(0, 0%, 0%, 0.5);
 }
+mires-chart-line {
+  --mires-color-background: var(--color-background, #3e3e3e);
+  --mires-chart-gridline: #2e2e2e;
+  --mires-chart-axis: var(--color-text, #ffffff);
+  --mires-form-color-text: var(--color-text, #ffffff);
+}
+mires-chart-line.card-plot {
+  --mires-color-background: var(--color-card, #3e3e3e);
+}
 .horizontal-tablist {
   border-radius: 10px;
 }

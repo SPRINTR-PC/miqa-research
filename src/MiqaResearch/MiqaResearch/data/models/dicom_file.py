@@ -23,6 +23,7 @@ class DicomFile(models.Model):
     image_orientation_patient = ArrayField(models.FloatField(), size=6, blank=True, null=True)
     frame_of_reference_uid = models.CharField(max_length=128, blank=True, null=True)
     pixel_spacing = ArrayField(models.FloatField(), size=2, blank=True, null=True)
+    contains_burned_in_annotations = models.BooleanField(blank=True, null=True)
     metadata = models.JSONField(blank=True, null=True)
 
     class Meta:

@@ -13,6 +13,15 @@ export default defineConfig({
         find: "buffer/",
         replacement: "buffer",
       },
+      {
+        // Anchored regex, not a plain string: a string `find` here matches
+        // as a prefix (rewriting "plotly.js/lib/core" too, which is exactly
+        // what plotly-custom.ts itself imports — an infinite alias loop).
+        // See that file for why the full "plotly.js" package is never
+        // imported directly.
+        find: /^plotly\.js$/,
+        replacement: resolve(__dirname, "src/charts/plotly-custom.ts"),
+      },
     ],
   },
   build: {
