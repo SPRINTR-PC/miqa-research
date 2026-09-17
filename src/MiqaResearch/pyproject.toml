@@ -42,6 +42,8 @@ dev = [
     "pytest-asyncio>=1.4.0",
     "pytest-django>=4.12.0",
     "pytest-html-plus>=1.0.1",
+    "pytest-benchmark",
+    "hypothesis",
     "sphinx",
     "myst-parser",
     "sphinx-autobuild>=2025.8.25",
