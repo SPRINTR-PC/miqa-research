@@ -1,10 +1,6 @@
 {% get_current_language as LANGUAGE_CODE %}
 <div class="space-y-4">
-    <div class="flex items-center justify-between">
-        <div>
-            <div class="font-bold text-2xl">{{ consent_counts }}</div>
-            <div class="text-sm text-muted-foreground">{% translate "Current consents" %}</div>
-        </div>
+    <div class="flex items-center justify-end">
         {% include '01_dashboard/_panel_consent_statistics_tablist.html' %}
     </div>
     <div id="dashboard-consent-contents" class="grid gap-4">
