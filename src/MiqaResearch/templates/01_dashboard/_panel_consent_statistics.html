@@ -1,4 +1,13 @@
 {% get_current_language as LANGUAGE_CODE %}
-<div class="rounded-lg border bg-card text-card-foreground shadow-sm p-6">
-    <mires-chart-line class="card-plot" data-url="{% url 'api-v1:dashboard_consent_plot_by_clinic' project.id %}"></mires-chart-line>
+<div class="space-y-4">
+    <div class="flex items-center justify-between">
+        <div>
+            <div class="font-bold text-2xl">{{ consent_counts }}</div>
+            <div class="text-sm text-muted-foreground">{% translate "Current consents" %}</div>
+        </div>
+        {% include '01_dashboard/_panel_consent_statistics_tablist.html' %}
+    </div>
+    <div id="dashboard-consent-contents" class="grid gap-4">
+        {% include "01_dashboard/_panel_consent_statistics_plots.html" %}
+    </div>
 </div>

@@ -283,7 +283,7 @@ def generate_django_fixture(now: datetime | None = None, seed: int = 42,
     clinic_pks: dict[str, str] = {}
     for clinic in CLINICS:
         clinic_pk = _fixture_uuid(rng)
-        add(_MODEL_CLINIC, clinic_pk, {"clinic_name": clinic})
+        add(_MODEL_CLINIC, clinic_pk, {"clinic_name": clinic, "clinic_code": clinic})
         clinic_pks[clinic] = clinic_pk
 
     participant_pks: dict[str, str] = {}

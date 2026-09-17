@@ -9,6 +9,8 @@ class ParticipantConsentType(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     label = models.CharField(
         max_length=255, unique=True, help_text="Short label for the consent type to display in the UI")
+    short_label = models.CharField(  # noqa: DJ001
+        max_length=40, blank=True, null=True, help_text="Short label for the consent type to display in the UI")
     description = models.TextField(blank=True, null=False, default="", help_text="Description of the consent type")
     research_project = models.ForeignKey(
         "ResearchProject", on_delete=models.CASCADE, blank=False, null=False, db_index=True)
@@ -35,6 +37,7 @@ class ParticipantConsent(models.Model):
     consent_type = models.ForeignKey(ParticipantConsentType, on_delete=models.CASCADE, blank=False, null=False,
                                      related_name="consents", related_query_name="consent",
                                      db_index=True)
+    participant_information_version = models.CharField(max_length=100, blank=True, null=True)  # noqa: DJ001
     source = models.CharField(max_length=200, blank=True, null=True, help_text="Source of the consent")  # noqa: DJ001
     extra_info = models.JSONField(blank=True, null=True, help_text="Extra information about the consent")
 

@@ -234,12 +234,14 @@ export abstract class MiresChartBase<TData = unknown> extends LitElement {
         color: axisColor || '#e1e1e1',
         gridcolor: gridColor || undefined,
         linecolor: axisColor || undefined,
+        automargin: true,
       },
       yaxis: {
         title: labels?.yAxisTitle ? { text: labels.yAxisTitle } : undefined,
         color: axisColor || '#e1e1e1',
         gridcolor: gridColor || undefined,
         linecolor: axisColor || undefined,
+        automargin: true,
       },
       legend: {
         font: { family: fontFamily, color: textColor || undefined },
@@ -392,7 +394,8 @@ export abstract class MiresChartBase<TData = unknown> extends LitElement {
     css`
       :host {
         position: relative;
-        display: block;
+        display: flex;
+        flex-direction: column;
         width: 100%;
         height: 100%;
         min-height: 240px;
@@ -404,14 +407,16 @@ export abstract class MiresChartBase<TData = unknown> extends LitElement {
         --mires-chart-padding-bottom: var(--chart-padding-bottom, 20);
       }
       .grouping-select {
-        position: absolute;
-        top: 8px;
-        right: 8px;
-        z-index: 1;
+        align-self: flex-end;
+        max-width: 100%;
+        margin-bottom: 8px;
+        --kp-select-width: auto;
       }
       .plot-container {
         width: 100%;
         height: 100%;
+        flex: 1 1 auto;
+        min-height: 0;
       }
       .chart-loading,
       .chart-error {

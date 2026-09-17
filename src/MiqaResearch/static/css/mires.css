@@ -13,6 +13,16 @@
 .text-card-foreground {
   color: var(--color-card-foreground);
 }
+.icon.small-inline-icon {
+  height: 1.3rem;
+  width: 1rem;
+}
+.icon.primary-fill {
+  fill: var(--color-primary);
+}
+.icon.primary-stroke {
+  stroke: var(--color-primary);
+}
 @media (min-width: 1400px) {
   .container {
     max-width: 1400px;
@@ -24,6 +34,11 @@
 @media (min-width: 640px) {
   .sm\:grid-cols-3 {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (min-width: 640px) {
+  .sm\:grid-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 dialog.modal {
@@ -45,14 +60,20 @@ dialog.modal[open] {
 dialog.modal::backdrop {
   background-color: hsla(0, 0%, 0%, 0.5);
 }
-mires-chart-line {
+mires-chart-line,
+mires-chart-bar {
   --mires-color-background: var(--color-background, #3e3e3e);
   --mires-chart-gridline: #2e2e2e;
   --mires-chart-axis: var(--color-text, #ffffff);
   --mires-form-color-text: var(--color-text, #ffffff);
 }
-mires-chart-line.card-plot {
+mires-chart-line.card-plot,
+mires-chart-bar.card-plot {
   --mires-color-background: var(--color-card, #3e3e3e);
+}
+.chart-container {
+  width: 100%;
+  height: 450px;
 }
 .horizontal-tablist {
   border-radius: 10px;
@@ -728,6 +749,12 @@ a {
 }
 .bg-primary\/10 {
   background-color: hsl(var(--color-primary-parts) / 0.1);
+}
+.bg-primary\/20 {
+  background-color: hsl(var(--color-primary-parts) / 0.2);
+}
+.bg-primary\/30 {
+  background-color: hsl(var(--color-primary-parts) / 0.3);
 }
 .bg-muted {
   background-color: var(--color-muted);

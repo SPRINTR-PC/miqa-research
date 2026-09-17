@@ -1,0 +1,18 @@
+<svg
+    xmlns="http://www.w3.org/2000/svg"
+    fillRule="evenodd"
+    strokeLinejoin="round"
+    strokeMiterlimit="1.5"
+    clipRule="evenodd"
+    viewBox="0 0 16 16"
+    width="28"
+    height="28"
+  >
+    <path
+      d="M5,11.991H9.993V28.3H5ZM14.32,5h4.66V28.3H14.32Zm9.32,13.316H28.3V28.3H23.64Z"
+      transform="translate(-4.5 -4.5)"
+      fill="currentColor"
+      stroke="currentColor"
+      strokeWidth="1"
+    />
+</svg>

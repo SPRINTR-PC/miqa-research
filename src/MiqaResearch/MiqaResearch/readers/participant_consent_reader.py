@@ -7,6 +7,8 @@ from django.db.models import Count, F
 from django.utils.translation import gettext
 
 from MiqaResearch.data.models import ParticipantConsent, ResearchProject
+from MiqaResearch.data.serializers.charts.bar import BarChartResponseSchema, BarChartConfigSchema, BarChartDataSchema, \
+    BarSeriesSchema
 from MiqaResearch.data.serializers.charts.base import ChartGroupingLabelsSchema, ChartGroupingSchema
 from MiqaResearch.data.serializers.charts.xy import (
     FilledAreaChartResponseSchema,
@@ -25,6 +27,30 @@ from MiqaResearch.readers.research_project_reader import (
 )
 
 logger = logging.getLogger("mires")
+
+
+async def get_project_consent_count(project: ResearchProject) -> int:
+    """
+    Get the total count of active consents for a given project.
+    """
+    consent_counts = await ParticipantConsent.objects.filter(
+        consent_type__research_project=project,
+        consent_revoked_date__isnull=True
+    ).acount()
+
+    return consent_counts
+
+
+async def get_project_consent_participant_count(project: ResearchProject) -> int:
+    """
+    Get the total count of particpants that have at least one active signed consentfor a given project.
+    """
+    participant_count = await ParticipantConsent.objects.filter(
+        consent_type__research_project=project,
+        consent_revoked_date__isnull=True
+    ).order_by().values("study_participant_id").distinct().acount()
+
+    return participant_count
 
 
 async def get_consent_data_by_clinic(project: ResearchProject) -> ProjectConsentHistoryByClinicSchema:
@@ -120,12 +146,115 @@ async def get_consent_history_plot_by_clinic(project: ResearchProject, filled_st
                 label=gettext("Consent History by Clinic"),
                 labels=ChartGroupingLabelsSchema(
                     x_axis_title=None,
-                    y_axis_title=gettext("Cumulative Consent Count"),
+                    y_axis_title=None,
                     legend_title=gettext("Clinic")
                 ),
                 data=formatted_data
             )
         ]
+    )
+
+
+async def get_consent_statistics_plot(project: ResearchProject) -> BarChartResponseSchema:
+    """
+    Get consent statistics plot data for a given project.
+    """
+    logger.debug("Querying for consent statistics")
+    consents_per_clinic = [
+        (clinic["clinic__clinic_name"], clinic["active_count"])
+        async for clinic in (
+            ParticipantConsent.objects
+            .filter(
+                consent_type__research_project=project,
+                consent_revoked_date__isnull=True
+            )
+            .values("clinic_id", "clinic__clinic_name")
+            .order_by("clinic__clinic_name")
+            .annotate(
+                active_count=Count("study_participant_id", distinct=True),
+            )
+        )
+    ]
+
+    consents_per_participant_information_version = [
+        (row["participant_information_version"], row["active_count"])
+        async for row in (
+            ParticipantConsent.objects
+            .filter(
+                consent_type__research_project=project,
+                consent_revoked_date__isnull=True
+            )
+            .values("participant_information_version")
+            .annotate(
+                active_count=Count("study_participant_id", distinct=True),
+            )
+        )
+    ]
+
+    consent_per_consent_type = [
+        (short_label if (short_label := row["consent_type__short_label"]) else row["consent_type__label"],
+         row["active_count"])
+        async for row in (
+            ParticipantConsent.objects
+            .select_related("consent_type")
+            .filter(
+                consent_type__research_project=project,
+                consent_revoked_date__isnull=True
+            )
+            .values("consent_type_id", "consent_type__label", "consent_type__short_label")
+            .annotate(
+                active_count=Count("study_participant_id", distinct=True),
+            )
+        )
+    ]
+
+    logger.debug("Creating data schema for clinic consents")
+    consents_per_clinic_series = BarChartDataSchema(
+        categories=[row[0] for row in consents_per_clinic],
+        series=[BarSeriesSchema(name=gettext("Active Consents"), values=[row[1] for row in consents_per_clinic])]
+    )
+    logger.debug("Created data schema for clinic consents")
+
+    logger.debug("Creating data schema for consents by PIV version")
+    consents_per_piv_series = BarChartDataSchema(
+        categories=[str(row[0]) if row[0] else gettext("Unknown") for row in consents_per_participant_information_version],
+        series=[BarSeriesSchema(
+            name=gettext("Active Consents"),
+            values=[row[1] for row in consents_per_participant_information_version]
+        )],
+    )
+    logger.debug("Created data schema for consents by PIV version")
+
+    logger.debug("Creating data schema for consents by consent type")
+    consents_per_consent_type = BarChartDataSchema(
+        categories=[str(row[0]) for row in consent_per_consent_type],
+        series=[BarSeriesSchema(name=gettext("Active Consents"), values=[row[1] for row in consent_per_consent_type])],
+    )
+    logger.debug("Created data schema for consents by consent type")
+
+    logger.debug("Creating and returning BarChartResponseSchema for consent statistics")
+    return BarChartResponseSchema(
+        config=BarChartConfigSchema(bar_mode="stack", orientation="v"),
+        groupings=[
+            ChartGroupingSchema(
+                name=gettext("Consent Statistics by Clinic"),
+                label=gettext("Consent Statistics by Clinic"),
+                labels=ChartGroupingLabelsSchema(x_axis_title=None, y_axis_title=None, legend_title=gettext("Clinic")),
+                data=consents_per_clinic_series,
+            ),
+            ChartGroupingSchema(
+                name=gettext("Consents By Consent Type"),
+                label=gettext("Consents By Consent Type"),
+                labels=ChartGroupingLabelsSchema(x_axis_title=None, y_axis_title=None, legend_title=gettext("Consent type")),
+                data=consents_per_consent_type,
+            ),
+            ChartGroupingSchema(
+                name=gettext("Consents by Participant Information Version"),
+                label=gettext("Consents by Participant Information Version"),
+                labels=ChartGroupingLabelsSchema(x_axis_title=None, y_axis_title=None, legend_title=gettext("Version")),
+                data=consents_per_piv_series,
+            ),
+        ],
     )
 
 
