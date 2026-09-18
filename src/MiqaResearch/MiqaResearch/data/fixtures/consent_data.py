@@ -18,7 +18,7 @@ format, matching the format parsed by MiqaResearch/tasks/participant_consent.py.
 ``generate_django_fixture()`` / ``write_django_fixture()`` additionally emit a
 Django loaddata fixture (consent_data.json) with the same data as model
 objects: ResearchProject "SPRiNTR", consent types, clinics, participants and
-consents. Running the module directly (``python consent-data.py``) writes
+consents. Running the module directly (``python consent_data.py``) writes
 consent_data.json next to this file.
 """
 import calendar
@@ -73,12 +73,12 @@ SIGNED_COL = "Signerat"
 LAST_UPDATED_COL = "Senast Uppdaterad"
 RETRACTED_COL = "Återtaget"
 CLINIC_COL = "klinik"
-FPI_COL = "fpi"
+PARTICIPANT_INFORMATION_VERSION_COL = "fpi"
 COMMENT_COL = "Kommentar"
 
 COLUMNS: tuple[str, ...] = (
     NAME_COL, PID_COL, STATUS_COL, SIGNED_COL, LAST_UPDATED_COL, RETRACTED_COL,
-    CLINIC_COL, FPI_COL, FIRST_CONSENT_LABEL, FUTURE_RESEARCH_CONSENT_LABEL, COMMENT_COL,
+    CLINIC_COL, PARTICIPANT_INFORMATION_VERSION_COL, FIRST_CONSENT_LABEL, FUTURE_RESEARCH_CONSENT_LABEL, COMMENT_COL,
 )
 
 STATUS_SIGNED = "Signerat"
@@ -114,6 +114,7 @@ FIXTURE_FILENAME = "consent_data.json"
 _MODEL_RESEARCH_PROJECT = "data.researchproject"
 _MODEL_CONSENT_TYPE = "data.participantconsenttype"
 _MODEL_CLINIC = "data.clinic"
+_MODEL_RESEARCH_PROJECT_CLINIC_MAP = "data.researchprojectclinicmap"
 _MODEL_PARTICIPANT = "data.studyparticipant"
 _MODEL_CONSENT = "data.participantconsent"
 
@@ -211,7 +212,7 @@ def generate_consent_rows(now: datetime | None = None, seed: int = 42) -> list[d
             LAST_UPDATED_COL: last_updated.strftime(DATETIME_FORMAT),
             RETRACTED_COL: revoked.strftime(DATETIME_FORMAT) if revoked else "",
             CLINIC_COL: rng.choice(clinic_codes),
-            FPI_COL: rng.choice(FPI_VERSIONS),
+            PARTICIPANT_INFORMATION_VERSION_COL: rng.choice(FPI_VERSIONS),
             FIRST_CONSENT_LABEL: "Ja",
             FUTURE_RESEARCH_CONSENT_LABEL: "Ja" if rng.random() < 0.6 else "Nej",
             COMMENT_COL: rng.choice(_COMMENTS),
@@ -259,7 +260,8 @@ def generate_django_fixture(now: datetime | None = None, seed: int = 42,
 
     Contains, in dependency order: 1 ResearchProject ("SPRiNTR"), 2
     ParticipantConsentType records (the consent label columns, linked to the
-    project), 10 Clinics, 2000 StudyParticipants (one per fixture row) and
+    project), 10 Clinics, 10 ResearchProjectClinicMap records linking each
+    clinic to the project, 2000 StudyParticipants (one per fixture row) and
     one ParticipantConsent per consented label per row — the same DB state the
     import pipeline would produce from the CSV form of this fixture.
 
@@ -307,6 +309,9 @@ def generate_django_fixture(now: datetime | None = None, seed: int = 42,
         add(_MODEL_CLINIC, clinic_pk, {"clinic_name": clinic_name, "clinic_code": clinic_code})
         clinic_pks[clinic_code] = clinic_pk
 
+    for map_pk, clinic_pk in enumerate(clinic_pks.values(), start=1):
+        add(_MODEL_RESEARCH_PROJECT_CLINIC_MAP, map_pk, {"project": project_pk, "clinic": clinic_pk})
+
     participant_pks: dict[str, str] = {}
     used_aliases: set[str] = set()
     for row in rows:
@@ -346,6 +351,7 @@ def generate_django_fixture(now: datetime | None = None, seed: int = 42,
                 "consent_revoked_date": revoked,
                 "clinic": clinic_pks[row[CLINIC_COL]],
                 "consent_type": type_pks[label],
+                "participant_information_version": row[PARTICIPANT_INFORMATION_VERSION_COL]
             })
 
     return json.dumps(objects, indent=1, ensure_ascii=False)

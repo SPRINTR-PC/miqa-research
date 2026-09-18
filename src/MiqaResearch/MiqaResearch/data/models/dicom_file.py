@@ -5,8 +5,8 @@ from django.contrib.postgres.fields import ArrayField
 from django.contrib.postgres.indexes import GinIndex
 from django.db import models
 
-from .research_project import ResearchProject
 from .dicom_series import DicomSeries
+from .research_project import ResearchProject
 
 
 def upload_to(instance, filename):

@@ -194,3 +194,5 @@ skills-lock.json
 .env.production.local
 appsettings.Development.json
 appsettings.Local.json
+
+src/MiqaResearch/MiqaResearch/data/fixtures/consent_data.json

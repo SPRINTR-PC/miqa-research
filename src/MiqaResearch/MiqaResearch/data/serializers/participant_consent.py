@@ -24,6 +24,24 @@ class ConsentHistoryEventSchema(Schema):
     timestamp: datetime
 
 
+class ConsentListSchema(Schema):
+    participant_study_id: UUID | str
+    alias: str
+    status: str
+    signed_date: datetime
+    last_updated: datetime
+    retracted: datetime | None
+    clinic: str
+    participant_information_version: str | None
+    consent_labels: list[str]
+    comment: str
+    source: str | None
+
+
+class ConsentListWithExtraInfoSchema(ConsentListSchema):
+    extra_info: dict[str, list[str]] | None
+
+
 class ClinicConsentHistorySchema(Schema):
     clinic_id: UUID | str
     clinic_name: str

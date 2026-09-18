@@ -4,9 +4,10 @@ from operator import itemgetter
 from typing import Any
 
 from django.db.models import Count, F
+from django.db.models.expressions import Case
 from django.utils.translation import gettext
 
-from MiqaResearch.data.models import ParticipantConsent, ResearchProject
+from MiqaResearch.data.models import ParticipantConsent, ResearchProject, research_project
 from MiqaResearch.data.serializers.charts.bar import BarChartResponseSchema, BarChartConfigSchema, BarChartDataSchema, \
     BarSeriesSchema
 from MiqaResearch.data.serializers.charts.base import ChartGroupingLabelsSchema, ChartGroupingSchema
@@ -16,6 +17,7 @@ from MiqaResearch.data.serializers.charts.xy import (
     XYChartDataSchema,
     XYSeriesSchema,
 )
+from MiqaResearch.data.serializers.data_table import DataTableResponseSchema
 from MiqaResearch.data.serializers.participant_consent import (
     ClinicConsentHistorySchema,
     ConsentHistoryEventSchema,
@@ -258,11 +260,36 @@ async def get_consent_statistics_plot(project: ResearchProject) -> BarChartRespo
     )
 
 
+async def get_consent_table_data_for_project(project: ResearchProject) -> DataTableResponseSchema:
+    logger.debug("Getting table data for project %s", project.name)
+
+    consent_data_list = (
+        ParticipantConsent.objects
+        .filter(consent_type__research_project=project)
+        .annotate(
+            consent_label=Case()
+        )
+        .values(
+            "clinic_id",
+            "clinic__clinic_name",
+            "clinic__code",
+            "status",
+            "consent_signed_date",
+            "consent_revoked_date",
+            "last_updated",
+            "participant_information_version",
+            "comment",
+            "source",
+            "study_participant__alias1"
+        )
+    )
+
+
 async def _get_consent_history_data(project: ResearchProject) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """
     Helper function to retrieve consent history data by clinic for the given project_id.
     """
-    print("Entering _get_consent_history_data")
+    logger.debug("Entering _get_consent_history_data")
     # Get the clinics associated with the project
     consent_counts_by_clinic_date_and_type = (
         ParticipantConsent.objects

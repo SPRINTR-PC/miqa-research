@@ -9,6 +9,7 @@ from ninja.errors import HttpError
 from MiqaResearch.data.models import ResearchProject
 from MiqaResearch.data.serializers.charts.bar import BarChartResponseSchema
 from MiqaResearch.data.serializers.charts.xy import FilledAreaChartResponseSchema, LineChartResponseSchema
+from MiqaResearch.data.serializers.data_table import DataTableResponseSchema
 from MiqaResearch.data.serializers.participant_consent import ProjectConsentHistoryByClinicSchema
 from MiqaResearch.readers.participant_consent_reader import (
     get_consent_history_by_clinic,
@@ -43,6 +44,30 @@ async def dashboard_consent_data_by_clinic(request, project_id: UUID):
         return {"error": str(e)}
 
     return consent_history_data
+
+
+@router.get(
+    "consent_by_clinic/{project_id}/table",
+    response=DataTableResponseSchema,
+    url_name="dashboard_consent_statistics_table"
+)
+async def dashboard_consent_table_data(request, project_id: UUID):
+    """
+    Get consent data by clinic for a specific research project for showing in a data table. The data is limited to the
+    clinics the user is associated with for the given research project.
+    """
+    research_project, has_required_role, error_response = await _check_research_and_role(request, project_id)
+
+    if error_response:
+        return error_response
+
+    try:
+        consent_table_data = await get_consent_table_data_for_project(research_project)
+    except Exception as e:
+        logger.error("Error fetching consent table data for project %s", project_id, exc_info=True)
+        return {"error": str(e)}
+
+    return consent_table_data
 
 
 @router.get(
