@@ -49,7 +49,7 @@ services:
     restart: on-failure
 
   mires_fs:
-    image: rustfs/rustfs:latest
+    image: rustfs/rustfs:1.0.0
     environment:
       - RUSTFS_ACCESS_KEY=MiresAccessKey
       - RUSTFS_SECRET_KEY=MiresSecretKey
