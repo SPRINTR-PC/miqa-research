@@ -33,6 +33,8 @@ from io import StringIO
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from MiqaResearch.data.models import ResearchProject
+
 RESEARCH_PROJECT_NAME = "SPRiNTR"
 NUM_ROWS = 2000
 SPREAD_MONTHS = 15
@@ -40,10 +42,18 @@ TIMEZONE = "Europe/Stockholm"
 DATETIME_FORMAT = "%Y-%m-%d %H:%M"
 
 # 10 clinics, id-number style like the example CSV
-CLINICS: tuple[str, ...] = (
-    "64001", "55123", "77890", "99012", "45678",
-    "55667", "60123", "44012", "33123", "22450",
-)
+CLINICS: dict[str, str] = {
+    "64001": "Jönköping",
+    "55123": "Östersund",
+    "77890": "Umeå",
+    "99012": "S:t Göran",
+    "45678": "Sahlgrenska",
+    "55667": "Eskilstuna",
+    "60123": "Akademiska sjukhuset",
+    "44012": "Karolinska sjukhuset",
+    "33123": "Södersjukhuset",
+    "22450": "Ankeborg",
+}
 
 # Consent label columns (non-standard CSV columns become consent labels in the
 # import pipeline). The first references the SPRiNTR research project.
@@ -191,6 +201,8 @@ def generate_consent_rows(now: datetime | None = None, seed: int = 42) -> list[d
             if last_updated < signed:
                 last_updated = signed
 
+        clinic_codes = list(CLINICS.keys())
+
         rows.append({
             NAME_COL: f"{rng.choice(_FIRST_NAMES)} {rng.choice(_LAST_NAMES)}",
             PID_COL: _random_pid(rng, used_pids),
@@ -198,7 +210,7 @@ def generate_consent_rows(now: datetime | None = None, seed: int = 42) -> list[d
             SIGNED_COL: signed.strftime(DATETIME_FORMAT),
             LAST_UPDATED_COL: last_updated.strftime(DATETIME_FORMAT),
             RETRACTED_COL: revoked.strftime(DATETIME_FORMAT) if revoked else "",
-            CLINIC_COL: rng.choice(CLINICS),
+            CLINIC_COL: rng.choice(clinic_codes),
             FPI_COL: rng.choice(FPI_VERSIONS),
             FIRST_CONSENT_LABEL: "Ja",
             FUTURE_RESEARCH_CONSENT_LABEL: "Ja" if rng.random() < 0.6 else "Nej",
@@ -264,11 +276,20 @@ def generate_django_fixture(now: datetime | None = None, seed: int = 42,
     def add(model: str, pk: str, fields: dict) -> None:
         objects.append({"model": model, "pk": pk, "fields": fields})
 
-    project_pk = _fixture_uuid(rng)
-    add(_MODEL_RESEARCH_PROJECT, project_pk, {
-        "name": RESEARCH_PROJECT_NAME,
-        "description": f"Research project for the {RESEARCH_PROJECT_NAME} consent fixture data.",
-    })
+    existing_project = ResearchProject.objects.order_by("name").first()
+
+    if existing_project is not None:
+        project_pk = str(existing_project.pk)
+    else:
+        project_pk = _fixture_uuid(rng)
+        add(
+            _MODEL_RESEARCH_PROJECT,
+            project_pk,
+            {
+                "name": RESEARCH_PROJECT_NAME,
+                "description": f"Research project for the {RESEARCH_PROJECT_NAME} consent fixture data.",
+            },
+        )
 
     type_pks: dict[str, str] = {}
     for label in (FIRST_CONSENT_LABEL, FUTURE_RESEARCH_CONSENT_LABEL):
@@ -281,10 +302,10 @@ def generate_django_fixture(now: datetime | None = None, seed: int = 42,
         type_pks[label] = type_pk
 
     clinic_pks: dict[str, str] = {}
-    for clinic in CLINICS:
+    for clinic_code, clinic_name  in CLINICS.items():
         clinic_pk = _fixture_uuid(rng)
-        add(_MODEL_CLINIC, clinic_pk, {"clinic_name": clinic, "clinic_code": clinic})
-        clinic_pks[clinic] = clinic_pk
+        add(_MODEL_CLINIC, clinic_pk, {"clinic_name": clinic_name, "clinic_code": clinic_code})
+        clinic_pks[clinic_code] = clinic_pk
 
     participant_pks: dict[str, str] = {}
     used_aliases: set[str] = set()
