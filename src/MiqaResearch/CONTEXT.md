@@ -246,6 +246,16 @@ One DICOM instance — a single file, one SOP Instance — within a Dicom Series
 represented by the `DicomFile` model (`sop_instance_uid`). The unit of storage
 and WADO retrieval.
 
+### UID Pseudonymization
+Per-Research Project deterministic replacement of the UIDs in ingested DICOM
+data (Study/Series/SOP Instance/Frame of Reference) with pseudonyms, so stored
+records cannot be linked back to the originating hospital PACS identifiers.
+The same source UID always yields the same pseudonym within a project and a
+different one across projects, keeping intra-project linkage and
+duplicate-detection intact. Also called HashUID (CTP-style).
+_Avoid_: Anonymization (that strips identifying data without preserving per-project linkage)
+See Dicom File.
+
 ### Chart Grouping
 One of possibly several alternative groupings of the same underlying dataset
 that a chart web component's `dataUrl` endpoint can return in a single
