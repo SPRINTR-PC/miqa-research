@@ -3,6 +3,7 @@ from typing import Literal
 from ninja import Schema
 
 ColumnDataType = Literal["string", "number", "date", "datetime", "boolean", "mini-barchart"]
+SortDirection = Literal["asc", "desc"]
 
 
 class PaginationMetaSchema(Schema):
@@ -19,4 +20,6 @@ class DataTableColumnSchema(Schema):
     label: str
     data_type: ColumnDataType
     sortable: bool = False
+    default_sort: SortDirection | None = None
+    default_sort_order: int | None = None
 

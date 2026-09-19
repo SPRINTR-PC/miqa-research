@@ -284,3 +284,120 @@ def test_dashboard_panel_template_resolves_the_table_endpoint_by_name(admin_of):
 
     expected_url = reverse("api-v1:dashboard_consent_statistics_table", kwargs={"project_id": project.id})
     assert f'dataUrl="{expected_url}"' in html
+
+
+# --- Sorting -------------------------------------------------------------------------------------------------------
+
+
+@pytest.fixture
+def sortable_project(db):
+    """Consents: (clinic, status, signed day). Two share a status and a clinic to force ties."""
+    project = ResearchProject.objects.create(name="Sort Project", description="desc")
+    consent_type = ParticipantConsentType.objects.create(label="Participation", research_project=project)
+    clinics = {}
+    for name in ("Alpha", "Beta"):
+        clinics[name] = Clinic.objects.create(clinic_code=f"SORT-{name}", clinic_name=name)
+        ResearchProjectClinicMap.objects.create(project=project, clinic=clinics[name])
+    for i, (clinic, status, day) in enumerate([
+        ("Beta", "Signerat", 5), ("Alpha", "Signerat", 3), ("Alpha", "Återkallat", 9), ("Beta", "Signerat", 1),
+    ]):
+        participant = StudyParticipant.objects.create(alias1=f"sort-{i}", research_project=project)
+        ParticipantConsent.objects.create(
+            study_participant=participant, status=status, clinic=clinics[clinic], consent_type=consent_type,
+            consent_signed_date=datetime(2026, 2, day, 8, 0, tzinfo=timezone.utc),
+        )
+    return project
+
+
+def _column(rows, key):
+    return [row[key] for row in rows]
+
+
+@pytest.mark.django_db
+def test_no_sort_follows_the_declared_default_of_newest_signed_first(sortable_project, admin_of):
+    rows = _get_table(admin_of(sortable_project), sortable_project.id).json()["rows"]
+
+    days = [row["consent_signed_date"][:10] for row in rows]
+    assert days == ["2026-02-09", "2026-02-05", "2026-02-03", "2026-02-01"]
+
+
+@pytest.mark.django_db
+def test_columns_declare_sortable_and_the_default_sort(sortable_project, admin_of):
+    columns = _get_table(admin_of(sortable_project), sortable_project.id, include_columns="true").json()["columns"]
+    by_accessor = {column["accessor"]: column for column in columns}
+
+    assert all(column["sortable"] for column in columns)
+    assert by_accessor["consent_signed_date"]["default_sort"] == "desc"
+    assert by_accessor["consent_signed_date"]["default_sort_order"] == 1
+    assert by_accessor["clinic__clinic_name"]["default_sort"] is None
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("sort, expected_days", [
+    ("consent_signed_date", [1, 3, 5, 9]),
+    ("-consent_signed_date", [9, 5, 3, 1]),
+])
+def test_single_column_sort_ascending_and_descending(sortable_project, admin_of, sort, expected_days):
+    rows = _get_table(admin_of(sortable_project), sortable_project.id, sort=sort).json()["rows"]
+
+    assert [int(row["consent_signed_date"][8:10]) for row in rows] == expected_days
+
+
+@pytest.mark.django_db
+def test_multi_column_sort_uses_later_columns_to_break_ties(sortable_project, admin_of):
+    rows = _get_table(
+        admin_of(sortable_project), sortable_project.id, sort="clinic__clinic_name,-consent_signed_date").json()["rows"]
+
+    assert [(row["clinic__clinic_name"], int(row["consent_signed_date"][8:10])) for row in rows] == [
+        ("Alpha", 9), ("Alpha", 3), ("Beta", 5), ("Beta", 1)]
+
+
+@pytest.mark.django_db
+def test_paging_is_stable_when_the_requested_sort_keys_tie(admin_of):
+    project = _project_with_n_consents(23)
+    user = admin_of(project)
+
+    seen = []
+    for page in (1, 2, 3):
+        seen += _column(
+            _get_table(user, project.id, sort="status", page=page, page_size=10).json()["rows"],
+            "study_participant__alias1")
+
+    assert len(seen) == len(set(seen)) == 23
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("sort", [
+    "nonexistent",
+    "-nonexistent",
+    "study_participant__name",  # a PID column, not declared unless include_pid
+    "consent_signed_date,nonexistent",
+    "c1,c2,c3,c4,c5,c6,c7",
+    "clinic_id,clinic__clinic_name,clinic__clinic_code,status,consent_signed_date,consent_revoked_date,last_updated",
+])
+def test_unknown_or_too_many_sort_columns_are_a_400(sortable_project, admin_of, sort):
+    response = _get_table(admin_of(sortable_project), sortable_project.id, sort=sort)
+
+    assert response.status_code == 400
+    assert "detail" in response.json()
+
+
+@pytest.mark.django_db
+def test_six_sort_columns_are_accepted(sortable_project, admin_of):
+    sort = "clinic_id,clinic__clinic_name,clinic__clinic_code,status,consent_signed_date,consent_revoked_date"
+
+    response = _get_table(admin_of(sortable_project), sortable_project.id, sort=sort)
+
+    assert response.status_code == 200
+
+
+@pytest.mark.django_db
+def test_encrypted_pid_columns_are_not_sortable(sortable_project, admin_of):
+    user = admin_of(sortable_project)
+
+    columns = _get_table(user, sortable_project.id, include_columns="true", include_pid="true").json()["columns"]
+    pid_columns = [column for column in columns if column["accessor"].startswith("study_participant__")
+                   and column["accessor"] != "study_participant__alias1"]
+
+    assert pid_columns and not any(column["sortable"] for column in pid_columns)
+    assert _get_table(user, sortable_project.id, include_pid="true", sort="study_participant__name").status_code == 400

@@ -305,25 +305,29 @@ async def get_consent_table_data_for_project(
         )
 
     columns = [
-        DataTableColumn("clinic_id", gettext("Clinic ID"), "string"),
-        DataTableColumn("clinic__clinic_name", gettext("Clinic Name"), "string"),
-        DataTableColumn("clinic__clinic_code", gettext("Clinic Code"), "string"),
-        DataTableColumn("status", gettext("Status"), "string"),
-        DataTableColumn("consent_signed_date", gettext("Signed Date"), "datetime"),
-        DataTableColumn("consent_revoked_date", gettext("Revoked Date"), "datetime"),
-        DataTableColumn("last_updated", gettext("Last Updated"), "datetime"),
-        DataTableColumn("participant_information_version", gettext("Participant Information Version"), "string"),
-        DataTableColumn("source", gettext("Source"), "string"),
-        DataTableColumn("study_participant__alias1", gettext("Alias"), "string"),
+        DataTableColumn("clinic_id", gettext("Clinic ID"), "string", sortable=True),
+        DataTableColumn("clinic__clinic_name", gettext("Clinic Name"), "string", sortable=True),
+        DataTableColumn("clinic__clinic_code", gettext("Clinic Code"), "string", sortable=True),
+        DataTableColumn("status", gettext("Status"), "string", sortable=True),
+        DataTableColumn(
+            "consent_signed_date", gettext("Signed Date"), "datetime", sortable=True,
+            default_sort="desc", default_sort_order=1),
+        DataTableColumn("consent_revoked_date", gettext("Revoked Date"), "datetime", sortable=True),
+        DataTableColumn("last_updated", gettext("Last Updated"), "datetime", sortable=True),
+        DataTableColumn(
+            "participant_information_version", gettext("Participant Information Version"), "string", sortable=True),
+        DataTableColumn("source", gettext("Source"), "string", sortable=True),
+        DataTableColumn("study_participant__alias1", gettext("Alias"), "string", sortable=True),
     ]
 
     if include_pid:
         columns += [
+            # Encrypted at rest: ordering by ciphertext would be meaningless, so these are not sortable.
             DataTableColumn("study_participant__person_source_value", gettext("Participant ID"), "string"),
             DataTableColumn("study_participant__name", gettext("Name"), "string"),
         ]
 
-    definition = DataTableDefinition(columns=tuple(columns), default_ordering=("-consent_signed_date",))
+    definition = DataTableDefinition(columns=tuple(columns))
 
     return DataTableSource(query.values(*definition.values_fields), definition)
 

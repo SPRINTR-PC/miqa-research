@@ -291,6 +291,9 @@ export class DataTable extends LitElement {
           columns: response.data.columns,
           pagination: response.data.pagination,
         });
+        if (columns && !this._columns && this._sortState.length === 0) {
+          this._sortState = this._defaultSortFrom(columns);
+        }
         this._rows = response.data.rows;
         this._columns = columns ?? this._columns ?? this._deriveColumnsFromRows(response.data.rows);
         this._pagination = pagination;
@@ -464,6 +467,15 @@ export class DataTable extends LitElement {
   private _applyFilters() {
     this._page = 1;
     void this._loadData();
+  }
+
+  // The server already applies the declared default when no sort is sent; seeding keeps the sort indicators and later
+  // requests consistent with it.
+  private _defaultSortFrom(columns: ColumnDefinition[]): SortState {
+    return columns
+      .flatMap((column) => (column.defaultSort ? [{ column, direction: column.defaultSort }] : []))
+      .sort((a, b) => (a.column.defaultSortOrder ?? columns.length) - (b.column.defaultSortOrder ?? columns.length))
+      .map(({ column, direction }) => ({ column: column.accessor, direction }));
   }
 
   private _deriveColumnsFromRows(rows: DataRow[]): ColumnDefinition[] | undefined {

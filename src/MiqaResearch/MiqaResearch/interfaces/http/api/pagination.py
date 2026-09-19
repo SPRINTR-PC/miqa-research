@@ -22,6 +22,7 @@ class DataTablePagination(AsyncPaginationBase):
     class Input(Schema):
         page: int = Field(1, ge=1)
         page_size: int | None = Field(None, ge=1, le=MAX_PAGE_SIZE)
+        sort: str | None = None
         include_columns: bool = False
 
     class Output(Schema):
@@ -43,8 +44,7 @@ class DataTablePagination(AsyncPaginationBase):
         page_size = pagination.page_size or self.default_page_size
         offset = (pagination.page - 1) * page_size
 
-        # `pk` as a unique tiebreaker keeps pages stable when the ordering column has ties.
-        ordered = source.queryset.order_by(*definition.default_ordering, "pk")
+        ordered = source.queryset.order_by(*definition.ordering_for(pagination.sort))
         total_items = await ordered.acount()
         total_pages = ceil(total_items / page_size)
 

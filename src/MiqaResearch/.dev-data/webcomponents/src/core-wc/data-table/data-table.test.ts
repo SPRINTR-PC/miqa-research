@@ -6,6 +6,7 @@ import type {
   ColumnDefinition,
   DataTableWireResponse,
   PaginationMeta,
+  SortDescriptor,
 } from "./data-table-interfaces";
 
 describe("DataTable", () => {
@@ -800,6 +801,61 @@ describe("DataTable", () => {
         "https://api.example.com/table-data?page=1&page_size=50&include_columns=true&sort=-machineName"
       );
       document.body.removeChild(el);
+    });
+
+    describe("default sort seeding", () => {
+      const pagination = { page: 1, page_size: 50, total_items: 60, total_pages: 2, has_next: true, has_previous: false };
+      const columnsWithDefaults = [
+        { accessor: "machineName", label: "Machine", sortable: true, default_sort: "asc", default_sort_order: 2 },
+        { accessor: "numExams", label: "Exams", sortable: true, default_sort: "desc", default_sort_order: 1 },
+        { accessor: "hospital", label: "Hospital", sortable: true },
+      ];
+
+      async function loadThenGoToNextPage(columns: Record<string, unknown>[], initialSort?: SortDescriptor[]) {
+        vi.spyOn(ApiService, "getData")
+          .mockResolvedValueOnce({
+            success: true,
+            data: { columns, rows: [{ machineName: "CT1" }], pagination },
+            message: "ok",
+          })
+          .mockResolvedValueOnce({
+            success: true,
+            data: { columns: null, rows: [{ machineName: "CT2" }], pagination: { ...pagination, page: 2 } },
+            message: "ok",
+          });
+        const el = new DataTable();
+        el.dataUrl = "https://api.example.com/table-data";
+        if (initialSort) el.initialSort = initialSort;
+        document.body.appendChild(el);
+        await new Promise((r) => setTimeout(r, 10));
+        await el.updateComplete;
+        (el.shadowRoot?.querySelector('[data-action="next"]') as HTMLButtonElement).click();
+        await new Promise((r) => setTimeout(r, 10));
+        await el.updateComplete;
+        document.body.removeChild(el);
+      }
+
+      it("should seed the sort from the columns' default sort and order when no initialSort is given", async () => {
+        await loadThenGoToNextPage(columnsWithDefaults);
+
+        expect(ApiService.getData).toHaveBeenLastCalledWith(
+          "https://api.example.com/table-data?page=2&page_size=50&sort=-numExams,machineName"
+        );
+      });
+
+      it("should prefer initialSort over the columns' defaults", async () => {
+        await loadThenGoToNextPage(columnsWithDefaults, [{ column: "hospital", direction: "asc" }]);
+
+        expect(ApiService.getData).toHaveBeenLastCalledWith(
+          "https://api.example.com/table-data?page=2&page_size=50&sort=hospital"
+        );
+      });
+
+      it("should not send a sort param when no column declares a default", async () => {
+        await loadThenGoToNextPage([{ accessor: "machineName", label: "Machine", sortable: true }]);
+
+        expect(ApiService.getData).toHaveBeenLastCalledWith("https://api.example.com/table-data?page=2&page_size=50");
+      });
     });
 
     it("should use the pageSize property as the initial page-size request", async () => {
