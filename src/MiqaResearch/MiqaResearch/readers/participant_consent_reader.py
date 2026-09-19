@@ -50,6 +50,12 @@ from contract.constants.research_project_role import PROJECT_ROLE_ADMIN, PROJECT
 
 logger = logging.getLogger("mires")
 
+# Roles (besides superusers) that may view the consent table, see all clinics, and see participant identifiers (PID).
+# Recruiters are clinic-scoped by the row filter. Eligibility for PID is decided here and only here.
+CONSENT_TABLE_ROLES = (PROJECT_ROLE_ADMIN, PROJECT_ROLE_PI, PROJECT_ROLE_PARTICIPANT_RECRUITER)
+CONSENT_TABLE_PROJECT_WIDE_ROLES = (PROJECT_ROLE_ADMIN, PROJECT_ROLE_PI)
+CONSENT_TABLE_PID_ROLES = (PROJECT_ROLE_ADMIN, PROJECT_ROLE_PI, PROJECT_ROLE_PARTICIPANT_RECRUITER)
+
 
 async def get_project_consent_count(project: ResearchProject) -> int:
     """
@@ -276,29 +282,24 @@ async def get_consent_statistics_plot(project: ResearchProject) -> BarChartRespo
 
 async def get_consent_table_data_for_project(
         project: ResearchProject, user, include_pid: bool = False) -> DataTableSource:
-    ALLOWED_USER_ROLES = (
-        PROJECT_ROLE_ADMIN,
-        PROJECT_ROLE_PI,
-        PROJECT_ROLE_PARTICIPANT_RECRUITER,
-    )
-    ADMIN_USER_ROLES = (
-        PROJECT_ROLE_ADMIN,
-        PROJECT_ROLE_PI,
-    )
     user_roles = await get_user_project_role_list(user, project)
 
     user_role_names = {user_role["name"] for user_role in user_roles}
 
-    if not user.is_superuser and user_role_names.isdisjoint(ALLOWED_USER_ROLES):
+    if not user.is_superuser and user_role_names.isdisjoint(CONSENT_TABLE_ROLES):
         logger.error("Table data requested for research project the user does not have access to this information for")
         raise HttpError(403, gettext("You do not have permission to access this project"))
+
+    if include_pid and not user.is_superuser and user_role_names.isdisjoint(CONSENT_TABLE_PID_ROLES):
+        logger.error("Participant identifiers requested by a user who may not see them for project %s", project.name)
+        raise HttpError(403, gettext("You do not have permission to view participant identifiers"))
 
     logger.debug("Getting table data for project %s", project.name)
 
     query = ParticipantConsent.objects.filter(consent_type__research_project=project)
 
 
-    if not user.is_superuser and user_role_names.isdisjoint(ADMIN_USER_ROLES):
+    if not user.is_superuser and user_role_names.isdisjoint(CONSENT_TABLE_PROJECT_WIDE_ROLES):
         query = query.filter(
             clinic__researchprojectuserrolemap__user=user,
             clinic__researchprojectuserrolemap__project=project,

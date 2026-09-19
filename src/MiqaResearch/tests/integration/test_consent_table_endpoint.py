@@ -511,3 +511,140 @@ def test_columns_metadata_declares_the_filter_kinds(sortable_project, admin_of):
     assert filters["clinic__clinic_name"] == {"kind": "text", "options": None}
     assert filters["consent_signed_date"]["kind"] == "date-range"
     assert filters["clinic_id"] is None
+
+
+# --- PID authorization ---------------------------------------------------------------------------------------------
+
+PID_KEYS = {"study_participant__person_source_value", "study_participant__name"}
+
+
+@pytest.fixture
+def pid_project(db):
+    """One consent per clinic; every participant has a PID and a name (encrypted at rest)."""
+    project = ResearchProject.objects.create(name="PID Project", description="desc")
+    consent_type = ParticipantConsentType.objects.create(label="Participation", research_project=project)
+    clinics = {}
+    for code in ("A", "B"):
+        clinic = Clinic.objects.create(clinic_code=f"PID-{code}", clinic_name=f"PID Clinic {code}")
+        ResearchProjectClinicMap.objects.create(project=project, clinic=clinic)
+        participant = StudyParticipant.objects.create(
+            alias1=f"pid-alias-{code}", person_source_value=f"19121212-000{code}", name=f"Person {code}",
+            research_project=project)
+        ParticipantConsent.objects.create(
+            study_participant=participant, status="Signerat", clinic=clinic, consent_type=consent_type,
+            consent_signed_date=datetime(2026, 1, 1, 9, 0, tzinfo=timezone.utc))
+        clinics[code] = clinic
+    return project, clinics
+
+
+def _eligible_users(project, clinics):
+    return {
+        "admin": _user_with_role(project, PROJECT_ROLE_ADMIN),
+        "pi": _user_with_role(project, PROJECT_ROLE_PI),
+        "recruiter": _user_with_role(project, PROJECT_ROLE_PARTICIPANT_RECRUITER, clinic=clinics["A"]),
+        "superuser": User.objects.create_superuser(username="pid-root", password="pw"),
+    }
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("who", ["admin", "pi", "recruiter", "superuser"])
+def test_eligible_user_without_include_pid_gets_no_pid_in_rows_or_columns(pid_project, who):
+    project, clinics = pid_project
+    user = _eligible_users(project, clinics)[who]
+
+    body = _get_table(user, project.id, include_columns="true").json()
+
+    assert not PID_KEYS & {key for row in body["rows"] for key in row}
+    assert not PID_KEYS & {column["accessor"] for column in body["columns"]}
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("who", ["admin", "pi", "recruiter", "superuser"])
+def test_eligible_user_with_include_pid_gets_pid_in_rows_and_columns(pid_project, who):
+    project, clinics = pid_project
+    user = _eligible_users(project, clinics)[who]
+
+    body = _get_table(user, project.id, include_columns="true", include_pid="true").json()
+
+    assert PID_KEYS <= {column["accessor"] for column in body["columns"]}
+    assert all(PID_KEYS <= set(row) for row in body["rows"])
+    assert {row["study_participant__name"] for row in body["rows"]} >= {"Person A"}
+
+
+@pytest.mark.django_db
+def test_recruiter_sees_pid_only_for_participants_in_their_own_clinic(pid_project):
+    project, clinics = pid_project
+    recruiter = _eligible_users(project, clinics)["recruiter"]
+
+    rows = _get_table(recruiter, project.id, include_pid="true").json()["rows"]
+
+    assert [(row["study_participant__name"], row["study_participant__person_source_value"]) for row in rows] == [
+        ("Person A", "19121212-000A")]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("role_name", [PROJECT_ROLE_INVESTIGATOR, None])
+@pytest.mark.parametrize("include_pid", ["true", "false"])
+def test_ineligible_user_never_receives_pid_keys_and_include_pid_is_a_403(pid_project, role_name, include_pid):
+    project, _ = pid_project
+    user = (_user_with_role(project, role_name) if role_name
+            else User.objects.create_user(username="pid-norole", password="pw"))
+
+    response = _get_table(user, project.id, include_columns="true", include_pid=include_pid)
+
+    assert response.status_code == 403
+    body = response.json()
+    assert "rows" not in body and "columns" not in body
+    assert not any(key in response.content.decode() for key in PID_KEYS)
+    assert "Person A" not in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_include_pid_is_refused_with_403_for_a_table_viewer_who_may_not_see_pid(pid_project, monkeypatch):
+    """The reader is the one place that knows which roles may see PID: narrowing it must not silently omit columns."""
+    from MiqaResearch.readers import participant_consent_reader
+
+    project, clinics = pid_project
+    recruiter = _eligible_users(project, clinics)["recruiter"]
+    monkeypatch.setattr(participant_consent_reader, "CONSENT_TABLE_PID_ROLES", (PROJECT_ROLE_ADMIN, PROJECT_ROLE_PI))
+
+    with_pid = _get_table(recruiter, project.id, include_columns="true", include_pid="true")
+    without_pid = _get_table(recruiter, project.id, include_columns="true")
+
+    assert with_pid.status_code == 403
+    assert without_pid.status_code == 200
+    assert not PID_KEYS & {column["accessor"] for column in without_pid.json()["columns"]}
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("include_pid", ["false", "true"])
+@pytest.mark.parametrize("query", [
+    {"sort": "study_participant__name"},
+    {"sort": "-study_participant__person_source_value"},
+    {"study_participant__name__icontains": "person"},
+    {"study_participant__person_source_value": "19121212-000A"},
+])
+def test_pid_columns_can_never_be_sorted_or_filtered(pid_project, include_pid, query):
+    """Encrypted with a random IV: the database can neither order nor match them, so the request is refused."""
+    project, clinics = pid_project
+    admin = _eligible_users(project, clinics)["admin"]
+
+    response = _get_table(admin, project.id, include_pid=include_pid, **query)
+
+    assert response.status_code == 400
+    assert "Person A" not in response.content.decode()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("query", [
+    {"sort": "study_participant__name"},
+    {"study_participant__name__icontains": "person"},
+])
+def test_ineligible_user_sorting_or_filtering_on_pid_is_refused(pid_project, query):
+    project, _ = pid_project
+    user = _user_with_role(project, PROJECT_ROLE_INVESTIGATOR)
+
+    response = _get_table(user, project.id, include_pid="true", **query)
+
+    assert 400 <= response.status_code < 500
+    assert "Person A" not in response.content.decode()

@@ -14,23 +14,17 @@ from MiqaResearch.data.serializers.charts.xy import FilledAreaChartResponseSchem
 from MiqaResearch.data.serializers.participant_consent import ProjectConsentHistoryByClinicSchema
 from MiqaResearch.interfaces.http.api.pagination import DataTablePagination
 from MiqaResearch.readers.participant_consent_reader import (
+    CONSENT_TABLE_ROLES,
     get_consent_history_by_clinic,
     get_consent_history_plot_by_clinic,
     get_consent_statistics_plot,
     get_consent_table_data_for_project,
 )
 from MiqaResearch.readers.research_project_reader import check_user_project_role_by_name
-from contract.constants.research_project_role import (
-    PROJECT_ROLE_ADMIN,
-    PROJECT_ROLE_PARTICIPANT_RECRUITER,
-    PROJECT_ROLE_PI,
-)
 
 logger = logging.getLogger("mires")
 
 router = Router()
-
-TABLE_ALLOWED_ROLES = (PROJECT_ROLE_ADMIN, PROJECT_ROLE_PI, PROJECT_ROLE_PARTICIPANT_RECRUITER)
 
 
 @router.get(
@@ -67,7 +61,7 @@ async def dashboard_consent_table_data(request, project_id: UUID, include_pid: b
     Query parameters: `page`, `page_size`, `include_columns` (see `DataTablePagination`) and `include_pid`.
     """
     research_project = await _check_research_and_role(
-        request, project_id, required_role=TABLE_ALLOWED_ROLES)
+        request, project_id, required_role=CONSENT_TABLE_ROLES)
 
     return await get_consent_table_data_for_project(
         research_project, await request.auser(), include_pid=include_pid)
