@@ -75,11 +75,12 @@ known-first-party = ["MiqaResearch", "data", "documentation"]
 DJANGO_SETTINGS_MODULE = "MiqaResearch.settings"
 python_files = ["tests.py", "test_*.py", "*_tests.py"]
 testpaths = ["tests"]
-addopts = "--reuse-db -m 'not vlm'"
+addopts = "--reuse-db -m 'not vlm and not long_running'"
 asyncio_mode = "auto"
 markers = [
     "slow: mark a test as slow",
     "vlm: mark a test that calls a real VLM (e.g. Ollama) over the network",
+    "long_running: mark a long-running (performance/load) test; excluded from the default test run",
 ]
 
 [tool.pytest-html-plus.profiles.ci]
