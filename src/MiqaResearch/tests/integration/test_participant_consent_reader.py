@@ -36,8 +36,8 @@ async def _create_project_with_consent_history() -> tuple[ResearchProject, Clini
     """
     project = await ResearchProject.objects.acreate(name="Consent Format Test Project", description="desc")
 
-    clinic_a = await Clinic.objects.acreate(clinic_name="Clinic A")
-    clinic_b = await Clinic.objects.acreate(clinic_name="Clinic B")
+    clinic_a = await Clinic.objects.acreate(clinic_code="CLINIC-A", clinic_name="Clinic A")
+    clinic_b = await Clinic.objects.acreate(clinic_code="CLINIC-B", clinic_name="Clinic B")
     await ResearchProjectClinicMap.objects.acreate(project=project, clinic=clinic_a)
     await ResearchProjectClinicMap.objects.acreate(project=project, clinic=clinic_b)
 
@@ -132,6 +132,120 @@ async def test_get_consent_history_by_clinic_should_report_correct_consent_and_r
         event.retracted_count for event in clinic_histories_by_id[str(clinic_b.id)].consent_history)
     assert clinic_b_total_consents == 2
     assert clinic_b_total_retractions == 1
+
+
+async def _create_project_with_same_day_multi_type_consents() -> tuple[ResearchProject, Clinic]:
+    """
+    Builds a project with a single clinic where two different consent types are both
+    signed on the same date, plus one more consent on a later date. A correct
+    implementation must sum the counts of every consent type falling on a given date,
+    not just the last one processed for that date.
+    """
+    project = await ResearchProject.objects.acreate(name="Multi Consent Type Project", description="desc")
+
+    clinic = await Clinic.objects.acreate(clinic_code="MULTI-A", clinic_name="Clinic Multi")
+    await ResearchProjectClinicMap.objects.acreate(project=project, clinic=clinic)
+
+    consent_type_alpha = await ParticipantConsentType.objects.acreate(
+        label="Alpha consent", research_project=project)
+    consent_type_beta = await ParticipantConsentType.objects.acreate(
+        label="Beta consent", research_project=project)
+
+    participant_1 = await StudyParticipant.objects.acreate(alias1="multi-p1", research_project=project)
+    participant_2 = await StudyParticipant.objects.acreate(alias1="multi-p2", research_project=project)
+    participant_3 = await StudyParticipant.objects.acreate(alias1="multi-p3", research_project=project)
+    participant_4 = await StudyParticipant.objects.acreate(alias1="multi-p4", research_project=project)
+
+    # Day 1: two "Alpha" consents and one "Beta" consent, all signed on the same date.
+    await ParticipantConsent.objects.acreate(
+        study_participant=participant_1, status="Signerat",
+        consent_signed_date=datetime(2026, 1, 1, 9, 0, tzinfo=timezone.utc),
+        clinic=clinic, consent_type=consent_type_alpha,
+    )
+    await ParticipantConsent.objects.acreate(
+        study_participant=participant_2, status="Signerat",
+        consent_signed_date=datetime(2026, 1, 1, 10, 0, tzinfo=timezone.utc),
+        clinic=clinic, consent_type=consent_type_alpha,
+    )
+    await ParticipantConsent.objects.acreate(
+        study_participant=participant_3, status="Signerat",
+        consent_signed_date=datetime(2026, 1, 1, 11, 0, tzinfo=timezone.utc),
+        clinic=clinic, consent_type=consent_type_beta,
+    )
+
+    # Day 2: one more "Alpha" consent on a later date.
+    await ParticipantConsent.objects.acreate(
+        study_participant=participant_4, status="Signerat",
+        consent_signed_date=datetime(2026, 1, 2, 9, 0, tzinfo=timezone.utc),
+        clinic=clinic, consent_type=consent_type_alpha,
+    )
+
+    return project, clinic
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+async def test_get_consent_history_plot_by_clinic_should_sum_counts_across_consent_types_on_the_same_date():
+    # Arrange
+    project, clinic = await _create_project_with_same_day_multi_type_consents()
+
+    # Act
+    result = await get_consent_history_plot_by_clinic(project)
+
+    # Assert
+    series_by_name = {series.name: series for series in result.groupings[0].data.series}
+    clinic_series = series_by_name[clinic.clinic_name]
+
+    # Day 1 has 3 signed consents (2 Alpha + 1 Beta), day 2 adds 1 more Alpha consent,
+    # so the cumulative signed count should be 3 then 4 regardless of how many distinct
+    # consent types were signed on the same day.
+    assert clinic_series.y == [3.0, 4.0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+async def test_get_consent_history_plot_by_clinic_final_count_should_match_total_signed_consents():
+    # Arrange
+    project, clinic = await _create_project_with_same_day_multi_type_consents()
+
+    expected_total_signed = await ParticipantConsent.objects.filter(
+        consent_type__research_project=project,
+        clinic=clinic,
+        consent_revoked_date__isnull=True,
+    ).acount()
+
+    # Act
+    result = await get_consent_history_plot_by_clinic(project)
+
+    # Assert
+    series_by_name = {series.name: series for series in result.groupings[0].data.series}
+    clinic_series = series_by_name[clinic.clinic_name]
+
+    assert clinic_series.y[-1] == expected_total_signed
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+async def test_get_consent_history_plot_by_clinic_total_across_clinics_should_match_project_signed_count():
+    # Arrange
+    project, clinic_a, clinic_b = await _create_project_with_consent_history()
+
+    # Every ParticipantConsent row represents a signing event; a subset of those are
+    # later revoked. The net cumulative total should be all signings minus all revocations.
+    expected_total_signed = await ParticipantConsent.objects.filter(
+        consent_type__research_project=project,
+    ).acount()
+    expected_total_revoked = await ParticipantConsent.objects.filter(
+        consent_type__research_project=project,
+        consent_revoked_date__isnull=False,
+    ).acount()
+
+    # Act
+    result = await get_consent_history_plot_by_clinic(project)
+
+    # Assert
+    total_net_signed = sum(series.y[-1] for series in result.groupings[0].data.series)
+    assert total_net_signed == expected_total_signed - expected_total_revoked
 
 
 @pytest.mark.asyncio

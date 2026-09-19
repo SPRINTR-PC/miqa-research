@@ -2,8 +2,9 @@ import logging
 from itertools import accumulate, chain, groupby
 from operator import itemgetter
 from typing import Any
+from uuid import UUID
 
-from django.db.models import Count, F
+from django.db.models import Count, F, IntegerField, OuterRef, Q, Subquery
 from django.db.models.expressions import Case
 from django.utils.translation import gettext
 
@@ -123,20 +124,13 @@ async def get_consent_history_by_clinic(request, project: ResearchProject) -> Pr
     return output
 
 
-async def get_consent_history_plot_by_clinic(project: ResearchProject, filled_stacked_chart: bool = True) -> LineChartResponseSchema | FilledAreaChartResponseSchema:
+async def get_consent_history_plot_by_clinic(project: ResearchProject) -> LineChartResponseSchema | FilledAreaChartResponseSchema:
     """
     Get consent count history plot data by clinic for a given project.
     """
-    participant_consents_signed, participant_consents_revoked = await _get_consent_history_data(project)
-
     connected_clinics = await get_project_connected_clinics(project.id)
 
-    formatted_data = _format_consent_data_for_plotting(
-        signed_data=participant_consents_signed,
-        retracted_data=participant_consents_revoked,
-        clinics=connected_clinics,
-        filled_stacked_chart=filled_stacked_chart
-    )
+    formatted_data = await _get_consent_history_plot_data(project=project, clinics=connected_clinics)
 
     logger.info("Formatted consent history plot data for project %s", project.id)
 
@@ -149,7 +143,8 @@ async def get_consent_history_plot_by_clinic(project: ResearchProject, filled_st
                 labels=ChartGroupingLabelsSchema(
                     x_axis_title=None,
                     y_axis_title=None,
-                    legend_title=gettext("Clinic")
+                    legend_title=gettext("Clinic"),
+                    y_axis_range=(0, None)
                 ),
                 data=formatted_data
             )
@@ -260,7 +255,7 @@ async def get_consent_statistics_plot(project: ResearchProject) -> BarChartRespo
     )
 
 
-async def get_consent_table_data_for_project(project: ResearchProject) -> DataTableResponseSchema:
+async def get_consent_table_data_for_project(project: ResearchProject, user) -> DataTableResponseSchema:
     logger.debug("Getting table data for project %s", project.name)
 
     consent_data_list = (
@@ -300,12 +295,13 @@ async def _get_consent_history_data(project: ResearchProject) -> tuple[list[dict
         )
         .values(
             "clinic_id",
+            "study_participant_id",
             "consent_type_id",
             "consent_label",
             "consent_date"
         )
         .annotate(consent_count=Count("id"))
-        .order_by("clinic_id", "consent_label", "consent_date")
+        .order_by("clinic_id", "study_participant_id", "consent_label", "consent_date")
     )
 
     consent_revoked_counts_by_clinic_date_and_type = (
@@ -315,28 +311,113 @@ async def _get_consent_history_data(project: ResearchProject) -> tuple[list[dict
             revoked_date=F("consent_revoked_date__date"),
             consent_label=F("consent_type__label"),
         )
-        .values("clinic_id", "consent_type_id", "consent_label", "revoked_date")
+        .values("clinic_id", "study_participant_id", "consent_type_id", "consent_label", "revoked_date")
         .annotate(consent_count=Count("id"))
-        .order_by("clinic_id", "consent_label", "revoked_date")
+        .order_by("clinic_id", "study_participant_id", "consent_label", "revoked_date")
     )
 
-    print("Before signed query")
     signed_output = [row async for row in consent_counts_by_clinic_date_and_type]
-    print("After signed query")
-    print("Before revoked query")
     revoked_output = [row async for row in consent_revoked_counts_by_clinic_date_and_type]
-    print("After revoked query")
+
+    logger.debug("Signed sum: %s", sum([row["consent_count"] for row in signed_output]))
+    logger.debug("Revoked sum: %s", sum([row["consent_count"] for row in revoked_output]))
 
     return (
         signed_output,
         revoked_output
     )
 
+
+async def _get_consent_history_plot_data(
+        project: ResearchProject, clinics: list[dict[str, str | UUID]]) -> XYChartDataSchema:
+    logger.debug("Fetching data for consented participants for plotting")
+    days = (
+        ParticipantConsent.objects
+        .filter(consent_type__research_project=project)
+        .annotate(day=F("consent_signed_date__date"))
+        .order_by("clinic_id", "day")
+        .values("clinic_id", "day")
+        .distinct()
+    )
+
+    active_participant_count = (
+        ParticipantConsent.objects
+        .filter(
+            consent_type__research_project=project,
+            clinic_id=OuterRef("clinic_id"),
+            consent_signed_date__date__lte=OuterRef("day"),
+        )
+        .filter(
+            Q(consent_revoked_date__isnull=True) | Q(consent_revoked_date__date__gt=OuterRef("day"))
+        )
+        .order_by()
+        .values("clinic_id")
+        .annotate(count=Count("study_participant_id", distinct=True))
+        .values("count")
+    )
+
+    query = days.annotate(
+        active_participant_count=Subquery(active_participant_count, output_field=IntegerField())
+    )
+
+    signed_and_not_revoked_count_by_clinic = [row async for row in query]
+    event_dates = sorted(set([row["day"] for row in signed_and_not_revoked_count_by_clinic]))
+
+    formatted_data = {
+        clinic["clinic_id"]: [
+            {
+                "clinic_name": clinic["clinic_name"],
+                "timestamp": event_date,
+                "active_consent_count": sum([
+                    row["active_participant_count"]
+                    for row in signed_and_not_revoked_count_by_clinic
+                    if row["day"] == event_date and row["clinic_id"] == clinic["clinic_id"]
+                ]),
+            }
+            for event_date in event_dates
+        ]
+        for clinic in clinics
+    }
+
+    clinic_data_items: list[dict[str, Any]] = [
+        dict(
+            name=(clinic_name := events[0]["clinic_name"] if events else gettext("Unknown Clinic")),
+            x=[str(el["timestamp"]) for el in events],
+            y=(y_values := list(accumulate(
+                [el["active_consent_count"] for el in events],
+                lambda previous, current: current if current != 0 else previous
+            ))),
+            hovertemplate=[f"{clinic_name}: {y_val} (%{{x}})" for y_val in y_values],
+        )
+        for clinic_id, events in formatted_data.items()
+        if clinic_id is not None
+    ]
+
+    plot_series = XYChartDataSchema(
+        series=[
+            XYSeriesSchema(
+                name=clinic_data["name"],
+                x=clinic_data["x"],
+                y=(
+                    clinic_data["y"]
+                    if ind == 0 else
+                    [sum(y) for y in zip(*([clinic_data_items[i]["y"] for i in range(ind)] + [clinic_data["y"]]))]
+                ),
+                size=None,
+                fill="tonexty" if ind > 0 else "tozeroy",
+                stackgroup=None,
+                hovertemplate=clinic_data["hovertemplate"],
+            )
+            for ind, clinic_data in enumerate(clinic_data_items)
+        ]
+    )
+
+    return plot_series
+
 def _format_signed_retracted_data(
         signed_data: list[dict[str, Any]],
         retracted_data: list[dict[str, Any]],
-        clinics: list[dict[str, str | Any]],
-        for_stacked_plot: bool = False
+        clinics: list[dict[str, str | Any]]
 ) -> dict[str, list[dict[str, int]]]:
     """
     Format the signed and retracted data into a dictionary with clinic_id as keys and
@@ -358,103 +439,27 @@ def _format_signed_retracted_data(
         for key, group in retracted_data.items()
     }
 
-    if for_stacked_plot:
-        event_dates = sorted(set(list(chain.from_iterable([
-            (
-                list(signed_data.get(clinic["clinic_id"], {}).keys())
-                + list(retracted_data.get(clinic["clinic_id"], {}).keys())
+    date_times_per_clinic = {
+        clinic["clinic_id"]: sorted(set(
+            list(
+                signed_data.get(clinic["clinic_id"], {}).keys()
+            ) + list(
+                retracted_data.get(clinic["clinic_id"], {}).keys()
             )
-            for clinic in clinics
-        ]))))
-
-        formatted_data = {
-            clinic["clinic_id"]: [
-                {
-                    "timestamp": event_date,
-                    "consent_count": signed_data.get(clinic["clinic_id"], {}).get(event_date, 0),
-                    "retracted_count": retracted_data.get(clinic["clinic_id"], {}).get(event_date, 0),
-                }
-                for event_date in event_dates
-            ]
-            for clinic in clinics
-        }
-    else:
-        date_times_per_clinic = {
-            clinic["clinic_id"]: sorted(set(
-                list(
-                    signed_data.get(clinic["clinic_id"], {}).keys()
-                ) + list(
-                    retracted_data.get(clinic["clinic_id"], {}).keys()
-                )
-            ))
-            for clinic in clinics
-        }
-
-        formatted_data = {
-            clinic: [
-                {
-                    "timestamp": event_date,
-                    "consent_count": signed_data.get(clinic, {}).get(event_date, 0),
-                    "retracted_count": retracted_data.get(clinic, {}).get(event_date, 0)
-                }
-                for event_date in event_dates
-            ]
-            for clinic, event_dates in date_times_per_clinic.items()
-        }
-
-    return formatted_data
-
-
-def _format_consent_data_for_plotting(
-    signed_data: list[dict[str, Any]],
-    retracted_data: list[dict[str, Any]],
-    clinics: list[dict[str, str | Any]],
-    filled_stacked_chart: bool = True
-) -> XYChartDataSchema:
-    formatted_data = _format_signed_retracted_data(signed_data, retracted_data, clinics, for_stacked_plot=True)
-
-    clinic_map = {
-        clinic["clinic_id"]: clinic["clinic_name"]
+        ))
         for clinic in clinics
     }
 
-    logger.debug("Formatting XYChartDataSchema based on formatted_data")
-    clinic_data_items = [
-        dict(
-            name=(clinic_name := clinic_map.get(clinic_id, gettext("Unknown Clinic"))),
-            x=[el_time.strftime("%Y-%m-%d %H:%M:%S") if (el_time := el.get("timestamp")) else "" for el in data],
-            y=(
-                y_values := list(
-                    accumulate([el.get("consent_count", 0) - el.get("retracted_count", 0) for el in data])
-                )
-            ),
-            hovertemplate=[f"{clinic_name}: {y_val} (%{{x}})" for y_val in y_values],
-        )
-        for clinic_id, data in formatted_data.items()
-        if clinic_id is not None
-    ]
-
-    plot_series = XYChartDataSchema(
-        series=[
-            XYSeriesSchema(
-                name=clinic_data["name"],
-                x=clinic_data["x"],
-                y=(
-                    clinic_data["y"]
-                    if (ind == 0 or not filled_stacked_chart)
-                    else [
-                        sum(y)
-                        for y in zip(*(
-                            [clinic_data_items[i]["y"] for i in range(ind)] + [clinic_data["y"]]))]
-                ),
-                size=None,
-                fill=None if not filled_stacked_chart else ("tonexty"),
-                stackgroup=None,
-                hovertemplate=clinic_data["hovertemplate"],
-            )
-            for ind, clinic_data in enumerate(clinic_data_items)
+    formatted_data = {
+        clinic: [
+            {
+                "timestamp": event_date,
+                "consent_count": signed_data.get(clinic, {}).get(event_date, 0),
+                "retracted_count": retracted_data.get(clinic, {}).get(event_date, 0)
+            }
+            for event_date in event_dates
         ]
-    )
-    logger.debug("Formatted consent history plot series for project")
+        for clinic, event_dates in date_times_per_clinic.items()
+    }
 
-    return plot_series
+    return formatted_data

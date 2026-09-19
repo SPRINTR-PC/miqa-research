@@ -247,9 +247,10 @@ per-Grouping `labels`)
 ### Chart Data
 The actual trace values inside one Chart Grouping — the per-chart-type
 payload (e.g. x/y arrays, categories, node/link lists) plus an optional
-`labels` sub-object (axis/legend titles) that can differ from one Grouping to
-the next, unlike Chart Config which is fixed for the whole response. See ADR
-0020.
+`labels` sub-object (axis/legend titles, and an optional `xAxisRange`/
+`yAxisRange` override of Plotly's computed autorange) that can differ from one
+Grouping to the next, unlike Chart Config which is fixed for the whole
+response. See ADR 0020.
 
 ### WebGL Threshold
 The datapoint-count threshold (`webglThreshold`, default 100) above which a
@@ -555,8 +556,12 @@ what's fixed across every Grouping in a response: `webglThreshold` (default
 mechanism is wayfinder ticket #73), and the mixed-subplot layout (internals
 deferred to ticket #75). Chart Data — the per-Grouping trace values — may
 also carry an optional `labels` sub-object (`xAxisTitle`, `yAxisTitle`,
-`legendTitle`) that overrides Config's defaults, because switching Grouping
-can change what's being measured, not only how it's sliced. On the Django
+`legendTitle`, `xAxisRange`, `yAxisRange`) that overrides Config's defaults,
+because switching Grouping can change what's being measured, not only how
+it's sliced; `xAxisRange`/`yAxisRange` override Plotly's computed autorange
+only when set (either element may be `null` to pin just that end while the
+other stays autoranged, per Plotly's own `range` semantics), otherwise
+autorange behaves as before. On the Django
 side, schema fields stay idiomatic Python snake_case
 (`webgl_threshold`, `event_callbacks`, `x_axis_title`, …).
 

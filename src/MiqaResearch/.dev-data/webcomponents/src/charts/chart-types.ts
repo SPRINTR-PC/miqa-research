@@ -13,6 +13,15 @@ export interface ChartGroupingLabels {
   xAxisTitle?: string;
   yAxisTitle?: string;
   legendTitle?: string;
+  /**
+   * Overrides Plotly's computed autorange for the x axis when set; omitted
+   * keeps the current autorange default. Either element may be `null` to
+   * pin just that end while the other stays autoranged (native Plotly
+   * `range` behaviour).
+   */
+  xAxisRange?: [number | null, number | null];
+  /** Same as `xAxisRange`, for the y axis. */
+  yAxisRange?: [number | null, number | null];
 }
 
 /**

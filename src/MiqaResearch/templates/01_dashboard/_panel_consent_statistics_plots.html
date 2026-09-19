@@ -7,7 +7,7 @@
     </div>
     <div id="chart-switchable">
         <div class="chart-container">
-            <mires-chart-bar class="card-plot" data-url="{% url 'api-v1:dashboard_consent_statistics_plot' project.id %}"></mires-chart-bar>
+            <mires-chart-bar class="card-plot" style="--chart-series-1: var(--color-primary)" data-url="{% url 'api-v1:dashboard_consent_statistics_plot' project.id %}"></mires-chart-bar>
         </div>
     </div>
 </div>
@@ -15,6 +15,7 @@
     <h3 class="font-semibold text-lg">{% translate "Cumulative consents over time" %}</h3>
     <p class="text-sm text-muted-foreground">{% translate "Cumulative consents, colored by site/clinic" %}</p>
     <div class="chart-container">
-        <mires-chart-line class="card-plot" data-url="{% url 'api-v1:dashboard_consent_plot_by_clinic' project.id %}"></mires-chart-line>
+        <mires-chart-line class="card-plot" data-url="{% url 'api-v1:dashboard_consent_plot_by_clinic' project.id %}"
+            webgl-threshold="50000"></mires-chart-line>
     </div>
 </div>

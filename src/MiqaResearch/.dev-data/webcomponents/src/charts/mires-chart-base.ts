@@ -235,6 +235,7 @@ export abstract class MiresChartBase<TData = unknown> extends LitElement {
         gridcolor: gridColor || undefined,
         linecolor: axisColor || undefined,
         automargin: true,
+        range: labels?.xAxisRange,
       },
       yaxis: {
         title: labels?.yAxisTitle ? { text: labels.yAxisTitle } : undefined,
@@ -242,6 +243,7 @@ export abstract class MiresChartBase<TData = unknown> extends LitElement {
         gridcolor: gridColor || undefined,
         linecolor: axisColor || undefined,
         automargin: true,
+        range: labels?.yAxisRange,
       },
       legend: {
         font: { family: fontFamily, color: textColor || undefined },
