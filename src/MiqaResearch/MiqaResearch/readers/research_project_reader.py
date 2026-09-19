@@ -18,7 +18,7 @@ async def check_user_project_role_by_name(
         logger.warning("User project role check requested with empty required_role for project %s", project_id)
         raise ValueError("required_role must not be empty")
 
-    user, research_project, project_roles = await get_user_project_role_list(request, project_id)
+    user, research_project, project_roles = await get_user_project_role_list_from_request_and_project(request, project_id)
 
     if research_project is None:
         logger.warning("User project role check requested for non-existent project %s", project_id)
@@ -42,7 +42,7 @@ async def check_user_project_role_by_id(
         logger.error("check_user_project_role_by_id called with empty required_role for project %s", project_id)
         raise ValueError("required_role must not be empty")
 
-    user, research_project, project_roles = await get_user_project_role_list(request, project_id)
+    user, research_project, project_roles = await get_user_project_role_list_from_request_and_project(request, project_id)
 
     if research_project is None:
         logger.warning("User project role check requested for non-existent project %s", project_id)
@@ -120,26 +120,43 @@ async def get_user_project_connected_clinics(request, project_id: UUID) -> list[
     return [clinic async for clinic in query]
 
 
-async def get_user_project_role_list(
+async def get_user_project_role_list_from_request_and_project(
         request, project_id: UUID) -> tuple[User | AnonymousUser, ResearchProject | None, list[dict[str, str | UUID]]]:
     """
-    Get the list of roles the user has for the given project.
+    Get the list of roles the user in a request object has for the given project.
     """
     user = await request.auser()
     if not user.is_authenticated:
         logger.warning("User project role list requested for unauthenticated user for project %s", project_id)
         return user, None, []
 
+    return await get_user_project_role_list(user, project_id)
+
+
+async def get_user_project_role_list_for_project_id(
+        user, project_id: UUID) -> tuple[User | AnonymousUser, ResearchProject | None, list[dict[str, str | UUID]]]:
+    """
+    Get the list of roles the user has for the given project id.
+    """
     try:
         research_project = await ResearchProject.objects.aget(id=project_id)
     except ResearchProject.DoesNotExist:
         logger.error("User project role list requested for non-existent project %s", project_id, exc_info=True)
         return user, None, []
 
+    user_roles = await get_user_project_role_list(user, research_project)
+
+    return user, research_project, user_roles
+
+
+async def get_user_project_role_list(
+        user, project: ResearchProject) -> list[dict[str, str | UUID]]:
+    """
+    Get the list of roles the user has for the given project id.
+    """
     queryset = ResearchProjectRole.objects.filter(
-        researchprojectuserrolemap__project=research_project,
+        researchprojectuserrolemap__project=project,
         researchprojectuserrolemap__user__exact=user
     ).values("id", "name")
 
-    user_roles = [role async for role in queryset]
-    return user, research_project, user_roles
+    return [role async for role in queryset]

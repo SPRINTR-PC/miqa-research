@@ -2,6 +2,7 @@ import logging
 from http.client import HTTPResponse
 from uuid import UUID
 
+from django.core.paginator import Paginator
 from django.utils.translation import gettext as _
 from ninja import Router
 from ninja.errors import HttpError
@@ -9,12 +10,13 @@ from ninja.errors import HttpError
 from MiqaResearch.data.models import ResearchProject
 from MiqaResearch.data.serializers.charts.bar import BarChartResponseSchema
 from MiqaResearch.data.serializers.charts.xy import FilledAreaChartResponseSchema, LineChartResponseSchema
-from MiqaResearch.data.serializers.data_table import DataTableResponseSchema
+from MiqaResearch.data.serializers.data_table import DataTableResponseSchema, PaginationMetaSchema
 from MiqaResearch.data.serializers.participant_consent import ProjectConsentHistoryByClinicSchema
 from MiqaResearch.readers.participant_consent_reader import (
     get_consent_history_by_clinic,
     get_consent_history_plot_by_clinic,
     get_consent_statistics_plot,
+    get_consent_table_data_for_project,
 )
 from MiqaResearch.readers.research_project_reader import check_user_project_role_by_name
 
@@ -61,8 +63,26 @@ async def dashboard_consent_table_data(request, project_id: UUID):
     if error_response:
         return error_response
 
+    per_page_result = int(request.GET.get("per_page", 25))
+    page_number = int(request.GET.get("page", 1))
+    include_pid = request.GET.get("include_pid", "false").lower() == "true"
+    include_columns = request.GET.get("columns", "true").lower() == "true"
+
     try:
-        consent_table_data = await get_consent_table_data_for_project(research_project)
+        consent_table_query, columns = await get_consent_table_data_for_project(
+            research_project, await request.auser(), include_pid=include_pid)
+        paginator = Paginator(consent_table_query, per_page=per_page_result)  # TODO: Update to that the per_page is selected from request query parameters
+        page = paginator.get_page(page_number)
+        consent_table_data = DataTableResponseSchema(
+            columns=columns if include_columns else None,
+            rows=page,
+            pagination=PaginationMetaSchema(
+                page=page_number,
+                page_size=per_page_result,
+                total_pages=paginator.num_pages,
+                total_items=paginator.count
+            )
+        )
     except Exception as e:
         logger.error("Error fetching consent table data for project %s", project_id, exc_info=True)
         return {"error": str(e)}
