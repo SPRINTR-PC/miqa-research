@@ -2,7 +2,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import "./data-table";
 import { DataTable } from "./data-table";
 import { ApiService } from "./api-service";
-import type { DataTableResponse } from "./data-table-interfaces";
+import type {
+  ColumnDefinition,
+  DataTableWireResponse,
+  PaginationMeta,
+} from "./data-table-interfaces";
 
 describe("DataTable", () => {
   beforeEach(() => {
@@ -53,7 +57,7 @@ describe("DataTable", () => {
   });
 
   it("should fetch data from dataUrl and render columns and rows", async () => {
-    const mockResponse: DataTableResponse = {
+    const mockResponse: DataTableWireResponse = {
       columns: [
         { accessor: "machineName", label: "Machine" },
         { accessor: "numExams", label: "Exams" },
@@ -62,7 +66,7 @@ describe("DataTable", () => {
         { machineName: "CT1", numExams: 12 },
         { machineName: "CT2", numExams: 7 },
       ],
-      pagination: { page: 1, pageSize: 50, count: 2, totalPages: 1, hasNext: false, hasPrevious: false },
+      pagination: { page: 1, page_size: 50, total_items: 2, total_pages: 1, has_next: false, has_previous: false },
     };
     vi.spyOn(ApiService, "getData").mockResolvedValue({ success: true, data: mockResponse, message: "ok" });
 
@@ -73,7 +77,7 @@ describe("DataTable", () => {
     await new Promise((r) => setTimeout(r, 10));
     await el.updateComplete;
 
-    expect(ApiService.getData).toHaveBeenCalledWith("https://api.example.com/table-data?page=1&pageSize=50");
+    expect(ApiService.getData).toHaveBeenCalledWith("https://api.example.com/table-data?page=1&page_size=50&include_columns=true");
 
     const headers = Array.from(el.shadowRoot?.querySelectorAll("th") ?? []).map((th) => th.textContent);
     expect(headers).toEqual(["Machine", "Exams"]);
@@ -102,12 +106,12 @@ describe("DataTable", () => {
   });
 
   it("should derive columns from the first row's keys when the response omits columns", async () => {
-    const mockResponse: DataTableResponse = {
+    const mockResponse: DataTableWireResponse = {
       rows: [
         { machineName: "CT1", numExams: 12 },
         { machineName: "CT2", numExams: 7 },
       ],
-      pagination: { page: 1, pageSize: 50, count: 2, totalPages: 1, hasNext: false, hasPrevious: false },
+      pagination: { page: 1, page_size: 50, total_items: 2, total_pages: 1, has_next: false, has_previous: false },
     };
     vi.spyOn(ApiService, "getData").mockResolvedValue({ success: true, data: mockResponse, message: "ok" });
 
@@ -125,10 +129,10 @@ describe("DataTable", () => {
   });
 
   it("should render no data message when the response has an empty rows array", async () => {
-    const mockResponse: DataTableResponse = {
+    const mockResponse: DataTableWireResponse = {
       columns: [{ accessor: "machineName", label: "Machine" }],
       rows: [],
-      pagination: { page: 1, pageSize: 50, count: 0, totalPages: 1, hasNext: false, hasPrevious: false },
+      pagination: { page: 1, page_size: 50, total_items: 0, total_pages: 1, has_next: false, has_previous: false },
     };
     vi.spyOn(ApiService, "getData").mockResolvedValue({ success: true, data: mockResponse, message: "ok" });
 
@@ -145,10 +149,10 @@ describe("DataTable", () => {
   });
 
   it("should not render pager controls when total row count fits in one page", async () => {
-    const mockResponse: DataTableResponse = {
+    const mockResponse: DataTableWireResponse = {
       columns: [{ accessor: "machineName", label: "Machine" }],
       rows: [{ machineName: "CT1" }],
-      pagination: { page: 1, pageSize: 50, count: 1, totalPages: 1, hasNext: false, hasPrevious: false },
+      pagination: { page: 1, page_size: 50, total_items: 1, total_pages: 1, has_next: false, has_previous: false },
     };
     vi.spyOn(ApiService, "getData").mockResolvedValue({ success: true, data: mockResponse, message: "ok" });
 
@@ -164,10 +168,10 @@ describe("DataTable", () => {
   });
 
   it("should render pager controls when total row count exceeds page size", async () => {
-    const mockResponse: DataTableResponse = {
+    const mockResponse: DataTableWireResponse = {
       columns: [{ accessor: "machineName", label: "Machine" }],
       rows: Array.from({ length: 50 }, (_, i) => ({ machineName: `CT${i}` })),
-      pagination: { page: 1, pageSize: 50, count: 60, totalPages: 2, hasNext: true, hasPrevious: false },
+      pagination: { page: 1, page_size: 50, total_items: 60, total_pages: 2, has_next: true, has_previous: false },
     };
     vi.spyOn(ApiService, "getData").mockResolvedValue({ success: true, data: mockResponse, message: "ok" });
 
@@ -188,16 +192,80 @@ describe("DataTable", () => {
     document.body.removeChild(el);
   });
 
+  it("should convert only the response envelope from snake_case and leave row keys untouched", async () => {
+    vi.spyOn(ApiService, "getData").mockResolvedValue({
+      success: true,
+      data: {
+        columns: [{ accessor: "clinic__clinic_name", label: "Clinic Name", data_type: "string", sortable: true }],
+        rows: [{ clinic__clinic_name: "Clinic A" }],
+        pagination: { page: 1, page_size: 50, total_items: 1, total_pages: 1, has_next: false, has_previous: false },
+      },
+      message: "ok",
+    });
+
+    const el = new DataTable();
+    el.dataUrl = "https://api.example.com/table-data";
+    document.body.appendChild(el);
+    await new Promise((r) => setTimeout(r, 10));
+    await el.updateComplete;
+
+    const internals = el as unknown as { _columns: ColumnDefinition[]; _pagination: PaginationMeta };
+    expect(internals._columns[0]).toMatchObject({ accessor: "clinic__clinic_name", dataType: "string" });
+    expect(internals._pagination).toEqual({
+      page: 1, pageSize: 50, totalItems: 1, totalPages: 1, hasNext: false, hasPrevious: false,
+    });
+    const cells = Array.from(el.shadowRoot?.querySelectorAll("tbody td") ?? []).map((td) => td.textContent);
+    expect(cells).toEqual(["Clinic A"]);
+
+    document.body.removeChild(el);
+  });
+
+  it("should keep the first-load columns when later pages omit them", async () => {
+    const pagination = { page: 1, page_size: 50, total_items: 60, total_pages: 2, has_next: true, has_previous: false };
+    vi.spyOn(ApiService, "getData")
+      .mockResolvedValueOnce({
+        success: true,
+        data: { columns: [{ accessor: "machineName", label: "Machine" }], rows: [{ machineName: "CT1" }], pagination },
+        message: "ok",
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          columns: null,
+          rows: [{ machineName: "CT2" }],
+          pagination: { ...pagination, page: 2, has_next: false, has_previous: true },
+        },
+        message: "ok",
+      });
+
+    const el = new DataTable();
+    el.dataUrl = "https://api.example.com/table-data";
+    document.body.appendChild(el);
+    await new Promise((r) => setTimeout(r, 10));
+    await el.updateComplete;
+
+    (el.shadowRoot?.querySelector('[data-action="next"]') as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 10));
+    await el.updateComplete;
+
+    const headers = Array.from(el.shadowRoot?.querySelectorAll("th") ?? []).map((th) => th.textContent?.trim());
+    expect(headers).toEqual(["Machine"]);
+    const cells = Array.from(el.shadowRoot?.querySelectorAll("tbody td") ?? []).map((td) => td.textContent);
+    expect(cells).toEqual(["CT2"]);
+
+    document.body.removeChild(el);
+  });
+
   it("should fetch the next page and re-render when the next control is clicked", async () => {
-    const firstPage: DataTableResponse = {
+    const firstPage: DataTableWireResponse = {
       columns: [{ accessor: "machineName", label: "Machine" }],
       rows: [{ machineName: "CT-page1" }],
-      pagination: { page: 1, pageSize: 50, count: 60, totalPages: 2, hasNext: true, hasPrevious: false },
+      pagination: { page: 1, page_size: 50, total_items: 60, total_pages: 2, has_next: true, has_previous: false },
     };
-    const secondPage: DataTableResponse = {
+    const secondPage: DataTableWireResponse = {
       columns: [{ accessor: "machineName", label: "Machine" }],
       rows: [{ machineName: "CT-page2" }],
-      pagination: { page: 2, pageSize: 50, count: 60, totalPages: 2, hasNext: false, hasPrevious: true },
+      pagination: { page: 2, page_size: 50, total_items: 60, total_pages: 2, has_next: false, has_previous: true },
     };
     vi.spyOn(ApiService, "getData")
       .mockResolvedValueOnce({ success: true, data: firstPage, message: "ok" })
@@ -216,7 +284,7 @@ describe("DataTable", () => {
     await new Promise((r) => setTimeout(r, 10));
     await el.updateComplete;
 
-    expect(ApiService.getData).toHaveBeenLastCalledWith("https://api.example.com/table-data?page=2&pageSize=50");
+    expect(ApiService.getData).toHaveBeenLastCalledWith("https://api.example.com/table-data?page=2&page_size=50");
     const cells = Array.from(el.shadowRoot?.querySelectorAll("tbody td") ?? []).map((td) => td.textContent);
     expect(cells).toEqual(["CT-page2"]);
 
@@ -229,15 +297,15 @@ describe("DataTable", () => {
   });
 
   it("should fetch the previous page when the previous control is clicked", async () => {
-    const firstPage: DataTableResponse = {
+    const firstPage: DataTableWireResponse = {
       columns: [{ accessor: "machineName", label: "Machine" }],
       rows: [{ machineName: "CT-page1" }],
-      pagination: { page: 1, pageSize: 50, count: 60, totalPages: 2, hasNext: true, hasPrevious: false },
+      pagination: { page: 1, page_size: 50, total_items: 60, total_pages: 2, has_next: true, has_previous: false },
     };
-    const secondPage: DataTableResponse = {
+    const secondPage: DataTableWireResponse = {
       columns: [{ accessor: "machineName", label: "Machine" }],
       rows: [{ machineName: "CT-page2" }],
-      pagination: { page: 2, pageSize: 50, count: 60, totalPages: 2, hasNext: false, hasPrevious: true },
+      pagination: { page: 2, page_size: 50, total_items: 60, total_pages: 2, has_next: false, has_previous: true },
     };
     vi.spyOn(ApiService, "getData")
       .mockResolvedValueOnce({ success: true, data: firstPage, message: "ok" })
@@ -258,7 +326,7 @@ describe("DataTable", () => {
     await new Promise((r) => setTimeout(r, 10));
     await el.updateComplete;
 
-    expect(ApiService.getData).toHaveBeenLastCalledWith("https://api.example.com/table-data?page=1&pageSize=50");
+    expect(ApiService.getData).toHaveBeenLastCalledWith("https://api.example.com/table-data?page=1&page_size=50");
     const cells = Array.from(el.shadowRoot?.querySelectorAll("tbody td") ?? []).map((td) => td.textContent);
     expect(cells).toEqual(["CT-page1"]);
 
@@ -266,14 +334,14 @@ describe("DataTable", () => {
   });
 
   describe("sort interactivity", () => {
-    const twoSortableColumnsResponse: DataTableResponse = {
+    const twoSortableColumnsResponse: DataTableWireResponse = {
       columns: [
         { accessor: "machineName", label: "Machine", sortable: true },
         { accessor: "numExams", label: "Exams", sortable: true },
         { accessor: "hospital", label: "Hospital" },
       ],
       rows: [{ machineName: "CT1", numExams: 5, hospital: "General" }],
-      pagination: { page: 1, pageSize: 50, count: 1, totalPages: 1, hasNext: false, hasPrevious: false },
+      pagination: { page: 1, page_size: 50, total_items: 1, total_pages: 1, has_next: false, has_previous: false },
     };
 
     function shiftClick(el: HTMLElement) {
@@ -296,7 +364,7 @@ describe("DataTable", () => {
 
     function headerFor(el: DataTable, label: string): HTMLElement {
       const headers = Array.from(el.shadowRoot?.querySelectorAll("th") ?? []);
-      const header = headers.find((th) => th.textContent?.trim().startsWith(label));
+      const header = headers.find((th) => th.textContent?.includes(label));
       if (!header) throw new Error(`No header found for ${label}`);
       return header as HTMLElement;
     }
@@ -307,7 +375,7 @@ describe("DataTable", () => {
       await new Promise((r) => setTimeout(r, 10));
 
       expect(ApiService.getData).toHaveBeenLastCalledWith(
-        "https://api.example.com/table-data?page=1&pageSize=50&sort=machineName"
+        "https://api.example.com/table-data?page=1&page_size=50&sort=machineName"
       );
       document.body.removeChild(el);
     });
@@ -320,7 +388,7 @@ describe("DataTable", () => {
       await new Promise((r) => setTimeout(r, 10));
 
       expect(ApiService.getData).toHaveBeenLastCalledWith(
-        "https://api.example.com/table-data?page=1&pageSize=50&sort=-machineName"
+        "https://api.example.com/table-data?page=1&page_size=50&sort=-machineName"
       );
       document.body.removeChild(el);
     });
@@ -333,7 +401,7 @@ describe("DataTable", () => {
       await new Promise((r) => setTimeout(r, 10));
 
       expect(ApiService.getData).toHaveBeenLastCalledWith(
-        "https://api.example.com/table-data?page=1&pageSize=50&sort=numExams"
+        "https://api.example.com/table-data?page=1&page_size=50&sort=numExams"
       );
       document.body.removeChild(el);
     });
@@ -346,7 +414,7 @@ describe("DataTable", () => {
       await new Promise((r) => setTimeout(r, 10));
 
       expect(ApiService.getData).toHaveBeenLastCalledWith(
-        "https://api.example.com/table-data?page=1&pageSize=50&sort=machineName,numExams"
+        "https://api.example.com/table-data?page=1&page_size=50&sort=machineName,numExams"
       );
       document.body.removeChild(el);
     });
@@ -361,7 +429,7 @@ describe("DataTable", () => {
       await new Promise((r) => setTimeout(r, 10));
 
       expect(ApiService.getData).toHaveBeenLastCalledWith(
-        "https://api.example.com/table-data?page=1&pageSize=50&sort=machineName,-numExams"
+        "https://api.example.com/table-data?page=1&page_size=50&sort=machineName,-numExams"
       );
       document.body.removeChild(el);
     });
@@ -377,10 +445,10 @@ describe("DataTable", () => {
     });
 
     it("should reset pagination to page 1 when sort changes", async () => {
-      const manyRowsResponse: DataTableResponse = {
+      const manyRowsResponse: DataTableWireResponse = {
         columns: twoSortableColumnsResponse.columns,
         rows: [{ machineName: "CT1", numExams: 5, hospital: "General" }],
-        pagination: { page: 2, pageSize: 50, count: 60, totalPages: 2, hasNext: false, hasPrevious: true },
+        pagination: { page: 2, page_size: 50, total_items: 60, total_pages: 2, has_next: false, has_previous: true },
       };
       vi.spyOn(ApiService, "getData")
         .mockResolvedValueOnce({ success: true, data: manyRowsResponse, message: "ok" })
@@ -396,14 +464,14 @@ describe("DataTable", () => {
       await new Promise((r) => setTimeout(r, 10));
 
       expect(ApiService.getData).toHaveBeenLastCalledWith(
-        "https://api.example.com/table-data?page=1&pageSize=50&sort=machineName"
+        "https://api.example.com/table-data?page=1&page_size=50&sort=machineName"
       );
       document.body.removeChild(el);
     });
   });
 
   describe("filter interactivity", () => {
-    const filterableColumnsResponse: DataTableResponse = {
+    const filterableColumnsResponse: DataTableWireResponse = {
       columns: [
         { accessor: "machineName", label: "Machine", filter: { kind: "text" } },
         { accessor: "numExams", label: "Exams", filter: { kind: "numeric" } },
@@ -422,7 +490,7 @@ describe("DataTable", () => {
         { accessor: "unfiltered", label: "Plain" },
       ],
       rows: [{ machineName: "CT1", numExams: 5, hospital: "gen", active: true, unfiltered: "x" }],
-      pagination: { page: 1, pageSize: 50, count: 1, totalPages: 1, hasNext: false, hasPrevious: false },
+      pagination: { page: 1, page_size: 50, total_items: 1, total_pages: 1, has_next: false, has_previous: false },
     };
 
     async function setUpFilterableTable(): Promise<DataTable> {
@@ -497,7 +565,7 @@ describe("DataTable", () => {
       await new Promise((r) => setTimeout(r, 300));
       expect(ApiService.getData).toHaveBeenCalledTimes(2);
       expect(ApiService.getData).toHaveBeenLastCalledWith(
-        "https://api.example.com/table-data?page=1&pageSize=50&machineName__icontains=ct"
+        "https://api.example.com/table-data?page=1&page_size=50&machineName__icontains=ct"
       );
       document.body.removeChild(el);
     });
@@ -511,7 +579,7 @@ describe("DataTable", () => {
       await new Promise((r) => setTimeout(r, 350));
 
       expect(ApiService.getData).toHaveBeenLastCalledWith(
-        "https://api.example.com/table-data?page=1&pageSize=50&numExams=5"
+        "https://api.example.com/table-data?page=1&page_size=50&numExams=5"
       );
       document.body.removeChild(el);
     });
@@ -526,7 +594,7 @@ describe("DataTable", () => {
 
       expect(ApiService.getData).toHaveBeenCalledTimes(2);
       expect(ApiService.getData).toHaveBeenLastCalledWith(
-        "https://api.example.com/table-data?page=1&pageSize=50&hospital=gen"
+        "https://api.example.com/table-data?page=1&page_size=50&hospital=gen"
       );
       document.body.removeChild(el);
     });
@@ -539,21 +607,21 @@ describe("DataTable", () => {
       select.dispatchEvent(new Event("change"));
       await new Promise((r) => setTimeout(r, 10));
       expect(ApiService.getData).toHaveBeenLastCalledWith(
-        "https://api.example.com/table-data?page=1&pageSize=50&active=true"
+        "https://api.example.com/table-data?page=1&page_size=50&active=true"
       );
 
       select.value = "";
       select.dispatchEvent(new Event("change"));
       await new Promise((r) => setTimeout(r, 10));
-      expect(ApiService.getData).toHaveBeenLastCalledWith("https://api.example.com/table-data?page=1&pageSize=50");
+      expect(ApiService.getData).toHaveBeenLastCalledWith("https://api.example.com/table-data?page=1&page_size=50");
 
       document.body.removeChild(el);
     });
 
     it("should reset pagination to page 1 when a filter changes", async () => {
-      const pageTwoResponse: DataTableResponse = {
+      const pageTwoResponse: DataTableWireResponse = {
         ...filterableColumnsResponse,
-        pagination: { page: 2, pageSize: 50, count: 60, totalPages: 2, hasNext: false, hasPrevious: true },
+        pagination: { page: 2, page_size: 50, total_items: 60, total_pages: 2, has_next: false, has_previous: true },
       };
       vi.spyOn(ApiService, "getData")
         .mockResolvedValueOnce({ success: true, data: pageTwoResponse, message: "ok" })
@@ -571,14 +639,14 @@ describe("DataTable", () => {
       await new Promise((r) => setTimeout(r, 10));
 
       expect(ApiService.getData).toHaveBeenLastCalledWith(
-        "https://api.example.com/table-data?page=1&pageSize=50&hospital=gen"
+        "https://api.example.com/table-data?page=1&page_size=50&hospital=gen"
       );
       document.body.removeChild(el);
     });
   });
 
   describe("range and multi-value filter interactivity", () => {
-    const rangeColumnsResponse: DataTableResponse = {
+    const rangeColumnsResponse: DataTableWireResponse = {
       columns: [
         { accessor: "medianDose", label: "Median dose", filter: { kind: "numeric-range" } },
         { accessor: "firstStudy", label: "First study", filter: { kind: "date-range" } },
@@ -596,7 +664,7 @@ describe("DataTable", () => {
         },
       ],
       rows: [{ medianDose: 50, firstStudy: "2024-01-01", hospital: "gen" }],
-      pagination: { page: 1, pageSize: 50, count: 1, totalPages: 1, hasNext: false, hasPrevious: false },
+      pagination: { page: 1, page_size: 50, total_items: 1, total_pages: 1, has_next: false, has_previous: false },
     };
 
     async function setUpRangeTable(): Promise<DataTable> {
@@ -637,7 +705,7 @@ describe("DataTable", () => {
 
       await new Promise((r) => setTimeout(r, 300));
       expect(ApiService.getData).toHaveBeenLastCalledWith(
-        "https://api.example.com/table-data?page=1&pageSize=50&medianDose__gte=20"
+        "https://api.example.com/table-data?page=1&page_size=50&medianDose__gte=20"
       );
       document.body.removeChild(el);
     });
@@ -653,7 +721,7 @@ describe("DataTable", () => {
       await new Promise((r) => setTimeout(r, 350));
 
       expect(ApiService.getData).toHaveBeenLastCalledWith(
-        "https://api.example.com/table-data?page=1&pageSize=50&medianDose__gte=20&medianDose__lte=80"
+        "https://api.example.com/table-data?page=1&page_size=50&medianDose__gte=20&medianDose__lte=80"
       );
       document.body.removeChild(el);
     });
@@ -669,7 +737,7 @@ describe("DataTable", () => {
       await new Promise((r) => setTimeout(r, 10));
 
       expect(ApiService.getData).toHaveBeenLastCalledWith(
-        "https://api.example.com/table-data?page=1&pageSize=50&firstStudy__gte=2023-01-01"
+        "https://api.example.com/table-data?page=1&page_size=50&firstStudy__gte=2023-01-01"
       );
       document.body.removeChild(el);
     });
@@ -692,7 +760,7 @@ describe("DataTable", () => {
       await new Promise((r) => setTimeout(r, 10));
 
       expect(ApiService.getData).toHaveBeenLastCalledWith(
-        "https://api.example.com/table-data?page=1&pageSize=50&hospital__in=gen%2Cwest"
+        "https://api.example.com/table-data?page=1&page_size=50&hospital__in=gen%2Cwest"
       );
       document.body.removeChild(el);
     });
@@ -705,17 +773,17 @@ describe("DataTable", () => {
       await new Promise((r) => setTimeout(r, 10));
 
       expect(ApiService.getData).toHaveBeenLastCalledWith(
-        "https://api.example.com/table-data?page=1&pageSize=50&firstStudy__gte=2023-01-01"
+        "https://api.example.com/table-data?page=1&page_size=50&firstStudy__gte=2023-01-01"
       );
       document.body.removeChild(el);
     });
   });
 
   describe("component property overrides", () => {
-    const basicResponse: DataTableResponse = {
+    const basicResponse: DataTableWireResponse = {
       columns: [{ accessor: "machineName", label: "Machine", sortable: true }],
       rows: [{ machineName: "CT1" }],
-      pagination: { page: 1, pageSize: 50, count: 1, totalPages: 1, hasNext: false, hasPrevious: false },
+      pagination: { page: 1, page_size: 50, total_items: 1, total_pages: 1, has_next: false, has_previous: false },
     };
 
     it("should send the initialSort property as the sort param on the first fetch", async () => {
@@ -729,7 +797,7 @@ describe("DataTable", () => {
       await el.updateComplete;
 
       expect(ApiService.getData).toHaveBeenCalledWith(
-        "https://api.example.com/table-data?page=1&pageSize=50&sort=-machineName"
+        "https://api.example.com/table-data?page=1&page_size=50&include_columns=true&sort=-machineName"
       );
       document.body.removeChild(el);
     });
@@ -744,7 +812,7 @@ describe("DataTable", () => {
       await new Promise((r) => setTimeout(r, 10));
       await el.updateComplete;
 
-      expect(ApiService.getData).toHaveBeenCalledWith("https://api.example.com/table-data?page=1&pageSize=25");
+      expect(ApiService.getData).toHaveBeenCalledWith("https://api.example.com/table-data?page=1&page_size=25&include_columns=true");
       document.body.removeChild(el);
     });
 

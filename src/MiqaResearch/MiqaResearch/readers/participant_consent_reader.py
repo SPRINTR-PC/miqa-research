@@ -29,7 +29,11 @@ from MiqaResearch.data.serializers.charts.xy import (
     XYChartDataSchema,
     XYSeriesSchema,
 )
-from MiqaResearch.data.serializers.data_table import DataTableResponseSchema, DataTableColumnSchema
+from MiqaResearch.data.serializers.data_table_definition import (
+    DataTableColumn,
+    DataTableDefinition,
+    DataTableSource,
+)
 from MiqaResearch.data.serializers.participant_consent import (
     ClinicConsentHistorySchema,
     ConsentHistoryEventSchema,
@@ -269,7 +273,8 @@ async def get_consent_statistics_plot(project: ResearchProject) -> BarChartRespo
     )
 
 
-async def get_consent_table_data_for_project(project: ResearchProject, user, include_pid: bool = False):
+async def get_consent_table_data_for_project(
+        project: ResearchProject, user, include_pid: bool = False) -> DataTableSource:
     ALLOWED_USER_ROLES = (
         PROJECT_ROLE_ADMIN,
         PROJECT_ROLE_PI,
@@ -299,51 +304,28 @@ async def get_consent_table_data_for_project(project: ResearchProject, user, inc
             clinic__researchprojectuserrolemap__role__name=PROJECT_ROLE_PARTICIPANT_RECRUITER,
         )
 
-    columns = {
-        "clinic_id": (gettext("Clinic ID"), "str"),
-        "clinic__clinic_name": (gettext("Clinic Name"), "str"),
-        "clinic__clinic_code": (gettext("Clinic Code"), "str"),
-        "status": (gettext("Status"), "str"),
-        "consent_signed_date": (gettext("Signed Date"), "datetime"),
-        "consent_revoked_date": (gettext("Revoked Date"), "datetime"),
-        "last_updated": (gettext("Last Updated"), "datetime"),
-        "participant_information_version": (gettext("Participant Information Version"), "str"),
-        "source": (gettext("Source"), "str"),
-        "study_participant__alias1": (gettext("Alias"), "str"),
-        "study_participant__person_source_value": (gettext("Participant ID"), "str"),
-        "study_participant__name": (gettext("Name"), "str"),
-    }
-    values_list = [
-        "clinic_id",
-        "clinic__clinic_name",
-        "clinic__clinic_code",
-        "status",
-        "consent_signed_date",
-        "consent_revoked_date",
-        "last_updated",
-        "participant_information_version",
-        "source",
-        "study_participant__alias1",
+    columns = [
+        DataTableColumn("clinic_id", gettext("Clinic ID"), "string"),
+        DataTableColumn("clinic__clinic_name", gettext("Clinic Name"), "string"),
+        DataTableColumn("clinic__clinic_code", gettext("Clinic Code"), "string"),
+        DataTableColumn("status", gettext("Status"), "string"),
+        DataTableColumn("consent_signed_date", gettext("Signed Date"), "datetime"),
+        DataTableColumn("consent_revoked_date", gettext("Revoked Date"), "datetime"),
+        DataTableColumn("last_updated", gettext("Last Updated"), "datetime"),
+        DataTableColumn("participant_information_version", gettext("Participant Information Version"), "string"),
+        DataTableColumn("source", gettext("Source"), "string"),
+        DataTableColumn("study_participant__alias1", gettext("Alias"), "string"),
     ]
 
     if include_pid:
-        values_list += [
-            "study_participant__person_source_value",
-            "study_participant__name",
+        columns += [
+            DataTableColumn("study_participant__person_source_value", gettext("Participant ID"), "string"),
+            DataTableColumn("study_participant__name", gettext("Name"), "string"),
         ]
 
-    return (
-        query.values(*values_list),
-        [
-            DataTableColumnSchema(
-                id=key,
-                title=val[0],
-                dataType=val[1]
-            )
-            for key, val in columns.items()
-            if key in values_list
-        ]
-    )
+    definition = DataTableDefinition(columns=tuple(columns), default_ordering=("-consent_signed_date",))
+
+    return DataTableSource(query.values(*definition.values_fields), definition)
 
 
 async def _get_consent_history_data(project: ResearchProject) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:

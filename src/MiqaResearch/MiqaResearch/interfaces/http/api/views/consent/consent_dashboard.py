@@ -1,17 +1,18 @@
 import logging
 from http.client import HTTPResponse
+from typing import Any
 from uuid import UUID
 
-from math import ceil
 from django.utils.translation import gettext as _
-from ninja import Query, Router
+from ninja import Router
 from ninja.errors import HttpError
+from ninja.pagination import paginate
 
 from MiqaResearch.data.models import ResearchProject
 from MiqaResearch.data.serializers.charts.bar import BarChartResponseSchema
 from MiqaResearch.data.serializers.charts.xy import FilledAreaChartResponseSchema, LineChartResponseSchema
-from MiqaResearch.data.serializers.data_table import DataTableResponseSchema, PaginationMetaSchema
 from MiqaResearch.data.serializers.participant_consent import ProjectConsentHistoryByClinicSchema
+from MiqaResearch.interfaces.http.api.pagination import DataTablePagination
 from MiqaResearch.readers.participant_consent_reader import (
     get_consent_history_by_clinic,
     get_consent_history_plot_by_clinic,
@@ -54,38 +55,22 @@ async def dashboard_consent_data_by_clinic(request, project_id: UUID):
 
 @router.get(
     "consent_by_clinic/{project_id}/table",
-    response=DataTableResponseSchema,
+    response=list[dict[str, Any]],
     url_name="dashboard_consent_statistics_table"
 )
-async def dashboard_consent_table_data(
-        request, project_id: UUID, page: int = Query(1, ge=1), per_page: int = Query(25, ge=1, le=200)):
+@paginate(DataTablePagination)
+async def dashboard_consent_table_data(request, project_id: UUID, include_pid: bool = False):
     """
     Get consent data by clinic for a specific research project for showing in a data table. The data is limited to the
     clinics the user is associated with for the given research project.
+
+    Query parameters: `page`, `page_size`, `include_columns` (see `DataTablePagination`) and `include_pid`.
     """
     research_project = await _check_research_and_role(
         request, project_id, required_role=TABLE_ALLOWED_ROLES)
 
-    include_pid = request.GET.get("include_pid", "false").lower() == "true"
-    include_columns = request.GET.get("columns", "true").lower() == "true"
-
-    consent_table_query, columns = await get_consent_table_data_for_project(
+    return await get_consent_table_data_for_project(
         research_project, await request.auser(), include_pid=include_pid)
-    total_items = await consent_table_query.acount()
-    offset = (page - 1) * per_page
-    rows = [row async for row in consent_table_query[offset:offset + per_page]]
-    consent_table_data = DataTableResponseSchema(
-        columns=columns if include_columns else None,
-        rows=rows,
-        pagination=PaginationMetaSchema(
-            page=page,
-            page_size=per_page,
-            total_pages=max(ceil(total_items / per_page), 1),
-            total_items=total_items,
-        )
-    )
-
-    return consent_table_data
 
 
 @router.get(

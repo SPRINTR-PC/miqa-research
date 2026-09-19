@@ -3,11 +3,13 @@ import type { PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 
+import { snakeToCamelDeep } from "../snake-to-camel";
 import { ApiService } from "./api-service";
 import type {
   ColumnDefinition,
   DataRow,
   DataTableResponse,
+  DataTableWireResponse,
   HslColor,
   PaginationMeta,
   SortDescriptor,
@@ -281,12 +283,18 @@ export class DataTable extends LitElement {
     this._hasError = false;
     this._errorDetail = undefined;
     try {
-      const response = await ApiService.getData<DataTableResponse>(this._buildRequestUrl());
+      const response = await ApiService.getData<DataTableWireResponse>(this._buildRequestUrl());
       if (response.success && response.data) {
+        // Row keys are column accessors (e.g. `clinic__clinic_name`) that are sent back for sort/filter, so only the
+        // envelope is converted from snake_case.
+        const { columns, pagination } = snakeToCamelDeep<Pick<DataTableResponse, "columns" | "pagination">>({
+          columns: response.data.columns,
+          pagination: response.data.pagination,
+        });
         this._rows = response.data.rows;
-        this._columns = response.data.columns ?? this._deriveColumnsFromRows(response.data.rows);
-        this._pagination = response.data.pagination;
-        this._page = response.data.pagination.page;
+        this._columns = columns ?? this._columns ?? this._deriveColumnsFromRows(response.data.rows);
+        this._pagination = pagination;
+        this._page = pagination.page;
       } else {
         this._rows = undefined;
         this._columns = undefined;
@@ -344,7 +352,10 @@ export class DataTable extends LitElement {
   private _buildRequestUrl(): string {
     const pageSize = this._pagination?.pageSize ?? this.pageSize ?? 50;
     const separator = this.dataUrl.includes("?") ? "&" : "?";
-    let url = `${this.dataUrl}${separator}page=${this._page}&pageSize=${pageSize}`;
+    let url = `${this.dataUrl}${separator}page=${this._page}&page_size=${pageSize}`;
+    if (!this._columns) {
+      url += "&include_columns=true";
+    }
     if (this._sortState.length > 0) {
       const sortParam = this._sortState
         .map((descriptor) => (descriptor.direction === "desc" ? `-${descriptor.column}` : descriptor.column))
@@ -634,7 +645,7 @@ export class DataTable extends LitElement {
 
   private _renderPager() {
     const pagination = this._pagination;
-    if (!pagination || pagination.count <= pagination.pageSize) return nothing;
+    if (!pagination || pagination.totalItems <= pagination.pageSize) return nothing;
 
     return html`
       <div class="pager">

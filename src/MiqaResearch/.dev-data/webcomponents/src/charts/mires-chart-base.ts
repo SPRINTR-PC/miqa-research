@@ -7,7 +7,7 @@ import type { Data, Layout, PlotlyHTMLElement } from "plotly.js";
 import "../core-wc/kp-select.js";
 import { chartPaletteStyles } from "./chart-palette-styles.js";
 import { resolveChartCallback } from "./chart-callback-registry.js";
-import { snakeToCamelDeep } from "./snake-to-camel.js";
+import { snakeToCamelDeep } from "../core-wc/snake-to-camel.js";
 import type {
   ChartCallbackEvent,
   ChartConfig,

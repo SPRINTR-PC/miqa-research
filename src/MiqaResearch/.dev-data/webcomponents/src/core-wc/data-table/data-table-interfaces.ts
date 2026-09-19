@@ -47,7 +47,7 @@ export type SortState = SortDescriptor[];
 export interface PaginationMeta {
   page: number;
   pageSize: number;
-  count: number;
+  totalItems: number;
   totalPages: number;
   hasNext: boolean;
   hasPrevious: boolean;
@@ -56,7 +56,24 @@ export interface PaginationMeta {
 export type DataRow = Record<string, unknown>;
 
 export interface DataTableResponse<TRow = DataRow> {
-  columns?: ColumnDefinition[];
+  columns?: ColumnDefinition[] | null; // only sent by the server when requested (include_columns)
   rows: TRow[];
   pagination: PaginationMeta;
+}
+
+// The server sends snake_case JSON. The component converts `columns` and `pagination` (never `rows`) to the camelCase
+// types above.
+export interface PaginationMetaWire {
+  page: number;
+  page_size: number;
+  total_items: number;
+  total_pages: number;
+  has_next: boolean;
+  has_previous: boolean;
+}
+
+export interface DataTableWireResponse<TRow = DataRow> {
+  columns?: Record<string, unknown>[] | null;
+  rows: TRow[];
+  pagination: PaginationMetaWire;
 }

@@ -1,6 +1,8 @@
-from typing import Any
+from typing import Literal
 
 from ninja import Schema
+
+ColumnDataType = Literal["string", "number", "date", "datetime", "boolean", "mini-barchart"]
 
 
 class PaginationMetaSchema(Schema):
@@ -8,15 +10,13 @@ class PaginationMetaSchema(Schema):
     page_size: int
     total_pages: int
     total_items: int
+    has_next: bool
+    has_previous: bool
 
 
 class DataTableColumnSchema(Schema):
-    id: str
-    title: str
-    dataType: str
+    accessor: str
+    label: str
+    data_type: ColumnDataType
+    sortable: bool = False
 
-
-class DataTableResponseSchema(Schema):
-    columns: list[DataTableColumnSchema] | None = None
-    rows: list[dict[str, Any]]
-    pagination: PaginationMetaSchema

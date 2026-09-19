@@ -57,11 +57,11 @@ def _user_with_role(project, role_name, clinic=None):
     return user
 
 
-def _get_table(user, project_id):
+def _get_table(user, project_id, **query):
     client = Client()
     client.force_login(user)
     url = reverse("api-v1:dashboard_consent_statistics_table", kwargs={"project_id": project_id})
-    return client.get(url)
+    return client.get(url, query)
 
 
 @pytest.mark.django_db
@@ -129,3 +129,158 @@ def test_missing_project_gives_404(project_with_consents):
     response = _get_table(user, uuid4())
 
     assert response.status_code == 404
+
+
+# --- Data Table envelope, pagination and wire format -------------------------------------------------------------
+
+
+def _project_with_n_consents(n):
+    """A project with one clinic and n consents that all share the same signed date (ordering must still be stable)."""
+    project = ResearchProject.objects.create(name=f"Paging Project {n}", description="desc")
+    consent_type = ParticipantConsentType.objects.create(label="Participation", research_project=project)
+    clinic = Clinic.objects.create(clinic_code=f"PAGING-{n}", clinic_name="Paging Clinic")
+    ResearchProjectClinicMap.objects.create(project=project, clinic=clinic)
+    for i in range(n):
+        participant = StudyParticipant.objects.create(alias1=f"paging-{n}-{i}", research_project=project)
+        ParticipantConsent.objects.create(
+            study_participant=participant, status="Signerat", clinic=clinic, consent_type=consent_type,
+            consent_signed_date=datetime(2026, 3, 1, 10, 15, tzinfo=timezone.utc),
+        )
+    return project
+
+
+@pytest.fixture
+def admin_of():
+    def make(project):
+        return _user_with_role(project, PROJECT_ROLE_ADMIN)
+    return make
+
+
+@pytest.mark.django_db
+def test_envelope_has_snake_case_columns_rows_and_pagination_when_columns_requested(admin_of):
+    project = _project_with_n_consents(3)
+
+    body = _get_table(admin_of(project), project.id, include_columns="true").json()
+
+    assert set(body) == {"columns", "rows", "pagination"}
+    assert set(body["pagination"]) == {"page", "page_size", "total_pages", "total_items", "has_next", "has_previous"}
+    columns = {column["accessor"]: column for column in body["columns"]}
+    assert columns["clinic__clinic_name"]["data_type"] == "string"
+    assert columns["consent_signed_date"]["data_type"] == "datetime"
+    assert all(column["label"] for column in columns.values())
+    assert set(body["rows"][0]) == set(columns)
+
+
+@pytest.mark.django_db
+def test_columns_are_omitted_unless_requested(admin_of):
+    project = _project_with_n_consents(3)
+
+    body = _get_table(admin_of(project), project.id).json()
+
+    assert body.get("columns") is None
+    assert len(body["rows"]) == 3
+
+
+@pytest.mark.django_db
+def test_row_keys_are_column_accessors_and_datetimes_are_iso_8601_with_utc_offset(admin_of):
+    project = _project_with_n_consents(1)
+
+    row = _get_table(admin_of(project), project.id).json()["rows"][0]
+
+    assert row["clinic__clinic_name"] == "Paging Clinic"
+    assert row["consent_signed_date"] == "2026-03-01T10:15:00+00:00"
+    assert row["consent_revoked_date"] is None
+
+
+@pytest.mark.django_db
+def test_pages_report_totals_and_next_previous_flags_at_the_boundaries(admin_of):
+    project = _project_with_n_consents(25)
+    user = admin_of(project)
+
+    first = _get_table(user, project.id, page=1, page_size=10).json()
+    middle = _get_table(user, project.id, page=2, page_size=10).json()
+    last = _get_table(user, project.id, page=3, page_size=10).json()
+
+    assert first["pagination"] == {
+        "page": 1, "page_size": 10, "total_pages": 3, "total_items": 25, "has_next": True, "has_previous": False}
+    assert (middle["pagination"]["has_next"], middle["pagination"]["has_previous"]) == (True, True)
+    assert (last["pagination"]["has_next"], last["pagination"]["has_previous"]) == (False, True)
+    assert [len(page["rows"]) for page in (first, middle, last)] == [10, 10, 5]
+
+
+@pytest.mark.django_db
+def test_exact_multiple_of_page_size_has_no_extra_page(admin_of):
+    project = _project_with_n_consents(20)
+
+    body = _get_table(admin_of(project), project.id, page=2, page_size=10).json()
+
+    assert body["pagination"]["total_pages"] == 2
+    assert body["pagination"]["has_next"] is False
+
+
+@pytest.mark.django_db
+def test_empty_result_has_zero_totals_and_no_next_or_previous(admin_of):
+    project = _project_with_n_consents(0)
+
+    body = _get_table(admin_of(project), project.id).json()
+
+    assert body["rows"] == []
+    assert body["pagination"] == {
+        "page": 1, "page_size": 25, "total_pages": 0, "total_items": 0, "has_next": False, "has_previous": False}
+
+
+@pytest.mark.django_db
+def test_paging_is_stable_when_rows_share_the_same_sort_value(admin_of):
+    project = _project_with_n_consents(23)
+    user = admin_of(project)
+
+    seen = []
+    for page in (1, 2, 3):
+        seen += [row["study_participant__alias1"] for row in
+                 _get_table(user, project.id, page=page, page_size=10).json()["rows"]]
+
+    assert len(seen) == len(set(seen)) == 23
+
+
+@pytest.mark.django_db
+def test_default_page_size_is_25(admin_of):
+    project = _project_with_n_consents(30)
+
+    body = _get_table(admin_of(project), project.id).json()
+
+    assert body["pagination"]["page_size"] == 25
+    assert len(body["rows"]) == 25
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("query", [
+    {"page": 0}, {"page": -1}, {"page": "abc"}, {"page_size": 0}, {"page_size": 201}, {"page_size": "abc"},
+])
+def test_invalid_page_or_page_size_is_a_validation_error(admin_of, query):
+    project = _project_with_n_consents(1)
+
+    response = _get_table(admin_of(project), project.id, **query)
+
+    assert response.status_code == 422
+
+
+@pytest.mark.django_db
+def test_maximum_page_size_is_accepted(admin_of):
+    project = _project_with_n_consents(1)
+
+    response = _get_table(admin_of(project), project.id, page_size=200)
+
+    assert response.status_code == 200
+    assert response.json()["pagination"]["page_size"] == 200
+
+
+@pytest.mark.django_db
+def test_dashboard_panel_template_resolves_the_table_endpoint_by_name(admin_of):
+    from django.template.loader import render_to_string
+
+    project = _project_with_n_consents(1)
+
+    html = render_to_string("01_dashboard/_panel_consent_statistics_table.html", {"project": project})
+
+    expected_url = reverse("api-v1:dashboard_consent_statistics_table", kwargs={"project_id": project.id})
+    assert f'dataUrl="{expected_url}"' in html

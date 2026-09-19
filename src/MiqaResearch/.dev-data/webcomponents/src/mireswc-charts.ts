@@ -29,4 +29,4 @@ export * from "./charts/chart-color-utils.js";
 export * from "./charts/chart-callback-registry.js";
 export * from "./charts/chart-grid-utils.js";
 export * from "./charts/chart-types.js";
-export * from "./charts/snake-to-camel.js";
+export * from "./core-wc/snake-to-camel.js";
