@@ -3,6 +3,7 @@ from typing import Any
 
 from django.http import HttpRequest
 from ninja import Field, Schema
+from ninja.errors import HttpError
 from ninja.pagination import AsyncPaginationBase
 
 from MiqaResearch.data.serializers.data_table import DataTableColumnSchema, PaginationMetaSchema
@@ -44,7 +45,20 @@ class DataTablePagination(AsyncPaginationBase):
         page_size = pagination.page_size or self.default_page_size
         offset = (pagination.page - 1) * page_size
 
-        ordered = source.queryset.order_by(*definition.ordering_for(pagination.sort))
+        # Ninja silently ignores query keys it does not know. This is a PII table, where ignoring a filter would return
+        # more rows than were asked for, so every other key must be a declared filter.
+        known = set(self.Input.model_fields) | set(params)
+        filters = {}
+        for key in request.GET:
+            if key in known:
+                continue
+            resolved = definition.filter_for(key, request.GET.getlist(key))
+            if resolved is None:
+                raise HttpError(400, f"Unknown query parameter '{key}'")
+            lookup, value = resolved
+            filters[lookup] = value
+
+        ordered = source.queryset.filter(**filters).order_by(*definition.ordering_for(pagination.sort))
         total_items = await ordered.acount()
         total_pages = ceil(total_items / page_size)
 

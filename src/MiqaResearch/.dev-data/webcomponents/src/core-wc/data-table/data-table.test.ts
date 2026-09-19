@@ -547,6 +547,46 @@ describe("DataTable", () => {
       document.body.removeChild(el);
     });
 
+    it("should render filter controls from server metadata (snake_case, null options for a text filter)", async () => {
+      vi.spyOn(ApiService, "getData").mockResolvedValue({
+        success: true,
+        data: {
+          columns: [
+            { accessor: "clinic__clinic_name", label: "Clinic", data_type: "string", filter: { kind: "text", options: null } },
+            {
+              accessor: "status",
+              label: "Status",
+              data_type: "string",
+              filter: { kind: "multi-select", options: [{ value: "signed", label: "Signed" }, { value: "revoked", label: "Revoked" }] },
+            },
+            { accessor: "consent_signed_date", label: "Signed", data_type: "datetime", filter: { kind: "date-range", options: null } },
+          ],
+          rows: [{ clinic__clinic_name: "A", status: "signed", consent_signed_date: "2026-01-01T08:00:00+00:00" }],
+          pagination: { page: 1, page_size: 50, total_items: 1, total_pages: 1, has_next: false, has_previous: false },
+        },
+        message: "ok",
+      });
+      const el = new DataTable();
+      el.dataUrl = "https://api.example.com/table-data";
+      document.body.appendChild(el);
+      await new Promise((r) => setTimeout(r, 10));
+      await el.updateComplete;
+
+      expect(filterControl(el, "clinic__clinic_name").tagName).toBe("INPUT");
+      const options = Array.from((filterControl(el, "status") as HTMLSelectElement).options).map((o) => o.textContent);
+      expect(options).toEqual(["Signed", "Revoked"]);
+
+      // and a filter typed on the double-underscore accessor is sent back as `<accessor>__icontains`, on page one
+      const input = filterControl(el, "clinic__clinic_name") as HTMLInputElement;
+      input.value = "alp";
+      input.dispatchEvent(new Event("input"));
+      await new Promise((r) => setTimeout(r, 400));
+      expect(ApiService.getData).toHaveBeenLastCalledWith(
+        "https://api.example.com/table-data?page=1&page_size=50&clinic__clinic_name__icontains=alp"
+      );
+      document.body.removeChild(el);
+    });
+
     it("should render no filter control for a column without a filter", async () => {
       const el = await setUpFilterableTable();
       expect(el.shadowRoot?.querySelector('[data-filter-accessor="unfiltered"]')).toBeNull();

@@ -1,7 +1,10 @@
+from datetime import date
+from decimal import Decimal
+
 import pytest
 from ninja.errors import HttpError
 
-from MiqaResearch.data.serializers.data_table_definition import DataTableColumn, DataTableDefinition
+from MiqaResearch.data.serializers.data_table_definition import DataTableColumn, DataTableDefinition, DataTableFilter
 
 
 def _definition(**overrides):
@@ -88,3 +91,80 @@ def test_sorting_by_the_same_column_twice_is_a_400(sort):
         _definition().ordering_for(sort)
 
     assert error.value.status_code == 400
+
+
+# --- Filters ---------------------------------------------------------------------------------------------------
+
+
+_STATUS_OPTIONS = (("signed", "Signed"), ("revoked", "Revoked"))
+
+
+def _filterable():
+    return DataTableDefinition(columns=(
+        DataTableColumn("clinic__name", "Clinic", "string", filter=DataTableFilter("text")),
+        DataTableColumn("exams", "Exams", "number", filter=DataTableFilter("numeric")),
+        DataTableColumn("dose", "Dose", "number", filter=DataTableFilter("numeric-range")),
+        DataTableColumn("signed_at", "Signed", "datetime", filter=DataTableFilter("date-range")),
+        DataTableColumn("birthday", "Birthday", "date", filter=DataTableFilter("date-range")),
+        DataTableColumn("state", "State", "string", filter=DataTableFilter("dropdown", _STATUS_OPTIONS)),
+        DataTableColumn("states", "States", "string", filter=DataTableFilter("multi-select", _STATUS_OPTIONS)),
+        DataTableColumn("active", "Active", "boolean", filter=DataTableFilter("boolean")),
+        DataTableColumn("plain", "Plain", "string"),
+    ))
+
+
+@pytest.mark.parametrize("key, values, expected", [
+    ("clinic__name__icontains", ["alp"], ("clinic__name__icontains", "alp")),
+    ("exams", ["5"], ("exams", 5)),
+    ("exams", ["5.5"], ("exams", Decimal("5.5"))),
+    ("dose__gte", ["20"], ("dose__gte", 20)),
+    ("dose__lte", ["80"], ("dose__lte", 80)),
+    ("signed_at__gte", ["2026-02-03"], ("signed_at__date__gte", date(2026, 2, 3))),
+    ("signed_at__lte", ["2026-02-05"], ("signed_at__date__lte", date(2026, 2, 5))),
+    ("birthday__lte", ["2000-01-31"], ("birthday__lte", date(2000, 1, 31))),
+    ("state", ["signed"], ("state", "signed")),
+    ("states__in", ["signed,revoked"], ("states__in", ["signed", "revoked"])),
+    ("active", ["true"], ("active", True)),
+    ("active", ["False"], ("active", False)),
+])
+def test_filter_key_maps_to_the_lookup_derived_from_the_declared_filter_kind(key, values, expected):
+    assert _filterable().filter_for(key, values) == expected
+
+
+@pytest.mark.parametrize("key", [
+    "nope", "plain", "plain__icontains", "clinic__name", "clinic__name__exact", "exams__gte", "dose", "dose__in",
+    "state__in", "states", "active__icontains",
+])
+def test_undeclared_or_wrong_lookup_filter_keys_are_not_allowed(key):
+    assert _filterable().filter_for(key, ["x"]) is None
+
+
+@pytest.mark.parametrize("key, value", [
+    ("exams", "abc"), ("exams", "nan"), ("dose__gte", ""), ("signed_at__gte", "yesterday"),
+    ("signed_at__lte", "2026-13-40"), ("state", "unknown"), ("states__in", "signed,unknown"),
+    ("states__in", "signed,,revoked"), ("active", "yes"),
+    ("signed_at__gte", "20260205"), ("signed_at__gte", "2026-2-5"),  # only YYYY-MM-DD
+    ("exams", "1e999999"), ("exams", "99999999999999999999999"), ("dose__lte", "-1e30"),  # would overflow the database
+])
+def test_values_that_cannot_be_coerced_are_a_400(key, value):
+    with pytest.raises(HttpError) as error:
+        _filterable().filter_for(key, [value])
+
+    assert error.value.status_code == 400
+
+
+def test_repeating_a_filter_key_is_a_400():
+    with pytest.raises(HttpError) as error:
+        _filterable().filter_for("clinic__name__icontains", ["a", "b"])
+
+    assert error.value.status_code == 400
+
+
+def test_column_metadata_carries_the_filter_kind_and_static_options():
+    by_accessor = {column.accessor: column for column in _filterable().column_schemas}
+
+    assert by_accessor["clinic__name"].filter.kind == "text"
+    assert by_accessor["clinic__name"].filter.options is None
+    assert [(o.value, o.label) for o in by_accessor["states"].filter.options] == [
+        ("signed", "Signed"), ("revoked", "Revoked")]
+    assert by_accessor["plain"].filter is None

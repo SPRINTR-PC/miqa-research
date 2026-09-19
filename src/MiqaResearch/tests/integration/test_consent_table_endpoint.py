@@ -401,3 +401,113 @@ def test_encrypted_pid_columns_are_not_sortable(sortable_project, admin_of):
 
     assert pid_columns and not any(column["sortable"] for column in pid_columns)
     assert _get_table(user, sortable_project.id, include_pid="true", sort="study_participant__name").status_code == 400
+
+
+# --- Filtering -----------------------------------------------------------------------------------------------------
+
+
+def _aliases(response):
+    return sorted(row["study_participant__alias1"] for row in response.json()["rows"])
+
+
+@pytest.mark.django_db
+def test_text_filter_is_case_insensitive_contains(sortable_project, admin_of):
+    response = _get_table(admin_of(sortable_project), sortable_project.id, clinic__clinic_name__icontains="ALP")
+
+    assert response.status_code == 200
+    assert {row["clinic__clinic_name"] for row in response.json()["rows"]} == {"Alpha"}
+    assert response.json()["pagination"]["total_items"] == 2
+
+
+@pytest.mark.django_db
+def test_date_range_filter_is_inclusive_of_the_whole_end_day(sortable_project, admin_of):
+    late = ParticipantConsent.objects.filter(consent_type__research_project=sortable_project).first()
+    late.consent_signed_date = datetime(2026, 2, 5, 23, 59, 59, tzinfo=timezone.utc)
+    late.save()
+    user = admin_of(sortable_project)
+
+    response = _get_table(
+        user, sortable_project.id, consent_signed_date__gte="2026-02-03", consent_signed_date__lte="2026-02-05")
+
+    # 3rd, the 5th at 08:00 and the 5th at 23:59:59 are in; the 1st and the 9th are out
+    days = sorted(int(row["consent_signed_date"][8:10]) for row in response.json()["rows"])
+    assert days == [3, 5, 5]
+    assert any(row["consent_signed_date"].startswith("2026-02-05T23:59:59") for row in response.json()["rows"])
+
+
+@pytest.mark.django_db
+def test_date_range_with_only_a_start_or_only_an_end(sortable_project, admin_of):
+    user = admin_of(sortable_project)
+
+    from_the_5th = _get_table(user, sortable_project.id, consent_signed_date__gte="2026-02-05").json()["rows"]
+    until_the_3rd = _get_table(user, sortable_project.id, consent_signed_date__lte="2026-02-03").json()["rows"]
+
+    assert sorted(int(r["consent_signed_date"][8:10]) for r in from_the_5th) == [5, 9]
+    assert sorted(int(r["consent_signed_date"][8:10]) for r in until_the_3rd) == [1, 3]
+
+
+@pytest.mark.django_db
+def test_filters_sort_and_paging_combine(sortable_project, admin_of):
+    user = admin_of(sortable_project)
+    common = dict(consent_signed_date__gte="2026-02-03", sort="-consent_signed_date", page_size=2)
+
+    first = _get_table(user, sortable_project.id, page=1, **common).json()
+    second = _get_table(user, sortable_project.id, page=2, **common).json()
+
+    days = lambda body: [int(row["consent_signed_date"][8:10]) for row in body["rows"]]  # noqa: E731
+    assert (days(first), days(second)) == ([9, 5], [3])
+    assert first["pagination"]["total_items"] == second["pagination"]["total_items"] == 3
+    assert first["pagination"]["has_next"] and not second["pagination"]["has_next"]
+
+
+@pytest.mark.django_db
+def test_recruiter_filtering_stays_limited_to_their_clinic(sortable_project):
+    alpha = Clinic.objects.get(clinic_code="SORT-Alpha")
+    recruiter = _user_with_role(sortable_project, PROJECT_ROLE_PARTICIPANT_RECRUITER, clinic=alpha)
+
+    everything = _get_table(recruiter, sortable_project.id, clinic__clinic_name__icontains="a").json()
+    asking_for_beta = _get_table(recruiter, sortable_project.id, clinic__clinic_name__icontains="beta").json()
+
+    assert {row["clinic__clinic_name"] for row in everything["rows"]} == {"Alpha"}
+    assert asking_for_beta["rows"] == []
+    assert asking_for_beta["pagination"]["total_items"] == 0
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("query", [
+    {"nonexistent": "x"},
+    {"clinic__clinic_name": "Alpha"},  # exact is not the lookup of a text filter
+    {"clinic__clinic_name__exact": "Alpha"},
+    {"clinic_id": "x"},  # declared but not filterable
+    {"study_participant__name__icontains": "x"},  # PID column, not declared without include_pid
+    {"consent_signed_date": "2026-02-01"},  # a date-range has no exact form
+    {"per_page": 10},  # the old paging parameter must not be ignored
+    {"consent_signed_date__gte": "yesterday"},
+    {"consent_signed_date__lte": "2026-13-01"},
+])
+def test_unknown_non_filterable_and_wrong_typed_filters_are_a_400_never_ignored(sortable_project, admin_of, query):
+    response = _get_table(admin_of(sortable_project), sortable_project.id, **query)
+
+    assert response.status_code == 400
+    assert "detail" in response.json()
+
+
+@pytest.mark.django_db
+def test_a_repeated_filter_key_is_a_400(sortable_project, admin_of):
+    client = Client()
+    client.force_login(admin_of(sortable_project))
+    url = reverse("api-v1:dashboard_consent_statistics_table", kwargs={"project_id": sortable_project.id})
+
+    response = client.get(url + "?clinic__clinic_name__icontains=a&clinic__clinic_name__icontains=b")
+
+    assert response.status_code == 400
+
+
+@pytest.mark.django_db
+def test_columns_metadata_declares_the_filter_kinds(sortable_project, admin_of):
+    columns = _get_table(admin_of(sortable_project), sortable_project.id, include_columns="true").json()["columns"]
+    filters = {column["accessor"]: column["filter"] for column in columns}
+
+    assert filters["clinic__clinic_name"] == {"kind": "text", "options": None}
+    assert filters["consent_signed_date"]["kind"] == "date-range"
+    assert filters["clinic_id"] is None

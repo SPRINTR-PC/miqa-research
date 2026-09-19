@@ -32,6 +32,7 @@ from MiqaResearch.data.serializers.charts.xy import (
 from MiqaResearch.data.serializers.data_table_definition import (
     DataTableColumn,
     DataTableDefinition,
+    DataTableFilter,
     DataTableSource,
 )
 from MiqaResearch.data.serializers.participant_consent import (
@@ -304,20 +305,26 @@ async def get_consent_table_data_for_project(
             clinic__researchprojectuserrolemap__role__name=PROJECT_ROLE_PARTICIPANT_RECRUITER,
         )
 
+    text = DataTableFilter("text")
+    date_range = DataTableFilter("date-range")
     columns = [
         DataTableColumn("clinic_id", gettext("Clinic ID"), "string", sortable=True),
-        DataTableColumn("clinic__clinic_name", gettext("Clinic Name"), "string", sortable=True),
-        DataTableColumn("clinic__clinic_code", gettext("Clinic Code"), "string", sortable=True),
-        DataTableColumn("status", gettext("Status"), "string", sortable=True),
         DataTableColumn(
-            "consent_signed_date", gettext("Signed Date"), "datetime", sortable=True,
+            "clinic__clinic_name", gettext("Clinic Name"), "string", sortable=True, filter=text),
+        DataTableColumn(
+            "clinic__clinic_code", gettext("Clinic Code"), "string", sortable=True, filter=text),
+        DataTableColumn("status", gettext("Status"), "string", sortable=True, filter=text),
+        DataTableColumn(
+            "consent_signed_date", gettext("Signed Date"), "datetime", sortable=True, filter=date_range,
             default_sort="desc", default_sort_order=1),
-        DataTableColumn("consent_revoked_date", gettext("Revoked Date"), "datetime", sortable=True),
-        DataTableColumn("last_updated", gettext("Last Updated"), "datetime", sortable=True),
         DataTableColumn(
-            "participant_information_version", gettext("Participant Information Version"), "string", sortable=True),
-        DataTableColumn("source", gettext("Source"), "string", sortable=True),
-        DataTableColumn("study_participant__alias1", gettext("Alias"), "string", sortable=True),
+            "consent_revoked_date", gettext("Revoked Date"), "datetime", sortable=True, filter=date_range),
+        DataTableColumn("last_updated", gettext("Last Updated"), "datetime", sortable=True, filter=date_range),
+        DataTableColumn(
+            "participant_information_version", gettext("Participant Information Version"), "string", sortable=True,
+            filter=text),
+        DataTableColumn("source", gettext("Source"), "string", sortable=True, filter=text),
+        DataTableColumn("study_participant__alias1", gettext("Alias"), "string", sortable=True, filter=text),
     ]
 
     if include_pid:
