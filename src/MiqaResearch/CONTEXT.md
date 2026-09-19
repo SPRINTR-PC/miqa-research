@@ -323,6 +323,28 @@ standalone Chart Data (e.g. a `"bar"` subplot's entry matches
 `BarChartData`). One Grouping dropdown switches every subplot together —
 there is no per-subplot Grouping concept. See ADR 0023.
 
+### Data Table
+A single reusable web component (`<data-table>`) that shows one page of rows
+fetched from its `dataUrl`, with column headers, multi-column sorting, and
+per-column filters. Sorting, filtering, and paging are all performed by the
+server; the component only holds the current view state and re-requests. Its
+first consumer is the consent statistics table.
+
+### Data Table Definition
+The single server-side declaration of a Data Table's columns: for each column
+its accessor, label, data type, whether it is sortable, and its filter kind.
+It is the one source for both the column metadata sent to the component and
+the set of sort and filter requests the server will accept — anything not
+declared is rejected.
+_Avoid_: Column map, table schema
+
+### Data Table Pagination
+The server-side unit that turns a request into one page of a Data Table: it
+applies the requested filters and sort, slices the page, and reports the
+page position and totals. Paging, sorting, and filtering are one unit, not
+separate layers.
+_Avoid_: Paginator (that names the generic Django class)
+
 ## Decisions (ADRs)
 
 | ADR | Title | Status |
