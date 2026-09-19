@@ -12,8 +12,8 @@ from django.db.models import (
     Q,
     Subquery
 )
-from django.db.models.expressions import Case
 from django.utils.translation import gettext
+from ninja.errors import HttpError
 
 from MiqaResearch.data.models import ParticipantConsent, ResearchProject
 from MiqaResearch.data.serializers.charts.bar import (
@@ -281,31 +281,33 @@ async def get_consent_table_data_for_project(project: ResearchProject, user, inc
     )
     user_roles = await get_user_project_role_list(user, project)
 
-    if not user.is_superuser() and not any([user_role in ALLOWED_USER_ROLES for user_role in user_roles]):
+    user_role_names = {user_role["name"] for user_role in user_roles}
+
+    if not user.is_superuser and user_role_names.isdisjoint(ALLOWED_USER_ROLES):
         logger.error("Table data requested for research project the user does not have access to this information for")
-        raise ValueError("User not allowed cosent table for specified project")
+        raise HttpError(403, gettext("You do not have permission to access this project"))
 
     logger.debug("Getting table data for project %s", project.name)
 
     query = ParticipantConsent.objects.filter(consent_type__research_project=project)
 
 
-    if not user.is_superuser() and not any([user_role in ADMIN_USER_ROLES for user_role in user_roles]):
+    if not user.is_superuser and user_role_names.isdisjoint(ADMIN_USER_ROLES):
         query = query.filter(
-            clinic__researchprojectclinicmap__project__researchprojectuserrolemap__user__exact=user,
-            clinic__researchprojectclinicmap__project__researchprojectuserrolemap__role__name=PROJECT_ROLE_PARTICIPANT_RECRUITER,
+            clinic__researchprojectuserrolemap__user=user,
+            clinic__researchprojectuserrolemap__project=project,
+            clinic__researchprojectuserrolemap__role__name=PROJECT_ROLE_PARTICIPANT_RECRUITER,
         )
 
     columns = {
         "clinic_id": (gettext("Clinic ID"), "str"),
         "clinic__clinic_name": (gettext("Clinic Name"), "str"),
-        "clinic__code": (gettext("Clinic Code"), "str"),
+        "clinic__clinic_code": (gettext("Clinic Code"), "str"),
         "status": (gettext("Status"), "str"),
         "consent_signed_date": (gettext("Signed Date"), "datetime"),
         "consent_revoked_date": (gettext("Revoked Date"), "datetime"),
         "last_updated": (gettext("Last Updated"), "datetime"),
         "participant_information_version": (gettext("Participant Information Version"), "str"),
-        "comment": (gettext("Comment"), "str"),
         "source": (gettext("Source"), "str"),
         "study_participant__alias1": (gettext("Alias"), "str"),
         "study_participant__person_source_value": (gettext("Participant ID"), "str"),
@@ -314,13 +316,12 @@ async def get_consent_table_data_for_project(project: ResearchProject, user, inc
     values_list = [
         "clinic_id",
         "clinic__clinic_name",
-        "clinic__code",
+        "clinic__clinic_code",
         "status",
         "consent_signed_date",
         "consent_revoked_date",
         "last_updated",
         "participant_information_version",
-        "comment",
         "source",
         "study_participant__alias1",
     ]
@@ -332,14 +333,14 @@ async def get_consent_table_data_for_project(project: ResearchProject, user, inc
         ]
 
     return (
-        query.annotate(consent_label=Case()).values(*values_list),
+        query.values(*values_list),
         [
             DataTableColumnSchema(
                 id=key,
                 title=val[0],
                 dataType=val[1]
             )
-            for key, val in columns
+            for key, val in columns.items()
             if key in values_list
         ]
     )

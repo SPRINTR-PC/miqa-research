@@ -27,7 +27,7 @@ async def check_user_project_role_by_name(
     if user.is_superuser or "any" in required_role and project_roles:
         return research_project, True
 
-    if not any(required_role or role["name"] in required_role for role in project_roles):
+    if not any(role["name"] in required_role for role in project_roles):
         return research_project, False
 
     return research_project, True
@@ -130,7 +130,7 @@ async def get_user_project_role_list_from_request_and_project(
         logger.warning("User project role list requested for unauthenticated user for project %s", project_id)
         return user, None, []
 
-    return await get_user_project_role_list(user, project_id)
+    return await get_user_project_role_list_for_project_id(user, project_id)
 
 
 async def get_user_project_role_list_for_project_id(
