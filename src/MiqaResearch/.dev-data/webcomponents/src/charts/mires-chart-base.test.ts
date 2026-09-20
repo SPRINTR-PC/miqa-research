@@ -368,6 +368,34 @@ describe("MiresChartBase", () => {
       warnSpy.mockRestore();
     });
 
+    it("observes the plot container, not the host, so sibling elements shrinking the plot trigger a resize", async () => {
+      const observed: Element[] = [];
+      class FakeResizeObserver {
+        constructor(_cb: () => void) {}
+        observe(target: Element): void {
+          observed.push(target);
+        }
+        unobserve(): void {}
+        disconnect(): void {}
+      }
+      vi.stubGlobal("ResizeObserver", FakeResizeObserver);
+
+      reactMock.mockResolvedValue({ on: vi.fn() });
+      fetchMock.mockResolvedValue(
+        jsonResponse({ groupings: [{ name: "n", label: "N", data: { value: 1 } }] }),
+      );
+
+      const el = document.createElement("mires-chart-fixture-no-gl") as NoGlFixtureChart;
+      el.dataUrl = "/fixture.json";
+      document.body.appendChild(el);
+      await waitForRenderCount(1);
+
+      const plotContainer = el.shadowRoot?.querySelector(".plot-container");
+      expect(plotContainer).toBeTruthy();
+      expect(observed).toContain(plotContainer);
+      expect(observed).not.toContain(el);
+    });
+
     it("guards its own resize-triggered relayout from firing the zoom callback", async () => {
       let resizeCallback: (() => void) | undefined;
       class FakeResizeObserver {

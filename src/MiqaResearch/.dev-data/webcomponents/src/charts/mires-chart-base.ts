@@ -110,7 +110,9 @@ export abstract class MiresChartBase<TData = unknown> extends LitElement {
     });
 
     this.resizeObserver = new ResizeObserver(this.handleResize);
-    this.resizeObserver.observe(this);
+    if (this.plotEl) {
+      this.resizeObserver.observe(this.plotEl);
+    }
   }
 
   public override disconnectedCallback(): void {
@@ -370,8 +372,13 @@ export abstract class MiresChartBase<TData = unknown> extends LitElement {
     this.selectedGroupingIndex = Number(event.detail.value);
   };
 
+  /** Observes the plot container rather than the host: the host keeps its size when siblings (grouping select, loading/error notices) shrink the plot. */
   private setPlotEl = (el?: Element): void => {
+    this.resizeObserver?.disconnect();
     this.plotEl = (el as HTMLDivElement | undefined) ?? undefined;
+    if (this.plotEl) {
+      this.resizeObserver?.observe(this.plotEl);
+    }
   };
 
   protected override render() {
@@ -401,6 +408,7 @@ export abstract class MiresChartBase<TData = unknown> extends LitElement {
         width: 100%;
         height: 100%;
         min-height: 240px;
+        overflow: hidden;
 
         /* Plot padding — the space reserved around the plot when the
            corresponding axis/plot title isn't present (see buildLayout()). */
