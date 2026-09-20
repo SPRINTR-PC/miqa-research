@@ -39,7 +39,7 @@ async def dashboard_consent_data_by_clinic(request, project_id: UUID):
     research_project = await _check_research_and_role(request, project_id)
 
     try:
-        consent_history_data = await get_consent_history_by_clinic(research_project)
+        consent_history_data = await get_consent_history_by_clinic(request, research_project)
     except Exception as e:
         logger.error("Error retrieving consent history data for project %s", project_id, exc_info=True)
         return {"error": str(e)}

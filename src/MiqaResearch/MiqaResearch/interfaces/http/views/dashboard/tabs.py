@@ -64,7 +64,7 @@ async def consent_statistics_content(request, project_id):
         )
         return _htmx_tab_response(
             request, template, research_project, 'consent-statistics',
-            'consent-statistics-plots'
+            active_subtab
         )
 
     return await consent_statistics(request, project_id)
@@ -81,7 +81,7 @@ async def consent_statistics_table(request, project_id):
             'consent-statistics-table'
         )
 
-    return consent_statistics(request, project_id)
+    return await consent_statistics(request, project_id)
 
 
 @htmx_login_required
