@@ -1,4 +1,4 @@
-<div class="rounded-lg border bg-card text-card-foreground shadow-sm p-6">
+<div class="fw flex justify-center px-8">
     <data-table
         id="dashboard-consent-statistics-table"
         dataUrl="{% url 'api-v1:dashboard_consent_statistics_table' project.id %}"
@@ -6,5 +6,4 @@
         loadingMessage="{% translate 'Loading data...' %}"
         striped="true"
     ></data-table>
-    <h3 class="font-semibold text-lg">{% translate "Here there be dragons!" %}</h3>
 </div>

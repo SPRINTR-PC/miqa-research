@@ -309,27 +309,26 @@ async def get_consent_table_data_for_project(
     text = DataTableFilter("text")
     date_range = DataTableFilter("date-range")
     columns = [
-        DataTableColumn("clinic_id", gettext("Clinic ID"), "string", sortable=True),
+        DataTableColumn("study_participant__alias1", gettext("Alias"), "string", sortable=True, filter=text),
         DataTableColumn(
             "clinic__clinic_name", gettext("Clinic Name"), "string", sortable=True, filter=text),
         DataTableColumn(
             "clinic__clinic_code", gettext("Clinic Code"), "string", sortable=True, filter=text),
         DataTableColumn("status", gettext("Status"), "string", sortable=True, filter=text),
         DataTableColumn(
-            "consent_signed_date", gettext("Signed Date"), "datetime", sortable=True, filter=date_range,
+            "consent_signed_date", gettext("Signed Date"), "date", sortable=True, filter=None,
             default_sort="desc", default_sort_order=1),
         DataTableColumn(
-            "consent_revoked_date", gettext("Revoked Date"), "datetime", sortable=True, filter=date_range),
-        DataTableColumn("last_updated", gettext("Last Updated"), "datetime", sortable=True, filter=date_range),
+            "consent_revoked_date", gettext("Revoked Date"), "date", sortable=True, filter=None),
+        DataTableColumn("last_updated", gettext("Last Updated"), "datetime", sortable=True, filter=None),
         DataTableColumn(
-            "participant_information_version", gettext("Participant Information Version"), "string", sortable=True,
+            "participant_information_version", gettext("Version"), "string", sortable=True,
             filter=text),
         DataTableColumn("source", gettext("Source"), "string", sortable=True, filter=text),
-        DataTableColumn("study_participant__alias1", gettext("Alias"), "string", sortable=True, filter=text),
     ]
 
     if include_pid:
-        columns += [
+        columns = [
             # Encrypted at rest with a random IV: the database can neither order them nor match a substring, so they
             # are not sortable and only filterable by exact match, through the companion deterministic hash field.
             DataTableColumn(
@@ -339,7 +338,7 @@ async def get_consent_table_data_for_project(
             DataTableColumn(
                 "study_participant__name", gettext("Name"), "string",
                 filter=DataTableFilter("text-exact", hash_field="study_participant__name_hash")),
-        ]
+        ] + columns
 
     definition = DataTableDefinition(columns=tuple(columns))
 
