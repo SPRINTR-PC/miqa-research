@@ -587,6 +587,42 @@ describe("DataTable", () => {
       document.body.removeChild(el);
     });
 
+    it("should render a text input for a text-exact filter and send the bare column key", async () => {
+      vi.spyOn(ApiService, "getData").mockResolvedValue({
+        success: true,
+        data: {
+          columns: [
+            {
+              accessor: "study_participant__name",
+              label: "Name",
+              data_type: "string",
+              sortable: false,
+              filter: { kind: "text-exact", options: null },
+            },
+          ],
+          rows: [{ study_participant__name: "Person A" }],
+          pagination: { page: 1, page_size: 50, total_items: 1, total_pages: 1, has_next: false, has_previous: false },
+        },
+        message: "ok",
+      });
+      const el = new DataTable();
+      el.dataUrl = "https://api.example.com/table-data";
+      document.body.appendChild(el);
+      await new Promise((r) => setTimeout(r, 10));
+      await el.updateComplete;
+
+      const input = filterControl(el, "study_participant__name") as HTMLInputElement;
+      expect(input.tagName).toBe("INPUT");
+      input.value = "Person A";
+      input.dispatchEvent(new Event("input"));
+      await new Promise((r) => setTimeout(r, 400));
+
+      expect(ApiService.getData).toHaveBeenLastCalledWith(
+        "https://api.example.com/table-data?page=1&page_size=50&study_participant__name=Person%20A"
+      );
+      document.body.removeChild(el);
+    });
+
     it("should render no filter control for a column without a filter", async () => {
       const el = await setUpFilterableTable();
       expect(el.shadowRoot?.querySelector('[data-filter-accessor="unfiltered"]')).toBeNull();

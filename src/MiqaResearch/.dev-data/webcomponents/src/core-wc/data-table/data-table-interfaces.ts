@@ -1,6 +1,6 @@
 export type ColumnDataType = "string" | "number" | "date"  | "datetime" | "boolean" | "mini-barchart";
 export type SortDirection = "asc" | "desc";
-export type FilterKind = "text" | "numeric" | "numeric-range" | "dropdown" | "multi-select" | "date-range" | "boolean";
+export type FilterKind = "text" | "text-exact" | "numeric" | "numeric-range" | "dropdown" | "multi-select" | "date-range" | "boolean";
 
 export interface FilterOption {
   value: string;

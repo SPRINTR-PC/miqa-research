@@ -168,3 +168,65 @@ def test_column_metadata_carries_the_filter_kind_and_static_options():
     assert [(o.value, o.label) for o in by_accessor["states"].filter.options] == [
         ("signed", "Signed"), ("revoked", "Revoked")]
     assert by_accessor["plain"].filter is None
+
+
+# --- Exact text filters (optionally matched through a deterministic hash field) ---------------------------------------
+
+
+def _exact():
+    return DataTableDefinition(columns=(
+        DataTableColumn("code", "Code", "string", filter=DataTableFilter("text-exact")),
+        DataTableColumn(
+            "person__pid", "PID", "string",
+            filter=DataTableFilter("text-exact", hash_field="person__pid_hash")),
+    ))
+
+
+def test_exact_text_filter_is_a_case_sensitive_exact_match_on_the_column():
+    assert _exact().filter_for("code", ["AbC"]) == ("code", "AbC")
+
+
+def test_exact_text_filter_on_an_encrypted_column_matches_the_hash_field_with_the_deterministic_hash(settings):
+    from helpers.db_fields import get_deterministic_hash
+
+    settings.SENSITIVE_DATA_HASH_KEY = "unit-test-hash-key"
+
+    assert _exact().filter_for("person__pid", ["19121212-0001"]) == (
+        "person__pid_hash", get_deterministic_hash("19121212-0001"))
+
+
+@pytest.mark.parametrize("key", ["code__icontains", "code__exact", "code__in", "person__pid__icontains", "person__pid_hash"])
+def test_exact_text_filter_allows_only_the_bare_column_key(key):
+    assert _exact().filter_for(key, ["x"]) is None
+
+
+def test_exact_text_filter_metadata_exposes_the_kind_but_not_the_hash_field():
+    by_accessor = {column.accessor: column for column in _exact().column_schemas}
+
+    assert by_accessor["person__pid"].filter.kind == "text-exact"
+    assert "hash" not in by_accessor["person__pid"].model_dump_json()
+
+
+def test_empty_exact_text_value_is_a_400_rather_than_matching_empty_rows():
+    with pytest.raises(HttpError) as error:
+        _exact().filter_for("code", [""])
+
+    assert error.value.status_code == 400
+
+
+def test_exact_filter_on_an_encrypted_column_is_a_clean_503_when_the_hash_key_is_not_configured(settings):
+    settings.SENSITIVE_DATA_HASH_KEY = None
+
+    with pytest.raises(HttpError) as error:
+        _exact().filter_for("person__pid", ["19121212-0001"])
+
+    assert error.value.status_code == 503
+    assert "19121212" not in str(error.value.message)
+
+
+def test_exact_text_filter_hashes_the_exact_string_without_normalising_it(settings):
+    from helpers.db_fields import get_deterministic_hash
+
+    settings.SENSITIVE_DATA_HASH_KEY = "unit-test-hash-key"
+
+    assert _exact().filter_for("person__pid", [" Åsa "]) == ("person__pid_hash", get_deterministic_hash(" Åsa "))

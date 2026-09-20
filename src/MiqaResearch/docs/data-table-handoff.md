@@ -74,6 +74,7 @@ The lookup is derived from the column's **declared filter kind**; the client can
 | `FilterKind` | Query params | Server lookup |
 |---|---|---|
 | `text` | `col__icontains=x` | `icontains` |
+| `text-exact` | `col=x` | `exact` (case-sensitive). On an encrypted column the Definition names its companion hash field: the server hashes `x` with the deterministic hash and matches the hash field. |
 | `numeric` | `col=5` | `exact` |
 | `numeric-range` | `col__gte`, `col__lte` | `gte` / `lte` |
 | `date-range` | `col__gte`, `col__lte` | `gte` / `lte` on the date; `lte` inclusive of the whole day |
@@ -130,6 +131,7 @@ async def dashboard_consent_table_data(request, project_id: UUID, include_pid: b
 ## 7. PID authorization
 
 - PID columns (`study_participant__person_source_value`, `study_participant__name`) are visible to every role that may view the table: Admin, PI, Participant Recruiter, and superusers. Recruiters remain clinic-scoped by the existing row filter. (Domain rule confirmed with the user; narrow to Admin/PI if it changes.)
+- PID columns are encrypted with a random IV, so the database can neither sort them nor match a substring. They are **not sortable** (400) and are filterable only by **exact match** (`text-exact` through the hash field): `col=x`, never `col__icontains`.
 - `include_pid` stays a **default-`false` opt-in** among eligible users. An ineligible user sending `include_pid=true` gets **403**, not silently omitted columns. The Definition builder / reader is the one place that knows roles.
 - **Test required**: PID keys never appear in `rows` (nor in `columns`) for an ineligible user, and sorting/filtering on PID columns as such a user is refused. There is no static row schema acting as a second safety net, so this test is the guard.
 

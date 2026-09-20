@@ -561,6 +561,7 @@ export class DataTable extends LitElement {
 
     switch (filter.kind) {
       case "text":
+      case "text-exact": // sent as `<accessor>=<value>`, see _buildFilterQueryString
         return html`<input
           type="text"
           data-filter-accessor=${column.accessor}

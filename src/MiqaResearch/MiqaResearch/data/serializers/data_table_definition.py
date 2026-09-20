@@ -1,12 +1,15 @@
+import logging
 import re
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from django.conf import settings
 from django.db.models import QuerySet
 from ninja.errors import HttpError
 
+from helpers.db_fields import get_deterministic_hash
 from MiqaResearch.data.serializers.data_table import (
     ColumnDataType,
     DataTableColumnSchema,
@@ -16,6 +19,8 @@ from MiqaResearch.data.serializers.data_table import (
     SortDirection,
 )
 
+logger = logging.getLogger("mires")
+
 MAX_SORT_COLUMNS = 6
 
 
@@ -23,6 +28,7 @@ MAX_SORT_COLUMNS = 6
 # the lookup.
 _FILTER_LOOKUPS: dict[FilterKind, tuple[tuple[str, str], ...]] = {
     "text": (("__icontains", "icontains"),),
+    "text-exact": (("", "exact"),),
     "numeric": (("", "exact"),),
     "numeric-range": (("__gte", "gte"), ("__lte", "lte")),
     "date-range": (("__gte", "gte"), ("__lte", "lte")),
@@ -36,6 +42,9 @@ _FILTER_LOOKUPS: dict[FilterKind, tuple[tuple[str, str], ...]] = {
 class DataTableFilter:
     kind: FilterKind
     options: tuple[tuple[str, str], ...] = ()  # (value, label), static; dropdown and multi-select
+    # text-exact on an encrypted column: the companion field holding its deterministic hash. The client's value is
+    # hashed server-side and matched against it; the hash field is never exposed.
+    hash_field: str | None = None
 
 
 @dataclass(frozen=True)
@@ -136,6 +145,15 @@ class DataTableDefinition:
         match table_filter.kind:
             case "text":
                 return f"{column.accessor}__icontains", raw
+            case "text-exact":
+                if not raw:
+                    raise invalid()
+                if not table_filter.hash_field:
+                    return column.accessor, raw
+                if not settings.SENSITIVE_DATA_HASH_KEY:
+                    logger.error("Cannot filter '%s': SENSITIVE_DATA_HASH_KEY is not configured", param_key)
+                    raise HttpError(503, "Exact-match filtering on this column is currently unavailable")
+                return table_filter.hash_field, get_deterministic_hash(raw)
             case "numeric" | "numeric-range":
                 key = column.accessor if lookup == "exact" else f"{column.accessor}__{lookup}"
                 number = _parse_number(raw)

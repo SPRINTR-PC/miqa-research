@@ -964,7 +964,7 @@ import{_ as e,b as t,c as n,d as r,f as i,g as a,h as o,i as s,l as c,m as l,n a
       class="sortable"
       @click=${t=>this._handleHeaderClick(e,t.shiftKey)}
       ><div class="header-content"><span>${i}${e.htmlLabel?M(e.label):e.label}</span><span>${r}</span></div></th
-    >`}_renderFilterControl(t){let n=t.filter;if(!n)return e;let r=this._filterValues[t.accessor]??``;switch(n.kind){case`text`:return v`<input
+    >`}_renderFilterControl(t){let n=t.filter;if(!n)return e;let r=this._filterValues[t.accessor]??``;switch(n.kind){case`text`:case`text-exact`:return v`<input
           type="text"
           data-filter-accessor=${t.accessor}
           .value=${r}

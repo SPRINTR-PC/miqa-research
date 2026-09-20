@@ -621,17 +621,82 @@ def test_include_pid_is_refused_with_403_for_a_table_viewer_who_may_not_see_pid(
 @pytest.mark.parametrize("query", [
     {"sort": "study_participant__name"},
     {"sort": "-study_participant__person_source_value"},
-    {"study_participant__name__icontains": "person"},
-    {"study_participant__person_source_value": "19121212-000A"},
+    {"study_participant__name__icontains": "person"},  # encrypted: no substring matching, only exact
+    {"study_participant__person_source_value__icontains": "1912"},
+    {"study_participant__person_source_value_hash": "abc"},  # the hash field is an implementation detail
 ])
-def test_pid_columns_can_never_be_sorted_or_filtered(pid_project, include_pid, query):
-    """Encrypted with a random IV: the database can neither order nor match them, so the request is refused."""
+def test_pid_columns_can_never_be_sorted_or_substring_filtered(pid_project, include_pid, query):
+    """Encrypted with a random IV: the database can neither order nor substring-match them, so the request is refused."""
     project, clinics = pid_project
     admin = _eligible_users(project, clinics)["admin"]
 
     response = _get_table(admin, project.id, include_pid=include_pid, **query)
 
     assert response.status_code == 400
+    assert "Person A" not in response.content.decode()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("column, value, expected", [
+    ("study_participant__person_source_value", "19121212-000B", ["Person B"]),
+    ("study_participant__name", "Person A", ["Person A"]),
+    ("study_participant__name", "person a", []),  # exact means case-sensitive
+    ("study_participant__name", "Person", []),  # and not a substring match
+    ("study_participant__person_source_value", "19121212-9999", []),
+])
+def test_eligible_user_can_filter_pid_columns_by_exact_match(pid_project, column, value, expected):
+    project, clinics = pid_project
+    admin = _eligible_users(project, clinics)["admin"]
+
+    body = _get_table(admin, project.id, include_pid="true", **{column: value}).json()
+
+    assert [row["study_participant__name"] for row in body["rows"]] == expected
+    assert body["pagination"]["total_items"] == len(expected)
+
+
+@pytest.mark.django_db
+def test_exact_pid_filter_is_refused_unless_pid_columns_are_included(pid_project):
+    project, clinics = pid_project
+    admin = _eligible_users(project, clinics)["admin"]
+
+    response = _get_table(admin, project.id, study_participant__name="Person A")
+
+    assert response.status_code == 400
+    assert "Person A" not in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_exact_pid_filter_stays_limited_to_the_recruiters_own_clinic(pid_project):
+    project, clinics = pid_project
+    recruiter = _eligible_users(project, clinics)["recruiter"]  # clinic A only
+
+    own = _get_table(recruiter, project.id, include_pid="true", study_participant__name="Person A").json()
+    other_clinic = _get_table(recruiter, project.id, include_pid="true", study_participant__name="Person B").json()
+
+    assert [row["study_participant__name"] for row in own["rows"]] == ["Person A"]
+    assert other_clinic["rows"] == [] and other_clinic["pagination"]["total_items"] == 0
+
+
+@pytest.mark.django_db
+def test_pid_columns_declare_an_exact_filter_and_are_not_sortable(pid_project):
+    project, clinics = pid_project
+    admin = _eligible_users(project, clinics)["admin"]
+
+    columns = _get_table(admin, project.id, include_pid="true", include_columns="true").json()["columns"]
+    pid_columns = [c for c in columns if c["accessor"] in PID_KEYS]
+
+    assert {c["accessor"] for c in pid_columns} == PID_KEYS
+    assert all(c["filter"] == {"kind": "text-exact", "options": None} and not c["sortable"] for c in pid_columns)
+
+
+@pytest.mark.django_db
+def test_ineligible_user_cannot_use_the_exact_pid_filter(pid_project):
+    project, _ = pid_project
+    user = _user_with_role(project, PROJECT_ROLE_INVESTIGATOR)
+
+    response = _get_table(user, project.id, include_pid="true", study_participant__name="Person A")
+
+    assert response.status_code == 403
     assert "Person A" not in response.content.decode()
 
 
@@ -647,4 +712,39 @@ def test_ineligible_user_sorting_or_filtering_on_pid_is_refused(pid_project, que
     response = _get_table(user, project.id, include_pid="true", **query)
 
     assert 400 <= response.status_code < 500
+    assert "Person A" not in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_exact_pid_filter_with_a_non_ascii_name_combines_with_sort_and_paging(pid_project):
+    project, clinics = pid_project
+    participant = StudyParticipant.objects.get(alias1="pid-alias-A")
+    participant.name = "Åsa Öberg"
+    participant.save()  # re-saves the ciphertext and the hash
+    admin = _eligible_users(project, clinics)["admin"]
+
+    body = _get_table(
+        admin, project.id, include_pid="true", study_participant__name="Åsa Öberg",
+        sort="-consent_signed_date", page=1, page_size=5).json()
+
+    assert [row["study_participant__name"] for row in body["rows"]] == ["Åsa Öberg"]
+
+
+@pytest.mark.django_db
+def test_empty_exact_pid_filter_is_a_400(pid_project):
+    project, clinics = pid_project
+    admin = _eligible_users(project, clinics)["admin"]
+
+    assert _get_table(admin, project.id, include_pid="true", study_participant__name="").status_code == 400
+
+
+@pytest.mark.django_db
+def test_exact_pid_filter_is_a_503_not_a_500_when_the_hash_key_is_missing(pid_project, settings):
+    project, clinics = pid_project
+    admin = _eligible_users(project, clinics)["admin"]
+    settings.SENSITIVE_DATA_HASH_KEY = None
+
+    response = _get_table(admin, project.id, include_pid="true", study_participant__name="Person A")
+
+    assert response.status_code == 503
     assert "Person A" not in response.content.decode()

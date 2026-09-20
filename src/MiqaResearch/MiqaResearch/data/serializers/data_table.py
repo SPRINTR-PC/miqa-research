@@ -4,7 +4,7 @@ from ninja import Schema
 
 ColumnDataType = Literal["string", "number", "date", "datetime", "boolean", "mini-barchart"]
 SortDirection = Literal["asc", "desc"]
-FilterKind = Literal["text", "numeric", "numeric-range", "dropdown", "multi-select", "date-range", "boolean"]
+FilterKind = Literal["text", "text-exact", "numeric", "numeric-range", "dropdown", "multi-select", "date-range", "boolean"]
 
 
 class PaginationMetaSchema(Schema):

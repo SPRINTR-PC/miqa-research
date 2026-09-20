@@ -330,9 +330,15 @@ async def get_consent_table_data_for_project(
 
     if include_pid:
         columns += [
-            # Encrypted at rest: ordering by ciphertext would be meaningless, so these are not sortable.
-            DataTableColumn("study_participant__person_source_value", gettext("Participant ID"), "string"),
-            DataTableColumn("study_participant__name", gettext("Name"), "string"),
+            # Encrypted at rest with a random IV: the database can neither order them nor match a substring, so they
+            # are not sortable and only filterable by exact match, through the companion deterministic hash field.
+            DataTableColumn(
+                "study_participant__person_source_value", gettext("Participant ID"), "string",
+                filter=DataTableFilter(
+                    "text-exact", hash_field="study_participant__person_source_value_hash")),
+            DataTableColumn(
+                "study_participant__name", gettext("Name"), "string",
+                filter=DataTableFilter("text-exact", hash_field="study_participant__name_hash")),
         ]
 
     definition = DataTableDefinition(columns=tuple(columns))
