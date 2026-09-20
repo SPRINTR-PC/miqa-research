@@ -226,3 +226,41 @@ def test_the_panels_being_replaced_are_dimmed_while_loading(client, project):
     for panel_id in ("dashboard-tab-panel", "dashboard-consent-contents"):
         element = re.search(rf'<[^>]*id="{panel_id}"[^>]*>', body)
         assert element and "loading-target" in element.group(0), panel_id
+
+
+# --- PID checkbox --------------------------------------------------------------------------------------------------
+
+PID_CHECKBOX = 'id="consent-table-include-pid"'
+
+
+def _client_with_role(project, role_name):
+    user = User.objects.create_user(username=f"pid-{role_name}", password="pw")
+    role, _ = ResearchProjectRole.objects.get_or_create(name=role_name, defaults={"description": role_name})
+    ResearchProjectUserRoleMap.objects.create(user=user, project=project, role=role)
+    client = Client()
+    client.force_login(user)
+    return client
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("role_name", ["Admin", "PI", "Participant Recruiter"])
+@pytest.mark.parametrize("request_kwargs", [{}, HTMX])
+@pytest.mark.parametrize("tab", ["consent", "content"])
+def test_pid_checkbox_is_shown_above_the_table_to_roles_that_may_view_pid(project, role_name, request_kwargs, tab):
+    response = _client_with_role(project, role_name).get(_url(project, tab, table=True), **request_kwargs)
+
+    assert PID_CHECKBOX in response.content.decode()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("request_kwargs", [{}, HTMX])
+def test_pid_checkbox_is_hidden_from_roles_that_may_not_view_pid(project, request_kwargs):
+    response = _client_with_role(project, "Investigator").get(_url(project, "content", table=True), **request_kwargs)
+
+    assert "<data-table" in response.content.decode()
+    assert PID_CHECKBOX not in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_pid_checkbox_is_not_on_the_plots_subtab(client, project):
+    assert PID_CHECKBOX not in client.get(_url(project, "content")).content.decode()

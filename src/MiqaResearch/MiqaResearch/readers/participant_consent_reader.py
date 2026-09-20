@@ -280,6 +280,16 @@ async def get_consent_statistics_plot(project: ResearchProject) -> BarChartRespo
     )
 
 
+async def user_can_view_consent_pid(user, project: ResearchProject) -> bool:
+    """
+    Whether the user may include participant identifiers (PID) in the consent table for the project.
+    """
+    if user.is_superuser:
+        return True
+    user_roles = await get_user_project_role_list(user, project)
+    return not {user_role["name"] for user_role in user_roles}.isdisjoint(CONSENT_TABLE_PID_ROLES)
+
+
 async def get_consent_table_data_for_project(
         project: ResearchProject, user, include_pid: bool = False) -> DataTableSource:
     user_roles = await get_user_project_role_list(user, project)

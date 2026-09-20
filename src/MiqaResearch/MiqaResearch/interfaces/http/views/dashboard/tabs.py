@@ -5,7 +5,7 @@ from django.shortcuts import render
 from django.template.loader import render_to_string
 
 from MiqaResearch.readers.participant_consent_reader import get_project_consent_count, \
-    get_project_consent_participant_count
+    get_project_consent_participant_count, user_can_view_consent_pid
 from MiqaResearch.readers.research_project_reader import get_project_connected_clinics
 from .htmx_auth import htmx_login_required
 from .project import get_user_project_or_404
@@ -21,6 +21,15 @@ _SUBTAB_PANELS = {
 
 def _consent_subtab(request) -> str:
     return SUBTAB_TABLE if request.GET.get("table", "").lower() == "true" else SUBTAB_PLOTS
+
+
+async def _table_context(request, project, active_subtab) -> dict:
+    """
+    Context for the consent table panel: whether the PID checkbox is offered. Only computed for the table sub tab.
+    """
+    if active_subtab != SUBTAB_TABLE:
+        return {}
+    return {'can_view_pid': await user_can_view_consent_pid(await request.auser(), project)}
 
 
 def _is_partial_request(request) -> bool:
@@ -66,6 +75,7 @@ async def consent_statistics(request, project_id):
     }
 
     active_subtab = _consent_subtab(request)
+    site_options |= await _table_context(request, research_project, active_subtab)
 
     if _is_partial_request(request):
         return _htmx_tab_response(
@@ -89,7 +99,7 @@ async def consent_statistics_content(request, project_id):
         active_subtab = _consent_subtab(request)
         return _htmx_tab_response(
             request, _SUBTAB_PANELS[active_subtab], research_project, 'consent-statistics', active_subtab,
-            with_subtablist=True
+            extra_context=await _table_context(request, research_project, active_subtab), with_subtablist=True
         )
 
     return await consent_statistics(request, project_id)
@@ -102,7 +112,7 @@ async def consent_statistics_table(request, project_id):
     if _is_partial_request(request):
         return _htmx_tab_response(
             request, _SUBTAB_PANELS[SUBTAB_TABLE], research_project, 'consent-statistics', SUBTAB_TABLE,
-            with_subtablist=True
+            extra_context=await _table_context(request, research_project, SUBTAB_TABLE), with_subtablist=True
         )
 
     return await consent_statistics(request, project_id)

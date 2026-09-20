@@ -7,6 +7,7 @@ from django.test import Client
 from django.urls import reverse
 
 from MiqaResearch.data.models import (
+    AuditLog,
     Clinic,
     ParticipantConsent,
     ParticipantConsentType,
@@ -16,6 +17,7 @@ from MiqaResearch.data.models import (
     StudyParticipant,
 )
 from MiqaResearch.data.models.research_project import ResearchProjectClinicMap
+from contract.constants.audit_log import EVENT_TYPE_PID_VIEW
 from contract.constants.research_project_role import (
     PROJECT_ROLE_ADMIN,
     PROJECT_ROLE_INVESTIGATOR,
@@ -748,3 +750,52 @@ def test_exact_pid_filter_is_a_503_not_a_500_when_the_hash_key_is_missing(pid_pr
 
     assert response.status_code == 503
     assert "Person A" not in response.content.decode()
+
+
+# --- PID audit logging ---------------------------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("who", ["admin", "pi", "recruiter", "superuser"])
+def test_sending_pid_is_audit_logged_with_user_project_and_ip(pid_project, who):
+    project, clinics = pid_project
+    user = _eligible_users(project, clinics)[who]
+
+    assert _get_table(user, project.id, include_pid="true").status_code == 200
+
+    entry = AuditLog.objects.get(event_type=EVENT_TYPE_PID_VIEW)
+    assert entry.user == user
+    assert entry.ip_address == "127.0.0.1"
+    assert entry.metadata["project_id"] == str(project.id)
+
+
+@pytest.mark.django_db
+def test_every_pid_response_is_logged_including_later_pages(pid_project):
+    project, clinics = pid_project
+    admin = _eligible_users(project, clinics)["admin"]
+
+    _get_table(admin, project.id, include_pid="true", page=1, page_size=1)
+    _get_table(admin, project.id, include_pid="true", page=2, page_size=1)
+
+    assert AuditLog.objects.filter(event_type=EVENT_TYPE_PID_VIEW).count() == 2
+
+
+@pytest.mark.django_db
+def test_table_without_pid_is_not_audit_logged(pid_project):
+    project, clinics = pid_project
+    admin = _eligible_users(project, clinics)["admin"]
+
+    assert _get_table(admin, project.id).status_code == 200
+    assert _get_table(admin, project.id, include_pid="false").status_code == 200
+
+    assert not AuditLog.objects.filter(event_type=EVENT_TYPE_PID_VIEW).exists()
+
+
+@pytest.mark.django_db
+def test_refused_pid_request_is_not_audit_logged(pid_project):
+    project, _ = pid_project
+    investigator = _user_with_role(project, PROJECT_ROLE_INVESTIGATOR)
+
+    assert _get_table(investigator, project.id, include_pid="true").status_code == 403
+
+    assert not AuditLog.objects.filter(event_type=EVENT_TYPE_PID_VIEW).exists()
