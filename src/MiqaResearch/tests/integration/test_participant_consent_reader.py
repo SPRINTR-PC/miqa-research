@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 import pytest
 from asgiref.sync import sync_to_async
@@ -25,9 +25,9 @@ from MiqaResearch.readers.participant_consent_reader import (
     get_consent_history_by_clinic,
     get_consent_history_plot_by_clinic,
 )
+from MiqaResearch.tasks.consent.update_consent_summary import _run_query_and_update_summary
 
 
-@pytest.fixture(autouse=True)
 def mock_encryption_keys(settings):
     settings.FERNET_KEY = b'EiGdHopiKZdBZwVCP4dVJitPrrDnOuGAd94W4EZpwQc='
     settings.SENSITIVE_DATA_HASH_KEY = 'H2QCB14temR-C2JnLORSE5TxPwLd8iy3YygNPQ-corA='
@@ -63,27 +63,29 @@ async def _create_project_with_consent_history() -> tuple[ResearchProject, Clini
     # Clinic A: two consents signed on the same day
     await ParticipantConsent.objects.acreate(
         study_participant=participant_1, status="Signerat",
-        consent_signed_date=datetime(2026, 1, 1, 9, 0, tzinfo=timezone.utc),
+        consent_signed_date=datetime(2026, 1, 1, 9, 0, tzinfo=UTC),
         clinic=clinic_a, consent_type=consent_type,
     )
     await ParticipantConsent.objects.acreate(
         study_participant=participant_2, status="Signerat",
-        consent_signed_date=datetime(2026, 1, 1, 10, 0, tzinfo=timezone.utc),
+        consent_signed_date=datetime(2026, 1, 1, 10, 0, tzinfo=UTC),
         clinic=clinic_a, consent_type=consent_type,
     )
 
     # Clinic B: one consent signed and later revoked on a different day
     await ParticipantConsent.objects.acreate(
         study_participant=participant_3, status="Signerat",
-        consent_signed_date=datetime(2026, 1, 2, 9, 0, tzinfo=timezone.utc),
-        consent_revoked_date=datetime(2026, 1, 5, 9, 0, tzinfo=timezone.utc),
+        consent_signed_date=datetime(2026, 1, 2, 9, 0, tzinfo=UTC),
+        consent_revoked_date=datetime(2026, 1, 5, 9, 0, tzinfo=UTC),
         clinic=clinic_b, consent_type=consent_type,
     )
     await ParticipantConsent.objects.acreate(
         study_participant=participant_4, status="Signerat",
-        consent_signed_date=datetime(2026, 1, 3, 9, 0, tzinfo=timezone.utc),
+        consent_signed_date=datetime(2026, 1, 3, 9, 0, tzinfo=UTC),
         clinic=clinic_b, consent_type=consent_type,
     )
+
+    await sync_to_async(_run_query_and_update_summary)(str(project.id))
 
     return project, clinic_a, clinic_b
 
@@ -170,24 +172,24 @@ async def _create_project_with_same_day_multi_type_consents() -> tuple[ResearchP
     # Day 1: two "Alpha" consents and one "Beta" consent, all signed on the same date.
     await ParticipantConsent.objects.acreate(
         study_participant=participant_1, status="Signerat",
-        consent_signed_date=datetime(2026, 1, 1, 9, 0, tzinfo=timezone.utc),
+        consent_signed_date=datetime(2026, 1, 1, 9, 0, tzinfo=UTC),
         clinic=clinic, consent_type=consent_type_alpha,
     )
     await ParticipantConsent.objects.acreate(
         study_participant=participant_2, status="Signerat",
-        consent_signed_date=datetime(2026, 1, 1, 10, 0, tzinfo=timezone.utc),
+        consent_signed_date=datetime(2026, 1, 1, 10, 0, tzinfo=UTC),
         clinic=clinic, consent_type=consent_type_alpha,
     )
     await ParticipantConsent.objects.acreate(
         study_participant=participant_3, status="Signerat",
-        consent_signed_date=datetime(2026, 1, 1, 11, 0, tzinfo=timezone.utc),
+        consent_signed_date=datetime(2026, 1, 1, 11, 0, tzinfo=UTC),
         clinic=clinic, consent_type=consent_type_beta,
     )
 
     # Day 2: one more "Alpha" consent on a later date.
     await ParticipantConsent.objects.acreate(
         study_participant=participant_4, status="Signerat",
-        consent_signed_date=datetime(2026, 1, 2, 9, 0, tzinfo=timezone.utc),
+        consent_signed_date=datetime(2026, 1, 2, 9, 0, tzinfo=UTC),
         clinic=clinic, consent_type=consent_type_alpha,
     )
 

@@ -1,6 +1,5 @@
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock, patch
 from uuid import UUID
 
@@ -10,7 +9,11 @@ from django.conf import settings
 
 from MiqaResearch.data.models import Clinic, ParticipantConsent, ParticipantConsentType, StudyParticipant
 from MiqaResearch.data.serializers.participant_consent import UploadConsentSchema
-from MiqaResearch.tasks.participant_consent import _handle_fetched_data, _process_consent_data, fetch_participant_consent
+from MiqaResearch.tasks.consent.participant_consent import (
+    _handle_fetched_data,
+    _process_consent_data,
+    fetch_participant_consent,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -30,8 +33,8 @@ def participant_consent_data(example_data_main_dir: Path) -> pl.DataFrame:
 
 @pytest.mark.asyncio
 @pytest.mark.django_db(transaction=True)
-@patch("MiqaResearch.tasks.participant_consent._get_access_token")
-@patch("MiqaResearch.tasks.participant_consent._get_csv_data")
+@patch("MiqaResearch.tasks.consent.participant_consent._get_access_token")
+@patch("MiqaResearch.tasks.consent.participant_consent._get_csv_data")
 async def test_fetch_participant_consent_should_generate_study_ids_for_new_study_participants(
         mock_get_csv_data, mock_get_access_token, participant_consent_data: pl.DataFrame):
     # Arrange
@@ -56,8 +59,8 @@ async def test_fetch_participant_consent_should_generate_study_ids_for_new_study
 
 @pytest.mark.asyncio
 @pytest.mark.django_db(transaction=True)
-@patch("MiqaResearch.tasks.participant_consent._get_access_token")
-@patch("MiqaResearch.tasks.participant_consent._get_csv_data")
+@patch("MiqaResearch.tasks.consent.participant_consent._get_access_token")
+@patch("MiqaResearch.tasks.consent.participant_consent._get_csv_data")
 async def test_fetch_participant_consent_should_encrypt_participant_ids_and_names(
         mock_get_csv_data, mock_get_access_token, participant_consent_data: pl.DataFrame):
     # Arrange
@@ -85,8 +88,8 @@ async def test_fetch_participant_consent_should_encrypt_participant_ids_and_name
 
 @pytest.mark.asyncio
 @pytest.mark.django_db(transaction=True)
-@patch("MiqaResearch.tasks.participant_consent._get_access_token")
-@patch("MiqaResearch.tasks.participant_consent._get_csv_data")
+@patch("MiqaResearch.tasks.consent.participant_consent._get_access_token")
+@patch("MiqaResearch.tasks.consent.participant_consent._get_csv_data")
 async def test_fetch_participant_consent_should_update_existing_consent_data(
         mock_get_csv_data, mock_get_access_token, participant_consent_data: pl.DataFrame):
     # Arrange
@@ -157,8 +160,8 @@ async def test__process_consent_data_should_replace_personal_identifiers_with_pa
 
 @pytest.mark.asyncio
 @pytest.mark.django_db(transaction=True)
-@patch("MiqaResearch.tasks.participant_consent._get_access_token")
-@patch("MiqaResearch.tasks.participant_consent._get_csv_data")
+@patch("MiqaResearch.tasks.consent.participant_consent._get_access_token")
+@patch("MiqaResearch.tasks.consent.participant_consent._get_csv_data")
 async def test_fetch_participant_consent_should_handle_reconsented_participants_getting_a_new_consent_record(
     mock_get_csv_data, mock_get_access_token):
     # Arrange: one participant that consents, retracts it five days later, then re-consents one day after the
@@ -255,8 +258,8 @@ def _expected_consent_label_counts(consent_data: pl.DataFrame) -> dict[str, int]
 
 @pytest.mark.asyncio
 @pytest.mark.django_db(transaction=True)
-@patch("MiqaResearch.tasks.participant_consent._get_access_token")
-@patch("MiqaResearch.tasks.participant_consent._get_csv_data")
+@patch("MiqaResearch.tasks.consent.participant_consent._get_access_token")
+@patch("MiqaResearch.tasks.consent.participant_consent._get_csv_data")
 async def test_fetch_participant_consent_should_store_a_consent_record_per_consented_label_in_db(
         mock_get_csv_data, mock_get_access_token, participant_consent_data: pl.DataFrame):
     # Arrange
@@ -290,8 +293,8 @@ async def test_fetch_participant_consent_should_store_a_consent_record_per_conse
 
 @pytest.mark.asyncio
 @pytest.mark.django_db(transaction=True)
-@patch("MiqaResearch.tasks.participant_consent._get_access_token")
-@patch("MiqaResearch.tasks.participant_consent._get_csv_data")
+@patch("MiqaResearch.tasks.consent.participant_consent._get_access_token")
+@patch("MiqaResearch.tasks.consent.participant_consent._get_csv_data")
 async def test_fetch_participant_consent_should_store_consents_linked_to_correct_participant_and_clinic(
         mock_get_csv_data, mock_get_access_token, participant_consent_data: pl.DataFrame):
     # Arrange
@@ -321,8 +324,8 @@ async def test_fetch_participant_consent_should_store_consents_linked_to_correct
 
 @pytest.mark.asyncio
 @pytest.mark.django_db(transaction=True)
-@patch("MiqaResearch.tasks.participant_consent._get_access_token")
-@patch("MiqaResearch.tasks.participant_consent._get_csv_data")
+@patch("MiqaResearch.tasks.consent.participant_consent._get_access_token")
+@patch("MiqaResearch.tasks.consent.participant_consent._get_csv_data")
 async def test_fetch_participant_consent_should_not_duplicate_consents_when_run_again_on_unchanged_data(
         mock_get_csv_data, mock_get_access_token, participant_consent_data: pl.DataFrame):
     # Arrange
@@ -345,7 +348,7 @@ async def test_fetch_participant_consent_should_not_duplicate_consents_when_run_
 
 @pytest.mark.asyncio
 @pytest.mark.django_db(transaction=True)
-@patch("MiqaResearch.tasks.participant_consent.create_participant_consents")
+@patch("MiqaResearch.tasks.consent.participant_consent.create_participant_consents")
 async def test__handle_fetched_data_should_log_and_reraise_when_storing_consents_fails(
         mock_create_participant_consents, participant_consent_data: pl.DataFrame, caplog):
     # Arrange

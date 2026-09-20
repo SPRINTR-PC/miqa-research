@@ -15,7 +15,7 @@ from django.db.models import (
 from django.utils.translation import gettext
 from ninja.errors import HttpError
 
-from MiqaResearch.data.models import ParticipantConsent, ResearchProject
+from MiqaResearch.data.models import ParticipantConsent, ResearchProject, ConsentDailyActiveSummary
 from MiqaResearch.data.serializers.charts.bar import (
     BarChartResponseSchema,
     BarChartConfigSchema,
@@ -406,45 +406,16 @@ async def _get_consent_history_data(project: ResearchProject) -> tuple[list[dict
 async def _get_consent_history_plot_data(
         project: ResearchProject, clinics: list[dict[str, str | UUID]]) -> XYChartDataSchema:
     logger.debug("Fetching data for consented participants for plotting")
-    signed_days = (
-        ParticipantConsent.objects
-        .filter(consent_type__research_project=project)
-        .annotate(day=F("consent_signed_date__date"))
-        .order_by("clinic_id", "day")
-        .values("clinic_id", "day")
-    )
-
-    revoked_days = (
-        ParticipantConsent.objects.filter(consent_type__research_project=project)
-        .annotate(day=F("consent_revoked_date__date"))
-        .order_by("clinic_id", "day")
-        .values("clinic_id", "day")
-    )
-
-    days = signed_days.union(revoked_days).order_by("clinic_id", "day").distinct()
-
-    active_participant_count = (
-        ParticipantConsent.objects
-        .filter(
-            consent_type__research_project=project,
-            clinic_id=OuterRef("clinic_id"),
-            consent_signed_date__date__lte=OuterRef("day"),
+    summary_rows = [
+        row async for row in (
+            ConsentDailyActiveSummary.objects
+            .filter(research_project=project)
+            .values("clinic_id", "day", "active_participant_count")
+            .order_by("clinic_id", "day")
         )
-        .filter(
-            Q(consent_revoked_date__isnull=True) | Q(consent_revoked_date__date__gt=OuterRef("day"))
-        )
-        .order_by()
-        .values("clinic_id")
-        .annotate(count=Count("study_participant_id", distinct=True))
-        .values("count")
-    )
+    ]
 
-    query = days.annotate(
-        active_participant_count=Subquery(active_participant_count, output_field=IntegerField())
-    )
-
-    signed_and_not_revoked_count_by_clinic = [row async for row in query]
-    event_dates = sorted(set([row["day"] for row in signed_and_not_revoked_count_by_clinic]))
+    event_dates = sorted(set([row["day"] for row in summary_rows]))
 
     formatted_data = {
         clinic["clinic_id"]: [
@@ -453,7 +424,7 @@ async def _get_consent_history_plot_data(
                 "timestamp": event_date,
                 "active_consent_count": sum([
                     row["active_participant_count"]
-                    for row in signed_and_not_revoked_count_by_clinic
+                    for row in summary_rows
                     if row["day"] == event_date and row["clinic_id"] == clinic["clinic_id"]
                 ]),
             }
