@@ -300,6 +300,67 @@ describe("DataTable", () => {
     document.body.removeChild(el);
   });
 
+  it("should refetch columns and rows and drop stale filters and sort when dataUrl changes", async () => {
+    const pagination = { page: 1, page_size: 50, total_items: 1, total_pages: 1, has_next: false, has_previous: false };
+    const spy = vi.spyOn(ApiService, "getData")
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          columns: [{ accessor: "machineName", label: "Machine", sortable: true, filter: { kind: "text" } }],
+          rows: [{ machineName: "CT1" }],
+          pagination,
+        },
+        message: "ok",
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          columns: [
+            { accessor: "pid", label: "PID" },
+            { accessor: "machineName", label: "Machine" },
+          ],
+          rows: [{ pid: "1912", machineName: "CT1" }],
+          pagination,
+        },
+        message: "ok",
+      });
+
+    const el = new DataTable();
+    el.dataUrl = "https://api.example.com/table-data";
+    document.body.appendChild(el);
+    await new Promise((r) => setTimeout(r, 10));
+    await el.updateComplete;
+
+    (el.shadowRoot?.querySelector("th.sortable") as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 10));
+    spy.mockClear();
+    spy.mockResolvedValueOnce({
+      success: true,
+      data: {
+        columns: [
+          { accessor: "pid", label: "PID" },
+          { accessor: "machineName", label: "Machine" },
+        ],
+        rows: [{ pid: "1912", machineName: "CT1" }],
+        pagination,
+      },
+      message: "ok",
+    });
+
+    el.dataUrl = "https://api.example.com/table-data?include_pid=true";
+    await new Promise((r) => setTimeout(r, 10));
+    await el.updateComplete;
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith(
+      "https://api.example.com/table-data?include_pid=true&page=1&page_size=50&include_columns=true"
+    );
+    const headers = Array.from(el.shadowRoot?.querySelectorAll("th") ?? []).map((th) => th.textContent?.trim());
+    expect(headers).toEqual(["PID", "Machine"]);
+
+    document.body.removeChild(el);
+  });
+
   describe("date and datetime cells", () => {
     beforeEach(() => {
       vi.stubEnv("TZ", "Asia/Tokyo"); // UTC+9: 23:30Z on the 1st is 08:30 on the 2nd

@@ -255,6 +255,9 @@ export class DataTable extends LitElement {
   @state()
   private _multiSelectValues: Record<string, string[]> = {};
 
+  // Set when the columns must be refetched although the current ones are still displayed (e.g. dataUrl changed).
+  private _refreshColumns: boolean = false;
+
   private _filterDebounceTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 
   connectedCallback() {
@@ -272,6 +275,13 @@ export class DataTable extends LitElement {
 
     if (changedProperties.has("dataUrl") && changedProperties.get("dataUrl") !== undefined) {
       if (this.dataUrl) {
+        // The new URL may describe different columns, so stale sort/filter state must not leak into the request. The
+        // current table stays mounted until the new columns and rows arrive.
+        this._refreshColumns = true;
+        this._sortState = this.initialSort ?? [];
+        this._filterValues = {};
+        this._rangeFilterValues = {};
+        this._multiSelectValues = {};
         this._page = 1;
         void this._loadData();
       } else {
@@ -296,7 +306,7 @@ export class DataTable extends LitElement {
           columns: response.data.columns,
           pagination: response.data.pagination,
         });
-        if (columns && !this._columns && this._sortState.length === 0) {
+        if (columns && (!this._columns || this._refreshColumns) && this._sortState.length === 0) {
           this._sortState = this._defaultSortFrom(columns);
         }
         this._rows = response.data.rows;
@@ -316,6 +326,7 @@ export class DataTable extends LitElement {
       this._hasError = true;
       this._errorDetail = error instanceof Error ? error.message : String(error);
     } finally {
+      this._refreshColumns = false;
       this._isLoading = false;
     }
   }
@@ -361,7 +372,7 @@ export class DataTable extends LitElement {
     const pageSize = this._pagination?.pageSize ?? this.pageSize ?? 50;
     const separator = this.dataUrl.includes("?") ? "&" : "?";
     let url = `${this.dataUrl}${separator}page=${this._page}&page_size=${pageSize}`;
-    if (!this._columns) {
+    if (!this._columns || this._refreshColumns) {
       url += "&include_columns=true";
     }
     if (this._sortState.length > 0) {
