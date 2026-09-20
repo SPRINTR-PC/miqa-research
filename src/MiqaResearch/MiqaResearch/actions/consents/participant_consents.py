@@ -37,7 +37,8 @@ async def create_participant_consents(new_consents: list[UploadConsentSchema]) -
     logger.debug("Starting to upsert participant consents in db")
     new_consent_count = 0
     for consent in new_consents:
-        clinic, _ = await Clinic.objects.aget_or_create(clinic_name=consent.clinic)
+        clinic, _ = await Clinic.objects.aget_or_create(
+            clinic_code=consent.clinic, defaults={"clinic_name": consent.clinic})
         for consent_label in consent.consent_labels:
             _, created = await ParticipantConsent.objects.aget_or_create(
                 study_participant_id=consent.participant_study_id,

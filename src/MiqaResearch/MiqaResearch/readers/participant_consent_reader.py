@@ -406,14 +406,22 @@ async def _get_consent_history_data(project: ResearchProject) -> tuple[list[dict
 async def _get_consent_history_plot_data(
         project: ResearchProject, clinics: list[dict[str, str | UUID]]) -> XYChartDataSchema:
     logger.debug("Fetching data for consented participants for plotting")
-    days = (
+    signed_days = (
         ParticipantConsent.objects
         .filter(consent_type__research_project=project)
         .annotate(day=F("consent_signed_date__date"))
         .order_by("clinic_id", "day")
         .values("clinic_id", "day")
-        .distinct()
     )
+
+    revoked_days = (
+        ParticipantConsent.objects.filter(consent_type__research_project=project)
+        .annotate(day=F("consent_revoked_date__date"))
+        .order_by("clinic_id", "day")
+        .values("clinic_id", "day")
+    )
+
+    days = signed_days.union(revoked_days).order_by("clinic_id", "day").distinct()
 
     active_participant_count = (
         ParticipantConsent.objects
@@ -489,6 +497,16 @@ async def _get_consent_history_plot_data(
 
     return plot_series
 
+def _sum_counts_by_date(rows: list[dict[str, Any]], date_key: str) -> dict[Any, int]:
+    """
+    Rows are grouped per participant and consent type, so several rows can share a date; their counts add up.
+    """
+    totals: dict[Any, int] = {}
+    for row in rows:
+        totals[row[date_key]] = totals.get(row[date_key], 0) + (row.get("consent_count") or 0)
+    return totals
+
+
 def _format_signed_retracted_data(
         signed_data: list[dict[str, Any]],
         retracted_data: list[dict[str, Any]],
@@ -502,16 +520,14 @@ def _format_signed_retracted_data(
         key: list(group) for key, group in groupby(signed_data, key=itemgetter("clinic_id"))
     }
     signed_data = {
-        key: {el["consent_date"]: el.get("consent_count", None) for el in group}
-        for key, group in signed_data.items()
+        key: _sum_counts_by_date(group, "consent_date") for key, group in signed_data.items()
     }
 
     retracted_data = {
         key: list(group) for key, group in groupby(retracted_data, key=itemgetter("clinic_id"))
     }
     retracted_data = {
-        key: {el["revoked_date"]: el.get("consent_count", None) for el in group}
-        for key, group in retracted_data.items()
+        key: _sum_counts_by_date(group, "revoked_date") for key, group in retracted_data.items()
     }
 
     date_times_per_clinic = {

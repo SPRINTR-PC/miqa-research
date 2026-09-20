@@ -15,7 +15,7 @@ class UploadConsentSchema(Schema):
     consent_labels: list[str]
     participant_information_version: str | None
     source: str | None
-    extra_info: dict[str, list[str]] | None
+    extra_info: dict[str, list[str]] | None = None
 
 
 class ConsentHistoryEventSchema(Schema):

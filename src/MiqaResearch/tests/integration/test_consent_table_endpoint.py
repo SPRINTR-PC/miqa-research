@@ -168,7 +168,8 @@ def test_envelope_has_snake_case_columns_rows_and_pagination_when_columns_reques
     assert set(body["pagination"]) == {"page", "page_size", "total_pages", "total_items", "has_next", "has_previous"}
     columns = {column["accessor"]: column for column in body["columns"]}
     assert columns["clinic__clinic_name"]["data_type"] == "string"
-    assert columns["consent_signed_date"]["data_type"] == "datetime"
+    assert columns["consent_signed_date"]["data_type"] == "date"
+    assert columns["last_updated"]["data_type"] == "datetime"
     assert all(column["label"] for column in columns.values())
     assert set(body["rows"][0]) == set(columns)
 
@@ -386,7 +387,7 @@ def test_unknown_or_too_many_sort_columns_are_a_400(sortable_project, admin_of, 
 
 @pytest.mark.django_db
 def test_six_sort_columns_are_accepted(sortable_project, admin_of):
-    sort = "clinic_id,clinic__clinic_name,clinic__clinic_code,status,consent_signed_date,consent_revoked_date"
+    sort = "study_participant__alias1,clinic__clinic_name,clinic__clinic_code,status,consent_signed_date,consent_revoked_date"
 
     response = _get_table(admin_of(sortable_project), sortable_project.id, sort=sort)
 
@@ -422,42 +423,23 @@ def test_text_filter_is_case_insensitive_contains(sortable_project, admin_of):
 
 
 @pytest.mark.django_db
-def test_date_range_filter_is_inclusive_of_the_whole_end_day(sortable_project, admin_of):
-    late = ParticipantConsent.objects.filter(consent_type__research_project=sortable_project).first()
-    late.consent_signed_date = datetime(2026, 2, 5, 23, 59, 59, tzinfo=timezone.utc)
-    late.save()
-    user = admin_of(sortable_project)
+@pytest.mark.parametrize("key", ["consent_signed_date__gte", "consent_signed_date__lte", "last_updated__gte"])
+def test_date_columns_declare_no_filter_so_date_filters_are_refused(sortable_project, admin_of, key):
+    response = _get_table(admin_of(sortable_project), sortable_project.id, **{key: "2026-02-03"})
 
-    response = _get_table(
-        user, sortable_project.id, consent_signed_date__gte="2026-02-03", consent_signed_date__lte="2026-02-05")
-
-    # 3rd, the 5th at 08:00 and the 5th at 23:59:59 are in; the 1st and the 9th are out
-    days = sorted(int(row["consent_signed_date"][8:10]) for row in response.json()["rows"])
-    assert days == [3, 5, 5]
-    assert any(row["consent_signed_date"].startswith("2026-02-05T23:59:59") for row in response.json()["rows"])
-
-
-@pytest.mark.django_db
-def test_date_range_with_only_a_start_or_only_an_end(sortable_project, admin_of):
-    user = admin_of(sortable_project)
-
-    from_the_5th = _get_table(user, sortable_project.id, consent_signed_date__gte="2026-02-05").json()["rows"]
-    until_the_3rd = _get_table(user, sortable_project.id, consent_signed_date__lte="2026-02-03").json()["rows"]
-
-    assert sorted(int(r["consent_signed_date"][8:10]) for r in from_the_5th) == [5, 9]
-    assert sorted(int(r["consent_signed_date"][8:10]) for r in until_the_3rd) == [1, 3]
+    assert response.status_code == 400
 
 
 @pytest.mark.django_db
 def test_filters_sort_and_paging_combine(sortable_project, admin_of):
     user = admin_of(sortable_project)
-    common = dict(consent_signed_date__gte="2026-02-03", sort="-consent_signed_date", page_size=2)
+    common = dict(status__icontains="signerat", sort="-consent_signed_date", page_size=2)
 
     first = _get_table(user, sortable_project.id, page=1, **common).json()
     second = _get_table(user, sortable_project.id, page=2, **common).json()
 
     days = lambda body: [int(row["consent_signed_date"][8:10]) for row in body["rows"]]  # noqa: E731
-    assert (days(first), days(second)) == ([9, 5], [3])
+    assert (days(first), days(second)) == ([5, 3], [1])
     assert first["pagination"]["total_items"] == second["pagination"]["total_items"] == 3
     assert first["pagination"]["has_next"] and not second["pagination"]["has_next"]
 
@@ -511,8 +493,8 @@ def test_columns_metadata_declares_the_filter_kinds(sortable_project, admin_of):
     filters = {column["accessor"]: column["filter"] for column in columns}
 
     assert filters["clinic__clinic_name"] == {"kind": "text", "options": None}
-    assert filters["consent_signed_date"]["kind"] == "date-range"
-    assert filters["clinic_id"] is None
+    assert filters["study_participant__alias1"]["kind"] == "text"
+    assert filters["consent_signed_date"] is None
 
 
 # --- PID authorization ---------------------------------------------------------------------------------------------

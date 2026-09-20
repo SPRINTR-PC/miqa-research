@@ -1,6 +1,9 @@
 from datetime import datetime, timezone
 
 import pytest
+from asgiref.sync import sync_to_async
+from django.contrib.auth import get_user_model
+from django.db.models.aggregates import Count
 
 from MiqaResearch.data.models import (
     Clinic,
@@ -8,6 +11,7 @@ from MiqaResearch.data.models import (
     ParticipantConsentType,
     ResearchProject,
     StudyParticipant,
+    study_participant,
 )
 from MiqaResearch.data.models.research_project import ResearchProjectClinicMap
 from MiqaResearch.data.serializers.charts.base import ChartGroupingSchema
@@ -27,6 +31,13 @@ from MiqaResearch.readers.participant_consent_reader import (
 def mock_encryption_keys(settings):
     settings.FERNET_KEY = b'EiGdHopiKZdBZwVCP4dVJitPrrDnOuGAd94W4EZpwQc='
     settings.SENSITIVE_DATA_HASH_KEY = 'H2QCB14temR-C2JnLORSE5TxPwLd8iy3YygNPQ-corA='
+
+
+class _SuperuserRequest:
+    """Minimal request whose user sees every clinic of the project."""
+
+    async def auser(self):
+        return await sync_to_async(get_user_model().objects.create_superuser)(username="history-root", password="pw")
 
 
 async def _create_project_with_consent_history() -> tuple[ResearchProject, Clinic, Clinic]:
@@ -84,7 +95,7 @@ async def test_get_consent_history_by_clinic_should_return_a_project_consent_his
     project, clinic_a, clinic_b = await _create_project_with_consent_history()
 
     # Act
-    result = await get_consent_history_by_clinic(project)
+    result = await get_consent_history_by_clinic(_SuperuserRequest(), project)
 
     # Assert
     assert isinstance(result, ProjectConsentHistoryByClinicSchema)
@@ -114,7 +125,7 @@ async def test_get_consent_history_by_clinic_should_report_correct_consent_and_r
     project, clinic_a, clinic_b = await _create_project_with_consent_history()
 
     # Act
-    result = await get_consent_history_by_clinic(project)
+    result = await get_consent_history_by_clinic(_SuperuserRequest(), project)
 
     # Assert
     clinic_histories_by_id = {str(clinic.clinic_id): clinic for clinic in result.consent_data_by_clinic}
@@ -232,20 +243,21 @@ async def test_get_consent_history_plot_by_clinic_total_across_clinics_should_ma
 
     # Every ParticipantConsent row represents a signing event; a subset of those are
     # later revoked. The net cumulative total should be all signings minus all revocations.
-    expected_total_signed = await ParticipantConsent.objects.filter(
-        consent_type__research_project=project,
-    ).acount()
-    expected_total_revoked = await ParticipantConsent.objects.filter(
-        consent_type__research_project=project,
-        consent_revoked_date__isnull=False,
-    ).acount()
+    expected_total_net_signed = (
+        await ParticipantConsent.objects
+        .filter(
+            consent_type__research_project=project,
+            consent_revoked_date__isnull=True,
+        )
+        .aaggregate(signed_participants_count=Count("study_participant_id", distinct=True))
+    )["signed_participants_count"]
 
     # Act
     result = await get_consent_history_plot_by_clinic(project)
 
     # Assert
-    total_net_signed = sum(series.y[-1] for series in result.groupings[0].data.series)
-    assert total_net_signed == expected_total_signed - expected_total_revoked
+    total_net_signed = max(series.y[-1] for series in result.groupings[0].data.series)
+    assert total_net_signed == expected_total_net_signed
 
 
 @pytest.mark.asyncio

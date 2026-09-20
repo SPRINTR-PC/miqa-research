@@ -117,7 +117,7 @@ def test_project_dashboard_renders_shell_with_default_tab(client, user, role, pr
     assert response.status_code == 200
     assert project_a.name in content
     assert project_a.description in content
-    assert "Consent statistics content will appear here." in content
+    assert "<mires-chart-bar" in content
     assert 'aria-selected="true"' in content
 
 
