@@ -257,6 +257,49 @@ describe("DataTable", () => {
     document.body.removeChild(el);
   });
 
+  it("should keep the header in the DOM while fetching new rows when columns are unchanged", async () => {
+    const pagination = { page: 1, page_size: 50, total_items: 60, total_pages: 2, has_next: true, has_previous: false };
+    let resolveSecond: (value: any) => void;
+    vi.spyOn(ApiService, "getData")
+      .mockResolvedValueOnce({
+        success: true,
+        data: { columns: [{ accessor: "machineName", label: "Machine" }], rows: [{ machineName: "CT1" }], pagination },
+        message: "ok",
+      })
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveSecond = resolve)) as any);
+
+    const el = new DataTable();
+    el.dataUrl = "https://api.example.com/table-data";
+    document.body.appendChild(el);
+    await new Promise((r) => setTimeout(r, 10));
+    await el.updateComplete;
+
+    const headerBefore = el.shadowRoot?.querySelector("th");
+    (el.shadowRoot?.querySelector('[data-action="next"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+
+    expect(el.shadowRoot?.querySelector("th")).toBe(headerBefore);
+    expect(el.shadowRoot?.querySelector("p.message")).toBeNull();
+
+    resolveSecond!({
+      success: true,
+      data: {
+        columns: null,
+        rows: [{ machineName: "CT2" }],
+        pagination: { ...pagination, page: 2, has_next: false, has_previous: true },
+      },
+      message: "ok",
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    await el.updateComplete;
+
+    expect(el.shadowRoot?.querySelector("th")).toBe(headerBefore);
+    const cells = Array.from(el.shadowRoot?.querySelectorAll("tbody td") ?? []).map((td) => td.textContent);
+    expect(cells).toEqual(["CT2"]);
+
+    document.body.removeChild(el);
+  });
+
   describe("date and datetime cells", () => {
     beforeEach(() => {
       vi.stubEnv("TZ", "Asia/Tokyo"); // UTC+9: 23:30Z on the 1st is 08:30 on the 2nd

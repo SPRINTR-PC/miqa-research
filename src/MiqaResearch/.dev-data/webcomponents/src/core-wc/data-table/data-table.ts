@@ -82,6 +82,10 @@ export class DataTable extends LitElement {
       border-radius: var(--dt-border-radius);
     }
     
+    table[aria-busy="true"] tbody {
+        opacity: 0.5;
+    }
+
     table tbody tr {
         background: var(--dt-background);
         color: var(--dt-color-text);
@@ -486,7 +490,10 @@ export class DataTable extends LitElement {
   }
 
   render() {
-    if (this._isLoading) {
+    // Once a table is showing, keep it mounted during refetches so only the rows update; the loading message is only
+    // for the initial load.
+    const hasTable = !this._hasError && !!this._columns && !!this._rows && this._rows.length > 0;
+    if (this._isLoading && !hasTable) {
       return html`<p class="message">${this.loadingMessage}</p>`;
     }
 
@@ -502,7 +509,7 @@ export class DataTable extends LitElement {
     const rows = this._rows;
 
     return html`
-      <table class="${this.striped ? "striped" : ""}">
+      <table class="${this.striped ? "striped" : ""}" aria-busy=${this._isLoading ? "true" : "false"}>
         <thead>
           <tr>
             ${columns.map((column) => this._renderHeader(column))}
