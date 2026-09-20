@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import "./data-table";
 import { DataTable } from "./data-table";
 import { ApiService } from "./api-service";
-import { formatDate, formatDateTime } from "./data-table-format";
 import type {
   ColumnDefinition,
   DataTableWireResponse,
@@ -291,25 +290,22 @@ describe("DataTable", () => {
       return cells;
     }
 
-    it("should render a datetime converted to the local timezone", async () => {
+    it("should render a datetime as yyyy-mm-dd HH:MM:SS converted to the local timezone", async () => {
       const [signedAt] = await renderCells({ signed_at: "2026-03-01T23:30:00+00:00", birthday: "2000-01-31" });
 
-      expect(signedAt).toBe(formatDateTime("2026-03-01T23:30:00+00:00"));
-      expect(signedAt).toMatch(/8:30|08:30/);
-      expect(signedAt).not.toMatch(/23:30|11:30/);
+      expect(signedAt).toBe("2026-03-02 08:30:00");
     });
 
-    it("should render a date column as the date only, with no time", async () => {
+    it("should render a date column as yyyy-mm-dd, with no time", async () => {
       const [, birthday] = await renderCells({ signed_at: "2026-03-01T23:30:00+00:00", birthday: "2000-01-31" });
 
-      expect(birthday).toBe(formatDate("2000-01-31"));
-      expect(birthday).not.toContain(":");
+      expect(birthday).toBe("2000-01-31");
     });
 
     it("should render only the date when a date column receives a value with a time", async () => {
       const [, birthday] = await renderCells({ signed_at: null, birthday: "2000-01-31T23:59:00+00:00" });
 
-      expect(birthday).toBe(formatDate("2000-01-31"));
+      expect(birthday).toBe("2000-01-31");
     });
 
     it("should leave other columns and empty date cells untouched", async () => {
