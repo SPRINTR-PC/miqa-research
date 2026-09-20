@@ -1,9 +1,11 @@
 {% get_current_language as LANGUAGE_CODE %}
 <div id="dashboard-consent-tablist" role="tablist" class="horizontal-tablist inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground"{% if oob %} hx-swap-oob="true"{% endif %}>
   <button type="button" role="tab" aria-selected="{% if active_subtab == 'consent-statistics-plots' %}true{% else %}false{% endif %}"
-    hx-get="{% url 'dashboard_tab_consent_statistics_content' project.id %}" hx-target="#dashboard-consent-contents" hx-swap="innerHTML" hx-push-url="true"
+    hx-get="{% url 'dashboard_tab_consent_statistics_content' project.id %}" hx-target="#dashboard-consent-contents" hx-swap="innerHTML" hx-push-url="true" hx-sync="#dashboard-tab-panel:replace"
+    hx-indicator="#dashboard-consent-loading, #dashboard-consent-contents"
     class="tab inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1_5 text-sm font-medium ring-offset-background ring-offset-2 ring-offset-background ring-1 ring-transparent hover:ring-primary gap-1">{% include 'components/icon.html' with icon_name='chart' icon_classes="primary-fill" %}{% translate "Plots" %}</button>
-  <button type="button" role="tab" aria-selected="{% if active_subtab == 'table' %}true{% else %}false{% endif %}"
-    hx-get="{% url 'dashboard_tab_consent_statistics_content' project.id %}?table=true" hx-target="#dashboard-consent-contents" hx-swap="innerHTML" hx-push-url="true"
+  <button type="button" role="tab" aria-selected="{% if active_subtab == 'consent-statistics-table' %}true{% else %}false{% endif %}"
+    hx-get="{% url 'dashboard_tab_consent_statistics_content' project.id %}?table=true" hx-target="#dashboard-consent-contents" hx-swap="innerHTML" hx-push-url="true" hx-sync="#dashboard-tab-panel:replace"
+    hx-indicator="#dashboard-consent-loading, #dashboard-consent-contents"
     class="tab inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1_5 text-sm font-medium ring-offset-background ring-offset-2 ring-offset-background ring-1 ring-transparent hover:ring-primary gap-1">{% include 'components/icon.html' with icon_name='table' icon_classes="primary-fill" %}{% translate "Table" %}</button>
 </div>

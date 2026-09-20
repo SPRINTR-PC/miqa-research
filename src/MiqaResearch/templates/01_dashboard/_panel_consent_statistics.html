@@ -1,9 +1,14 @@
 {% get_current_language as LANGUAGE_CODE %}
 <div class="space-y-4">
-    <div class="flex items-center justify-end">
+    <div class="flex items-center justify-end gap-3">
+        {% include 'components/loading_indicator.html' with indicator_id='dashboard-consent-loading' %}
         {% include '01_dashboard/_panel_consent_statistics_tablist.html' %}
     </div>
-    <div id="dashboard-consent-contents" class="grid gap-4">
-        {% include "01_dashboard/_panel_consent_statistics_plots.html" %}
+    <div id="dashboard-consent-contents" class="grid gap-4 loading-target">
+        {% if active_subtab == 'consent-statistics-table' %}
+            {% include "01_dashboard/_panel_consent_statistics_table.html" %}
+        {% else %}
+            {% include "01_dashboard/_panel_consent_statistics_plots.html" %}
+        {% endif %}
     </div>
 </div>

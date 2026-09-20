@@ -11,8 +11,11 @@
     </div>
     <p class="text-muted-foreground mt-1">{{ project.description }}</p>
   </div>
-  {% include '01_dashboard/_tablist.html' with project=project active_tab=active_tab %}
-  <div id="dashboard-tab-panel">
+  <div class="flex items-center gap-3">
+    {% include '01_dashboard/_tablist.html' with project=project active_tab=active_tab %}
+    {% include 'components/loading_indicator.html' with indicator_id='dashboard-tab-loading' %}
+  </div>
+  <div id="dashboard-tab-panel" class="loading-target">
     {% if active_tab == 'goals' %}
       {% include '01_dashboard/_panel_goals.html' %}
     {% else %}
