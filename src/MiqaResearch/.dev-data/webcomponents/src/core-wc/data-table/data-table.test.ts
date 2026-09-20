@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import "./data-table";
 import { DataTable } from "./data-table";
 import { ApiService } from "./api-service";
+import { formatDate, formatDateTime } from "./data-table-format";
 import type {
   ColumnDefinition,
   DataTableWireResponse,
@@ -255,6 +256,67 @@ describe("DataTable", () => {
     expect(cells).toEqual(["CT2"]);
 
     document.body.removeChild(el);
+  });
+
+  describe("date and datetime cells", () => {
+    beforeEach(() => {
+      vi.stubEnv("TZ", "Asia/Tokyo"); // UTC+9: 23:30Z on the 1st is 08:30 on the 2nd
+    });
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    async function renderCells(row: Record<string, unknown>) {
+      vi.spyOn(ApiService, "getData").mockResolvedValue({
+        success: true,
+        data: {
+          columns: [
+            { accessor: "signed_at", label: "Signed", data_type: "datetime" },
+            { accessor: "birthday", label: "Birthday", data_type: "date" },
+            { accessor: "clinic__clinic_name", label: "Clinic", data_type: "string" },
+          ],
+          rows: [row],
+          pagination: { page: 1, page_size: 50, total_items: 1, total_pages: 1, has_next: false, has_previous: false },
+        },
+        message: "ok",
+      });
+      const el = new DataTable();
+      el.dataUrl = "https://api.example.com/table-data";
+      document.body.appendChild(el);
+      await new Promise((r) => setTimeout(r, 10));
+      await el.updateComplete;
+      const cells = Array.from(el.shadowRoot?.querySelectorAll("tbody td") ?? []).map((td) => td.textContent?.trim());
+      document.body.removeChild(el);
+      return cells;
+    }
+
+    it("should render a datetime converted to the local timezone", async () => {
+      const [signedAt] = await renderCells({ signed_at: "2026-03-01T23:30:00+00:00", birthday: "2000-01-31" });
+
+      expect(signedAt).toBe(formatDateTime("2026-03-01T23:30:00+00:00"));
+      expect(signedAt).toMatch(/8:30|08:30/);
+      expect(signedAt).not.toMatch(/23:30|11:30/);
+    });
+
+    it("should render a date column as the date only, with no time", async () => {
+      const [, birthday] = await renderCells({ signed_at: "2026-03-01T23:30:00+00:00", birthday: "2000-01-31" });
+
+      expect(birthday).toBe(formatDate("2000-01-31"));
+      expect(birthday).not.toContain(":");
+    });
+
+    it("should render only the date when a date column receives a value with a time", async () => {
+      const [, birthday] = await renderCells({ signed_at: null, birthday: "2000-01-31T23:59:00+00:00" });
+
+      expect(birthday).toBe(formatDate("2000-01-31"));
+    });
+
+    it("should leave other columns and empty date cells untouched", async () => {
+      const cells = await renderCells({ signed_at: null, birthday: null, clinic__clinic_name: "Clinic A" });
+
+      expect(cells).toEqual(["", "", "Clinic A"]);
+    });
   });
 
   it("should fetch the next page and re-render when the next control is clicked", async () => {

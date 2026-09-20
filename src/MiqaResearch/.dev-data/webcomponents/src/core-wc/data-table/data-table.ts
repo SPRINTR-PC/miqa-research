@@ -5,6 +5,7 @@ import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 
 import { snakeToCamelDeep } from "../snake-to-camel";
 import { ApiService } from "./api-service";
+import { formatDate, formatDateTime } from "./data-table-format";
 import type {
   ColumnDefinition,
   DataRow,
@@ -523,7 +524,7 @@ export class DataTable extends LitElement {
                                 ? (this._resolveAccessor(row, column.accessor) as number[])
                                 : [],
                               column.hslColor ?? { hue: 200, saturation: 100, lightness: 50 })
-                            : html`<td>${this._resolveAccessor(row, column.accessor) ?? nothing}</td>`;
+                            : html`<td>${this._formatCellValue(column, this._resolveAccessor(row, column.accessor))}</td>`;
                 })}
               </tr>
             `
@@ -532,6 +533,17 @@ export class DataTable extends LitElement {
       </table>
       ${this._renderPager()}
     `;
+  }
+
+  private _formatCellValue(column: ColumnDefinition, value: unknown) {
+    switch (column.dataType) {
+      case "date":
+        return formatDate(value);
+      case "datetime":
+        return formatDateTime(value);
+      default:
+        return value ?? nothing;
+    }
   }
 
   private _renderHeader(column: ColumnDefinition) {
