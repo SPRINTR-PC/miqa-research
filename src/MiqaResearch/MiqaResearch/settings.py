@@ -56,6 +56,11 @@ env = environ.Env(
     MIRES_CELERY_WORKER_PREFETCH_MULTIPLIER=(int, 1),
     MIRES_DATA_HASH_FERNET_KEY_ENCRYPTION=(str, "utf-8"),
     MIRES_DATA_HASH_KEY_VAULT_PATH=(str, "mires/datahashing"),
+    MIRES_DICOM_ALLOWED_SOURCE_ROOTS=(str, ""),
+    MIRES_DICOM_S3_ENDPOINT_URL=(str, None),
+    MIRES_DICOM_S3_REGION_NAME=(str, None),
+    MIRES_DICOM_S3_ACCESS_KEY_ID=(str, None),
+    MIRES_DICOM_S3_SECRET_ACCESS_KEY=(str, None),
     MIRES_EMAIL_HOST=(str, None),
     MIRES_EMAIL_PORT=(int, 1234),
     MIRES_EMAIL_HOST_USER=(str, None),
@@ -113,6 +118,20 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = False if DEBUG else True
 SESSION_COOKIE_AGE = env("MIRES_SESSION_COOKIE_AGE")
 SESSION_IDLE_TIMEOUT = env("MIRES_SESSION_IDLE_TIMEOUT")
 AUDIT_LOG_RETENTION_DAYS = env("MIRES_AUDIT_LOG_RETENTION_DAYS")
+
+# DICOM ingestion (#120): local source paths must sit inside one of the
+# allowed roots (default-deny: nothing allowed until configured). The S3
+# settings configure the run's read-scoped S3 source client; the storage-write
+# path (#122) reuses the same connection settings.
+DICOM_ALLOWED_SOURCE_ROOTS: list[Path] = [
+    Path(part.strip()).expanduser()
+    for part in env("MIRES_DICOM_ALLOWED_SOURCE_ROOTS").split(",")
+    if part.strip()
+]
+DICOM_S3_ENDPOINT_URL: str | None = env("MIRES_DICOM_S3_ENDPOINT_URL")
+DICOM_S3_REGION_NAME: str | None = env("MIRES_DICOM_S3_REGION_NAME")
+DICOM_S3_ACCESS_KEY_ID: str | None = env("MIRES_DICOM_S3_ACCESS_KEY_ID")
+DICOM_S3_SECRET_ACCESS_KEY: str | None = env("MIRES_DICOM_S3_SECRET_ACCESS_KEY")
 
 
 def get_allowed_hosts_list(allowed_hosts_env) -> list[str]:

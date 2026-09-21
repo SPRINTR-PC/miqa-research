@@ -28,6 +28,9 @@ class DicomFile(models.Model):
     contains_burned_in_annotations = models.BooleanField(blank=True, null=True)
     metadata = models.JSONField(blank=True, null=True)
     file_size_in_mb = models.FloatField(blank=False, null=False, help_text="The size of this file in MB")
+    content_sha256 = models.CharField(
+        max_length=64, blank=True, null=False, default="",
+        help_text="SHA-256 hex of the stored original file bytes; detects duplicate files whose content differs from what's stored")
 
     class Meta:
         db_table = "mires_dicom_file"

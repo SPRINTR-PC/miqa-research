@@ -18,6 +18,11 @@ def encryption_keys(settings):
     settings.SENSITIVE_DATA_HASH_KEY = "H2QCB14temR-C2JnLORSE5TxPwLd8iy3YygNPQ-corA="
 
 
+@pytest.fixture(autouse=True)
+def allow_tmp_sources(settings, tmp_path):
+    """#120: local sources must sit inside the configured allow-list — allow this test's tmp_path."""
+    settings.DICOM_ALLOWED_SOURCE_ROOTS = [tmp_path]
+
 @pytest.fixture
 def research_project(db):
     return ResearchProject.objects.create(name="Ingestion single-file project", description="Project for #119 tests")
@@ -29,7 +34,7 @@ def test_ingestion_creates_linked_record_hierarchy_for_new_participant(research_
 
     report = run_ingestion(research_project, src)
 
-    assert report.counts == {"ingested": 1, "skipped_duplicate": 0, "error": 0}
+    assert report.counts == {"ingested": 1, "skipped_duplicate": 0, "duplicate_conflict": 0, "error": 0}
     result = report.results[0]
     assert result.outcome == "ingested"
     assert result.error is None
@@ -333,7 +338,7 @@ def test_file_without_patient_id_is_per_file_error(research_project, tmp_path, s
 
     report = run_ingestion(research_project, src)
 
-    assert report.counts == {"ingested": 0, "skipped_duplicate": 0, "error": 1}
+    assert report.counts == {"ingested": 0, "skipped_duplicate": 0, "duplicate_conflict": 0, "error": 1}
     result = report.results[0]
     assert "patient identifier" in result.error
     assert StudyParticipant.objects.count() == 0
@@ -347,7 +352,7 @@ def test_non_dicom_file_is_per_file_error(research_project, tmp_path, settings):
 
     report = run_ingestion(research_project, src)
 
-    assert report.counts == {"ingested": 0, "skipped_duplicate": 0, "error": 1}
+    assert report.counts == {"ingested": 0, "skipped_duplicate": 0, "duplicate_conflict": 0, "error": 1}
     assert report.results[0].error == "not a DICOM file"
     assert DicomFile.objects.count() == 0
     assert StudyParticipant.objects.count() == 0
@@ -361,7 +366,7 @@ def test_reingesting_same_file_skips_duplicate(research_project, tmp_path, setti
     second = run_ingestion(research_project, src)
 
     assert first.counts["ingested"] == 1
-    assert second.counts == {"ingested": 0, "skipped_duplicate": 1, "error": 0}
+    assert second.counts == {"ingested": 0, "skipped_duplicate": 1, "duplicate_conflict": 0, "error": 0}
     assert DicomFile.objects.count() == 1
     assert DicomSeries.objects.count() == 1
     series = DicomSeries.objects.get()
@@ -376,7 +381,7 @@ def test_non_standard_sop_class_still_ingested_via_generic_handler(research_proj
 
     report = run_ingestion(research_project, src)
 
-    assert report.counts == {"ingested": 1, "skipped_duplicate": 0, "error": 0}
+    assert report.counts == {"ingested": 1, "skipped_duplicate": 0, "duplicate_conflict": 0, "error": 0}
     dcm_file = DicomFile.objects.get()
     # Generic handler: no image geometry, but tags still captured
     assert dcm_file.image_orientation_patient is None
@@ -391,7 +396,7 @@ def test_file_without_preamble_still_ingested(research_project, tmp_path, settin
 
     report = run_ingestion(research_project, src)
 
-    assert report.counts == {"ingested": 1, "skipped_duplicate": 0, "error": 0}
+    assert report.counts == {"ingested": 1, "skipped_duplicate": 0, "duplicate_conflict": 0, "error": 0}
     assert DicomFile.objects.count() == 1
 
 
@@ -406,7 +411,7 @@ def test_second_file_same_study_and_series_matches_existing_records(research_pro
     run_ingestion(research_project, first)
     report = run_ingestion(research_project, second)
 
-    assert report.counts == {"ingested": 1, "skipped_duplicate": 0, "error": 0}
+    assert report.counts == {"ingested": 1, "skipped_duplicate": 0, "duplicate_conflict": 0, "error": 0}
     assert DicomStudy.objects.count() == 1
     assert DicomSeries.objects.count() == 1
     assert DicomFile.objects.count() == 2
@@ -422,7 +427,7 @@ def test_standard_image_without_frame_of_reference_uid_ingests(research_project,
 
     report = run_ingestion(research_project, src)
 
-    assert report.counts == {"ingested": 1, "skipped_duplicate": 0, "error": 0}
+    assert report.counts == {"ingested": 1, "skipped_duplicate": 0, "duplicate_conflict": 0, "error": 0}
     dcm_file = DicomFile.objects.get()
     assert dcm_file.frame_of_reference_uid is None
     assert dcm_file.image_orientation_patient == [1.0, 0.0, 0.0]
@@ -448,5 +453,5 @@ def test_truncated_dicom_file_is_per_file_error(research_project, tmp_path, sett
 
     report = run_ingestion(research_project, src)
 
-    assert report.counts == {"ingested": 0, "skipped_duplicate": 0, "error": 1}
+    assert report.counts == {"ingested": 0, "skipped_duplicate": 0, "duplicate_conflict": 0, "error": 1}
     assert DicomFile.objects.count() == 0

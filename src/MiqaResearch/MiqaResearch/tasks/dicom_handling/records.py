@@ -8,7 +8,7 @@ ones (#115).
 """
 from uuid import uuid7
 
-from django.db.models import F
+from django.db.models import F, Sum
 from django.db.models.functions import Coalesce
 
 from MiqaResearch.data.models import DicomFile, DicomSeries, DicomStudy, StudyParticipant
@@ -63,6 +63,50 @@ def add_file_size_to_series(series: DicomSeries, file_size_in_mb: float) -> None
     DicomSeries.objects.filter(pk=series.pk).update(
         file_size_in_mb=Coalesce(F("file_size_in_mb"), 0.0) + file_size_in_mb
     )
+
+
+def set_series_file_size(series: DicomSeries) -> None:
+    """Resync the series' size aggregate to the current sum of its files' sizes.
+
+    Used after an in-place update, where the file's size contribution changes
+    rather than a new file being added.
+    """
+    total = DicomFile.objects.filter(series=series).aggregate(total=Sum("file_size_in_mb"))["total"]
+    DicomSeries.objects.filter(pk=series.pk).update(file_size_in_mb=total or 0.0)
+
+
+def fill_study_series_blanks(series: DicomSeries, extracted: dict) -> None:
+    """Fill still-blank Study/Series fields from `extracted` (never overwrite)."""
+    _fill_blanks(
+        series.study,
+        {
+            "study_datetime": extracted["study_datetime"],
+            "study_description": extracted.get("study_description"),
+        },
+    )
+    _fill_blanks(
+        series,
+        {
+            "series_description": extracted.get("series_description"),
+            "modality": extracted.get("modality"),
+        },
+    )
+
+
+def update_file_in_place(dcm_file: DicomFile, extracted: dict, file_size_in_mb: float, content_sha256: str) -> None:
+    """Replace an existing DicomFile's file-level data in place (#109 update mode).
+
+    Study/Series fields are handled separately (fill-blank-only); the series'
+    size aggregate is resynced so the updated file's new size replaces — never
+    adds to — its previous contribution.
+    """
+    dcm_file.metadata = extracted.get("metadata")
+    for key in _FILE_COLUMN_KEYS:
+        setattr(dcm_file, key, extracted.get(key))
+    dcm_file.file_size_in_mb = file_size_in_mb
+    dcm_file.content_sha256 = content_sha256
+    dcm_file.save()
+    set_series_file_size(dcm_file.series)
 
 
 def _upsert_study(study_participant: StudyParticipant, study_uid: str, fields: dict) -> DicomStudy:
