@@ -222,6 +222,40 @@ more than one Site Assignment on the same project. Does not exist in the
 codebase yet; introduced by the Dashboard feature. See ADR 0019.
 _Avoid_: Site membership, clinic membership
 
+### Study Participant
+The person enrolled in a Research Project, represented by the `StudyParticipant`
+model. It is the only person/subject identity in this codebase — imaging data
+and consent records both hang off the same Study Participant; there is no
+separate "Patient" concept. Personally identifying fields (`person_source_value`,
+`name`) are encrypted at rest and looked up via a deterministic hash sidecar
+rather than plaintext query. Identified pseudonymously per Research Project via
+`alias1`.
+_Avoid_: Patient, Subject
+
+### Dicom Study
+One DICOM study belonging to a Study Participant, represented by the
+`DicomStudy` model (`study_instance_uid`). Optionally links to a
+`VisitOccurrence`. See Dicom Series.
+
+### Dicom Series
+One DICOM series within a Dicom Study, represented by the `DicomSeries` model
+(`series_instance_uid`, `modality`). See Dicom File.
+
+### Dicom File
+One DICOM instance — a single file, one SOP Instance — within a Dicom Series,
+represented by the `DicomFile` model (`sop_instance_uid`). The unit of storage
+and WADO retrieval.
+
+### UID Pseudonymization
+Per-Research Project deterministic replacement of the UIDs in ingested DICOM
+data (Study/Series/SOP Instance/Frame of Reference) with pseudonyms, so stored
+records cannot be linked back to the originating hospital PACS identifiers.
+The same source UID always yields the same pseudonym within a project and a
+different one across projects, keeping intra-project linkage and
+duplicate-detection intact. Also called HashUID (CTP-style).
+_Avoid_: Anonymization (that strips identifying data without preserving per-project linkage)
+See Dicom File.
+
 ### Chart Grouping
 One of possibly several alternative groupings of the same underlying dataset
 that a chart web component's `dataUrl` endpoint can return in a single

@@ -20,11 +20,17 @@ class DicomFile(models.Model):
     sop_instance_uid = models.CharField(max_length=128, blank=False, null=False, unique=True)
     research_project = models.ForeignKey(ResearchProject, on_delete=models.PROTECT, blank=True, null=True, db_index=True)
     file = models.FileField(upload_to=upload_to, blank=False, null=False)
-    image_orientation_patient = ArrayField(models.FloatField(), size=6, blank=True, null=True)
+    # 3-valued per PS3.3 C.7.5.1.1 (row direction cosines), not 6
+    image_orientation_patient = ArrayField(models.FloatField(), size=3, blank=True, null=True)
+    image_position_patient = ArrayField(models.FloatField(), size=3, blank=True, null=True)
     frame_of_reference_uid = models.CharField(max_length=128, blank=True, null=True)
     pixel_spacing = ArrayField(models.FloatField(), size=2, blank=True, null=True)
     contains_burned_in_annotations = models.BooleanField(blank=True, null=True)
     metadata = models.JSONField(blank=True, null=True)
+    file_size_in_mb = models.FloatField(blank=False, null=False, help_text="The size of this file in MB")
+    content_sha256 = models.CharField(
+        max_length=64, blank=True, null=False, default="",
+        help_text="SHA-256 hex of the stored original file bytes; detects duplicate files whose content differs from what's stored")
 
     class Meta:
         db_table = "mires_dicom_file"

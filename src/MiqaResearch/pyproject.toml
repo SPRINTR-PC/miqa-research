@@ -18,6 +18,7 @@ dependencies = [
     "hvac",
     "httpx",
     "pydicom",
+    "boto3>=1.42.0",
     "celery>=5.6.3",
     "django-celery-beat>=2.9.0",
     "django-celery-results",
@@ -42,6 +43,9 @@ dev = [
     "pytest-asyncio>=1.4.0",
     "pytest-django>=4.12.0",
     "pytest-html-plus>=1.0.1",
+    "pytest-benchmark",
+    "hypothesis",
+    "moto[s3]>=5.0.0",
     "sphinx",
     "myst-parser",
     "sphinx-autobuild>=2025.8.25",
@@ -73,11 +77,12 @@ known-first-party = ["MiqaResearch", "data", "documentation"]
 DJANGO_SETTINGS_MODULE = "MiqaResearch.settings"
 python_files = ["tests.py", "test_*.py", "*_tests.py"]
 testpaths = ["tests"]
-addopts = "--reuse-db -m 'not vlm'"
+addopts = "--reuse-db -m 'not vlm and not long_running'"
 asyncio_mode = "auto"
 markers = [
     "slow: mark a test as slow",
     "vlm: mark a test that calls a real VLM (e.g. Ollama) over the network",
+    "long_running: mark a long-running (performance/load) test; excluded from the default test run",
 ]
 
 [tool.pytest-html-plus.profiles.ci]

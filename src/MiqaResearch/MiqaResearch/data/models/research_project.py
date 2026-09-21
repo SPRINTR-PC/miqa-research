@@ -3,6 +3,8 @@ from uuid import uuid7
 from django.contrib.auth import get_user_model
 from django.db import models
 
+from helpers.db_fields import EncryptedCharField
+
 from .clinic import Clinic
 
 User = get_user_model()
@@ -12,6 +14,16 @@ class ResearchProject(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     name = models.CharField(max_length=100, blank=False, null=False, unique=True)
     description = models.TextField(blank=False, null=False)
+    dicom_duplicate_handling = models.CharField(
+        max_length=10, choices=[("skip", "Skip"), ("update", "Update")], default="skip", blank=False, null=False,
+        help_text="Default behavior when DICOM ingestion encounters a file whose SOP Instance UID already exists")
+    dicom_delete_originals_after_storage = models.BooleanField(
+        blank=True, null=True, default=None,
+        help_text="Overrides MIRES_DICOM_DELETE_ORIGINALS_AFTER_STORAGE for this project; null defers to the global setting")
+    dicom_hashuid_salt_key = EncryptedCharField(
+        blank=True, null=True,
+        help_text="Salt used to pseudonymize incoming DICOM UIDs (CTP-style HashUID) for this project. "
+                   "Auto-generated once on first use; must never be rotated, or already-ingested UIDs stop matching.")
 
     class Meta:
         db_table = "mires_research_project"

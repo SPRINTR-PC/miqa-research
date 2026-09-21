@@ -3,7 +3,6 @@ import hmac
 import logging
 
 from cryptography.fernet import Fernet, InvalidToken
-
 from django.conf import settings
 from django.db import models
 
@@ -24,7 +23,9 @@ def get_deterministic_hash(value):
 
 
 class SearchableEncryptedCharField(models.CharField):
-    description = "A searchable encrypted character field, encrypted using Fernet and a deterministic hash for searchability."
+    description = (
+        "A searchable encrypted character field, encrypted with Fernet and hashed deterministically for searchability."
+    )
 
     def __init__(self, *args, **kwargs):
         self.hash_field_name = kwargs.pop("hash_field_name", None)
@@ -96,5 +97,35 @@ class SearchableEncryptedCharField(models.CharField):
             return decrypted_bytes.decode("utf-8")
         except InvalidToken:
             # Return a failsafe value in case the key changed or data was corrupted
+            logger.error(f"Failed to decrypt value: {value}. Returning failsafe value", exc_info=True)
+            return "[DECRYPTION_ERROR]"
+
+
+class EncryptedCharField(models.CharField):
+    description = "An encrypted character field, encrypted using Fernet. Not searchable by plaintext value."
+
+    def __init__(self, *args, **kwargs):
+        kwargs["max_length"] = kwargs.get("max_length", 500)
+        super().__init__(*args, **kwargs)
+
+    def get_prep_value(self, value):
+        """Encrypts the plaintext right before it is inserted into the INSERT/UPDATE statement"""
+        if value is None or value == "":
+            return value
+
+        fernet = get_fernet()
+        encrypted_bytes = fernet.encrypt(value.encode("utf-8"))
+        return encrypted_bytes.decode("utf-8")
+
+    def from_db_value(self, value, expression, connection):
+        """Decrypts the ciphertext as it is pulled out of the database."""
+        if value is None or value == "":
+            return value
+
+        fernet = get_fernet()
+        try:
+            decrypted_bytes = fernet.decrypt(value.encode("utf-8"))
+            return decrypted_bytes.decode("utf-8")
+        except InvalidToken:
             logger.error(f"Failed to decrypt value: {value}. Returning failsafe value", exc_info=True)
             return "[DECRYPTION_ERROR]"

@@ -1,0 +1,259 @@
+"""DICOM ingestion pipeline — top-level test seam (#98 testing decisions, #119, #120).
+
+`run_ingestion` is plain and directly callable: it runs the staged pipeline
+(discovery → parse → participant match/create → UID pseudonymization →
+extraction → record upsert → storage → report) synchronously in one
+invocation, mirroring the OCR pipeline's orchestrator structure
+(tasks/ocr/pipeline.py). Tests call this function directly, bypassing task
+dispatch; the django.tasks/Celery wrapper is a later ticket.
+
+A run's source is exactly one of: a local file path, a local folder path
+(scanned fully recursively), or an ``s3://bucket[/prefix]`` location. Source
+for a run fails the run immediately (discovery.SourceError); per-file problems
+are reported per file in the run's report.
+"""
+import hashlib
+import logging
+from dataclasses import dataclass, field
+from pathlib import Path
+from uuid import UUID
+
+from django.conf import settings as django_settings
+from django.db import transaction
+
+from helpers.dicom_uid import pseudonymize_uid
+from MiqaResearch.data.models import DicomFile, ResearchProject
+
+from . import discovery, dicom_parsing, extractors, records
+from . import participant as participant_stage
+from . import storage as storage_stage
+from .dicom_parsing import NotADicomError
+
+logger = logging.getLogger(__name__)
+
+OUTCOME_INGESTED = "ingested"
+OUTCOME_SKIPPED_DUPLICATE = "skipped_duplicate"
+OUTCOME_DUPLICATE_CONFLICT = "duplicate_conflict"
+OUTCOME_ERROR = "error"
+
+# (dataset keyword, pseudonym key) for the UIDs pseudonymized before anything
+# reaches the database or retained metadata (#115).
+_UID_PSEUDONYM_KEYS = (
+    ("StudyInstanceUID", "study"),
+    ("SeriesInstanceUID", "series"),
+    ("SOPInstanceUID", "sop"),
+)
+
+_REQUIRED_PSEUDONYM_KEYS = ("study", "series", "sop")
+
+
+@dataclass
+class FileIngestionResult:
+    """Per-file outcome for the run's report. Never carries raw PHI values —
+    only the source path, the pseudonymized SOP Instance UID, and the
+    participant's existing pseudonymous alias."""
+
+    source_path: str
+    outcome: str
+    error: str | None = None
+    sop_instance_uid: str | None = None
+    study_participant_alias: str | None = None
+    dcm_file_id: UUID | None = None
+
+
+@dataclass
+class IngestionReport:
+    """Structured summary of one ingestion run: counts plus the per-file list."""
+
+    research_project_id: UUID
+    results: list[FileIngestionResult] = field(default_factory=list)
+
+    @property
+    def counts(self) -> dict[str, int]:
+        return {
+            OUTCOME_INGESTED: sum(result.outcome == OUTCOME_INGESTED for result in self.results),
+            OUTCOME_SKIPPED_DUPLICATE: sum(result.outcome == OUTCOME_SKIPPED_DUPLICATE for result in self.results),
+            OUTCOME_DUPLICATE_CONFLICT: sum(result.outcome == OUTCOME_DUPLICATE_CONFLICT for result in self.results),
+            OUTCOME_ERROR: sum(result.outcome == OUTCOME_ERROR for result in self.results),
+        }
+
+
+def run_ingestion(
+    research_project: ResearchProject,
+    source: str | Path,
+    overwrite_existing: bool | None = None,
+) -> IngestionReport:
+    """Ingest every DICOM file under `source` into `research_project` and report the outcomes.
+
+    `source` is exactly one of: a local file path, a local folder path (scanned
+    fully recursively, DICOM detected by content regardless of extension), or an
+    "s3://bucket[/prefix]" location. Source-level problems (missing or
+    inaccessible source, a local source outside the configured allow-list, an
+    unreachable S3 bucket) raise discovery.SourceError subclasses and fail the
+    run immediately — distinct from a run that completes having found zero
+    files. Per-file problems are recorded as error outcomes and never abort the
+    run. `overwrite_existing` overrides the project's duplicate-handling
+    setting (skip/update) for this run only; None keeps the project setting.
+    """
+    report = IngestionReport(research_project_id=research_project.id)
+    if _is_s3_source(source):
+        _run_s3_source(research_project, source, overwrite_existing, report)
+        return report
+    _run_local_source(research_project, source, overwrite_existing, report)
+    return report
+
+
+def _is_s3_source(source) -> bool:
+    return isinstance(source, str) and source.startswith("s3://")
+
+
+def _run_local_source(research_project: ResearchProject, source: str | Path, overwrite_existing: bool | None, report: IngestionReport) -> None:
+    allowed_roots = django_settings.DICOM_ALLOWED_SOURCE_ROOTS
+    # discover_local_files validates the top-level source (allow-list,
+    # existence, accessibility) and fails the run immediately on any problem.
+    for file_path in discovery.discover_local_files(source, allowed_roots):
+        # Per-file gate: a symlink found mid-walk may resolve outside the
+        # allow-list even though the top-level source passed — reject before read.
+        try:
+            discovery.assert_local_source_allowed(file_path, allowed_roots)
+        except discovery.SourceNotAllowedError:
+            report.results.append(
+                FileIngestionResult(source_path=str(file_path), outcome=OUTCOME_ERROR, error="file resolves outside the allowed source roots")
+            )
+            continue
+        try:
+            raw_bytes = file_path.read_bytes()
+        except OSError as exc:
+            report.results.append(
+                FileIngestionResult(source_path=str(file_path), outcome=OUTCOME_ERROR, error=f"source file unreadable: {type(exc).__name__}")
+            )
+            continue
+        report.results.append(_ingest_file(research_project, str(file_path), raw_bytes, overwrite_existing))
+
+
+def _run_s3_source(research_project: ResearchProject, source: str, overwrite_existing: bool | None, report: IngestionReport) -> None:
+    # Opening/validating the source fails the run immediately (S3SourceError).
+    s3_source = discovery.S3Source(source)
+    for ref in s3_source.list_objects():
+        try:
+            raw_bytes = s3_source.read(ref)
+        except discovery.S3SourceError:
+            # The source was reachable at discovery time but this object can't
+            # be read now — a per-file problem, not a source-level failure.
+            report.results.append(
+                FileIngestionResult(source_path=ref.uri, outcome=OUTCOME_ERROR, error="S3 object unreadable")
+            )
+            continue
+        report.results.append(_ingest_file(research_project, ref.uri, raw_bytes, overwrite_existing))
+
+
+def _ingest_file(
+    research_project: ResearchProject,
+    source_path: str,
+    raw_bytes: bytes,
+    overwrite_existing: bool | None,
+) -> FileIngestionResult:
+    """The single-file pipeline core: parse → pseudonymize → upsert → store.
+
+    Returns the file's FileIngestionResult; the run collects one per file.
+    """
+
+    def finish(outcome: str, **kwargs) -> FileIngestionResult:
+        return FileIngestionResult(source_path=source_path, outcome=outcome, **kwargs)
+
+    try:
+        dataset = dicom_parsing.parse_dicom(raw_bytes)
+    except NotADicomError:
+        return finish(OUTCOME_ERROR, error="not a DICOM file")
+    except Exception:
+        return finish(OUTCOME_ERROR, error="DICOM parse error")
+
+    try:
+        pseudonyms = _pseudonymize_uids(dataset, research_project)
+    except Exception:
+        return finish(OUTCOME_ERROR, error="UID pseudonymization failed")
+    if pseudonyms is None:
+        return finish(OUTCOME_ERROR, error="missing required UID tag (StudyInstanceUID or SeriesInstanceUID)")
+
+    sop_pseudonym = pseudonyms["sop"]
+    try:
+        with transaction.atomic():
+            existing = DicomFile.objects.select_related("series__study").filter(sop_instance_uid=sop_pseudonym).first()
+            if existing is not None:
+                return finish(_handle_duplicate(existing, dataset, research_project, raw_bytes, overwrite_existing), sop_instance_uid=sop_pseudonym)
+            participant = participant_stage.match_or_create_participant(dataset, research_project)
+            extracted = extractors.extract(dataset, research_project)
+            file_size_in_mb = len(raw_bytes) / (1024 * 1024)
+            dcm_file = records.build_hierarchy(
+                participant, research_project, pseudonyms, extracted, file_size_in_mb
+            )
+            dcm_file.content_sha256 = _content_hash(raw_bytes)
+            storage_stage.store_file_bytes(dcm_file, raw_bytes)
+            dcm_file.save()
+            records.add_file_size_to_series(dcm_file.series, file_size_in_mb)
+    except ValueError:
+        # match_or_create_participant: the file has no usable patient identifier
+        return finish(OUTCOME_ERROR, error="no usable patient identifier (PatientID missing or empty)")
+    except Exception:
+        logger.exception("DICOM ingestion failed for %s", source_path)
+        return finish(OUTCOME_ERROR, error="ingestion failed", sop_instance_uid=sop_pseudonym)
+
+    return finish(
+        OUTCOME_INGESTED,
+        sop_instance_uid=sop_pseudonym,
+        study_participant_alias=participant.alias1,
+        dcm_file_id=dcm_file.id,
+    )
+
+
+def _handle_duplicate(
+    existing: DicomFile,
+    dataset,
+    research_project: ResearchProject,
+    raw_bytes: bytes,
+    overwrite_existing: bool | None,
+) -> str:
+    """Resolve a file whose pseudonymized SOP UID is already stored (#120).
+
+    Identical content is a no-op duplicate in either mode. Differing content is
+    always reported as a conflict; only in update mode is the record replaced
+    in place (file-level data; Study/Series fields stay fill-blank-only).
+    Must run inside the caller's transaction.
+    """
+    new_hash = _content_hash(raw_bytes)
+    if new_hash == _stored_content_hash(existing):
+        return OUTCOME_SKIPPED_DUPLICATE
+    update = overwrite_existing if overwrite_existing is not None else research_project.dicom_duplicate_handling == "update"
+    if update:
+        extracted = extractors.extract(dataset, research_project)
+        file_size_in_mb = len(raw_bytes) / (1024 * 1024)
+        superseded = storage_stage.replace_file_bytes(existing, raw_bytes)
+        records.update_file_in_place(existing, extracted, file_size_in_mb, new_hash)
+        records.fill_study_series_blanks(existing.series, extracted)
+        transaction.on_commit(lambda: storage_stage.discard_file(existing, superseded))
+    return OUTCOME_DUPLICATE_CONFLICT
+
+
+def _content_hash(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _stored_content_hash(dcm_file: DicomFile) -> str:
+    """SHA-256 of the stored bytes; legacy rows without a stored hash are hashed from the file."""
+    if dcm_file.content_sha256:
+        return dcm_file.content_sha256
+    with dcm_file.file.storage.open(dcm_file.file.name, "rb") as stored:
+        return _content_hash(stored.read())
+
+
+def _pseudonymize_uids(dataset, research_project: ResearchProject) -> dict[str, str] | None:
+    """Pseudonymize the file's UIDs for the project, or None when a required one is absent."""
+    pseudonyms: dict[str, str] = {}
+    for keyword, key in _UID_PSEUDONYM_KEYS:
+        value = str(dataset.get(keyword) or "").strip()
+        if not value:
+            if key in _REQUIRED_PSEUDONYM_KEYS:
+                return None
+            continue
+        pseudonyms[key] = pseudonymize_uid(value, research_project)
+    return pseudonyms

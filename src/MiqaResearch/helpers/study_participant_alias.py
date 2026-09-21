@@ -2,8 +2,7 @@ import logging
 import random
 
 from MiqaResearch.data.models import StudyParticipant
-from MiqaResearch.readers.study_participant_reader import \
-    get_list_of_study_participants_with_alias1_in_list_of_aliases
+from MiqaResearch.readers.study_participant_reader import get_list_of_study_participants_with_alias1_in_list_of_aliases
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +13,7 @@ ADJECTIVES: list[str] = ['Abandoned', 'Able', 'Absolute', 'Adorable', 'Adventuro
 def generate_study_participant_alias1() -> str:
     alias = _get_study_participant_alias1()
     tries_count = 0
-    while StudyParticipant.objects.filter(alias=alias).exists():
+    while StudyParticipant.objects.filter(alias1=alias).exists():
         if tries_count > 1000:
             logger.error("Failed to generate unique study participant alias1 after 1000 tries. Consider increasing the number of adjectives or animals to reduce collisions.")
             raise Exception("Failed to generate unique study participant alias1")
