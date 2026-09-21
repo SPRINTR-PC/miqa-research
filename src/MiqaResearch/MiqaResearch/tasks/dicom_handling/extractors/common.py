@@ -3,6 +3,8 @@ from datetime import UTC, datetime
 
 from pydicom.dataset import Dataset
 
+from helpers.dicom_uid import pseudonymize_uid
+
 
 def common_extraction(ds: Dataset) -> dict:
     return {
@@ -56,3 +58,34 @@ def _study_datetime(ds: Dataset) -> datetime:
         except (ValueError, IndexError):
             pass
     return datetime.now(UTC)
+
+
+def image_geometry(ds: Dataset, research_project) -> dict:
+    """Image-plane geometry columns from the standard image-plane tags; absent tags give None."""
+    # ImageOrientationPatient is a 3-valued DS (row direction cosines), PS3.3 C.7.5.1.1
+    for_uid = str(ds.get("FrameOfReferenceUID") or "").strip()
+    return {
+        "image_orientation_patient": _decimal_list(ds.get("ImageOrientationPatient"), 3),
+        "image_position_patient": _decimal_list(ds.get("ImagePositionPatient"), 3),
+        "pixel_spacing": _decimal_list(ds.get("PixelSpacing"), 2),
+        "frame_of_reference_uid": pseudonymize_uid(for_uid, research_project) if for_uid else None,
+    }
+
+
+def _decimal_list(value, expected_length: int) -> list[float] | None:
+    """Convert a DS value (list, or backslash-delimited string) into a float list.
+
+    Returns None when the tag is absent or malformed.
+    """
+    if value is None:
+        return None
+    try:
+        # Multi-valued DS tags read back as (UserList-based) iterables; single
+        # values as str or number. Normalize both to a list of floats.
+        parts = value.split("\\") if isinstance(value, str) else [float(item) for item in value]
+        numbers = [float(part) for part in parts]
+    except (TypeError, ValueError, AttributeError):
+        return None
+    if len(numbers) != expected_length:
+        return None
+    return numbers

@@ -7,8 +7,7 @@ a standard image missing them simply leaves the columns null.
 """
 from pydicom.dataset import Dataset
 
-from helpers.dicom_uid import pseudonymize_uid
-
+from .common import image_geometry
 from .generic import extract as generic_extract
 
 STANDARD_IMAGE_SOP_CLASSES: frozenset[str] = frozenset({
@@ -36,29 +35,5 @@ STANDARD_IMAGE_SOP_CLASSES: frozenset[str] = frozenset({
 
 def extract(ds: Dataset, research_project) -> dict:
     result = generic_extract(ds, research_project)
-    # ImageOrientationPatient is a 3-valued DS (row direction cosines), PS3.3 C.7.5.1.1
-    result["image_orientation_patient"] = _decimal_list(ds.get("ImageOrientationPatient"), 3)
-    result["image_position_patient"] = _decimal_list(ds.get("ImagePositionPatient"), 3)
-    result["pixel_spacing"] = _decimal_list(ds.get("PixelSpacing"), 2)
-    for_uid = str(ds.get("FrameOfReferenceUID") or "").strip()
-    result["frame_of_reference_uid"] = pseudonymize_uid(for_uid, research_project) if for_uid else None
+    result.update(image_geometry(ds, research_project))
     return result
-
-
-def _decimal_list(value, expected_length: int) -> list[float] | None:
-    """Convert a DS value (list, or backslash-delimited string) into a float list.
-
-    Returns None when the tag is absent or malformed.
-    """
-    if value is None:
-        return None
-    try:
-        # Multi-valued DS tags read back as (UserList-based) iterables; single
-        # values as str or number. Normalize both to a list of floats.
-        parts = value.split("\\") if isinstance(value, str) else [float(item) for item in value]
-        numbers = [float(part) for part in parts]
-    except (TypeError, ValueError, AttributeError):
-        return None
-    if len(numbers) != expected_length:
-        return None
-    return numbers
