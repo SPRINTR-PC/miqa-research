@@ -317,7 +317,6 @@ async def get_consent_table_data_for_project(
         )
 
     text = DataTableFilter("text")
-    date_range = DataTableFilter("date-range")
     columns = [
         DataTableColumn("study_participant__alias1", gettext("Alias"), "string", sortable=True, filter=text),
         DataTableColumn(
@@ -334,6 +333,9 @@ async def get_consent_table_data_for_project(
         DataTableColumn(
             "participant_information_version", gettext("Version"), "string", sortable=True,
             filter=text),
+        DataTableColumn(
+            "consent_type__label", gettext("Consent Type"), "string", sortable=True, filter=text
+        ),
         DataTableColumn("source", gettext("Source"), "string", sortable=True, filter=text),
     ]
 

@@ -496,6 +496,94 @@ describe("DataTable", () => {
     document.body.removeChild(el);
   });
 
+  describe("page input", () => {
+    const columns = [{ accessor: "machineName", label: "Machine" }];
+    const pageResponse = (page: number): DataTableWireResponse => ({
+      columns,
+      rows: [{ machineName: `CT-page${page}` }],
+      pagination: {
+        page,
+        page_size: 50,
+        total_items: 250,
+        total_pages: 5,
+        has_next: page < 5,
+        has_previous: page > 1,
+      },
+    });
+
+    async function setUpPagedTable(): Promise<DataTable> {
+      vi.spyOn(ApiService, "getData").mockImplementation(async (url: string) => {
+        const page = Number(new URL(url).searchParams.get("page"));
+        return { success: true, data: pageResponse(page), message: "ok" };
+      });
+      const el = new DataTable();
+      el.dataUrl = "https://api.example.com/table-data";
+      document.body.appendChild(el);
+      await new Promise((r) => setTimeout(r, 10));
+      await el.updateComplete;
+      return el;
+    }
+
+    function pageInput(el: DataTable): HTMLInputElement {
+      return el.shadowRoot?.querySelector('input[data-action="page-input"]') as HTMLInputElement;
+    }
+
+    async function submitPage(el: DataTable, value: string) {
+      const input = pageInput(el);
+      input.value = value;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 10));
+      await el.updateComplete;
+    }
+
+    it("should render the current page in a number input bounded by total pages", async () => {
+      const el = await setUpPagedTable();
+      const input = pageInput(el);
+      expect(input.type).toBe("number");
+      expect(input.value).toBe("1");
+      expect(input.min).toBe("1");
+      expect(input.max).toBe("5");
+      document.body.removeChild(el);
+    });
+
+    it("should fetch the typed page", async () => {
+      const el = await setUpPagedTable();
+      await submitPage(el, "3");
+      expect(ApiService.getData).toHaveBeenLastCalledWith("https://api.example.com/table-data?page=3&page_size=50");
+      expect(pageInput(el).value).toBe("3");
+      document.body.removeChild(el);
+    });
+
+    it("should clamp a page above the maximum to the last page", async () => {
+      const el = await setUpPagedTable();
+      await submitPage(el, "99");
+      expect(ApiService.getData).toHaveBeenLastCalledWith("https://api.example.com/table-data?page=5&page_size=50");
+      expect(pageInput(el).value).toBe("5");
+      document.body.removeChild(el);
+    });
+
+    it("should clamp a page below the minimum to the first page", async () => {
+      const el = await setUpPagedTable();
+      await submitPage(el, "3");
+      await submitPage(el, "-4");
+      expect(ApiService.getData).toHaveBeenLastCalledWith("https://api.example.com/table-data?page=1&page_size=50");
+      expect(pageInput(el).value).toBe("1");
+      document.body.removeChild(el);
+    });
+
+    it("should not refetch and should restore the value when input is empty or the current page", async () => {
+      const el = await setUpPagedTable();
+      const spy = vi.mocked(ApiService.getData);
+      const callsBefore = spy.mock.calls.length;
+
+      await submitPage(el, "");
+      expect(pageInput(el).value).toBe("1");
+      await submitPage(el, "1");
+      expect(spy.mock.calls.length).toBe(callsBefore);
+      document.body.removeChild(el);
+    });
+  });
+
   describe("sort interactivity", () => {
     const twoSortableColumnsResponse: DataTableWireResponse = {
       columns: [

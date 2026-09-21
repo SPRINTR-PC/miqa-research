@@ -185,6 +185,12 @@ export class DataTable extends LitElement {
       margin-top: 0.75rem;
     }
 
+    .page-input {
+      width: 4rem;
+      box-sizing: border-box;
+      text-align: center;
+    }
+
     .filter-row input,
     .filter-row select {
       width: 100%;
@@ -198,6 +204,9 @@ export class DataTable extends LitElement {
 
     .range-filter input {
       min-width: 0;
+    }
+    button {
+      padding: 0.5rem 0.75rem;
     }
   `];
 
@@ -221,6 +230,21 @@ export class DataTable extends LitElement {
 
   @property({ type: Boolean })
   striped: boolean = false;
+
+  @property({ type: String })
+  previousString: string = "Previous";
+
+  @property({ type: String })
+  nextString: string = "Next";
+
+  @property({ type: String })
+  pageString: string = "Page";
+
+  @property({ type: String })
+  ofString: string = "of";
+
+  @property({ type: String })
+  itemsString: string = "items";
 
   @state()
   private _columns: ColumnDefinition[] | undefined = undefined;
@@ -418,6 +442,19 @@ export class DataTable extends LitElement {
   private _goToPage(page: number) {
     this._page = page;
     void this._loadData();
+  }
+
+  private _handlePageInput(event: Event, pagination: PaginationMeta) {
+    const input = event.target as HTMLInputElement;
+    const requested = Math.trunc(Number(input.value));
+    if (input.value.trim() === "" || !Number.isFinite(requested)) {
+      input.value = String(pagination.page);
+      return;
+    }
+    const page = Math.min(Math.max(requested, 1), Math.max(pagination.totalPages, 1));
+    input.value = String(page);
+    if (page === pagination.page) return;
+    this._goToPage(page);
   }
 
   private _handleHeaderClick(column: ColumnDefinition, shiftKey: boolean) {
@@ -698,16 +735,32 @@ export class DataTable extends LitElement {
           ?disabled=${!pagination.hasPrevious}
           @click=${() => this._goToPage(pagination.page - 1)}
         >
-          Previous
+          ${this.previousString}
         </button>
-        <span>Page ${pagination.page} of ${pagination.totalPages}</span>
+        <span class="page-info">
+          ${this.pageString}
+          <input
+            type="number"
+            class="page-input"
+            data-action="page-input"
+            min="1"
+            max=${pagination.totalPages}
+            .value=${String(pagination.page)}
+            aria-label=${this.pageString}
+            @change=${(event: Event) => this._handlePageInput(event, pagination)}
+            @keydown=${(event: KeyboardEvent) => {
+              if (event.key === "Enter") (event.target as HTMLInputElement).blur();
+            }}
+          />
+          ${this.ofString} ${pagination.totalPages} (${pagination.totalItems} ${this.itemsString})
+        </span>
         <button
           type="button"
           data-action="next"
           ?disabled=${!pagination.hasNext}
           @click=${() => this._goToPage(pagination.page + 1)}
         >
-          Next
+          ${this.nextString}
         </button>
       </div>
     `;

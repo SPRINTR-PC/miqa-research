@@ -4,7 +4,7 @@
          {% include 'components/loading_indicator.html' with indicator_id='dashboard-consent-loading' %}
          {% include '01_dashboard/_panel_consent_statistics_tablist.html' %}
     </div>
-    <div id="dashboard-consent-contents" class="loading-target fw">
+    <div id="dashboard-consent-contents" class="loading-target fw space-y-8">
         {% if active_subtab == 'consent-statistics-table' %}
             {% include "01_dashboard/_panel_consent_statistics_table.html" %}
         {% else %}
