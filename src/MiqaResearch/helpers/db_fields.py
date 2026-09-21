@@ -3,7 +3,6 @@ import hmac
 import logging
 
 from cryptography.fernet import Fernet, InvalidToken
-
 from django.conf import settings
 from django.db import models
 
@@ -24,7 +23,9 @@ def get_deterministic_hash(value):
 
 
 class SearchableEncryptedCharField(models.CharField):
-    description = "A searchable encrypted character field, encrypted using Fernet and a deterministic hash for searchability."
+    description = (
+        "A searchable encrypted character field, encrypted with Fernet and hashed deterministically for searchability."
+    )
 
     def __init__(self, *args, **kwargs):
         self.hash_field_name = kwargs.pop("hash_field_name", None)
