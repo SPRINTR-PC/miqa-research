@@ -186,8 +186,18 @@ INTERNAL_IPS = [
     'localhost',
 ]
 
+def show_debug_toolbar(request):
+    """Skip the default INTERNAL_IPS check (Docker gateway IP never matches).
+
+    Read django.conf.settings at call time: the test runners (Django, pytest-django)
+    force settings.DEBUG=False, unlike this module's DEBUG global, so tests are excluded.
+    """
+    from django.conf import settings as django_settings
+    return django_settings.DEBUG
+
+
 DEBUG_TOOLBAR_CONFIG = {
-    'SHOW_TOOLBAR_CALLBACK': lambda request: DEBUG,  # TODO: Add more sophisticated logic to determine when to show the toolbar so that it shows up for Docker containers
+    'SHOW_TOOLBAR_CALLBACK': 'MiqaResearch.settings.show_debug_toolbar',
 }
 
 ROOT_URLCONF = 'MiqaResearch.urls'
