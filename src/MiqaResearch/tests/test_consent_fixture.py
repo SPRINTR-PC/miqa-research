@@ -1,4 +1,4 @@
-"""Tests for the consent fixture data generator (MiqaResearch/data/fixtures/consent-data.py).
+"""Tests for the consent fixture data generator (MiqaResearch/data/fixtures/consent_data.py).
 
 The fixture must follow the structure of
 tests/example_data/participant_consent/consents_example.csv: 2000 rows,
@@ -28,8 +28,9 @@ from MiqaResearch.data.models import (
     ResearchProject,
     StudyParticipant,
 )
+from MiqaResearch.data.models.research_project import ResearchProjectClinicMap
 
-consent_fixture = importlib.import_module("MiqaResearch.data.fixtures.consent-data")
+consent_fixture = importlib.import_module("MiqaResearch.data.fixtures.consent_data")
 RESEARCH_PROJECT_NAME = consent_fixture.RESEARCH_PROJECT_NAME
 FIRST_LABEL = consent_fixture.FIRST_CONSENT_LABEL
 FUTURE_LABEL = consent_fixture.FUTURE_RESEARCH_CONSENT_LABEL
@@ -38,6 +39,7 @@ EXPECTED_MODELS = {
     "data.researchproject",
     "data.participantconsenttype",
     "data.clinic",
+    "data.researchprojectclinicmap",
     "data.studyparticipant",
     "data.participantconsent",
 }
@@ -45,9 +47,12 @@ ORDERED_MODELS = (
     "data.researchproject",
     "data.participantconsenttype",
     "data.clinic",
+    "data.researchprojectclinicmap",
     "data.studyparticipant",
     "data.participantconsent",
 )
+# pk is an integer (BigAutoField), not a UUID, for this join model
+_INT_PK_MODELS = {"data.researchprojectclinicmap"}
 
 EXAMPLE_CSV = (
     Path(__file__).parent / "example_data" / "participant_consent" / "consents_example.csv"
@@ -174,12 +179,32 @@ def test_csv_is_deterministic_for_fixed_now_and_seed():
 
 
 @pytest.fixture(scope="module")
-def fixture_objects() -> list[dict]:
-    return json.loads(consent_fixture.generate_django_fixture(now=FIXED_NOW, seed=42))
+def fixture_objects(django_db_setup, django_db_blocker) -> list[dict]:
+    # generate_django_fixture() queries for an existing ResearchProject, so DB
+    # access must be unblocked even though this fixture is module-scoped. The
+    # django_db_setup dependency ensures the test DB has been created and
+    # migrated (and thus has migration 0002's seed project) before that query
+    # runs, regardless of fixture resolution order.
+    with django_db_blocker.unblock():
+        return json.loads(consent_fixture.generate_django_fixture(now=FIXED_NOW, seed=42))
 
 
 def _objects_of(model: str, objects: list[dict]) -> list[dict]:
     return [obj for obj in objects if obj["model"] == model]
+
+
+def _project_pk(fixture_objects: list[dict]) -> str:
+    """The research project pk the fixture links everything to.
+
+    generate_django_fixture() omits the data.researchproject object when a
+    project already exists in the DB (e.g. the one migration 0002 seeds) and
+    reuses that project's pk instead, so it must be recovered from one of the
+    other objects that reference it.
+    """
+    projects = _objects_of("data.researchproject", fixture_objects)
+    if projects:
+        return projects[0]["pk"]
+    return _objects_of("data.participantconsenttype", fixture_objects)[0]["fields"]["research_project"]
 
 
 def _expected_consent_count(rows: list[dict[str, str]]) -> int:
@@ -192,35 +217,54 @@ def test_django_fixture_object_structure(fixture_objects):
     for obj in fixture_objects:
         assert set(obj) == {"model", "pk", "fields"}
         assert obj["model"] in EXPECTED_MODELS
-        uuid_lib.UUID(obj["pk"])  # valid UUID
+        if obj["model"] in _INT_PK_MODELS:
+            assert isinstance(obj["pk"], int)
+        else:
+            uuid_lib.UUID(obj["pk"])  # valid UUID
         assert isinstance(obj["fields"], dict)
-    # dependencies must be serialized before dependents
+    # dependencies must be serialized before dependents. data.researchproject
+    # is omitted entirely when an existing project is reused (see _project_pk),
+    # in which case it's simply absent from the order.
     first_seen = [obj["model"] for i, obj in enumerate(fixture_objects)
                   if obj["model"] not in {o["model"] for o in fixture_objects[:i]}]
-    assert first_seen == list(ORDERED_MODELS)
+    assert first_seen == [m for m in ORDERED_MODELS if m in first_seen]
 
 
+@pytest.mark.django_db
 def test_django_fixture_single_sprintr_project(fixture_objects):
     projects = _objects_of("data.researchproject", fixture_objects)
-    assert len(projects) == 1
-    assert projects[0]["fields"]["name"] == "SPRiNTR"
+    if projects:
+        assert len(projects) == 1
+        assert projects[0]["fields"]["name"] == RESEARCH_PROJECT_NAME
+    else:
+        # an existing project (e.g. seeded by migration 0002) was reused instead
+        assert ResearchProject.objects.filter(pk=_project_pk(fixture_objects)).exists()
 
 
 def test_django_fixture_10_clinics(fixture_objects):
     clinics = _objects_of("data.clinic", fixture_objects)
     assert len(clinics) == 10
-    assert {c["fields"]["clinic_name"] for c in clinics} == set(consent_fixture.CLINICS)
+    assert {c["fields"]["clinic_name"] for c in clinics} == set(consent_fixture.CLINICS.values())
+
+
+def test_django_fixture_clinics_linked_to_sprintr(fixture_objects):
+    project_pk = _project_pk(fixture_objects)
+    clinic_pks = {c["pk"] for c in _objects_of("data.clinic", fixture_objects)}
+    maps = _objects_of("data.researchprojectclinicmap", fixture_objects)
+    assert len(maps) == 10
+    assert all(m["fields"]["project"] == project_pk for m in maps)
+    assert {m["fields"]["clinic"] for m in maps} == clinic_pks
 
 
 def test_django_fixture_consent_types_linked_to_sprintr(fixture_objects):
-    project_pk = _objects_of("data.researchproject", fixture_objects)[0]["pk"]
+    project_pk = _project_pk(fixture_objects)
     types = _objects_of("data.participantconsenttype", fixture_objects)
     assert {t["fields"]["label"] for t in types} == {FIRST_LABEL, FUTURE_LABEL}
     assert all(t["fields"]["research_project"] == project_pk for t in types)
 
 
 def test_django_fixture_2000_participants(rows, fixture_objects):
-    project_pk = _objects_of("data.researchproject", fixture_objects)[0]["pk"]
+    project_pk = _project_pk(fixture_objects)
     participants = _objects_of("data.studyparticipant", fixture_objects)
     assert len(participants) == 2000
     assert len({p["fields"]["alias1"] for p in participants}) == 2000
@@ -260,6 +304,7 @@ def test_django_fixture_consents(rows, fixture_objects):
             assert f["consent_revoked_date"] is None
 
 
+@pytest.mark.django_db
 def test_write_django_fixture_writes_json_file(tmp_path, fixture_objects):
     out = tmp_path / "consent_data.json"
     written = consent_fixture.write_django_fixture(output_path=out, now=FIXED_NOW, seed=42)
@@ -281,6 +326,10 @@ def test_loaddata_loads_fixture_into_database(settings, tmp_path, rows):
     expected_consents = _expected_consent_count(rows)
     assert ResearchProject.objects.filter(name="SPRiNTR").count() == 1
     assert Clinic.objects.count() == 10
+    project = ResearchProject.objects.get(name="SPRiNTR")
+    assert ResearchProjectClinicMap.objects.filter(project=project).count() == 10
+    assert set(ResearchProjectClinicMap.objects.filter(project=project)
+               .values_list("clinic", flat=True)) == set(Clinic.objects.values_list("pk", flat=True))
     assert ParticipantConsentType.objects.count() == 2
     assert StudyParticipant.objects.count() == 2000
     # searchable-encrypted hash columns were provided (raw loaddata skips pre_save)

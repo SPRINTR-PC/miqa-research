@@ -23,13 +23,38 @@
 .icon.primary-stroke {
   stroke: var(--color-primary);
 }
-@media (min-width: 1400px) {
-  .container {
-    max-width: 1400px;
+.loading-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 1.5rem;
+  font-size: 0.875rem;
+  color: var(--color-muted-foreground);
+}
+.loading-spinner {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 9999px;
+  animation: loading-spin 0.7s linear infinite;
+}
+@keyframes loading-spin {
+  to {
+    transform: rotate(360deg);
   }
-  .container.fw {
-    max-width: 100%;
+}
+@media (prefers-reduced-motion: reduce) {
+  .loading-spinner {
+    animation-duration: 2.5s;
   }
+}
+.loading-target {
+  transition: opacity 0.15s ease-in-out;
+}
+.loading-target.htmx-request {
+  opacity: 0.5;
+  pointer-events: none;
 }
 @media (min-width: 640px) {
   .sm\:grid-cols-3 {
@@ -101,6 +126,8 @@ header {
 }
 .top-bar.container {
   display: flex;
+  padding: 0 2rem;
+  max-width: 1400px;
   flex-direction: row;
 }
 .top-bar.container .logo-container {
@@ -367,9 +394,32 @@ a {
   text-decoration: inherit;
 }
 .container {
+  --container-max: 1400px;
+  --container-gutter: 2rem;
   width: 100%;
-  padding: 0 2rem;
   margin: 0 auto;
+  display: grid;
+  grid-template-columns: [full-start] minmax(var(--container-gutter), 1fr) [content-start] minmax(0, var(--container-max)) [content-end] minmax(var(--container-gutter), 1fr) [full-end];
+}
+.container > * {
+  grid-column: content;
+}
+.container > .fw {
+  grid-column: full;
+}
+.subgrid {
+  grid-column: full;
+  display: grid;
+  grid-template-columns: subgrid;
+}
+.subgrid > * {
+  grid-column: content;
+}
+.subgrid > * {
+  grid-column: content;
+}
+.subgrid > .fw {
+  grid-column: full;
 }
 .font-5xl {
   font-size: 3rem;
@@ -729,6 +779,11 @@ a {
   --tw-space-y-reverse: 0;
   margin-top: calc(1.5rem * calc(1 - var(--tw-space-y-reverse)));
   margin-bottom: calc(1.5rem * var(--tw-space-y-reverse));
+}
+.space-y-8 > :not([hidden]) ~ :not([hidden]) {
+  --tw-space-y-reverse: 0;
+  margin-top: calc(2rem * calc(1 - var(--tw-space-y-reverse)));
+  margin-bottom: calc(2rem * var(--tw-space-y-reverse));
 }
 .space-y-16 > :not([hidden]) ~ :not([hidden]) {
   --tw-space-y-reverse: 0;

@@ -10,3 +10,4 @@ export * from "./core-wc/miqa-monitor-columns";
 export * from "./core-wc/miqa-monitor-filter";
 export * from "./core-wc/miqa-monitor-table";
 export * from "./core-wc/prom-upload";
+export * from "./core-wc/data-table/data-table";

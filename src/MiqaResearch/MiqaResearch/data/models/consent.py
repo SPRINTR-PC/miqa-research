@@ -50,3 +50,40 @@ class ParticipantConsent(models.Model):
 
     def __str__(self) -> str:
         return  f"{self.study_participant} - {self.consent_type} ({self.status})"
+
+
+class ConsentDailyActiveSummary(models.Model):
+    research_project = models.ForeignKey(
+        "ResearchProject",
+        on_delete=models.CASCADE,
+        related_name="consent_daily_active_summaries",
+    )
+    clinic = models.ForeignKey(
+        "Clinic",
+        on_delete=models.CASCADE,
+        related_name="consent_daily_active_summaries",
+    )
+    day = models.DateField()
+    active_participant_count = models.PositiveIntegerField(default=0)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "mires_consent_daily_active_summary"
+        verbose_name = "Consent Daily Active Summary"
+        verbose_name_plural = "Consent Daily Active Summaries"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["research_project", "clinic", "day"],
+                name="unique_consent_daily_active_summary",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["research_project", "clinic", "day"]),
+            models.Index(fields=["research_project", "day"]),
+        ]
+        ordering = ["research_project", "clinic", "day"]
+
+    def __str__(self) -> str:
+        return f"ConsentDailyActiveSummary(project={self.research_project}, clinic={self.clinic}, day={self.day}, active_participant_count={self.active_participant_count})"

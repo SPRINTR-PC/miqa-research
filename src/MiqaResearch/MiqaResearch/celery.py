@@ -3,7 +3,7 @@ import os
 from celery import Celery
 from kombu import Queue
 
-from contract.constants.celery import QUEUE_EMAIL, QUEUE_GET_CONSENTS, QUEUE_OCR
+from contract.constants.celery import QUEUE_CALCULATE_CONSENT_STATISTICS, QUEUE_EMAIL, QUEUE_GET_CONSENTS, QUEUE_OCR
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'MiqaResearch.settings')
 
@@ -14,6 +14,8 @@ app.conf.task_default_queue_type="quorum"
 app.conf.task_default_exchange_type = 'topic'
 app.conf.task_queues = (
     Queue(QUEUE_EMAIL, queue_arguments={"x-queue-type": "quorum"}, routing_key="notification.email.#"),
+    Queue(QUEUE_CALCULATE_CONSENT_STATISTICS, queue_arguments={"x-queue-type": "quorum"},
+          routing_key="data.calculate.consent_statistics.#"),
     Queue(QUEUE_GET_CONSENTS, queue_arguments={"x-queue-type": "quorum"}, routing_key="data.get.consent.#"),
     Queue(QUEUE_OCR, queue_arguments={"x-queue-type": "quorum"}, routing_key="analysis.ocr.#"),
 )

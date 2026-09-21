@@ -3,16 +3,19 @@
 {% get_current_language as LANGUAGE_CODE %}
 {% block main %}
 <div class="container space-y-4">
-  <div>
-    <div class="flex items-center gap-3">
-        <h1 class="font-bold text-3xl tracking-tight">{{ project.name }}</h1>
-        <span class="rounded-full text-sm flex items-center gap-1 bg-primary/20 px-3 py-1"><div class="icon small-inline-icon">{% include "components/icon.html" with bare_icon=1 icon_name="users" %}</div>{{ participant_count }} {% translate "participants" %}</span>
-        <span class="rounded-full text-sm flex items-center gap-1 bg-primary/20 px-3 py-1">{{ site_count }} {% translate "sites" %}</span>
-    </div>
-    <p class="text-muted-foreground mt-1">{{ project.description }}</p>
+  <div class="flex items-center gap-3">
+    <h1 class="font-bold text-3xl tracking-tight">{{ project.name }}</h1>
+    <span class="rounded-full text-sm flex items-center gap-1 bg-primary/20 px-3 py-1"><div class="icon small-inline-icon">{% include "components/icon.html" with bare_icon=1 icon_name="users" %}</div>{{ participant_count }} {% translate "participants" %}</span>
+    <span class="rounded-full text-sm flex items-center gap-1 bg-primary/20 px-3 py-1">{{ site_count }} {% translate "sites" %}</span>
   </div>
-  {% include '01_dashboard/_tablist.html' with project=project active_tab=active_tab %}
-  <div id="dashboard-tab-panel">
+  <p class="text-muted-foreground mt-1">{{ project.description }}</p>
+
+  <div class="flex items-center gap-3">
+    {% include '01_dashboard/_tablist.html' with project=project active_tab=active_tab %}
+    {% include 'components/loading_indicator.html' with indicator_id='dashboard-tab-loading' %}
+  </div>
+
+  <div id="dashboard-tab-panel" class="loading-target fw">
     {% if active_tab == 'goals' %}
       {% include '01_dashboard/_panel_goals.html' %}
     {% else %}
