@@ -11,6 +11,8 @@ class XYSeriesSchema(Schema):
     y: list[float]
     size: list[float] | None = None  # bubble only — marker size per point
     fill: Literal["none", "tozeroy", "tonexty"] | None = None  # filled area only
+    stackgroup: str | None = None  # filled area only — series with the same stackgroup will be stacked
+    hovertemplate: str | list[str] | None = None # optional hover template for the series
 
 
 class XYChartDataSchema(Schema):

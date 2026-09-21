@@ -1,0 +1,24 @@
+{% if can_view_pid %}
+    <div class="container">
+        <div class="flex justify-start px-8 pb-4">
+            <label class="flex items-center gap-2 text-sm">
+                <input
+                    type="checkbox"
+                    id="consent-table-include-pid"
+                    data-url="{% url 'api-v1:dashboard_consent_statistics_table' project.id %}"
+                    onchange="document.getElementById('dashboard-consent-statistics-table').dataUrl = this.checked ? this.dataset.url + '?include_pid=true' : this.dataset.url"
+                >
+                {% translate "Include participant ID" %}
+            </label>
+        </div>
+    </div>
+{% endif %}
+<div class="fw flex justify-center px-8">
+    <data-table
+        id="dashboard-consent-statistics-table"
+        dataUrl="{% url 'api-v1:dashboard_consent_statistics_table' project.id %}"
+        noDataMessage="{% translate 'No data available' %}"
+        loadingMessage="{% translate 'Loading data...' %}"
+        striped="true"
+    ></data-table>
+</div>

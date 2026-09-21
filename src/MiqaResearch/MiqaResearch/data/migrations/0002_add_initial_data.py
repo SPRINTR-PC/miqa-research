@@ -54,6 +54,7 @@ def add_default_users(apps, schema_editor):
         "password": os.environ.get("MIRES_SU_PASSWORD"),
     }
 
+    user = None
     if not any([val is None for _, val in super_user.items()]):
         user = User(
             username=super_user["email"].split("@")[0],
@@ -145,6 +146,12 @@ def add_default_users(apps, schema_editor):
     # noinspection PyPep8Naming
     ResearchProjectUserRoleMap = apps.get_model("data", "ResearchProjectUserRoleMap")
 
+    if user is not None:
+        ResearchProjectUserRoleMap.objects.create(
+            user=user,
+            project=project,
+            role=ResearchProjectRole.objects.get(name=PROJECT_ROLE_ADMIN),
+        )
     project_roles = ResearchProjectUserRoleMap.objects.bulk_create([
         ResearchProjectUserRoleMap(
             user=development_users[1],

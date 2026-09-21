@@ -2,6 +2,7 @@ from django.contrib import admin
 from unfold.admin import ModelAdmin
 
 from MiqaResearch.data.models import ResearchProject, ResearchProjectRole, ResearchProjectUserRoleMap
+from MiqaResearch.data.models.research_project import ResearchProjectClinicMap
 
 
 @admin.register(ResearchProject)
@@ -36,3 +37,14 @@ class ResearchProjectUserRoleMapAdmin(ModelAdmin):
 
     class Meta:
         model = ResearchProjectUserRoleMap
+
+
+@admin.register(ResearchProjectClinicMap)
+class ResearchProjectClinicMapAdmin(ModelAdmin):
+    list_display = ("project", "clinic",)
+    list_display_links = ("project", "clinic",)
+    list_filter = ("project", "clinic")
+    search_fields = ("project", "clinic",)
+
+    class Meta:
+        model = ResearchProjectClinicMap

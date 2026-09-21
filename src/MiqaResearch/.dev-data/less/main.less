@@ -1,7 +1,10 @@
 @import "buttons";
 @import "card";
+@import "icons";
+@import "loading";
 @import "media-query";
 @import "modal";
+@import "plots";
 @import "tabs";
 @import "topBar";
 
@@ -211,9 +214,31 @@ a {
 }
 
 .container {
+  --container-max: 1400px;
+  --container-gutter: 2rem;
   width: 100%;
-  padding: 0 2rem;
   margin: 0 auto;
+  display: grid;
+  grid-template-columns:
+    [full-start] minmax(var(--container-gutter), 1fr)
+    [content-start] minmax(0, var(--container-max))
+    [content-end] minmax(var(--container-gutter), 1fr)
+    [full-end];
+
+  > * { grid-column: content; }
+  // Children opt in to break out of the max-width to span the full window
+  > .fw { grid-column: full; }
+}
+
+// Nested wrapper inside a .container: spans the parent's full width and reuses its columns
+.subgrid {
+  grid-column: full;
+  display: grid;
+  grid-template-columns: subgrid;
+
+  > * { grid-column: content; }
+  > * { grid-column: content; }
+  > .fw { grid-column: full; }
 }
 
 .font-5xl { font-size: 3rem; }
@@ -236,6 +261,7 @@ a {
 
 .justify-between { justify-content: space-between; }
 .justify-center { justify-content: center; }
+.justify-end { justify-content: end; }
 .flex { display: flex; }
 .flex-col { flex-direction: column; }
 .inline-flex { display: inline-flex; }
@@ -343,6 +369,11 @@ a {
   margin-top: calc(1.5rem * calc(1 - var(--tw-space-y-reverse)));
   margin-bottom: calc(1.5rem * var(--tw-space-y-reverse));
 }
+.space-y-8>:not([hidden])~:not([hidden]) {
+  --tw-space-y-reverse: 0;
+  margin-top: calc(2rem * calc(1 - var(--tw-space-y-reverse)));
+  margin-bottom: calc(2rem * var(--tw-space-y-reverse));
+}
 .space-y-16>:not([hidden])~:not([hidden]) {
   --tw-space-y-reverse: 0;
   margin-top: calc(4rem * calc(1 - var(--tw-space-y-reverse)));
@@ -356,6 +387,8 @@ a {
 
 .bg-primary { background-color: var(--color-primary); }
 .bg-primary\/10 { background-color: hsl(var(--color-primary-parts) / 0.1); }
+.bg-primary\/20 { background-color: hsl(var(--color-primary-parts) / 0.2); }
+.bg-primary\/30 { background-color: hsl(var(--color-primary-parts) / 0.3); }
 .bg-muted { background-color: var(--color-muted); }
 
 .border { border-style: solid; border-width: 1px; }

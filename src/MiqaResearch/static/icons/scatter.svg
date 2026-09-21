@@ -1,0 +1,14 @@
+<svg
+    xmlns="http://www.w3.org/2000/svg"
+    fillRule="evenodd"
+    strokeLinejoin="round"
+    strokeMiterlimit="1.5"
+    clipRule="evenodd"
+    viewBox="0 0 16 16"
+    width="22"
+    height="22"
+  >
+    <circle cx="2" cy="2" r="2" transform="translate(0 11.89)" />
+    <circle cx="2" cy="2" r="2" transform="translate(6.083)" />
+    <circle cx="2" cy="2" r="2" transform="translate(10.6 7.241)" />
+</svg>

@@ -16,6 +16,8 @@ export interface XYSeries {
   size?: number[];
   /** Filled area only; the other 3 types default to "none". */
   fill?: "none" | "tozeroy" | "tonexty";
+  stackgroup?: string;
+  hovertemplate?: string | string[];
 }
 
 export interface XYChartData {
@@ -29,15 +31,25 @@ export function buildXYTraces(
   mode: XYMode,
   defaultFill: "none" | "tozeroy" | "tonexty" = "none",
 ): PlotlyTrace[] {
-  return data.series.map((series) => ({
+  let output = data.series.map((series) => ({
     type: "scatter",
     mode,
     name: series.name,
     x: series.x,
     y: series.y,
-    marker: series.size ? { size: series.size } : undefined,
-    fill: series.fill ?? defaultFill,
+    // Omit the `marker` key entirely rather than setting it to `undefined`:
+    // plotly.js's trace cleanup (plot_api/helpers.js) checks `'marker' in
+    // trace`, which is true even for an `undefined` value, then dereferences
+    // `trace.marker.line` and throws.
+    ...(series.size ? { marker: { size: series.size } } : {}),
+    fill: series.stackgroup ? "tonexty" : series.fill ?? defaultFill,
+    stackgroup: series.stackgroup,
+    hovertemplate: series.hovertemplate ?? ""
   }));
+
+  if (output.length > 0) output[0].fill = output[0].stackgroup ? "tozeroy" : output[0].fill;
+
+  return output
 }
 
 export const buildLineTraces = (data: XYChartData): PlotlyTrace[] => buildXYTraces(data, "lines");

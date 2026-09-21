@@ -25,6 +25,10 @@ class ChartGroupingLabelsSchema(Schema):
     x_axis_title: str | None = None
     y_axis_title: str | None = None
     legend_title: str | None = None
+    # Either element may be None to pin just that end while the other stays
+    # autoranged (native Plotly `range` behaviour).
+    x_axis_range: tuple[float | None, float | None] | None = None
+    y_axis_range: tuple[float | None, float | None] | None = None
 
 
 class ChartGroupingSchema(Schema, Generic[TData]):

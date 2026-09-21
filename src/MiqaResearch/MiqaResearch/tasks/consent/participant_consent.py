@@ -174,30 +174,27 @@ async def _process_consent_data(consent_data: pl.DataFrame) -> list[UploadConsen
         TASK_CONSENT_FORM_COL_COMMENT  # Str
     )
 
-    # Set the source in the extra info field
-    extra_info_data = {
-        "extra_info": {
-            "source": [settings.TASK_CONSENT_SOURCE]
-        }
-    } if settings.TASK_CONSENT_SOURCE else {
-        "extra_info": {}
-    }
-
-    output = [UploadConsentSchema(**(
-        {
-            "participant_study_id": str(participants[row[TASK_CONSENT_FORM_COL_PID].replace("-", "")]),
-            "signed_date": row[TASK_CONSENT_FORM_COL_SIGNED],
-            "status": row[TASK_CONSENT_FORM_COL_STATUS],
-            "last_updated": row[TASK_CONSENT_FORM_COL_LAST_UPDATED],
-            "retracted": row[TASK_CONSENT_FORM_COL_RETRACTED],
-            "clinic": str(row[TASK_CONSENT_FORM_COL_CLINIC]),
-            "comment": row[TASK_CONSENT_FORM_COL_COMMENT],
-            "consent_labels": [
-                col.replace('""', '"')
-                for col in consent_data.columns
-                if col not in standard_columns and row[col] in TASK_CONSENT_FORM_CONSENTED_TRUE_VALUES
-            ],
-        } | extra_info_data))
+    output = [
+        UploadConsentSchema(
+            **(
+                {
+                    "participant_study_id": str(participants[row[TASK_CONSENT_FORM_COL_PID].replace("-", "")]),
+                    "signed_date": row[TASK_CONSENT_FORM_COL_SIGNED],
+                    "status": row[TASK_CONSENT_FORM_COL_STATUS],
+                    "last_updated": row[TASK_CONSENT_FORM_COL_LAST_UPDATED],
+                    "retracted": row[TASK_CONSENT_FORM_COL_RETRACTED],
+                    "clinic": str(row[TASK_CONSENT_FORM_COL_CLINIC]),
+                    "comment": row[TASK_CONSENT_FORM_COL_COMMENT],
+                    "consent_labels": [
+                        col.replace('""', '"')
+                        for col in consent_data.columns
+                        if col not in standard_columns and row[col] in TASK_CONSENT_FORM_CONSENTED_TRUE_VALUES
+                    ],
+                    "source": settings.TASK_CONSENT_SOURCE,
+                    "participant_information_version": row.get("participant_information_version"),
+                }
+            )
+        )
         for row in consent_data.iter_rows(named=True)
     ]
 

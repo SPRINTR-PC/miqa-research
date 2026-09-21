@@ -147,6 +147,86 @@ describe("MiresChartBase", () => {
     expect(el.renderRoot.querySelector("kp-select")).toBeNull();
   });
 
+  describe("axis range", () => {
+    it("leaves xaxis/yaxis range unset (Plotly autorange) when labels omit it", async () => {
+      reactMock.mockResolvedValue({ on: vi.fn() });
+      fetchMock.mockResolvedValue(
+        jsonResponse({ groupings: [{ name: "only", label: "Only", data: { value: 1 } }] }),
+      );
+
+      const el = document.createElement("mires-chart-fixture-no-gl") as NoGlFixtureChart;
+      el.dataUrl = "/fixture.json";
+      document.body.appendChild(el);
+      await waitForRenderCount(1);
+
+      const [, , layout] = reactMock.mock.calls[0] as [
+        unknown,
+        unknown,
+        { xaxis: { range?: unknown }; yaxis: { range?: unknown } },
+      ];
+      expect(layout.xaxis.range).toBeUndefined();
+      expect(layout.yaxis.range).toBeUndefined();
+    });
+
+    it("applies labels.xAxisRange/yAxisRange to the Plotly layout when set", async () => {
+      reactMock.mockResolvedValue({ on: vi.fn() });
+      fetchMock.mockResolvedValue(
+        jsonResponse({
+          groupings: [
+            {
+              name: "only",
+              label: "Only",
+              labels: { x_axis_range: [0, 10], y_axis_range: [-5, 5] },
+              data: { value: 1 },
+            },
+          ],
+        }),
+      );
+
+      const el = document.createElement("mires-chart-fixture-no-gl") as NoGlFixtureChart;
+      el.dataUrl = "/fixture.json";
+      document.body.appendChild(el);
+      await waitForRenderCount(1);
+
+      const [, , layout] = reactMock.mock.calls[0] as [
+        unknown,
+        unknown,
+        { xaxis: { range?: unknown }; yaxis: { range?: unknown } },
+      ];
+      expect(layout.xaxis.range).toEqual([0, 10]);
+      expect(layout.yaxis.range).toEqual([-5, 5]);
+    });
+
+    it("passes a null range endpoint through unchanged, leaving that end on Plotly's autorange", async () => {
+      reactMock.mockResolvedValue({ on: vi.fn() });
+      fetchMock.mockResolvedValue(
+        jsonResponse({
+          groupings: [
+            {
+              name: "only",
+              label: "Only",
+              labels: { y_axis_range: [0, null] },
+              data: { value: 1 },
+            },
+          ],
+        }),
+      );
+
+      const el = document.createElement("mires-chart-fixture-no-gl") as NoGlFixtureChart;
+      el.dataUrl = "/fixture.json";
+      document.body.appendChild(el);
+      await waitForRenderCount(1);
+
+      const [, , layout] = reactMock.mock.calls[0] as [
+        unknown,
+        unknown,
+        { xaxis: { range?: unknown }; yaxis: { range?: unknown } },
+      ];
+      expect(layout.xaxis.range).toBeUndefined();
+      expect(layout.yaxis.range).toEqual([0, null]);
+    });
+  });
+
   describe("WebGL threshold precedence", () => {
     it("upgrades above the default threshold (100) when nothing overrides it", async () => {
       reactMock.mockResolvedValue({ on: vi.fn() });
@@ -286,6 +366,34 @@ describe("MiresChartBase", () => {
       expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("never-registered"));
 
       warnSpy.mockRestore();
+    });
+
+    it("observes the plot container, not the host, so sibling elements shrinking the plot trigger a resize", async () => {
+      const observed: Element[] = [];
+      class FakeResizeObserver {
+        constructor(_cb: () => void) {}
+        observe(target: Element): void {
+          observed.push(target);
+        }
+        unobserve(): void {}
+        disconnect(): void {}
+      }
+      vi.stubGlobal("ResizeObserver", FakeResizeObserver);
+
+      reactMock.mockResolvedValue({ on: vi.fn() });
+      fetchMock.mockResolvedValue(
+        jsonResponse({ groupings: [{ name: "n", label: "N", data: { value: 1 } }] }),
+      );
+
+      const el = document.createElement("mires-chart-fixture-no-gl") as NoGlFixtureChart;
+      el.dataUrl = "/fixture.json";
+      document.body.appendChild(el);
+      await waitForRenderCount(1);
+
+      const plotContainer = el.shadowRoot?.querySelector(".plot-container");
+      expect(plotContainer).toBeTruthy();
+      expect(observed).toContain(plotContainer);
+      expect(observed).not.toContain(el);
     });
 
     it("guards its own resize-triggered relayout from firing the zoom callback", async () => {

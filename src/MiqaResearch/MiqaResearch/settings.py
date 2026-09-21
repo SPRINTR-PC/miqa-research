@@ -3,7 +3,12 @@ from pathlib import Path
 import environ
 from more_itertools.more import lstrip
 
-from contract.constants.celery import QUEUE_EMAIL, QUEUE_GET_CONSENTS, QUEUE_OCR
+from contract.constants.celery import (
+    QUEUE_CALCULATE_CONSENT_STATISTICS,
+    QUEUE_EMAIL,
+    QUEUE_GET_CONSENTS,
+    QUEUE_OCR,
+)
 from contract.constants.scopes import (
     SCOPE_ADMIN,
     SCOPE_MONITOR_CLIENT,
@@ -173,13 +178,17 @@ MIDDLEWARE = [
 
 if DEBUG:
     INSTALLED_APPS += ['debug_toolbar']
-    MIDDLEWARE += ["debug_toolbar.middleware.DebugToolbarMiddleware"]
+    MIDDLEWARE = MIDDLEWARE[:1] + ["debug_toolbar.middleware.DebugToolbarMiddleware"] + MIDDLEWARE[1:]
 
 
 INTERNAL_IPS = [
     '127.0.0.1',
     'localhost',
 ]
+
+DEBUG_TOOLBAR_CONFIG = {
+    'SHOW_TOOLBAR_CALLBACK': lambda request: DEBUG,  # TODO: Add more sophisticated logic to determine when to show the toolbar so that it shows up for Docker containers
+}
 
 ROOT_URLCONF = 'MiqaResearch.urls'
 
@@ -403,8 +412,6 @@ STATICFILES_FINDERS = [
     "django.contrib.staticfiles.finders.AppDirectoriesFinder",
 ]
 
-STATIC_ROOT_IGNORES = ["less", "webcomponents"]
-
 # ==============================
 # SENSITIVE DATA ENCRYPTION
 # ==============================
@@ -420,7 +427,7 @@ FERNET_KEY, SENSITIVE_DATA_HASH_KEY = (
 TASKS = {
     "default": {
         "BACKEND": "django_tasks_celery.CeleryBackend", # See: https://github.com/oliverhaas/django-tasks-celery
-        "QUEUES": ["default", QUEUE_OCR, QUEUE_EMAIL, QUEUE_GET_CONSENTS],
+        "QUEUES": ["default", QUEUE_OCR, QUEUE_EMAIL, QUEUE_GET_CONSENTS, QUEUE_CALCULATE_CONSENT_STATISTICS],
     }
 }
 CELERY_BROKER_URL = env("MIRES_CELERY_BROKER_URL", default="amqp://guest:guest@miresrabbit:5672//")
@@ -496,7 +503,7 @@ TASK_CONSENT_ADFS_TOKEN_URL = env("MIRES_TASK_CONSENT_ADFS_TOKEN_URL")
 TASK_CONSENT_RESOURCE = env("MIRES_TASK_CONSENT_RESOURCE")
 TASK_CONSENT_CLIENT_ID, TASK_CONSENT_CLIENT_SECRET = _get_consent_client_id_and_secret()
 TASK_CONSENT_BASE_URL = env("MIRES_TASK_CONSENT_BASE_URL")
-TASK_CONSENT_SOURCE: str = env("MIRES_TASK_CONSENT_SOURCE")
+TASK_CONSENT_SOURCE: str | None = env("MIRES_TASK_CONSENT_SOURCE")
 TASK_CONSENT_RESEARCH_PROJECT_NAME: str = env("MIRES_TASK_CONSENT_RESEARCH_PROJECT_NAME")
 TASK_CONSENT_FORM_COL_NAME = env("MIRES_TASK_CONSENT_FORM_COL_NAME", default="Namn")
 TASK_CONSENT_FORM_COL_PID = env("MIRES_TASK_CONSENT_FORM_COL_PID", default="Personnummer")

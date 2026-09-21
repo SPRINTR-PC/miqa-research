@@ -247,9 +247,10 @@ per-Grouping `labels`)
 ### Chart Data
 The actual trace values inside one Chart Grouping — the per-chart-type
 payload (e.g. x/y arrays, categories, node/link lists) plus an optional
-`labels` sub-object (axis/legend titles) that can differ from one Grouping to
-the next, unlike Chart Config which is fixed for the whole response. See ADR
-0020.
+`labels` sub-object (axis/legend titles, and an optional `xAxisRange`/
+`yAxisRange` override of Plotly's computed autorange) that can differ from one
+Grouping to the next, unlike Chart Config which is fixed for the whole
+response. See ADR 0020.
 
 ### WebGL Threshold
 The datapoint-count threshold (`webglThreshold`, default 100) above which a
@@ -321,6 +322,28 @@ carries one entry per subplot, shaped exactly like that subplot's own
 standalone Chart Data (e.g. a `"bar"` subplot's entry matches
 `BarChartData`). One Grouping dropdown switches every subplot together —
 there is no per-subplot Grouping concept. See ADR 0023.
+
+### Data Table
+A single reusable web component (`<data-table>`) that shows one page of rows
+fetched from its `dataUrl`, with column headers, multi-column sorting, and
+per-column filters. Sorting, filtering, and paging are all performed by the
+server; the component only holds the current view state and re-requests. Its
+first consumer is the consent statistics table.
+
+### Data Table Definition
+The single server-side declaration of a Data Table's columns: for each column
+its accessor, label, data type, whether it is sortable, and its filter kind.
+It is the one source for both the column metadata sent to the component and
+the set of sort and filter requests the server will accept — anything not
+declared is rejected.
+_Avoid_: Column map, table schema
+
+### Data Table Pagination
+The server-side unit that turns a request into one page of a Data Table: it
+applies the requested filters and sort, slices the page, and reports the
+page position and totals. Paging, sorting, and filtering are one unit, not
+separate layers.
+_Avoid_: Paginator (that names the generic Django class)
 
 ## Decisions (ADRs)
 
@@ -555,8 +578,12 @@ what's fixed across every Grouping in a response: `webglThreshold` (default
 mechanism is wayfinder ticket #73), and the mixed-subplot layout (internals
 deferred to ticket #75). Chart Data — the per-Grouping trace values — may
 also carry an optional `labels` sub-object (`xAxisTitle`, `yAxisTitle`,
-`legendTitle`) that overrides Config's defaults, because switching Grouping
-can change what's being measured, not only how it's sliced. On the Django
+`legendTitle`, `xAxisRange`, `yAxisRange`) that overrides Config's defaults,
+because switching Grouping can change what's being measured, not only how
+it's sliced; `xAxisRange`/`yAxisRange` override Plotly's computed autorange
+only when set (either element may be `null` to pin just that end while the
+other stays autoranged, per Plotly's own `range` semantics), otherwise
+autorange behaves as before. On the Django
 side, schema fields stay idiomatic Python snake_case
 (`webgl_threshold`, `event_callbacks`, `x_axis_title`, …).
 

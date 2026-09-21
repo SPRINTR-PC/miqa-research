@@ -8,10 +8,8 @@
     <link rel="stylesheet" href="src/index.css" />
     <!--<script type="module" src="/src/prom-upload.ts"></script>
     <script type="module" src="/src/kp-select.ts"></script>-->
-    <script type="module" src="/src/miqa-monitor.ts"></script>
-    <script type="module" src="/src/miqa-monitor-columns.ts"></script>
-    <script type="module" src="/src/miqa-monitor-filter.ts"></script>
-    <script type="module" src="/src/miqa-monitor-table.ts"></script>
+    <script type="module" src="src/mireswc.ts"></script>
+    <script type="module" src="src/mireswc-charts.ts"></script>
     <script>
       // Fixture-data mock for the chart demo below — a classic (synchronous)
       // script, so it patches window.fetch before any deferred module script
@@ -175,9 +173,11 @@
   </head>
   <body>
     <div id="app" style="width: 960px; padding: 20px;">
+    <!--
       <miqa-monitor
         columnListApiUri="http://localhost:8000/api/v1/monitor/columnlist"
       ></miqa-monitor>
+      -->
 
       <div style="margin-top: 40px; border-top: 1px solid #ccc; padding-top: 20px;">
         <h3>Chart components demo (fixture data, wayfinder ticket #88)</h3>

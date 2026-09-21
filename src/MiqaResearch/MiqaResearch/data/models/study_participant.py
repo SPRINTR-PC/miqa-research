@@ -3,8 +3,10 @@ from uuid import uuid7
 from django.db import models
 
 from helpers.db_fields import SearchableEncryptedCharField
-from .research_project import ResearchProject
+
 from ..managers.study_participant_manager import StudyParticipantManager
+from .research_project import ResearchProject
+
 
 class StudyParticipant(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid7, editable=False)

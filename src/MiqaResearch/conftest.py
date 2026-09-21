@@ -12,3 +12,16 @@ import os
 # `manage.py` / `pytest` can start in a local dev/test environment.
 os.environ.setdefault("MIRES_FERNET_KEY", "EiGdHopiKZdBZwVCP4dVJitPrrDnOuGAd94W4EZpwQc=")
 os.environ.setdefault("MIRES_SENSITIVE_DATA_HASH_KEY", "H2QCB14temR-C2JnLORSE5TxPwLd8iy3YygNPQ-corA=")
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _dummy_tasks_backend(settings):
+    """Signals enqueue tasks; never hit a real broker in tests."""
+    settings.TASKS = {
+        "default": {
+            "BACKEND": "django.tasks.backends.dummy.DummyBackend",
+            "QUEUES": settings.TASKS["default"]["QUEUES"],
+        }
+    }

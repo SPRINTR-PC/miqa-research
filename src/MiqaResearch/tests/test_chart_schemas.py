@@ -112,6 +112,43 @@ def test_chart_response_schema_labels_override_axis_and_legend_titles():
     assert parsed.groupings[0].labels.x_axis_title == "Site"
     assert parsed.groupings[0].labels.y_axis_title == "Count"
     assert parsed.groupings[0].labels.legend_title is None
+    assert parsed.groupings[0].labels.x_axis_range is None
+    assert parsed.groupings[0].labels.y_axis_range is None
+
+
+def test_chart_response_schema_labels_override_axis_range():
+    payload = {
+        "groupings": [
+            {
+                "name": "by_site",
+                "label": "By Site",
+                "labels": {"x_axis_range": [0, 10], "y_axis_range": [-5, 5]},
+                "data": {"series": []},
+            }
+        ],
+    }
+
+    parsed = LineChartResponseSchema.model_validate(payload)
+
+    assert parsed.groupings[0].labels.x_axis_range == (0, 10)
+    assert parsed.groupings[0].labels.y_axis_range == (-5, 5)
+
+
+def test_chart_response_schema_labels_axis_range_allows_a_null_endpoint():
+    payload = {
+        "groupings": [
+            {
+                "name": "by_site",
+                "label": "By Site",
+                "labels": {"y_axis_range": [0, None]},
+                "data": {"series": []},
+            }
+        ],
+    }
+
+    parsed = LineChartResponseSchema.model_validate(payload)
+
+    assert parsed.groupings[0].labels.y_axis_range == (0, None)
 
 
 def test_chart_response_schema_json_schema_generation_does_not_error():
