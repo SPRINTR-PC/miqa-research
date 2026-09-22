@@ -65,14 +65,14 @@ def image_geometry(ds: Dataset, research_project) -> dict:
     # ImageOrientationPatient is a 3-valued DS (row direction cosines), PS3.3 C.7.5.1.1
     for_uid = str(ds.get("FrameOfReferenceUID") or "").strip()
     return {
-        "image_orientation_patient": _decimal_list(ds.get("ImageOrientationPatient"), 3),
-        "image_position_patient": _decimal_list(ds.get("ImagePositionPatient"), 3),
-        "pixel_spacing": _decimal_list(ds.get("PixelSpacing"), 2),
+        "image_orientation_patient": decimal_list(ds.get("ImageOrientationPatient"), 3),
+        "image_position_patient": decimal_list(ds.get("ImagePositionPatient"), 3),
+        "pixel_spacing": decimal_list(ds.get("PixelSpacing"), 2),
         "frame_of_reference_uid": pseudonymize_uid(for_uid, research_project) if for_uid else None,
     }
 
 
-def _decimal_list(value, expected_length: int) -> list[float] | None:
+def decimal_list(value, expected_length: int) -> list[float] | None:
     """Convert a DS value (list, or backslash-delimited string) into a float list.
 
     Returns None when the tag is absent or malformed.
