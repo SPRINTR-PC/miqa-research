@@ -477,6 +477,8 @@ STATICFILES_FINDERS = [
     "django.contrib.staticfiles.finders.AppDirectoriesFinder",
 ]
 
+MEDIA_ROOT = env("MIRES_MEDIA_ROOT")
+
 # ==============================
 # SENSITIVE DATA ENCRYPTION
 # ==============================

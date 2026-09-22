@@ -184,13 +184,12 @@ services:
       # Shared with mires_testrunner's dicom concurrency perf test (#126) --
       # source files that test writes must be readable inside this worker
       # container, since the task this worker runs executes *here*, not in
-      # the test process. Storage output stays on local disk (the default);
-      # this codebase's MIRES_MEDIA_ROOT env var is declared but never
-      # actually wired to Django's MEDIA_ROOT setting, so output lands at
-      # this container's CWD instead of a chosen scratch path -- the test
-      # itself cleans that up (see its docstring for why S3/RustFS isn't
-      # used here as an alternative).
+      # the test process. Storage stays on local disk (the default);
+      # MIRES_MEDIA_ROOT points it at a scratch dir alongside the source
+      # root, so the test can find and clean up its output (see its
+      # docstring for why S3/RustFS isn't used here as an alternative).
       - MIRES_DICOM_ALLOWED_SOURCE_ROOTS=/app/.dev-data/dicom_perf_concurrency
+      - MIRES_MEDIA_ROOT=/app/.dev-data/dicom_perf_concurrency_media
     depends_on:
       - mires_web
       - mires_db
