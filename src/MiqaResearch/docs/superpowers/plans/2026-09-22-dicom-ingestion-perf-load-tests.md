@@ -225,6 +225,14 @@ def ingest_dicom_source(research_project_id: str, source: str) -> dict[str, int]
     return report.counts
 ```
 
+`MiqaResearch/tasks/__init__.py` — add the import that makes the worker process actually register this task with Celery at startup (matching the existing pattern for the other two `django.tasks`/raw-Celery task entrypoints; found only by live-verifying against a real `mires_worker_dicom` container, whose `[tasks]` startup log didn't list `ingest_dicom_source` until this import was added):
+
+```python
+from .consent.participant_consent import fetch_participant_consent
+from .dicom_handling.tasks import ingest_dicom_source
+from .ocr import run_ocr_on_prom_data
+```
+
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `uv run --no-sync pytest tests/test_dicom_ingestion_task.py -v`
