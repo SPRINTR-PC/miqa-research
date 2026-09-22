@@ -168,11 +168,12 @@ BINDINGS = [
     },
 ]
 
-VARIANT_ORDER = ["A", "B", "C"]
+VARIANT_ORDER = ["A", "B", "C", "FINAL"]
 VARIANT_LABELS = {
     "A": "Project tab, sub-tabs (mirrors Consent Statistics)",
     "B": "Dedicated workspace, section sidebar (mirrors Administration)",
     "C": "Binding-centric hub, expandable cards, wizard-first",
+    "FINAL": "Synthesis: A's tab placement + B's section sidebar",
 }
 SECTIONS = ["bindings", "scripts", "jobs", "defaults"]
 
