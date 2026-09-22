@@ -18,6 +18,23 @@ _SUBTAB_PANELS = {
     SUBTAB_TABLE: "01_dashboard/_panel_consent_statistics_table.html",
 }
 
+ETL_SECTION_BINDINGS = "bindings"
+ETL_SECTION_SCRIPTS = "scripts"
+ETL_SECTION_JOBS = "jobs"
+ETL_SECTION_DEFAULTS = "defaults"
+_ETL_SECTIONS = [ETL_SECTION_BINDINGS, ETL_SECTION_SCRIPTS, ETL_SECTION_JOBS, ETL_SECTION_DEFAULTS]
+_ETL_SECTION_PANELS = {
+    ETL_SECTION_BINDINGS: "01_dashboard/_panel_etl_bindings.html",
+    ETL_SECTION_SCRIPTS: "01_dashboard/_panel_etl_scripts.html",
+    ETL_SECTION_JOBS: "01_dashboard/_panel_etl_jobs.html",
+    ETL_SECTION_DEFAULTS: "01_dashboard/_panel_etl_defaults.html",
+}
+
+
+def _etl_section(request) -> str:
+    section = request.GET.get("section", ETL_SECTION_BINDINGS)
+    return section if section in _ETL_SECTIONS else ETL_SECTION_BINDINGS
+
 
 def _consent_subtab(request) -> str:
     return SUBTAB_TABLE if request.GET.get("table", "").lower() == "true" else SUBTAB_PLOTS
@@ -42,10 +59,11 @@ def _is_partial_request(request) -> bool:
 
 def _htmx_tab_response(
         request, panel_template, project, active_tab, active_subtab=None, extra_context: dict | None = None,
-        with_subtablist: bool = False):
+        with_subtablist: bool = False, with_sidebar: bool = False):
     """
     The panel for the swap target plus out-of-band tab lists, so the highlighted tab and sub tab always match the panel.
     `with_subtablist` is for swaps that replace only the sub tab's content, where the sub tab list is not in the target.
+    `with_sidebar` is the ETL Pipelines tab's equivalent, for swaps that replace only a section's content.
     """
     context = {
         'project': project, 'active_tab': active_tab, 'active_subtab': active_subtab, 'oob': True,
@@ -56,7 +74,11 @@ def _htmx_tab_response(
         render_to_string('01_dashboard/_panel_consent_statistics_tablist.html', context, request=request)
         if with_subtablist else ""
     )
-    return HttpResponse(panel_html + tablist_html + subtablist_html)
+    sidebar_html = (
+        render_to_string('01_dashboard/_etl_sidebar.html', context, request=request)
+        if with_sidebar else ""
+    )
+    return HttpResponse(panel_html + tablist_html + subtablist_html + sidebar_html)
 
 
 @htmx_login_required
@@ -142,3 +164,35 @@ async def goals(request, project_id):
         '01_dashboard/project.html',
         {'project': research_project, 'active_tab': 'goals'} | site_options,
     )
+
+
+@htmx_login_required
+async def etl_pipelines(request, project_id):
+    research_project = await get_user_project_or_404(request, project_id)
+    etl_section = _etl_section(request)
+
+    if _is_partial_request(request):
+        return _htmx_tab_response(
+            request, '01_dashboard/_panel_etl_pipelines.html', research_project, 'etl-pipelines',
+            extra_context={'etl_section': etl_section},
+        )
+
+    return render(
+        request,
+        '01_dashboard/project.html',
+        {'project': research_project, 'active_tab': 'etl-pipelines', 'etl_section': etl_section},
+    )
+
+
+@htmx_login_required
+async def etl_pipelines_content(request, project_id):
+    research_project = await get_user_project_or_404(request, project_id)
+
+    if _is_partial_request(request):
+        etl_section = _etl_section(request)
+        return _htmx_tab_response(
+            request, _ETL_SECTION_PANELS[etl_section], research_project, 'etl-pipelines',
+            extra_context={'etl_section': etl_section}, with_sidebar=True,
+        )
+
+    return await etl_pipelines(request, project_id)

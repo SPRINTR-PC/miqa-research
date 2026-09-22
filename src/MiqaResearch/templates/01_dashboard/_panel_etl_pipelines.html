@@ -1,0 +1,17 @@
+{% get_current_language as LANGUAGE_CODE %}
+<div class="container">
+  <div class="etl-workspace">
+    {% include '01_dashboard/_etl_sidebar.html' %}
+    <div id="etl-section-panel" class="loading-target fw space-y-4">
+      {% if etl_section == 'scripts' %}
+        {% include '01_dashboard/_panel_etl_scripts.html' %}
+      {% elif etl_section == 'jobs' %}
+        {% include '01_dashboard/_panel_etl_jobs.html' %}
+      {% elif etl_section == 'defaults' %}
+        {% include '01_dashboard/_panel_etl_defaults.html' %}
+      {% else %}
+        {% include '01_dashboard/_panel_etl_bindings.html' %}
+      {% endif %}
+    </div>
+  </div>
+</div>

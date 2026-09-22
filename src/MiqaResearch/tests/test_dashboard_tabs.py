@@ -191,7 +191,7 @@ def test_goals_history_restore_after_a_cache_miss_gets_a_full_page(client, proje
 def test_every_tab_and_subtab_button_names_a_loading_indicator_that_exists_on_the_page(client, project):
     page = parse(client.get(_url(project, "consent")))
 
-    assert len(page.indicator_refs) == 4  # two tabs and two subtabs
+    assert len(page.indicator_refs) == 5  # three tabs and two subtabs
     for reference in page.indicator_refs:
         assert reference, "a tab button without an hx-indicator"
         for selector in (part.strip() for part in reference.split(",")):
@@ -202,7 +202,7 @@ def test_every_tab_and_subtab_button_names_a_loading_indicator_that_exists_on_th
 def test_tab_buttons_replace_an_in_flight_switch_so_a_late_response_cannot_win(client, project):
     page = parse(client.get(_url(project, "consent")))
 
-    assert page.sync_refs == ["#dashboard-tab-panel:replace"] * 4
+    assert page.sync_refs == ["#dashboard-tab-panel:replace"] * 5
     assert "dashboard-tab-panel" in page.ids
 
 
