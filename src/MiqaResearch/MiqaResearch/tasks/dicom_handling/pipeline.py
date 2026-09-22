@@ -59,6 +59,11 @@ class FileIngestionResult:
     sop_instance_uid: str | None = None
     study_participant_alias: str | None = None
     dcm_file_id: UUID | None = None
+    # Set when this run wrote new bytes to storage and read them back to
+    # confirm they match (#123). Gates source-retention deletion — never set
+    # for a duplicate that wasn't written this run (skipped, or conflicting
+    # without an update), since nothing was verified in that case.
+    stored_and_verified: bool = False
 
 
 @dataclass
@@ -82,6 +87,7 @@ def run_ingestion(
     research_project: ResearchProject,
     source: str | Path,
     overwrite_existing: bool | None = None,
+    delete_originals_after_storage: bool | None = None,
 ) -> IngestionReport:
     """Ingest every DICOM file under `source` into `research_project` and report the outcomes.
 
@@ -94,20 +100,44 @@ def run_ingestion(
     files. Per-file problems are recorded as error outcomes and never abort the
     run. `overwrite_existing` overrides the project's duplicate-handling
     setting (skip/update) for this run only; None keeps the project setting.
+
+    `delete_originals_after_storage` governs source retention (#123): once a
+    file's stored copy is read back and confirmed to match, its source is
+    deleted. Most-specific-wins: this run-level override, else the project's
+    `dicom_delete_originals_after_storage`, else the global
+    `DICOM_DELETE_ORIGINALS_AFTER_STORAGE` setting. A file whose storage isn't
+    verified this run (duplicate skip, or a conflict left unwritten) is never
+    deleted, regardless of the setting.
     """
+    delete_originals = _resolve_delete_originals_after_storage(research_project, delete_originals_after_storage)
     report = IngestionReport(research_project_id=research_project.id)
     if _is_s3_source(source):
-        _run_s3_source(research_project, source, overwrite_existing, report)
+        _run_s3_source(research_project, source, overwrite_existing, delete_originals, report)
         return report
-    _run_local_source(research_project, source, overwrite_existing, report)
+    _run_local_source(research_project, source, overwrite_existing, delete_originals, report)
     return report
+
+
+def _resolve_delete_originals_after_storage(research_project: ResearchProject, run_override: bool | None) -> bool:
+    """Most-specific-wins: run override > project override > global default (#123)."""
+    if run_override is not None:
+        return run_override
+    if research_project.dicom_delete_originals_after_storage is not None:
+        return research_project.dicom_delete_originals_after_storage
+    return django_settings.DICOM_DELETE_ORIGINALS_AFTER_STORAGE
 
 
 def _is_s3_source(source) -> bool:
     return isinstance(source, str) and source.startswith("s3://")
 
 
-def _run_local_source(research_project: ResearchProject, source: str | Path, overwrite_existing: bool | None, report: IngestionReport) -> None:
+def _run_local_source(
+    research_project: ResearchProject,
+    source: str | Path,
+    overwrite_existing: bool | None,
+    delete_originals: bool,
+    report: IngestionReport,
+) -> None:
     allowed_roots = django_settings.DICOM_ALLOWED_SOURCE_ROOTS
     # discover_local_files validates the top-level source (allow-list,
     # existence, accessibility) and fails the run immediately on any problem.
@@ -128,10 +158,27 @@ def _run_local_source(research_project: ResearchProject, source: str | Path, ove
                 FileIngestionResult(source_path=str(file_path), outcome=OUTCOME_ERROR, error=f"source file unreadable: {type(exc).__name__}")
             )
             continue
-        report.results.append(_ingest_file(research_project, str(file_path), raw_bytes, overwrite_existing))
+        result = _ingest_file(research_project, str(file_path), raw_bytes, overwrite_existing)
+        report.results.append(result)
+        if delete_originals and result.stored_and_verified:
+            _delete_local_source(file_path)
 
 
-def _run_s3_source(research_project: ResearchProject, source: str, overwrite_existing: bool | None, report: IngestionReport) -> None:
+def _delete_local_source(file_path: Path) -> None:
+    """Delete exactly the source file this run just read and verified (#123)."""
+    try:
+        file_path.unlink()
+    except OSError:
+        logger.exception("Could not delete verified source file %s after storage", file_path)
+
+
+def _run_s3_source(
+    research_project: ResearchProject,
+    source: str,
+    overwrite_existing: bool | None,
+    delete_originals: bool,
+    report: IngestionReport,
+) -> None:
     # Opening/validating the source fails the run immediately (S3SourceError).
     s3_source = discovery.S3Source(source)
     for ref in s3_source.list_objects():
@@ -144,7 +191,18 @@ def _run_s3_source(research_project: ResearchProject, source: str, overwrite_exi
                 FileIngestionResult(source_path=ref.uri, outcome=OUTCOME_ERROR, error="S3 object unreadable")
             )
             continue
-        report.results.append(_ingest_file(research_project, ref.uri, raw_bytes, overwrite_existing))
+        result = _ingest_file(research_project, ref.uri, raw_bytes, overwrite_existing)
+        report.results.append(result)
+        if delete_originals and result.stored_and_verified:
+            _delete_s3_source(s3_source, ref)
+
+
+def _delete_s3_source(s3_source: discovery.S3Source, ref: discovery.S3ObjectRef) -> None:
+    """Delete exactly the source object this run just read and verified (#123)."""
+    try:
+        s3_source.delete(ref)
+    except discovery.S3SourceError:
+        logger.exception("Could not delete verified source object %s after storage", ref.uri)
 
 
 def _ingest_file(
@@ -180,7 +238,10 @@ def _ingest_file(
         with transaction.atomic():
             existing = DicomFile.objects.select_related("series__study").filter(sop_instance_uid=sop_pseudonym).first()
             if existing is not None:
-                return finish(_handle_duplicate(existing, dataset, research_project, raw_bytes, overwrite_existing), sop_instance_uid=sop_pseudonym)
+                outcome, stored_and_verified = _handle_duplicate(
+                    existing, dataset, research_project, raw_bytes, overwrite_existing
+                )
+                return finish(outcome, sop_instance_uid=sop_pseudonym, stored_and_verified=stored_and_verified)
             participant = participant_stage.match_or_create_participant(dataset, research_project)
             extracted = extractors.extract(dataset, research_project)
             file_size_in_mb = len(raw_bytes) / (1024 * 1024)
@@ -191,6 +252,7 @@ def _ingest_file(
             storage_stage.store_file_bytes(dcm_file, raw_bytes)
             dcm_file.save()
             records.add_file_size_to_series(dcm_file.series, file_size_in_mb)
+            stored_and_verified = _verify_stored(dcm_file, dcm_file.content_sha256, source_path)
     except ValueError:
         # match_or_create_participant: the file has no usable patient identifier
         return finish(OUTCOME_ERROR, error="no usable patient identifier (PatientID missing or empty)")
@@ -203,7 +265,22 @@ def _ingest_file(
         sop_instance_uid=sop_pseudonym,
         study_participant_alias=participant.alias1,
         dcm_file_id=dcm_file.id,
+        stored_and_verified=stored_and_verified,
     )
+
+
+def _verify_stored(dcm_file: DicomFile, expected_sha256: str, source_path: str) -> bool:
+    """Read back what was just stored and confirm it matches (#123).
+
+    A verification failure never fails the ingestion itself — the record is
+    already valid and saved — it only withholds the go-ahead for source
+    retention to delete the original.
+    """
+    try:
+        return storage_stage.verify_stored_bytes(dcm_file, expected_sha256)
+    except Exception:
+        logger.exception("Stored-file verification failed for %s", source_path)
+        return False
 
 
 def _handle_duplicate(
@@ -212,17 +289,21 @@ def _handle_duplicate(
     research_project: ResearchProject,
     raw_bytes: bytes,
     overwrite_existing: bool | None,
-) -> str:
+) -> tuple[str, bool]:
     """Resolve a file whose pseudonymized SOP UID is already stored (#120).
 
     Identical content is a no-op duplicate in either mode. Differing content is
     always reported as a conflict; only in update mode is the record replaced
     in place (file-level data; Study/Series fields stay fill-blank-only).
     Must run inside the caller's transaction.
+
+    Returns (outcome, stored_and_verified) — the second only True when this
+    call itself wrote new bytes and read them back to confirm they match
+    (#123); a skipped or unwritten conflict never verifies anything this run.
     """
     new_hash = _content_hash(raw_bytes)
     if new_hash == _stored_content_hash(existing):
-        return OUTCOME_SKIPPED_DUPLICATE
+        return OUTCOME_SKIPPED_DUPLICATE, False
     update = overwrite_existing if overwrite_existing is not None else research_project.dicom_duplicate_handling == "update"
     if update:
         extracted = extractors.extract(dataset, research_project)
@@ -231,7 +312,9 @@ def _handle_duplicate(
         records.update_file_in_place(existing, extracted, file_size_in_mb, new_hash)
         records.fill_study_series_blanks(existing.series, extracted)
         transaction.on_commit(lambda: storage_stage.discard_file(existing, superseded))
-    return OUTCOME_DUPLICATE_CONFLICT
+        stored_and_verified = _verify_stored(existing, new_hash, existing.file.name)
+        return OUTCOME_DUPLICATE_CONFLICT, stored_and_verified
+    return OUTCOME_DUPLICATE_CONFLICT, False
 
 
 def _content_hash(data: bytes) -> str:
