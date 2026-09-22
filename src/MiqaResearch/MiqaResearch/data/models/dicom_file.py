@@ -6,6 +6,7 @@ from django.contrib.postgres.indexes import GinIndex
 from django.db import models
 
 from .dicom_series import DicomSeries
+from .dicom_storage import DicomStorage
 from .research_project import ResearchProject
 
 
@@ -19,7 +20,7 @@ class DicomFile(models.Model):
     series = models.ForeignKey(DicomSeries, on_delete=models.CASCADE, blank=False, null=False, db_index=True)
     sop_instance_uid = models.CharField(max_length=128, blank=False, null=False, unique=True)
     research_project = models.ForeignKey(ResearchProject, on_delete=models.PROTECT, blank=True, null=True, db_index=True)
-    file = models.FileField(upload_to=upload_to, blank=False, null=False)
+    file = models.FileField(upload_to=upload_to, storage=DicomStorage(), blank=False, null=False)
     # 3-valued per PS3.3 C.7.5.1.1 (row direction cosines), not 6
     image_orientation_patient = ArrayField(models.FloatField(), size=3, blank=True, null=True)
     image_position_patient = ArrayField(models.FloatField(), size=3, blank=True, null=True)

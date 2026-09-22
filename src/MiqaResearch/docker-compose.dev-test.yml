@@ -243,6 +243,7 @@ services:
     depends_on:
       - mires_rabbit
       - mires_db
+      - mires_fs
       - mires_vault
     volumes:
       - ./:/app

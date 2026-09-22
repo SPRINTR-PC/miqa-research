@@ -8,7 +8,16 @@ preamble + "DICM" magic (or without a preamble, on request).
 from pathlib import Path
 
 from pydicom.dataset import Dataset, FileMetaDataset
-from pydicom.uid import CTImageStorage, ExplicitVRLittleEndian, XRayRadiationDoseSRStorage
+from pydicom.uid import (
+    BasicTextSRStorage,
+    CTImageStorage,
+    ExplicitVRLittleEndian,
+    RTDoseStorage,
+    RTImageStorage,
+    RTPlanStorage,
+    RTStructureSetStorage,
+    XRayRadiationDoseSRStorage,
+)
 
 # Well-known, non-identifying demo values only
 DEFAULT_PATIENT_ID = "P-1001"
@@ -86,12 +95,12 @@ def build_generic_dataset(
     study_instance_uid: str = "1.2.9999.42.9.9001",
     series_instance_uid: str = "1.2.9999.42.9.9002",
     sop_instance_uid: str = "1.2.9999.42.9.9003",
-    sop_class_uid: str = XRayRadiationDoseSRStorage,
+    sop_class_uid: str = BasicTextSRStorage,
     modality: str = "SR",
     study_date: str = "20240315",
 ) -> Dataset:
-    """Build a synthetic non-image dataset (dose SR by default): no image-plane tags,
-    no pixel data — exercises the generic fall-through extractor."""
+    """Build a synthetic non-image dataset (Basic Text SR by default — a SOP Class with no
+    bespoke handler): no image-plane tags, no pixel data — exercises the generic fall-through."""
     ds = _base_dataset(
         patient_id=patient_id,
         patient_name=DEFAULT_PATIENT_NAME,
@@ -103,12 +112,247 @@ def build_generic_dataset(
         sop_class_uid=sop_class_uid,
         study_date=study_date,
         study_time="110000",
-        study_description="DOSE REPORT",
-        series_description="XRAY DOSE SR",
+        study_description="TEXT REPORT",
+        series_description="BASIC TEXT SR",
         modality=modality,
     )
     ds.XRayTubeCurrent = "2.5"  # a non-PHI tag that must be captured
     return ds
+
+
+def _code(value: str, meaning: str, scheme: str = "DCM") -> Dataset:
+    item = Dataset()
+    item.CodeValue = value
+    item.CodingSchemeDesignator = scheme
+    item.CodeMeaning = meaning
+    return item
+
+
+def _num_item(code: str, meaning: str, value: str, unit: str) -> Dataset:
+    item = Dataset()
+    item.RelationshipType = "CONTAINS"
+    item.ValueType = "NUM"
+    item.ConceptNameCodeSequence = [_code(code, meaning)]
+    measured = Dataset()
+    measured.NumericValue = value
+    measured.MeasurementUnitsCodeSequence = [_code(unit, unit, "UCUM")]
+    item.MeasuredValueSequence = [measured]
+    return item
+
+
+def _container_item(code: str, meaning: str, children: list) -> Dataset:
+    item = Dataset()
+    item.RelationshipType = "CONTAINS"
+    item.ValueType = "CONTAINER"
+    item.ConceptNameCodeSequence = [_code(code, meaning)]
+    item.ContentSequence = children
+    return item
+
+
+def build_rdsr(
+    *,
+    patient_id: str = DEFAULT_PATIENT_ID,
+    study_instance_uid: str = "1.2.9999.42.5.5001",
+    series_instance_uid: str = "1.2.9999.42.5.5002",
+    sop_instance_uid: str = "1.2.9999.42.5.5003",
+) -> Dataset:
+    """Synthetic X-Ray Radiation Dose SR (TID 10001): accumulated totals (TID 10007)
+    plus two irradiation events (TID 10003 / 10003B). Values are fake."""
+    ds = _base_dataset(
+        patient_id=patient_id,
+        patient_name=DEFAULT_PATIENT_NAME,
+        patient_birth_date=DEFAULT_BIRTH_DATE,
+        patient_sex="F",
+        study_instance_uid=study_instance_uid,
+        series_instance_uid=series_instance_uid,
+        sop_instance_uid=sop_instance_uid,
+        sop_class_uid=XRayRadiationDoseSRStorage,
+        study_date="20240315",
+        study_time="110000",
+        study_description="DOSE REPORT",
+        series_description="XRAY DOSE SR",
+        modality="SR",
+    )
+    accumulated = _container_item("113702", "Accumulated X-Ray Dose Data", [
+        _num_item("113722", "Dose Area Product Total", "12.5", "Gy.m2"),
+        _num_item("113725", "Dose (RP) Total", "0.85", "Gy"),
+    ])
+    events = [
+        _container_item("113706", "Irradiation Event X-Ray Data", [
+            _num_item("122130", "Dose Area Product", "4.5", "Gy.m2"),
+            _container_item("113742", "Irradiation Event X-Ray Source Data", [
+                _num_item("113738", "Dose (RP)", "0.3", "Gy"),
+                _num_item("113733", "KVP", "81", "kV"),
+                _num_item("113824", "Exposure Time", "120", "ms"),
+                _num_item("113734", "X-Ray Tube Current", "250", "mA"),
+            ]),
+        ]),
+        _container_item("113706", "Irradiation Event X-Ray Data", [
+            _num_item("122130", "Dose Area Product", "8.0", "Gy.m2"),
+            _container_item("113742", "Irradiation Event X-Ray Source Data", [
+                _num_item("113733", "KVP", "110", "kV"),
+                _num_item("113824", "Exposure Time", "45", "ms"),
+            ]),
+        ]),
+    ]
+    ds.ValueType = "CONTAINER"
+    ds.ConceptNameCodeSequence = [_code("113701", "X-Ray Radiation Dose Report")]
+    ds.ContentSequence = [accumulated, *events]
+    return ds
+
+
+def _ref_item(sop_class: str, sop_instance: str) -> Dataset:
+    item = Dataset()
+    item.ReferencedSOPClassUID = sop_class
+    item.ReferencedSOPInstanceUID = sop_instance
+    return item
+
+
+def build_rtstruct(
+    *,
+    patient_id: str = DEFAULT_PATIENT_ID,
+    study_instance_uid: str = "1.2.9999.42.6.6001",
+    series_instance_uid: str = "1.2.9999.42.6.6002",
+    sop_instance_uid: str = "1.2.9999.42.6.6003",
+    referenced_frame_of_reference_uid: str = "1.2.9999.42.1.1004",
+    referenced_series_instance_uid: str = "1.2.9999.42.1.1002",
+    referenced_image_sop_instance_uid: str = "1.2.9999.42.1.1003",
+) -> Dataset:
+    """Synthetic RT Structure Set: no pixel data, two ROIs, reference chain down to one CT slice."""
+    ds = _rt_base(RTStructureSetStorage, "RTSTRUCT", patient_id, study_instance_uid,
+                  series_instance_uid, sop_instance_uid)
+    ds.StructureSetLabel = "STRUCT_1"
+    image_ref = _ref_item(CTImageStorage, referenced_image_sop_instance_uid)
+    series = Dataset()
+    series.SeriesInstanceUID = referenced_series_instance_uid
+    series.ContourImageSequence = [image_ref]
+    rt_study = Dataset()
+    rt_study.ReferencedSOPClassUID = "1.2.840.10008.3.1.2.3.1"
+    rt_study.ReferencedSOPInstanceUID = study_instance_uid + ".ref"
+    rt_study.RTReferencedSeriesSequence = [series]
+    frame = Dataset()
+    frame.FrameOfReferenceUID = referenced_frame_of_reference_uid
+    frame.RTReferencedStudySequence = [rt_study]
+    ds.ReferencedFrameOfReferenceSequence = [frame]
+    rois = []
+    for number, name in ((1, "PTV"), (2, "BLADDER")):
+        roi = Dataset()
+        roi.ROINumber = number
+        roi.ReferencedFrameOfReferenceUID = referenced_frame_of_reference_uid
+        roi.ROIName = name
+        roi.ROIGenerationAlgorithm = "MANUAL"
+        rois.append(roi)
+    ds.StructureSetROISequence = rois
+    observations = []
+    for number, kind in ((1, "PTV"), (2, "ORGAN")):
+        obs = Dataset()
+        obs.ObservationNumber = number
+        obs.ReferencedROINumber = number
+        obs.RTROIInterpretedType = kind
+        observations.append(obs)
+    ds.RTROIObservationsSequence = observations
+    return ds
+
+
+def build_rtplan(
+    *,
+    patient_id: str = DEFAULT_PATIENT_ID,
+    study_instance_uid: str = "1.2.9999.42.6.6001",
+    series_instance_uid: str = "1.2.9999.42.7.7002",
+    sop_instance_uid: str = "1.2.9999.42.7.7003",
+    referenced_structure_set_sop_instance_uid: str = "1.2.9999.42.6.6003",
+) -> Dataset:
+    """Synthetic RT Plan: no pixel data, references a structure set, 2 beams, 1 fraction group."""
+    ds = _rt_base(RTPlanStorage, "RTPLAN", patient_id, study_instance_uid,
+                  series_instance_uid, sop_instance_uid)
+    ds.RTPlanLabel = "PLAN_A"
+    ds.RTPlanGeometry = "PATIENT"
+    ds.PlanIntent = "CURATIVE"
+    ds.ApprovalStatus = "APPROVED"
+    ds.ReferencedStructureSetSequence = [
+        _ref_item(RTStructureSetStorage, referenced_structure_set_sop_instance_uid)
+    ]
+    beams = []
+    for number in (1, 2):
+        beam = Dataset()
+        beam.BeamNumber = number
+        beam.BeamName = f"BEAM_{number}"
+        beams.append(beam)
+    ds.BeamSequence = beams
+    group = Dataset()
+    group.FractionGroupNumber = 1
+    group.NumberOfFractionsPlanned = 30
+    ds.FractionGroupSequence = [group]
+    return ds
+
+
+def build_rtdose(
+    *,
+    patient_id: str = DEFAULT_PATIENT_ID,
+    study_instance_uid: str = "1.2.9999.42.6.6001",
+    series_instance_uid: str = "1.2.9999.42.8.8002",
+    sop_instance_uid: str = "1.2.9999.42.8.8003",
+    referenced_plan_sop_instance_uid: str = "1.2.9999.42.7.7003",
+    referenced_structure_set_sop_instance_uid: str = "1.2.9999.42.6.6003",
+    frame_of_reference_uid: str = "1.2.9999.42.1.1004",
+) -> Dataset:
+    """Synthetic RT Dose: small dose grid with scaling, references a plan and a structure set."""
+    ds = _rt_base(RTDoseStorage, "RTDOSE", patient_id, study_instance_uid,
+                  series_instance_uid, sop_instance_uid)
+    ds.DoseUnits = "GY"
+    ds.DoseType = "PHYSICAL"
+    ds.DoseSummationType = "PLAN"
+    ds.add_new(0x3004000E, "DS", "0.0025")  # DoseGridScaling
+    ds.ReferencedRTPlanSequence = [_ref_item(RTPlanStorage, referenced_plan_sop_instance_uid)]
+    ds.ReferencedStructureSetSequence = [
+        _ref_item(RTStructureSetStorage, referenced_structure_set_sop_instance_uid)
+    ]
+    ds.add_new(0x00200052, "UI", frame_of_reference_uid)
+    ds.add_new(0x00200037, "DS", "1\\0\\0")
+    ds.add_new(0x00200032, "DS", "-10.0\\-20.0\\50.5")
+    ds.add_new(0x00280030, "DS", "2.5\\2.5")
+    _add_small_pixel_block(ds, rows=4, columns=4)
+    return ds
+
+
+def build_rtimage(
+    *,
+    patient_id: str = DEFAULT_PATIENT_ID,
+    study_instance_uid: str = "1.2.9999.42.6.6001",
+    series_instance_uid: str = "1.2.9999.42.9.9902",
+    sop_instance_uid: str = "1.2.9999.42.9.9903",
+    referenced_plan_sop_instance_uid: str = "1.2.9999.42.7.7003",
+) -> Dataset:
+    """Synthetic RT Image (portal image): references a plan, beam and fraction group."""
+    ds = _rt_base(RTImageStorage, "RTIMAGE", patient_id, study_instance_uid,
+                  series_instance_uid, sop_instance_uid)
+    ds.RTImageLabel = "PORTAL_1"
+    ds.RTImagePlane = "NORMAL"
+    ds.ReferencedRTPlanSequence = [_ref_item(RTPlanStorage, referenced_plan_sop_instance_uid)]
+    ds.ReferencedBeamNumber = 1
+    ds.ReferencedFractionGroupNumber = 1
+    ds.RTImageSID = "1500"
+    ds.add_new(0x30020011, "DS", "0.392\\0.392")  # ImagePlanePixelSpacing
+    _add_small_pixel_block(ds, rows=4, columns=4)
+    return ds
+
+
+def _rt_base(sop_class_uid, modality, patient_id, study_uid, series_uid, sop_uid) -> Dataset:
+    return _base_dataset(
+        patient_id=patient_id,
+        patient_name=DEFAULT_PATIENT_NAME,
+        patient_birth_date=DEFAULT_BIRTH_DATE,
+        patient_sex="F",
+        study_instance_uid=study_uid,
+        series_instance_uid=series_uid,
+        sop_instance_uid=sop_uid,
+        sop_class_uid=sop_class_uid,
+        study_date="20240315",
+        study_time="110000",
+        study_description="RT COURSE",
+        series_description=modality,
+        modality=modality,
+    )
 
 
 def _base_dataset(
