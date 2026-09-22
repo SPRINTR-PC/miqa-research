@@ -5,6 +5,7 @@ from more_itertools.more import lstrip
 
 from contract.constants.celery import (
     QUEUE_CALCULATE_CONSENT_STATISTICS,
+    QUEUE_DICOM_INGESTION,
     QUEUE_EMAIL,
     QUEUE_GET_CONSENTS,
     QUEUE_OCR,
@@ -479,7 +480,7 @@ FERNET_KEY, SENSITIVE_DATA_HASH_KEY = (
 TASKS = {
     "default": {
         "BACKEND": "django_tasks_celery.CeleryBackend", # See: https://github.com/oliverhaas/django-tasks-celery
-        "QUEUES": ["default", QUEUE_OCR, QUEUE_EMAIL, QUEUE_GET_CONSENTS, QUEUE_CALCULATE_CONSENT_STATISTICS],
+        "QUEUES": ["default", QUEUE_OCR, QUEUE_EMAIL, QUEUE_GET_CONSENTS, QUEUE_CALCULATE_CONSENT_STATISTICS, QUEUE_DICOM_INGESTION],
     }
 }
 CELERY_BROKER_URL = env("MIRES_CELERY_BROKER_URL", default="amqp://guest:guest@miresrabbit:5672//")
