@@ -1,0 +1,69 @@
+"""DicomFile's storage backend (#122): local disk by default, S3-compatible
+object storage (RustFS or similar) when configured -- toggled by
+settings.DICOM_STORAGE_BACKEND, used only by DicomFile.file.
+
+Django resolves a FileField's ``storage=`` callable exactly once, when the
+model class is defined (app-loading time), so a plain callable can't flip
+mid-process. DicomStorage instead re-checks the setting on every operation by
+delegating to a freshly built backend each call, so switching backends needs
+neither a new migration (this proxy's deconstructed form never changes) nor a
+process restart.
+
+Not registered under settings.STORAGES["dicom"]: nothing else in the app
+needs to look this storage up by name, and a STORAGES entry would still be
+resolved once at startup like any other named storage, so it wouldn't help
+with the per-call re-checking above.
+"""
+from django.core.files.storage import FileSystemStorage, Storage
+from django.utils.deconstruct import deconstructible
+
+
+@deconstructible
+class DicomStorage(Storage):
+    def _backend(self) -> Storage:
+        from django.conf import settings
+
+        if settings.DICOM_STORAGE_BACKEND != "s3":
+            return FileSystemStorage()
+
+        from storages.backends.s3 import S3Storage
+
+        kwargs: dict = {
+            "bucket_name": settings.DICOM_S3_BUCKET,
+            "signature_version": "s3v4",
+        }
+        if settings.DICOM_S3_REGION_NAME:
+            kwargs["region_name"] = settings.DICOM_S3_REGION_NAME
+        if settings.DICOM_S3_ACCESS_KEY_ID:
+            kwargs["access_key"] = settings.DICOM_S3_ACCESS_KEY_ID
+        if settings.DICOM_S3_SECRET_ACCESS_KEY:
+            kwargs["secret_key"] = settings.DICOM_S3_SECRET_ACCESS_KEY
+        if settings.DICOM_S3_ENDPOINT_URL:
+            kwargs["endpoint_url"] = settings.DICOM_S3_ENDPOINT_URL
+            # Path-style addressing: S3-compatible endpoints (RustFS et al.)
+            # generally can't rely on virtual-hosted-style DNS wildcards.
+            kwargs["addressing_style"] = "path"
+        return S3Storage(**kwargs)
+
+    def _open(self, name, mode="rb"):
+        return self._backend()._open(name, mode)
+
+    def _save(self, name, content):
+        return self._backend()._save(name, content)
+
+    def delete(self, name):
+        return self._backend().delete(name)
+
+    def exists(self, name):
+        return self._backend().exists(name)
+
+    def size(self, name):
+        return self._backend().size(name)
+
+    def url(self, name):
+        return self._backend().url(name)
+
+    def path(self, name):
+        # Delegates to the local backend's implementation; the S3 backend's
+        # base Storage.path() correctly raises NotImplementedError instead.
+        return self._backend().path(name)
