@@ -55,6 +55,7 @@ def test_run_ocr_on_prom_data_stores_a_schema_valid_parsed_prom_form(prom_data, 
     assert all(entry["value"] is not None for entry in parsed.data["data"])
 
 
+@pytest.mark.ocr
 @pytest.mark.django_db
 def test_a_soft_time_limit_mid_escalation_still_saves_a_parsed_prom_form(prom_data, monkeypatch):
     """sample_01 (#48/#49's own measurements) escalates fields across
@@ -81,6 +82,7 @@ def test_a_soft_time_limit_mid_escalation_still_saves_a_parsed_prom_form(prom_da
     assert all(entry["value"] is not None for entry in parsed.data["data"])
 
 
+@pytest.mark.ocr
 @pytest.mark.django_db
 def test_vlm_only_mode_skips_mark_detection_and_stores_a_valid_parsed_prom_form(prom_data, monkeypatch, settings):
     # #67, docs/prom-ocr-handoff.md §10.2 -- VLM-Only Mode skips mark_detection
@@ -106,6 +108,7 @@ def test_vlm_only_mode_skips_mark_detection_and_stores_a_valid_parsed_prom_form(
     assert all("vlm" in flag["attempted"] for flag in parsed.extraction_flags.values())
 
 
+@pytest.mark.ocr
 @pytest.mark.django_db
 def test_run_ocr_on_prom_data_never_creates_a_kpforms_form_submission(prom_data, monkeypatch):
     monkeypatch.setattr(vlm_fallback, "run_vlm_fallback", lambda *args, **kwargs: {})
@@ -118,6 +121,7 @@ def test_run_ocr_on_prom_data_never_creates_a_kpforms_form_submission(prom_data,
     assert not FormSubmission.objects.exists()
 
 
+@pytest.mark.ocr
 @pytest.mark.django_db
 def test_running_ocr_twice_appends_a_new_parsed_prom_form_row_rather_than_overwriting(prom_data, monkeypatch):
     monkeypatch.setattr(vlm_fallback, "run_vlm_fallback", lambda *args, **kwargs: {})
@@ -132,6 +136,7 @@ def test_running_ocr_twice_appends_a_new_parsed_prom_form_row_rather_than_overwr
     assert first in rows  # the original row is untouched, not upserted
 
 
+@pytest.mark.ocr
 @pytest.mark.django_db
 def test_run_ocr_on_prom_data_is_a_noop_for_a_missing_prom_data():
     run_ocr_on_prom_data(uuid.uuid4())

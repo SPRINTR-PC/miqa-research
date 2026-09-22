@@ -77,11 +77,12 @@ known-first-party = ["MiqaResearch", "data", "documentation"]
 DJANGO_SETTINGS_MODULE = "MiqaResearch.settings"
 python_files = ["tests.py", "test_*.py", "*_tests.py"]
 testpaths = ["tests"]
-addopts = "--reuse-db -m 'not vlm and not long_running'"
+addopts = "--reuse-db -m 'not vlm and not long_running and not ocr'"
 asyncio_mode = "auto"
 markers = [
     "slow: mark a test as slow",
     "vlm: mark a test that calls a real VLM (e.g. Ollama) over the network",
+    "ocr: mark a test that runs OCR service as they are slow and should not be run every time",
     "long_running: mark a long-running (performance/load) test; excluded from the default test run",
 ]
 

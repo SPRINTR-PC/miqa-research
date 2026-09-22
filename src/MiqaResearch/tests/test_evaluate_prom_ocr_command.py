@@ -46,6 +46,7 @@ def test_ground_truth_field_counts_match_17s_reported_325_across_all_samples():
     assert total == 325
 
 
+@pytest.mark.ocr
 @pytest.mark.django_db
 def test_evaluate_prom_ocr_runs_all_ten_fixtures_and_reports_classic_path_only_accuracy(monkeypatch):
     # Real field_matching/mark_detection/merge (#47/#48/#50) run for real
