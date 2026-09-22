@@ -379,6 +379,83 @@ page position and totals. Paging, sorting, and filtering are one unit, not
 separate layers.
 _Avoid_: Paginator (that names the generic Django class)
 
+### ETL Datatype
+A code-registered kind of data an ETL pipeline can produce (e.g. measurement,
+visit occurrence): a key, an output row schema, and a loader. Users choose a
+Datatype; they never define one.
+_Avoid_: Data type, target table, schema
+
+### ETL Script
+A unit of extract-and-transform logic bound to one Datatype. Either **native**
+(shipped in the MiqaResearch codebase, editable only by changing it) or
+**custom** (user-supplied, editable in the app). Both are stored the same way,
+run the same way in a Sandbox Runner, emit the same row output, and never touch
+the database.
+_Avoid_: Pipeline script, transformer, plugin
+
+### Script Version
+An immutable revision of an ETL Script. A Pipeline Binding pins one; changes
+create a new version rather than editing in place.
+_Avoid_: Revision, release
+
+### Pipeline Binding
+The per-Research-Project assignment of an ETL Script Version to a source bucket
+and a Datatype, plus its script configuration and keep-source setting.
+_Avoid_: Pipeline, mapping, config
+
+### Raw Bucket
+The storage bucket that receives a source file after its ETL Job succeeds,
+so the original is retained after leaving the source bucket.
+_Avoid_: Archive, landing bucket
+
+### ETL Location Grant
+An operator's assignment of a bucket and prefix namespace to one Research
+Project. A Pipeline Binding may only use source and raw locations granted to its
+project.
+_Avoid_: Bucket permission, bucket claim
+
+### Pending Group
+A candidate file or folder group (per its Pipeline Binding's grouping mode)
+being watched for quiescence before it becomes an ETL Job: the most recent
+modification time among its still-unprocessed members, tracked poll to poll.
+Promoted to an ETL Job once that time has held unchanged for the Binding's
+configured quiescence window; not retained once promoted.
+_Avoid_: Candidate group, watch group
+
+### ETL Job
+One run of a Pipeline Binding over a file or folder group. Records the script
+version, input files with checksums, image digest, status, and log. Loads
+all-or-nothing.
+_Avoid_: Run, task, import
+
+### Stuck Job Recovery
+Periodic detection of an ETL Job left `running` because its worker process
+died mid-run: once the Job's effective timeout plus a grace period has
+elapsed, it is marked `failed` and the Sandbox Runner's `sweep()` is invoked
+to remove any container it left behind. Distinct from that `sweep()` itself,
+which only removes orphaned containers and doesn't decide a Job's status.
+See ADR 0024.
+_Avoid_: Sweep, sweep task (ambiguous with Sandbox Runner's own `sweep()`)
+
+### Processed File Ledger
+The per-Pipeline-Binding record of source files (key + content checksum) already
+loaded successfully. Decides what the next poll treats as new: same key with new
+content is processed again, same content is skipped. Outlives ETL Job history.
+_Avoid_: Cursor, seen files
+
+### Sandbox Runner
+The component that executes a custom ETL Script in an ephemeral, network-less
+container with read-only input and resource limits, on docker-compose or
+Kubernetes.
+_Avoid_: Executor, worker container
+
+### Participant Reference
+How an ETL row identifies a Study Participant: an explicit kind
+(`person_source_value` or `alias1`) plus a value, resolved by the platform
+within the binding's Research Project. No match or multiple matches is a row
+error; participants are never auto-created.
+_Avoid_: Patient id, subject key
+
 ## Decisions (ADRs)
 
 | ADR | Title | Status |
@@ -406,6 +483,47 @@ _Avoid_: Paginator (that names the generic Django class)
 | 0021 | Chart Event Callback resolution: client-side registry, lazy fire-time lookup | Accepted |
 | 0022 | Chart Palette: fixed categorical set, brand-anchoring rejected; live-derived sequential ramp | Accepted |
 | 0023 | Chart Grid: combined dataUrl, shared per-type trace-builder functions, subplot-attributed events | Accepted |
+| 0024 | ETL Orchestrator: SandboxBackend.run() stays synchronous for v1; Stuck Job Recovery via timeout+grace, not heartbeat | Accepted |
+
+### ADR 0024 — ETL Orchestrator: SandboxBackend.run() stays synchronous for v1; Stuck Job Recovery via timeout+grace, not heartbeat
+
+**Context**: The ETL pipelines design spec (wayfinder map: ETL pipelines with
+custom sandboxed scripts — design spec, issue #140) needed a way for the
+Orchestrator to notice an ETL Job stuck `running` because its worker process
+died mid-run (Sandbox Runner's own interface, #146, defers this case
+explicitly to the Orchestrator ticket, #145). `SandboxBackend.run()` was
+already locked in #146 as a single blocking call from the worker task, which
+rules out a genuine periodic heartbeat (nothing runs concurrently with the
+blocked call to emit one) without adding a background thread. The real
+alternative — splitting `run()` into an async `start()`/poll-status pair —
+was considered directly: it would give accurate container liveness and free
+a worker process for other work during a long run, at the cost of reopening
+#146's interface (both the Compose and Kubernetes backends) and adding a
+state machine for "dispatched but not yet confirmed done."
+
+**Decision**: Keep `SandboxBackend.run()` synchronous/blocking as #146
+specified it — #146 is not reopened. Stuck Job Recovery instead marks a
+`running` ETL Job `failed` once its `started_at` exceeds that Job's effective
+timeout (its Pipeline Binding's override, or the global default) plus a fixed
+grace period, then invokes the Sandbox Runner's own `sweep()` to remove any
+container it left behind. This is deliberately distinct from Sandbox
+Runner's `sweep()`: Stuck Job Recovery is the Orchestrator-side periodic task
+that decides an ETL Job is dead and updates its status; `sweep()` is the
+Sandbox Runner method that removes orphaned containers regardless of which
+Job they belonged to.
+
+**Consequences**:
+- A healthy, slow-but-alive ETL Job and a genuinely dead one are
+  distinguished only by elapsed time, not real liveness — acceptable because
+  #146 already enforces the same timeout inside the backend, so a healthy Job
+  can never itself exceed it; only a dead worker can.
+- One Celery worker process is tied up for the full duration of every running
+  ETL Job (up to the configured timeout). At this platform's scale (#145: no
+  per-project fairness needed, plain FIFO on one queue) this was judged
+  acceptable rather than worth the added complexity.
+- Async `start()`/poll-status is left as a fast-follow if worker-pool
+  contention becomes a real problem — `SandboxBackend` is already an
+  abstraction seam for it, but adopting it reopens #146.
 
 ### ADR 0023 — Chart Grid: combined dataUrl, shared per-type trace-builder functions, subplot-attributed events
 

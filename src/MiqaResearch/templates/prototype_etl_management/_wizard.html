@@ -1,0 +1,69 @@
+{% load static %}
+{% comment %}
+Shared binding-wizard content, reused by all three variants (only its entry point/placement
+differs between them — the step content itself isn't part of what's being compared).
+Native <details> accordion, no JS: step 1 open by default, later steps closed.
+{% endcomment %}
+<div class="proto-wizard rounded-lg border bg-card text-card-foreground">
+  <details open class="proto-wizard-step">
+    <summary>{% include 'components/icon.html' with icon_name='database' icon_classes='h-4 w-4' %}<strong>1. Datatype</strong><span class="text-sm text-muted-foreground">what kind of data this pipeline produces</span></summary>
+    <div class="proto-wizard-step-body">
+      <p class="text-sm text-muted-foreground mb-2">Users pick from platform-registered datatypes — a datatype is code, not something you define here.</p>
+      <div class="proto-radio-row">
+        <label class="proto-radio-card"><input type="radio" name="proto-datatype" checked> <strong>Measurement</strong><span class="text-sm text-muted-foreground">Lab results, vitals, scores</span></label>
+        <label class="proto-radio-card"><input type="radio" name="proto-datatype"> <strong>Visit Occurrence</strong><span class="text-sm text-muted-foreground">Clinic visit / encounter records</span></label>
+      </div>
+    </div>
+  </details>
+  <details class="proto-wizard-step">
+    <summary>{% include 'components/icon.html' with icon_name='folder-kanban' icon_classes='h-4 w-4' %}<strong>2. Source bucket</strong><span class="text-sm text-muted-foreground">raw-intake/site-a/labs/</span></summary>
+    <div class="proto-wizard-step-body">
+      <label class="proto-field"><span>RustFS bucket</span>
+        <select disabled><option>raw-intake/site-a/labs/</option><option>raw-intake/site-a/visits/</option><option>raw-intake/site-x/labs/</option></select>
+      </label>
+      <p class="text-sm text-muted-foreground">Only buckets this project has been granted (Admin-managed) are listed — see #148.</p>
+    </div>
+  </details>
+  <details class="proto-wizard-step">
+    <summary>{% include 'components/icon.html' with icon_name='pencil' icon_classes='h-4 w-4' %}<strong>3. Script &amp; version</strong><span class="text-sm text-muted-foreground">REDCap Labs CSV · v3</span></summary>
+    <div class="proto-wizard-step-body">
+      <label class="proto-field"><span>Script</span>
+        <select disabled>
+          <optgroup label="Built-in">
+            <option selected>REDCap Labs CSV (Python)</option>
+          </optgroup>
+          <optgroup label="Custom (this project)">
+            <option>Site X Lab Export (R)</option>
+          </optgroup>
+        </select>
+      </label>
+      <label class="proto-field"><span>Version</span><select disabled><option>v3 — Add unit normalisation for mmol/L vs mg/dL (current)</option><option>v2</option><option>v1</option></select></label>
+      <p class="text-sm text-muted-foreground">Bindings pin one immutable version. Publishing a script edit creates a new version — it never changes v3 in place.</p>
+    </div>
+  </details>
+  <details class="proto-wizard-step">
+    <summary>{% include 'components/icon.html' with icon_name='filter' icon_classes='h-4 w-4' %}<strong>4. Grouping</strong><span class="text-sm text-muted-foreground">per file</span></summary>
+    <div class="proto-wizard-step-body">
+      <div class="proto-radio-row">
+        <label class="proto-radio-card"><input type="radio" name="proto-grouping" checked> <strong>Per file</strong><span class="text-sm text-muted-foreground">Each new file is its own job</span></label>
+        <label class="proto-radio-card"><input type="radio" name="proto-grouping"> <strong>Per folder</strong><span class="text-sm text-muted-foreground">Waits for a folder to go quiet, then runs all its files as one job</span></label>
+      </div>
+    </div>
+  </details>
+  <details class="proto-wizard-step">
+    <summary>{% include 'components/icon.html' with icon_name='upload' icon_classes='h-4 w-4' %}<strong>5. Raw bucket &amp; review</strong><span class="text-sm text-muted-foreground">etl-raw/measurement/</span></summary>
+    <div class="proto-wizard-step-body space-y-3">
+      <p class="text-sm">Successful files move to <code>etl-raw/measurement/</code> (fixed per datatype) and are verified by checksum before the source is deleted.</p>
+      <label class="flex items-center gap-2 text-sm"><input type="checkbox" checked disabled> Keep source file after a successful run</label>
+      <div class="proto-review">
+        <div><span class="text-muted-foreground">Datatype</span><strong>Measurement</strong></div>
+        <div><span class="text-muted-foreground">Source</span><strong>raw-intake/site-a/labs/</strong></div>
+        <div><span class="text-muted-foreground">Script</span><strong>REDCap Labs CSV v3</strong></div>
+        <div><span class="text-muted-foreground">Grouping</span><strong>Per file</strong></div>
+        <div><span class="text-muted-foreground">Raw bucket</span><strong>etl-raw/measurement/</strong></div>
+      </div>
+      <button class="btn" type="button" disabled title="Prototype — not wired up">{% include 'components/icon.html' with icon_name='plus' icon_classes='h-4 w-4' %}{% translate "Create binding" %}</button>
+      <p class="text-sm text-muted-foreground">Runs sandboxed: no network, read-only input, resource limits — see #146.</p>
+    </div>
+  </details>
+</div>

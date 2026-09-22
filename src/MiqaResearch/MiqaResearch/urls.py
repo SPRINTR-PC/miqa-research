@@ -48,4 +48,9 @@ urlpatterns = [
 if settings.DEBUG:
     from debug_toolbar.toolbar import debug_toolbar_urls
 
+    from MiqaResearch.interfaces.http.views.prototype_etl_management.index import index as prototype_etl_management_index
+
     urlpatterns += debug_toolbar_urls()
+    urlpatterns += [
+        path('prototype/etl-management/', prototype_etl_management_index, name='prototype_etl_management'),
+    ]

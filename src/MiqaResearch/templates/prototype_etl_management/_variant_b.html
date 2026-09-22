@@ -1,0 +1,91 @@
+{% load static %}
+<!-- ===================== VARIANT B — dedicated workspace, section sidebar ===================== -->
+<div class="container space-y-4">
+  <div>
+    <p class="text-sm text-muted-foreground">{{ project.name }} / {% translate "ETL Pipelines" %}</p>
+    <div class="flex items-center justify-between">
+      <h1 class="font-bold text-3xl tracking-tight">{% translate "ETL Pipelines" %}</h1>
+    </div>
+    <p class="text-muted-foreground mt-1">{% translate "A separate workspace, reached from a card on the project dashboard — same shape as Administration, scoped to this project." %}</p>
+  </div>
+
+  <div class="proto-workspace">
+    <nav class="proto-workspace-nav">
+      <a class="proto-workspace-link" href="#" style="opacity:.6;cursor:default;">{% include 'components/icon.html' with icon_name='plus' icon_classes='h-4 w-4' %}{% translate "New binding" %}</a>
+      <div style="height:.5rem;"></div>
+      <a class="proto-workspace-link {% if section == 'bindings' %}active{% endif %}" href="?variant=B&section=bindings">{% include 'components/icon.html' with icon_name='database' icon_classes='h-4 w-4' %}{% translate "Bindings" %}</a>
+      <a class="proto-workspace-link {% if section == 'scripts' %}active{% endif %}" href="?variant=B&section=scripts">{% include 'components/icon.html' with icon_name='pencil' icon_classes='h-4 w-4' %}{% translate "Scripts" %}</a>
+      <a class="proto-workspace-link {% if section == 'jobs' %}active{% endif %}" href="?variant=B&section=jobs">{% include 'components/icon.html' with icon_name='scroll-text' icon_classes='h-4 w-4' %}{% translate "Jobs" %}</a>
+      <a class="proto-workspace-link {% if section == 'defaults' %}active{% endif %}" href="?variant=B&section=defaults">{% include 'components/icon.html' with icon_name='shield-check' icon_classes='h-4 w-4' %}{% translate "Defaults" %}</a>
+    </nav>
+
+    <div class="space-y-4">
+      {% if section == 'bindings' %}
+        <details>
+          <summary class="btn" style="display:inline-flex;width:fit-content;cursor:pointer;">{% include 'components/icon.html' with icon_name='plus' icon_classes='h-4 w-4' %}{% translate "New binding" %}</summary>
+          <div style="margin-top:.75rem;">{% include "prototype_etl_management/_wizard.html" %}</div>
+        </details>
+        <div class="space-y-3">
+          {% for b in bindings %}
+          <div class="rounded-lg border bg-card text-card-foreground p-4" style="border-left-width:4px;{% if b.status == 'active' %}border-left-color:hsl(var(--color-chart-success-parts));{% else %}border-left-color:hsl(var(--color-destructive-parts));{% endif %}">
+            <div class="flex items-center gap-2 mb-1">
+              <strong>{{ b.datatype }}</strong>
+              <span class="text-sm text-muted-foreground">{{ b.script }} {{ b.script_version }}{% if b.script_origin == 'custom' %} · {% translate "custom" %}{% endif %}</span>
+              <span class="proto-pill proto-pill-{{ b.last_job_status }}" style="margin-left:auto;">{{ b.last_job_status }}</span>
+            </div>
+            <div class="proto-binding-flow">
+              <span>{{ b.source_bucket }}</span>{% include 'components/icon.html' with icon_name='arrow-right' icon_classes='h-3 w-3' %}<span>{{ b.raw_bucket }}</span>
+              <span style="margin-left:.5rem;">· {{ b.grouping }} · {{ b.last_job_when }}</span>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      {% elif section == 'scripts' %}
+        <p class="text-sm text-muted-foreground">{% translate "Native (read-only) and custom (project-owned) scripts, side by side." %}</p>
+        <div class="proto-card-grid" style="grid-template-columns: 1fr 1fr;">
+          <div class="space-y-2">
+            <h3 class="font-semibold text-sm text-muted-foreground">{% translate "BUILT-IN" %}</h3>
+            {% for s in native_scripts %}{% include "prototype_etl_management/_script_item.html" with script=s %}{% endfor %}
+          </div>
+          <div class="space-y-2">
+            <h3 class="font-semibold text-sm text-muted-foreground">{% translate "CUSTOM (this project)" %}</h3>
+            {% for s in custom_scripts %}{% include "prototype_etl_management/_script_item.html" with script=s %}{% endfor %}
+          </div>
+        </div>
+      {% elif section == 'jobs' %}
+        <div class="flex items-center gap-2">
+          {% include 'components/icon.html' with icon_name='filter' icon_classes='h-4 w-4 text-muted-foreground' %}
+          <select disabled style="border:1px solid hsl(var(--color-border-parts));border-radius:.375rem;padding:.3rem .5rem;font-size:.875rem;"><option>{% translate "All statuses" %}</option></select>
+          <select disabled style="border:1px solid hsl(var(--color-border-parts));border-radius:.375rem;padding:.3rem .5rem;font-size:.875rem;"><option>{% translate "All bindings" %}</option></select>
+        </div>
+        <div class="space-y-3">
+          {% for job in jobs %}{% include "prototype_etl_management/_job_item.html" %}{% endfor %}
+        </div>
+      {% elif section == 'defaults' %}
+        <p class="text-sm text-muted-foreground">{% translate "Reference catalog of every built-in script this platform ships, and whether it's active for this project." %}</p>
+        <div class="proto-card-grid">
+          {% for s in native_scripts %}
+          <div class="rounded-lg border bg-card text-card-foreground p-4 space-y-1">
+            <div class="flex items-center gap-2"><strong>{{ s.name }}</strong></div>
+            <p class="text-sm text-muted-foreground">{{ s.datatype }} · {{ s.language }} · {{ s.current_version }}</p>
+            <p class="text-sm">{{ s.description }}</p>
+            <label class="flex items-center gap-2 text-sm" style="padding-top:.35rem;"><input type="checkbox" checked disabled> {% translate "Enabled for this project (Admin only)" %}</label>
+          </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- ===================== EMPTY STATE PREVIEW (no bindings yet) ===================== -->
+<div class="container space-y-4" style="margin-top:3rem;">
+  <h2 class="font-semibold tracking-tight text-lg text-muted-foreground">{% translate "Empty state preview — Bindings section, 0 bindings" %}</h2>
+  <div class="rounded-lg border bg-card text-card-foreground shadow-sm">
+    <div class="p-6 py-16 text-center text-muted-foreground space-y-2">
+      {% include "components/icon.html" with icon_name="database" %}
+      <p class="font-medium">{% translate "This project has no ETL pipelines" %}</p>
+      <p class="text-sm">{% translate "Use New binding in the sidebar to connect a source bucket to a script." %}</p>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,21 @@
+{% comment %}Shared script card: identity + expandable version history (<details>). Expects `script`.{% endcomment %}
+<details class="proto-job rounded-lg border bg-card text-card-foreground">
+  <summary>
+    <span class="proto-pill proto-pill-{% if script.origin == 'native' %}info{% else %}neutral{% endif %}">{% if script.origin == 'native' %}{% translate "Built-in" %}{% else %}{% translate "Custom" %}{% endif %}</span>
+    <strong>{{ script.name }}</strong>
+    <span class="text-sm text-muted-foreground">{{ script.language }} · {{ script.datatype }} · {{ script.current_version }}</span>
+    {% if script.origin == 'custom' %}
+    <button class="btn" type="button" disabled title="Prototype — not wired up" style="margin-left:auto;">{% include 'components/icon.html' with icon_name='pencil' icon_classes='h-4 w-4' %}{% translate "Edit" %}</button>
+    {% endif %}
+  </summary>
+  <div class="proto-wizard-step-body space-y-2">
+    <p class="text-sm text-muted-foreground">{{ script.description }}</p>
+    <p class="text-sm">{% blocktranslate count counter=script.used_by %}Used by {{ counter }} binding{% plural %}Used by {{ counter }} bindings{% endblocktranslate %}</p>
+    <div class="proto-version-list">
+      {% for v in script.versions %}
+      <div class="proto-version-row"><strong>{{ v.version }}</strong><span class="text-sm text-muted-foreground">{{ v.date }}{% if v.author %} · {{ v.author }}{% endif %}</span><span class="text-sm">{{ v.note }}</span></div>
+      {% endfor %}
+    </div>
+    {% if script.origin == 'native' %}<p class="text-sm text-muted-foreground">{% translate "Native scripts ship with the codebase and are read-only here — see Defaults." %}</p>{% endif %}
+  </div>
+</details>

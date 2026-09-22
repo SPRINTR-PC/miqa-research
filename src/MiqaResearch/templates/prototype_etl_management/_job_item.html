@@ -1,0 +1,26 @@
+{% comment %}Shared job row: status pill + expandable detail (<details>, no JS). Expects `job`.{% endcomment %}
+<details class="proto-job rounded-lg border bg-card text-card-foreground"{% if job.status == "failed" %} open{% endif %}>
+  <summary>
+    <span class="proto-pill proto-pill-{{ job.status }}">{{ job.status }}</span>
+    <strong>{{ job.binding }}</strong>
+    <span class="text-sm text-muted-foreground">{{ job.started }}{% if job.duration != "—" %} · {{ job.duration }}{% endif %}</span>
+    <span class="text-sm text-muted-foreground proto-job-input">{{ job.input }}</span>
+  </summary>
+  <div class="proto-wizard-step-body space-y-2">
+    <div class="proto-review">
+      <div><span class="text-muted-foreground">Input</span><strong>{{ job.input }}</strong></div>
+      <div><span class="text-muted-foreground">Checksum</span><strong>{{ job.checksum }}</strong></div>
+      {% if job.rows is not None %}<div><span class="text-muted-foreground">Rows loaded</span><strong>{{ job.rows }}</strong></div>{% endif %}
+      {% if job.exit_code %}<div><span class="text-muted-foreground">Exit code</span><strong>{{ job.exit_code }}</strong></div>{% endif %}
+    </div>
+    {% if job.error %}
+    <div class="proto-admonition proto-admonition-error">{{ job.error }}</div>
+    {% endif %}
+    {% if job.log_tail %}
+    <pre class="proto-log">{% for line in job.log_tail %}{{ line }}
+{% endfor %}</pre>
+    {% else %}
+    <p class="text-sm text-muted-foreground">{% translate "No log lines yet." %}</p>
+    {% endif %}
+  </div>
+</details>

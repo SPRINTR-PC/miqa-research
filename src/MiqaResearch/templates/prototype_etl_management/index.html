@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% load static %}
+{% get_current_language as LANGUAGE_CODE %}
+{% comment %}
+PROTOTYPE — wayfinder ticket #150 (ETL management UI, map #140).
+Three structurally different variants, switchable via ?variant=A|B|C. Throwaway:
+lives only on branch prototype/etl-management-ui, never merged to main. Mock data only —
+no EtlScript/PipelineBinding/EtlJob models exist yet.
+{% endcomment %}
+{% block main %}
+
+<style>
+  /* Prototype-only styling, scoped by proto- prefix. Not added to mires.css. */
+  .proto-pill { display: inline-flex; align-items: center; border-radius: 9999px; padding: .1rem .6rem; font-size: .75rem; font-weight: 600; text-transform: capitalize; white-space: nowrap; }
+  .proto-pill-succeeded, .proto-pill-active { background: hsl(var(--color-chart-success-parts) / .18); color: hsl(var(--color-chart-success-parts)); }
+  .proto-pill-running { background: hsl(var(--color-chart-info-parts) / .18); color: hsl(var(--color-chart-info-parts)); }
+  .proto-pill-queued { background: hsl(var(--color-muted-parts) / .3); color: hsl(var(--color-muted-foreground-parts)); }
+  .proto-pill-failed, .proto-pill-needs-attention { background: hsl(var(--color-destructive-parts) / .18); color: hsl(var(--color-destructive-parts)); }
+  .proto-pill-info { background: hsl(var(--color-chart-info-parts) / .18); color: hsl(var(--color-chart-info-parts)); }
+  .proto-pill-neutral { background: hsl(var(--color-muted-parts) / .3); color: hsl(var(--color-muted-foreground-parts)); }
+
+  .proto-wizard-step, .proto-job { border-bottom: 1px solid hsl(var(--color-border-parts)); }
+  .proto-wizard-step:last-child, .proto-job:last-child { border-bottom: none; }
+  .proto-wizard-step > summary, .proto-job > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: .6rem; padding: .85rem 1rem; }
+  .proto-wizard-step > summary::-webkit-details-marker, .proto-job > summary::-webkit-details-marker { display: none; }
+  .proto-wizard-step > summary::before { content: "▸"; color: hsl(var(--color-muted-foreground-parts)); transition: transform .1s; }
+  .proto-wizard-step[open] > summary::before { transform: rotate(90deg); }
+  .proto-job > summary::before { content: "▸"; color: hsl(var(--color-muted-foreground-parts)); }
+  .proto-job[open] > summary::before { transform: rotate(90deg); }
+  .proto-job-input { margin-left: auto; }
+  .proto-wizard-step-body { padding: 0 1rem 1rem 2.4rem; }
+  .proto-job > .proto-wizard-step-body { padding-left: 1rem; }
+
+  .proto-field { display: flex; flex-direction: column; gap: .25rem; font-size: .875rem; margin-bottom: .75rem; }
+  .proto-field select { border: 1px solid hsl(var(--color-border-parts)); border-radius: .375rem; padding: .4rem .6rem; background: hsl(var(--color-background-parts)); }
+  .proto-radio-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: .6rem; }
+  .proto-radio-card { display: flex; flex-direction: column; gap: .1rem; border: 1px solid hsl(var(--color-border-parts)); border-radius: .5rem; padding: .6rem .75rem; font-size: .875rem; }
+  .proto-review { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .5rem .75rem; font-size: .875rem; background: hsl(var(--color-muted-parts) / .12); border-radius: .5rem; padding: .75rem; }
+  .proto-review > div { display: flex; flex-direction: column; gap: .1rem; }
+
+  .proto-log { background: hsl(var(--color-background-parts)); border: 1px solid hsl(var(--color-border-parts)); border-radius: .375rem; padding: .6rem .75rem; font-family: var(--font-mono); font-size: .8rem; overflow-x: auto; }
+  .proto-admonition-error { border: 1px solid hsl(var(--color-destructive-parts) / .4); background: hsl(var(--color-destructive-parts) / .1); color: hsl(var(--color-destructive-parts)); border-radius: .5rem; padding: .6rem .75rem; font-size: .875rem; }
+  .proto-version-list { display: flex; flex-direction: column; gap: .35rem; }
+  .proto-version-row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: baseline; font-size: .875rem; }
+  .proto-version-row strong { min-width: 2.2rem; }
+
+  .proto-sub-tablist { display: inline-flex; gap: .25rem; border-bottom: 1px solid hsl(var(--color-border-parts)); }
+  .proto-sub-tab { display: inline-flex; align-items: center; gap: .4rem; padding: .5rem .9rem; font-size: .875rem; font-weight: 500; color: hsl(var(--color-muted-foreground-parts)); border-bottom: 2px solid transparent; text-decoration: none; }
+  .proto-sub-tab.active { color: hsl(var(--color-foreground-parts)); border-bottom-color: hsl(var(--color-primary-parts)); }
+
+  .proto-workspace { display: grid; grid-template-columns: 220px 1fr; gap: 1.5rem; align-items: start; }
+  .proto-workspace-nav { display: flex; flex-direction: column; gap: .2rem; position: sticky; top: 5rem; }
+  .proto-workspace-link { display: flex; align-items: center; gap: .5rem; padding: .5rem .75rem; border-radius: .5rem; text-decoration: none; color: hsl(var(--color-foreground-parts)); font-size: .9rem; }
+  .proto-workspace-link.active { background: hsl(var(--color-muted-parts) / .25); font-weight: 600; }
+  .proto-workspace-link:hover { background: hsl(var(--color-muted-parts) / .15); }
+  @media (max-width: 700px) { .proto-workspace { grid-template-columns: 1fr; } }
+
+  .proto-binding-flow { display: flex; align-items: center; gap: .4rem; font-size: .8rem; color: hsl(var(--color-muted-foreground-parts)); flex-wrap: wrap; }
+  .proto-card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; }
+</style>
+
+<div style="border:2px dashed hsl(var(--color-destructive-parts));border-radius:.5rem;padding:.75rem 1rem;margin-bottom:1.5rem;background:hsl(var(--color-destructive-parts) / .08);">
+  <strong>PROTOTYPE</strong> — not real data, not wired to models. Wayfinder ticket
+  <a href="https://github.com/SPRINTR-PC/miqa-research/issues/150" target="_blank" rel="noopener">#150</a>
+  (map <a href="https://github.com/SPRINTR-PC/miqa-research/issues/140" target="_blank" rel="noopener">#140</a>).
+  Answers: where does ETL management live, and how are Bindings / Scripts / Jobs / Defaults organised.
+</div>
+
+{% if variant == "A" %}
+  {% include "prototype_etl_management/_variant_a.html" %}
+{% elif variant == "B" %}
+  {% include "prototype_etl_management/_variant_b.html" %}
+{% elif variant == "C" %}
+  {% include "prototype_etl_management/_variant_c.html" %}
+{% endif %}
+
+<div style="position:fixed;bottom:1.25rem;left:50%;transform:translateX(-50%);z-index:9999;
+            background:hsl(var(--color-popover-parts));color:hsl(var(--color-popover-foreground-parts));
+            border:1px solid hsl(var(--color-border-parts));border-radius:9999px;
+            padding:.5rem .5rem .5rem 1rem;display:flex;align-items:center;gap:.75rem;
+            box-shadow:0 8px 24px rgba(0,0,0,.35);font-size:.875rem;">
+  <a href="?variant={{ prev_variant }}" aria-label="Previous variant"
+     style="text-decoration:none;font-size:1.1rem;padding:.15rem .5rem;">&larr;</a>
+  <span><strong>{{ variant }}</strong> — {{ variant_label }}</span>
+  <a href="?variant={{ next_variant }}" aria-label="Next variant"
+     style="text-decoration:none;font-size:1.1rem;padding:.15rem .5rem;">&rarr;</a>
+</div>
+
+<script>
+  (function () {
+    var prev = "{{ prev_variant }}";
+    var next = "{{ next_variant }}";
+    document.addEventListener("keydown", function (e) {
+      var tag = (document.activeElement && document.activeElement.tagName) || "";
+      var editable = document.activeElement && document.activeElement.isContentEditable;
+      if (tag === "INPUT" || tag === "TEXTAREA" || editable) return;
+      if (e.key === "ArrowLeft") window.location.href = "?variant=" + prev;
+      if (e.key === "ArrowRight") window.location.href = "?variant=" + next;
+    });
+  })();
+</script>
+{% endblock main %}
