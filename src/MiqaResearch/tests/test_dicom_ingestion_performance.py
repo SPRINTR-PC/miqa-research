@@ -133,18 +133,13 @@ def test_concurrent_ingestion_runs_via_real_task_dispatch_complete_correctly_and
     test's own settings overrides only apply in *this* process; the
     dispatched task runs inside the worker container.
 
-    Storage stays local (the default): this codebase's MIRES_MEDIA_ROOT env
-    var is declared but never actually wired to Django's MEDIA_ROOT setting
-    (a pre-existing, out-of-scope gap -- found live, when local-backend
-    output landed at the worker container's CWD instead of the intended
-    scratch path), so there is no way to point the worker's storage output
-    at a scratch location via env var. Rather than depend on that gap (or on
+    Storage stays local (the default), pointed at a scratch media root via
+    the worker's MIRES_MEDIA_ROOT (docker-compose.dev-test.yml) -- not at
     S3/RustFS, whose `mires_fs` hostname trips a separate pre-existing,
-    out-of-scope botocore endpoint-validation issue in this environment --
-    also reproduced against the already-merged AC #4 RustFS test in
-    test_dicom_storage_backend.py), this test accepts the CWD-relative
-    `DICOM/` folder Django's un-configured default FileSystemStorage
-    produces and removes it afterward, same as it does its own scratch root.
+    out-of-scope botocore endpoint-validation issue in this environment
+    (reproduced against the already-merged AC #4 RustFS test in
+    test_dicom_storage_backend.py, #171). This test removes that scratch
+    media root afterward, same as it does its own source scratch root.
 
     Uses `transactional_db`, not `db`: the default `db` fixture wraps the
     test in one outer transaction rolled back at the end, so a separate
@@ -168,10 +163,10 @@ def test_concurrent_ingestion_runs_via_real_task_dispatch_complete_correctly_and
         "default": {**settings.TASKS["default"], "BACKEND": "django_tasks_celery.CeleryBackend"},
     }
     scratch_root = Path(django_settings.BASE_DIR) / ".dev-data" / "dicom_perf_concurrency"
-    # Where the worker's un-configured default FileSystemStorage actually
-    # lands (its CWD is /app, same as this process's BASE_DIR -- see
-    # docstring above); cleaned up alongside scratch_root.
-    stray_media_root = Path(django_settings.BASE_DIR) / "DICOM"
+    # Must match the worker's MIRES_MEDIA_ROOT (docker-compose.dev-test.yml);
+    # its CWD is /app, same as this process's BASE_DIR. Cleaned up alongside
+    # scratch_root.
+    worker_media_root = Path(django_settings.BASE_DIR) / ".dev-data" / "dicom_perf_concurrency_media"
     settings.DICOM_ALLOWED_SOURCE_ROOTS = [scratch_root]
     settings.DICOM_STORAGE_BACKEND = "local"
 
@@ -223,4 +218,4 @@ def test_concurrent_ingestion_runs_via_real_task_dispatch_complete_correctly_and
         assert DicomFile.objects.filter(research_project=project).count() == run_count * files_per_run
     finally:
         shutil.rmtree(scratch_root, ignore_errors=True)
-        shutil.rmtree(stray_media_root, ignore_errors=True)
+        shutil.rmtree(worker_media_root, ignore_errors=True)
