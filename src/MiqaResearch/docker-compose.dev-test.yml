@@ -157,6 +157,36 @@ services:
       - mires
     restart: unless-stopped
 
+  mires_worker_dicom:
+    build:
+      context: .
+      dockerfile: dev.Dockerfile
+    command: sh -c "/tools/celery/start_worker.sh dicomIngestion"
+    environment:
+      - MIRES_DEBUG=1
+      - MIRES_SITE_URL=http://mires_web:8000
+      - MIRES_DATABASE_URL=psql://postgres:postgres@mires_db:5432/miqaresearch
+      - MIRES_CELERY_BROKER_URL=amqp://miresRabmin:miresRabmin@miresrabbit:5672//
+      - MIRES_AUTH_TOKEN=2ac83c66b6affe116e16efc51ef752f583b37c52
+      - SET_CELERY_PYTHON_PATH=1
+      - MIRES_VAULT_URL=http://mires_vault:8200
+      - MIRES_VAULT_TOKEN=AVeryUnsecretSecret
+      # Shared with mires_testrunner's dicom concurrency perf test (#126) --
+      # both processes must agree on these paths, since the task this worker
+      # runs executes in *this* container, not the test process.
+      - MIRES_DICOM_ALLOWED_SOURCE_ROOTS=/app/.dev-data/dicom_perf_concurrency
+      - MIRES_MEDIA_ROOT=/app/.dev-data/dicom_perf_concurrency/media
+    depends_on:
+      - mires_web
+      - mires_db
+      - mires_rabbit
+      - mires_vault
+    volumes:
+      - ./:/app
+    networks:
+      - mires
+    restart: unless-stopped
+
   mires_beat:
     build:
       context: .
@@ -237,6 +267,8 @@ services:
       - MIRES_USE_VAULT=1
       - MIRES_VAULT_URL=http://mires_vault:8200
       - MIRES_VAULT_TOKEN=AVeryUnsecretSecret
+      - MIRES_DICOM_ALLOWED_SOURCE_ROOTS=/app/.dev-data/dicom_perf_concurrency
+      - MIRES_MEDIA_ROOT=/app/.dev-data/dicom_perf_concurrency/media
     command: sh -c "pytest --plus-profile=ci"
     networks:
       - mires
@@ -245,6 +277,7 @@ services:
       - mires_db
       - mires_fs
       - mires_vault
+      - mires_worker_dicom
     volumes:
       - ./:/app
 
