@@ -1,0 +1,13 @@
+{% get_current_language as LANGUAGE_CODE %}
+<p class="text-sm text-muted-foreground">{% translate "Each binding connects one source bucket to one script, producing one datatype. Project Admins and Data Managers only." %}</p>
+<details>
+  <summary class="btn" style="display:inline-flex;width:fit-content;cursor:pointer;">{% include 'components/icon.html' with icon_name='plus' icon_classes='h-4 w-4' %}{% translate "New binding" %}</summary>
+  <div style="margin-top:.75rem;">{% include '01_dashboard/_panel_etl_wizard.html' %}</div>
+</details>
+<div class="rounded-lg border bg-card text-card-foreground shadow-sm">
+  <div class="p-6 py-16 text-center text-muted-foreground space-y-2">
+    {% include "components/icon.html" with icon_name="database" %}
+    <p class="font-medium">{% translate "No pipelines connected yet" %}</p>
+    <p class="text-sm">{% translate "Connect a source bucket to a script and this project starts extracting data automatically." %}</p>
+  </div>
+</div>

@@ -13,6 +13,114 @@
 .text-card-foreground {
   color: var(--color-card-foreground);
 }
+.etl-workspace {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+@media (max-width: 700px) {
+  .etl-workspace {
+    grid-template-columns: 1fr;
+  }
+}
+.etl-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  position: sticky;
+  top: 5rem;
+}
+.etl-sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  text-decoration: none;
+  color: var(--color-foreground);
+  font-size: 0.9rem;
+}
+.etl-sidebar-link:hover {
+  background-color: hsl(var(--color-muted-parts) / 0.15);
+}
+.etl-sidebar-link.active {
+  background-color: hsl(var(--color-muted-parts) / 0.25);
+  font-weight: 600;
+}
+.etl-sidebar-link[aria-disabled="true"] {
+  opacity: 0.6;
+  cursor: default;
+}
+.etl-wizard .etl-wizard-step {
+  border-bottom: 1px solid var(--color-border);
+}
+.etl-wizard .etl-wizard-step:last-child {
+  border-bottom: none;
+}
+.etl-wizard .etl-wizard-step > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.85rem 1rem;
+}
+.etl-wizard .etl-wizard-step > summary::-webkit-details-marker {
+  display: none;
+}
+.etl-wizard .etl-wizard-step > summary::before {
+  content: "▸";
+  color: var(--color-muted-foreground);
+  transition: transform 0.1s;
+}
+.etl-wizard .etl-wizard-step[open] > summary::before {
+  transform: rotate(90deg);
+}
+.etl-wizard-step-body {
+  padding: 0 1rem 1rem 2.4rem;
+}
+.etl-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.875rem;
+  margin-bottom: 0.75rem;
+}
+.etl-field select {
+  border: 1px solid var(--color-border);
+  border-radius: 0.375rem;
+  padding: 0.4rem 0.6rem;
+  background-color: var(--color-background);
+}
+.etl-radio-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.6rem;
+}
+.etl-radio-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.875rem;
+}
+.etl-review {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  background-color: hsl(var(--color-muted-parts) / 0.12);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+}
+.etl-review > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
 .icon.small-inline-icon {
   height: 1.3rem;
   width: 1rem;

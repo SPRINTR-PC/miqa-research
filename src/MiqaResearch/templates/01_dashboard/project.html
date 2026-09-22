@@ -18,6 +18,8 @@
   <div id="dashboard-tab-panel" class="loading-target fw">
     {% if active_tab == 'goals' %}
       {% include '01_dashboard/_panel_goals.html' %}
+    {% elif active_tab == 'etl-pipelines' %}
+      {% include '01_dashboard/_panel_etl_pipelines.html' %}
     {% else %}
       {% include '01_dashboard/_panel_consent_statistics.html' %}
     {% endif %}

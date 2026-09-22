@@ -1,0 +1,9 @@
+{% get_current_language as LANGUAGE_CODE %}
+<p class="text-sm text-muted-foreground">{% translate "Built-in scripts available to every project. Enabled by default; an Admin can disable one for this project." %}</p>
+<div class="rounded-lg border bg-card text-card-foreground shadow-sm">
+  <div class="p-6 py-16 text-center text-muted-foreground space-y-2">
+    {% include "components/icon.html" with icon_name="shield-check" %}
+    <p class="font-medium">{% translate "No built-in scripts registered yet" %}</p>
+    <p class="text-sm">{% translate "This will catalog every native script the platform ships once the script registry lands." %}</p>
+  </div>
+</div>

@@ -1,0 +1,9 @@
+{% get_current_language as LANGUAGE_CODE %}
+<p class="text-sm text-muted-foreground">{% translate "One row per run attempt. All-or-nothing: a job either loads every row or none." %}</p>
+<div class="rounded-lg border bg-card text-card-foreground shadow-sm">
+  <div class="p-6 py-16 text-center text-muted-foreground space-y-2">
+    {% include "components/icon.html" with icon_name="scroll-text" %}
+    <p class="font-medium">{% translate "No jobs yet" %}</p>
+    <p class="text-sm">{% translate "Runs will appear here once a binding exists and the orchestrator picks up a file." %}</p>
+  </div>
+</div>

@@ -8,4 +8,8 @@
     hx-get="{% url 'dashboard_tab_goals' project.id %}" hx-target="#dashboard-tab-panel" hx-swap="innerHTML" hx-push-url="true" hx-sync="#dashboard-tab-panel:replace"
     hx-indicator="#dashboard-tab-loading, #dashboard-tab-panel"
     class="tab inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1_5 text-sm font-medium ring-offset-background ring-offset-2 ring-offset-background ring-1 ring-transparent hover:ring-primary gap-1">{% include 'components/icon.html' with icon_name='target' %}{% translate "Goals" %}</button>
+  <button type="button" role="tab" aria-selected="{% if active_tab == 'etl-pipelines' %}true{% else %}false{% endif %}"
+    hx-get="{% url 'dashboard_tab_etl_pipelines' project.id %}" hx-target="#dashboard-tab-panel" hx-swap="innerHTML" hx-push-url="true" hx-sync="#dashboard-tab-panel:replace"
+    hx-indicator="#dashboard-tab-loading, #dashboard-tab-panel"
+    class="tab inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1_5 text-sm font-medium ring-offset-background ring-offset-2 ring-offset-background ring-1 ring-transparent hover:ring-primary gap-1">{% include 'components/icon.html' with icon_name='scroll-text' %}{% translate "ETL Pipelines" %}</button>
 </div>

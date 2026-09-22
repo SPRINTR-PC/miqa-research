@@ -1,0 +1,9 @@
+{% get_current_language as LANGUAGE_CODE %}
+<p class="text-sm text-muted-foreground">{% translate "Native scripts ship with the codebase and are read-only. Custom scripts are project-owned and editable." %}</p>
+<div class="rounded-lg border bg-card text-card-foreground shadow-sm">
+  <div class="p-6 py-16 text-center text-muted-foreground space-y-2">
+    {% include "components/icon.html" with icon_name="pencil" %}
+    <p class="font-medium">{% translate "No scripts registered yet" %}</p>
+    <p class="text-sm">{% translate "Built-in and custom scripts will be listed here once the script registry lands." %}</p>
+  </div>
+</div>
