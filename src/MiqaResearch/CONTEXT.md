@@ -379,6 +379,42 @@ page position and totals. Paging, sorting, and filtering are one unit, not
 separate layers.
 _Avoid_: Paginator (that names the generic Django class)
 
+### ETL Datatype
+A code-registered kind of incoming data (name, output schema, loader that
+persists validated rows into models). Users choose among Datatypes; they never
+define them. Scripts return rows matching the Datatype's schema and never write
+to the database themselves.
+_Avoid_: Data type (ambiguous with column/field types)
+
+### ETL Script
+A user-authored program (Python; R later) that takes staged input files and
+produces rows for one ETL Datatype. Belongs to a Research Project, managed by
+its Admins and Data Managers. Built-in (default) scripts are global and
+read-only. Every save produces an immutable **Script Version**.
+
+### Script Version
+An immutable, content-hashed snapshot of an ETL Script. Pipeline Bindings pin a
+version (or "latest"), so every ETL Job is reproducible.
+
+### Pipeline Binding
+The link, within a Research Project, between an ETL Datatype, a source bucket
+(with prefix/pattern), an ETL Script (version), a grouping mode (per file or
+per folder), and a Raw Bucket destination.
+
+### Raw Bucket
+The bucket where source files are moved (copy, verify, then delete source) after
+a successful ETL Job. Default behaviour; per-binding toggle to keep sources.
+
+### ETL Job
+One run of one Script Version over one group of input files. Records script
+version, input object keys and checksums, runtime image digest, status, and log.
+Loading is all-or-nothing per job.
+
+### Sandbox Runner
+The isolated, ephemeral container in which custom ETL Scripts execute: no
+network, read-only staged input, resource-limited, no credentials. Built-in
+scripts run in-process.
+
 ## Decisions (ADRs)
 
 | ADR | Title | Status |
