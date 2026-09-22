@@ -111,11 +111,12 @@ def parse_s3_source(source: str) -> tuple[str, str]:
 
 
 class S3Source:
-    """An opened S3 bucket/prefix source: validated, listable, readable.
+    """An opened S3 bucket/prefix source: validated, listable, readable, and
+    (for source retention, #123) deletable one object at a time.
 
-    Uses its own read-scoped boto3 client, independent of the storage-write
-    path (#99). Object keys are opaque strings here — they are never used to
-    build local filesystem paths; the pipeline processes the bytes directly.
+    Uses its own boto3 client, independent of the storage-write path (#99).
+    Object keys are opaque strings here — they are never used to build local
+    filesystem paths; the pipeline processes the bytes directly.
     """
 
     def __init__(self, source: str):
@@ -151,6 +152,13 @@ class S3Source:
             return self._client.get_object(Bucket=ref.bucket, Key=ref.key)["Body"].read()
         except ClientError as exc:
             raise S3SourceError(f"S3 object unreadable: {ref.uri}") from exc
+
+    def delete(self, ref: S3ObjectRef) -> None:
+        """Delete exactly this object (source retention, #123). S3SourceError when it can't be deleted."""
+        try:
+            self._client.delete_object(Bucket=ref.bucket, Key=ref.key)
+        except ClientError as exc:
+            raise S3SourceError(f"S3 object could not be deleted: {ref.uri}") from exc
 
 
 def _build_s3_client():

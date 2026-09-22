@@ -63,6 +63,7 @@ env = environ.Env(
     MIRES_DICOM_S3_SECRET_ACCESS_KEY=(str, None),
     MIRES_DICOM_STORAGE_BACKEND=(str, "local"),
     MIRES_DICOM_S3_BUCKET=(str, None),
+    MIRES_DICOM_DELETE_ORIGINALS_AFTER_STORAGE=(bool, False),
     MIRES_EMAIL_HOST=(str, None),
     MIRES_EMAIL_PORT=(int, 1234),
     MIRES_EMAIL_HOST_USER=(str, None),
@@ -147,6 +148,13 @@ DICOM_S3_SECRET_ACCESS_KEY: str | None = env("MIRES_DICOM_S3_SECRET_ACCESS_KEY")
 # affected -- no other file storage in the app.
 DICOM_STORAGE_BACKEND: str = env("MIRES_DICOM_STORAGE_BACKEND")
 DICOM_S3_BUCKET: str | None = env("MIRES_DICOM_S3_BUCKET")
+
+# DICOM ingestion (#123): global default for source retention. A run deletes
+# its source file only once storage is verified, never merely on a successful
+# storage call. Layered: ResearchProject.dicom_delete_originals_after_storage
+# overrides this per project (None defers here); run_ingestion's
+# delete_originals_after_storage overrides both for a single run.
+DICOM_DELETE_ORIGINALS_AFTER_STORAGE: bool = env("MIRES_DICOM_DELETE_ORIGINALS_AFTER_STORAGE")
 
 
 def get_allowed_hosts_list(allowed_hosts_env) -> list[str]:

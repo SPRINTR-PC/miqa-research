@@ -3,6 +3,8 @@
 Local deployment storage by default (#119); the S3-compatible object storage
 option (#122) slots in here via a dedicated named storage for imaging files.
 """
+import hashlib
+
 from django.core.files.base import ContentFile
 
 from MiqaResearch.data.models import DicomFile
@@ -32,3 +34,15 @@ def discard_file(dcm_file: DicomFile, name: str) -> None:
     """Delete a superseded stored file."""
     if name and name != dcm_file.file.name:
         dcm_file.file.storage.delete(name)
+
+
+def verify_stored_bytes(dcm_file: DicomFile, expected_sha256: str) -> bool:
+    """Read back the just-stored file and confirm it hashes to `expected_sha256`.
+
+    A storage backend's write call can return without error while the
+    persisted bytes are corrupt or truncated; source retention (#123) must
+    never delete an original on that weaker guarantee, so it reads the bytes
+    back instead of trusting the write call alone.
+    """
+    with dcm_file.file.storage.open(dcm_file.file.name, "rb") as stored:
+        return hashlib.sha256(stored.read()).hexdigest() == expected_sha256
