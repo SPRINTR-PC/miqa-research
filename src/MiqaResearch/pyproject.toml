@@ -85,7 +85,7 @@ markers = [
     "slow: mark a test as slow",
     "vlm: mark a test that calls a real VLM (e.g. Ollama) over the network",
     "ocr: mark a test that runs OCR service as they are slow and should not be run every time",
-    "long_running: mark a long-running (performance/load) test; excluded from the default test run",
+    "long_running: mark a long-running (performance/load/extended security) test; excluded from the default test run",
 ]
 
 [tool.pytest-html-plus.profiles.ci]

@@ -24,10 +24,11 @@ from django.db import transaction
 from helpers.dicom_uid import pseudonymize_uid
 from MiqaResearch.data.models import DicomFile, ResearchProject
 
-from . import discovery, dicom_parsing, extractors, records
+from . import discovery, dicom_parsing, extractors, pixel_bounds, records
 from . import participant as participant_stage
 from . import storage as storage_stage
 from .dicom_parsing import NotADicomError
+from .pixel_bounds import ImplausiblePixelDimensionsError
 
 logger = logging.getLogger(__name__)
 
@@ -225,6 +226,13 @@ def _ingest_file(
         return finish(OUTCOME_ERROR, error="not a DICOM file")
     except Exception:
         return finish(OUTCOME_ERROR, error="DICOM parse error")
+
+    try:
+        pixel_bounds.assert_plausible_pixel_dimensions(
+            dataset, django_settings.DICOM_MAX_PIXEL_DIMENSIONS, django_settings.DICOM_MAX_FRAME_COUNT
+        )
+    except ImplausiblePixelDimensionsError as exc:
+        return finish(OUTCOME_ERROR, error=str(exc))
 
     try:
         pseudonyms = _pseudonymize_uids(dataset, research_project)

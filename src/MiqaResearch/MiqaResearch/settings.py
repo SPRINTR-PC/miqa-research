@@ -65,6 +65,8 @@ env = environ.Env(
     MIRES_DICOM_STORAGE_BACKEND=(str, "local"),
     MIRES_DICOM_S3_BUCKET=(str, None),
     MIRES_DICOM_DELETE_ORIGINALS_AFTER_STORAGE=(bool, False),
+    MIRES_DICOM_MAX_PIXEL_DIMENSIONS=(int, 200_000),
+    MIRES_DICOM_MAX_FRAME_COUNT=(int, 500_000),
     MIRES_EMAIL_HOST=(str, None),
     MIRES_EMAIL_PORT=(int, 1234),
     MIRES_EMAIL_HOST_USER=(str, None),
@@ -156,6 +158,16 @@ DICOM_S3_BUCKET: str | None = env("MIRES_DICOM_S3_BUCKET")
 # overrides this per project (None defers here); run_ingestion's
 # delete_originals_after_storage overrides both for a single run.
 DICOM_DELETE_ORIGINALS_AFTER_STORAGE: bool = env("MIRES_DICOM_DELETE_ORIGINALS_AFTER_STORAGE")
+
+# DICOM ingestion security (#114, #127): a file's *declared* Rows/Columns/
+# TotalPixelMatrixRows/TotalPixelMatrixColumns/NumberOfFrames tags are
+# rejected before any pixel data is decoded when they exceed these bounds --
+# defense against a small compressed payload declaring an enormous decoded
+# size (a decompression-bomb shape, especially relevant to pathology J2K
+# frames). Defaults are generous enough for real gigapixel WSI pyramids
+# (tunable per deployment via env).
+DICOM_MAX_PIXEL_DIMENSIONS: int = env("MIRES_DICOM_MAX_PIXEL_DIMENSIONS")
+DICOM_MAX_FRAME_COUNT: int = env("MIRES_DICOM_MAX_FRAME_COUNT")
 
 
 def get_allowed_hosts_list(allowed_hosts_env) -> list[str]:
