@@ -270,10 +270,22 @@ No test for this task (infrastructure-only; verified functionally by Task 5's co
     environment:
       - MIRES_DEBUG=1
       - MIRES_SITE_URL=http://mires_web:8000
-      - MIRES_DATABASE_URL=psql://postgres:postgres@mires_db:5432/miqaresearch
+      # test_miqaresearch, not miqaresearch: this worker exists only to serve
+      # the dicom concurrency perf test, which (via pytest-django) runs
+      # against Django's test database, not the dev one -- a separate
+      # database on the same server (confirmed live: without this, the
+      # worker raised ResearchProject.DoesNotExist for a row that existed
+      # only in test_miqaresearch). Must match what mires_testrunner's own
+      # MIRES_DATABASE_URL resolves to as its test DB.
+      - MIRES_DATABASE_URL=psql://postgres:postgres@mires_db:5432/test_miqaresearch
       - MIRES_CELERY_BROKER_URL=amqp://miresRabmin:miresRabmin@miresrabbit:5672//
       - MIRES_AUTH_TOKEN=2ac83c66b6affe116e16efc51ef752f583b37c52
       - SET_CELERY_PYTHON_PATH=1
+      # Unlike mires_worker_consent/email/ocr, this worker's task pseudonymizes
+      # UIDs with Fernet encryption (helpers.dicom_uid.pseudonymize_uid), so it
+      # actually needs a real FERNET_KEY -- found live: without MIRES_USE_VAULT,
+      # FERNET_KEY is None and every file errors with "UID pseudonymization failed".
+      - MIRES_USE_VAULT=1
       - MIRES_VAULT_URL=http://mires_vault:8200
       - MIRES_VAULT_TOKEN=AVeryUnsecretSecret
       # Shared with mires_testrunner's dicom concurrency perf test (#126) --
@@ -524,22 +536,26 @@ git commit -m "DICOM ingestion: large-file/S3 benchmark (#126)"
 - Modify: `tests/test_dicom_ingestion_performance.py` (append)
 
 **Interfaces:**
-- Consumes: `ingest_dicom_source` (Task 2), `django.tasks.base.TaskResultStatus`, `django.conf.settings.BASE_DIR`.
-- Requires: `mires_worker_dicom` (Task 3) live and consuming `dicomIngestion`; this test's local scratch paths must match that worker's `MIRES_DICOM_ALLOWED_SOURCE_ROOTS`/`MIRES_MEDIA_ROOT` exactly (both resolve to `/app/.dev-data/dicom_perf_concurrency` inside the shared bind-mounted `/app`).
+- Consumes: `ingest_dicom_source` (Task 2), `celery.result.AsyncResult`, `MiqaResearch.celery.app`, `django.conf.settings.BASE_DIR`.
+- Requires: `mires_worker_dicom` (Task 3) live and consuming `dicomIngestion`; this test's local scratch source path must match that worker's `MIRES_DICOM_ALLOWED_SOURCE_ROOTS` exactly (both resolve to `/app/.dev-data/dicom_perf_concurrency` inside the shared bind-mounted `/app`).
 - Uses pytest-django's `transactional_db` fixture, not `db` — the default `db` fixture wraps the test in one outer transaction that's rolled back at the end, so a separate process (the worker, on its own DB connection) would never see the `ResearchProject` row this test creates. `transactional_db` commits for real (flushing the affected tables afterward instead), which is required whenever another process must see this test's writes.
+- `mires_worker_dicom`'s `MIRES_DATABASE_URL` must point at `test_miqaresearch`, not `miqaresearch` — found live: pytest-django runs against Django's test database (`test_<name>`, derived automatically from `MIRES_DATABASE_URL`'s `NAME`), a separate database on the same Postgres server from the one `mires_web`/the other workers use. Without this, the worker raises `ResearchProject.DoesNotExist` for a row that exists only in the test database.
+- Polls via Celery's own `AsyncResult`, not `django.tasks`'s `TaskResult.refresh()`/`.return_value` — found live: `django_tasks_celery`'s extended django-db-backend metadata bridging (`meta_to_task_result`) does `dict(meta["kwargs"])` expecting an already-decoded dict, but the "django-db" Celery result backend actually stores `kwargs`/`args` as JSON *strings*, so this raises `ValueError: dictionary update sequence element #0 has length 1; 2 is required` on the literal string `"{}"`. `enqueue()` dispatch itself is unaffected — only that particular result-reading path is — so this task's own unit test (Task 2, which never dispatches for real) is unaffected too.
+- Storage stays local (the default), not S3/RustFS like AC #2 — found live: this codebase's `MIRES_MEDIA_ROOT` env var is declared but never actually wired to Django's `MEDIA_ROOT` setting, so a worker's local-storage output lands at its CWD (`/app`) rather than any chosen scratch path; and `mires_fs`'s underscore-containing hostname independently trips the same pre-existing botocore endpoint-validation issue AC #2 documents (reproduced live against the already-merged `test_dicom_storage_backend.py` RustFS test too — out of scope for #126). This test works around the first (dead) gap directly instead of trading it for the second: it accepts Django's un-configured default `FileSystemStorage` landing files at `<BASE_DIR>/DICOM/...` and removes that folder itself afterward, alongside its own scratch root.
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `tests/test_dicom_ingestion_performance.py` (add `time` and `shutil` to the existing imports, plus `from pathlib import Path`, `from django.conf import settings as django_settings`, `from django.tasks.base import TaskResultStatus`, `from MiqaResearch.tasks.dicom_handling.tasks import ingest_dicom_source`):
+Append to `tests/test_dicom_ingestion_performance.py` (add `time` and `shutil` to the existing imports, plus `from pathlib import Path`, `from celery.result import AsyncResult`, `from django.conf import settings as django_settings`, `from MiqaResearch.celery import app as celery_app`, `from MiqaResearch.tasks.dicom_handling.tasks import ingest_dicom_source`):
 
 ```python
 import shutil
 import time
 from pathlib import Path
 
+from celery.result import AsyncResult
 from django.conf import settings as django_settings
-from django.tasks.base import TaskResultStatus
 
+from MiqaResearch.celery import app as celery_app
 from MiqaResearch.tasks.dicom_handling.tasks import ingest_dicom_source
 
 # ... (existing imports/fixtures/tests above stay as-is)
@@ -552,10 +568,12 @@ def test_concurrent_ingestion_runs_via_real_task_dispatch_complete_correctly_and
     directly) -- not in-process calls.
 
     Requires a live mires_worker_dicom consuming `dicomIngestion` (see
-    docker-compose.dev-test.yml). The scratch source/media paths below must
-    match that worker's MIRES_DICOM_ALLOWED_SOURCE_ROOTS/MIRES_MEDIA_ROOT
-    env vars exactly -- this test's own settings overrides only apply in
-    *this* process; the dispatched task runs inside the worker container.
+    docker-compose.dev-test.yml). The scratch source path below must match
+    that worker's MIRES_DICOM_ALLOWED_SOURCE_ROOTS env var exactly -- this
+    test's own settings overrides only apply in *this* process; the
+    dispatched task runs inside the worker container.
+
+    Storage, transactional_db, and AsyncResult polling: see Interfaces above.
     """
     # Undo tests/conftest.py's autouse dummy-backend override so this run
     # actually goes through django_tasks_celery.CeleryBackend.
@@ -564,8 +582,11 @@ def test_concurrent_ingestion_runs_via_real_task_dispatch_complete_correctly_and
         "default": {**settings.TASKS["default"], "BACKEND": "django_tasks_celery.CeleryBackend"},
     }
     scratch_root = Path(django_settings.BASE_DIR) / ".dev-data" / "dicom_perf_concurrency"
+    # Where the worker's un-configured default FileSystemStorage actually
+    # lands (its CWD is /app, same as this process's BASE_DIR); cleaned up
+    # alongside scratch_root (see Interfaces above).
+    stray_media_root = Path(django_settings.BASE_DIR) / "DICOM"
     settings.DICOM_ALLOWED_SOURCE_ROOTS = [scratch_root]
-    settings.MEDIA_ROOT = scratch_root / "media"
     settings.DICOM_STORAGE_BACKEND = "local"
 
     shutil.rmtree(scratch_root, ignore_errors=True)
@@ -593,40 +614,38 @@ def test_concurrent_ingestion_runs_via_real_task_dispatch_complete_correctly_and
 
         start = time.monotonic()
         task_results = [ingest_dicom_source.enqueue(str(project.id), source) for source in sources]
+        async_results = [AsyncResult(result.id, app=celery_app) for result in task_results]
 
         deadline = start + acceptance_seconds
-        while not all(result.is_finished for result in task_results) and time.monotonic() < deadline:
+        while not all(ar.ready() for ar in async_results) and time.monotonic() < deadline:
             time.sleep(0.5)
-            for result in task_results:
-                if not result.is_finished:
-                    result.refresh()
         elapsed = time.monotonic() - start
 
-        assert all(result.is_finished for result in task_results), "not every dispatched run finished before the deadline"
-        assert all(result.status == TaskResultStatus.SUCCESSFUL for result in task_results), [
-            (r.id, r.status, r.errors) for r in task_results
+        assert all(ar.ready() for ar in async_results), "not every dispatched run finished before the deadline"
+        assert all(ar.successful() for ar in async_results), [
+            (ar.id, ar.state, ar.result) for ar in async_results if not ar.successful()
         ]
         assert elapsed < acceptance_seconds, f"{run_count} concurrent runs took {elapsed:.1f}s, over the {acceptance_seconds}s threshold"
 
-        for result in task_results:
-            assert result.return_value == {
+        for ar in async_results:
+            assert ar.get() == {
                 "ingested": files_per_run, "skipped_duplicate": 0, "duplicate_conflict": 0, "error": 0,
             }
         assert DicomFile.objects.filter(research_project=project).count() == run_count * files_per_run
     finally:
         shutil.rmtree(scratch_root, ignore_errors=True)
+        shutil.rmtree(stray_media_root, ignore_errors=True)
 ```
 
 `DicomFile.research_project` is a direct FK (`MiqaResearch/data/models/dicom_file.py`) — no need to traverse `series__study__study_participant`.
 
 - [ ] **Step 2: Run test to verify it fails for the right reason**
 
-Run (requires the dev-test docker-compose stack up, including the new `mires_worker_dicom`): `uv run --no-sync pytest tests/test_dicom_ingestion_performance.py::test_concurrent_ingestion_runs_via_real_task_dispatch_complete_correctly_and_within_threshold -v -m long_running`
-Expected: before Task 2/3 exist, this fails with `ModuleNotFoundError`/connection errors. Once Tasks 2-3 are in place but before this step, it should reach the polling loop — confirm the "red" case for this specific test by pointing `ingest_dicom_source.enqueue` at a queue nothing consumes (e.g. temporarily lower `acceptance_seconds` to `2`) to see the deadline assertion fail, then restore `60`.
+Run inside the docker-compose dev-test stack (this test's `BASE_DIR`-derived scratch path must resolve to `/app/...`, matching the worker — so run it via `docker-compose -f docker-compose.dev-test.yml run --rm mires_testrunner sh -c "pytest tests/test_dicom_ingestion_performance.py::test_concurrent_ingestion_runs_via_real_task_dispatch_complete_correctly_and_within_threshold -v -m long_running"`, not directly from the host venv). Confirm the "red" case by temporarily lowering `acceptance_seconds` to an unreachable value (e.g. `0.0001`) to see the deadline assertion fail, then restore `60`. (A run cut short this way races the worker's still-in-flight write against this test's own cleanup — delete any stray `DICOM/` folder left at the repo root afterward; the real, full-threshold run always finishes before cleaning up.)
 
 - [ ] **Step 3: Run test to verify it passes**
 
-Run: same command with `acceptance_seconds = 60` restored, full docker-compose dev-test stack up.
+Run: same command with `acceptance_seconds = 60` restored, full docker-compose dev-test stack up (`mires_db`, `mires_rabbit`, `mires_vault`, `mires_web`, `mires_worker_dicom`).
 Expected: PASS (1 passed)
 
 - [ ] **Step 4: Commit**
