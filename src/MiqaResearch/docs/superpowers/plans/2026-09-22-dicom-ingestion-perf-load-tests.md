@@ -679,3 +679,9 @@ Expected: all pass, no new failures, no new warnings introduced by this work (th
 - [ ] **Step 4: `/code-review` the branch, then close out**
 
 Run `/code-review` against the base commit this work started from. Address any findings, then `gh issue comment 126` with a summary and `gh issue close 126`.
+
+## Post-review addendum
+
+`/code-review`'s Spec axis flagged that `ingest_dicom_source` (Task 2) returned only `report.counts`, narrowing #103's resolution ("the task returns a structured result (dataclass: per-file success/skip/error counts + reasons)... matching the OCR PipelineResult precedent") without discussion. Fixed: the task now returns `{"counts": ..., "results": [...]}`, with each per-file result serialized to plain JSON-safe types (`dcm_file_id` stringified from `UUID`). `tests/test_dicom_ingestion_task.py` and the concurrency test's payload assertions were updated to match, both re-verified live against the docker-compose dev-test stack (`AsyncResult.get()` round-trips the richer payload through Celery's JSON result backend without issue — this is a different path from the `TaskResult.refresh()` bug documented in Task 6).
+
+The Standards axis's other judgement call — `ingest_dicom_source` lets `ResearchProject.DoesNotExist` propagate uncaught, unlike the OCR/consent task precedents that catch-and-log — was addressed with a docstring note explaining the deliberate choice (no sensible partial result exists for a run never scoped to a real project).

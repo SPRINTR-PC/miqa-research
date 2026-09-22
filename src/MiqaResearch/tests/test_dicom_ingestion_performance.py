@@ -214,9 +214,12 @@ def test_concurrent_ingestion_runs_via_real_task_dispatch_complete_correctly_and
         assert elapsed < acceptance_seconds, f"{run_count} concurrent runs took {elapsed:.1f}s, over the {acceptance_seconds}s threshold"
 
         for ar in async_results:
-            assert ar.get() == {
+            payload = ar.get()
+            assert payload["counts"] == {
                 "ingested": files_per_run, "skipped_duplicate": 0, "duplicate_conflict": 0, "error": 0,
             }
+            assert len(payload["results"]) == files_per_run
+            assert all(result["outcome"] == "ingested" for result in payload["results"])
         assert DicomFile.objects.filter(research_project=project).count() == run_count * files_per_run
     finally:
         shutil.rmtree(scratch_root, ignore_errors=True)

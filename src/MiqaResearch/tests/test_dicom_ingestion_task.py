@@ -1,10 +1,10 @@
 """Unit test for the Celery task wrapper around DICOM ingestion (#126).
 
 Calls the task's underlying function directly (`.func(...)`), bypassing
-dispatch -- this thin wrapper's only job is id-resolution and counts
-extraction, so a plain unit test is enough here; real dispatch is exercised
-only by the concurrency scenario in test_dicom_ingestion_performance.py, per
-#116's Testing Decisions.
+dispatch -- this thin wrapper's only job is id-resolution and serializing the
+run's report, so a plain unit test is enough here; real dispatch is
+exercised only by the concurrency scenario in
+test_dicom_ingestion_performance.py, per #116's Testing Decisions.
 """
 import pytest
 
@@ -29,13 +29,22 @@ def research_project(db):
     return ResearchProject.objects.create(name="Task wrapper project", description="Project for #126 tests")
 
 
-def test_ingest_dicom_source_ingests_the_file_and_returns_counts(research_project, tmp_path, settings):
+def test_ingest_dicom_source_ingests_the_file_and_returns_counts_and_per_file_results(research_project, tmp_path, settings):
+    """Per #103's resolution: the task's result carries per-file counts *and*
+    reasons (matching the OCR PipelineResult precedent), not just counts."""
     settings.MEDIA_ROOT = tmp_path / "media"
     src = write_dicom(build_ct_image(), tmp_path / "ct1.dcm")
 
-    counts = ingest_dicom_source.func(str(research_project.id), str(src))
+    payload = ingest_dicom_source.func(str(research_project.id), str(src))
 
-    assert counts == {"ingested": 1, "skipped_duplicate": 0, "duplicate_conflict": 0, "error": 0}
+    assert payload["counts"] == {"ingested": 1, "skipped_duplicate": 0, "duplicate_conflict": 0, "error": 0}
+    assert len(payload["results"]) == 1
+    result = payload["results"][0]
+    assert result["source_path"] == str(src)
+    assert result["outcome"] == "ingested"
+    assert result["error"] is None
+    assert result["sop_instance_uid"]
+    assert result["dcm_file_id"]
     assert DicomFile.objects.count() == 1
 
 
