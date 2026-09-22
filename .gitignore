@@ -95,6 +95,9 @@ coverage.xml
 .ruff_cache/
 .hypothesis/
 
+# Downloaded long_running-test fixtures (e.g. real WSI samples, #125)
+src/MiqaResearch/tests/testdata/
+
 # Django specific
 src/MiqaResearch/db.sqlite3
 
