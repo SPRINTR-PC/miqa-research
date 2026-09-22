@@ -16,6 +16,7 @@ from pydicom.uid import (
     RTImageStorage,
     RTPlanStorage,
     RTStructureSetStorage,
+    VLWholeSlideMicroscopyImageStorage,
     XRayRadiationDoseSRStorage,
 )
 
@@ -117,6 +118,79 @@ def build_generic_dataset(
         modality=modality,
     )
     ds.XRayTubeCurrent = "2.5"  # a non-PHI tag that must be captured
+    return ds
+
+
+def build_wsi(
+    *,
+    patient_id: str = DEFAULT_PATIENT_ID,
+    study_instance_uid: str = "1.2.9999.42.10.10001",
+    series_instance_uid: str = "1.2.9999.42.10.10002",
+    sop_instance_uid: str = "1.2.9999.42.10.10003",
+    frame_of_reference_uid: str | None = "1.2.9999.42.10.10004",
+    number_of_frames: int = 3,
+    tile_rows: int = 4,
+    tile_columns: int = 4,
+    total_pixel_matrix_rows: int = 8,
+    total_pixel_matrix_columns: int = 8,
+    image_type: tuple[str, ...] = ("ORIGINAL", "PRIMARY", "VOLUME", "NONE"),
+    pixel_spacing: str | None = "0.00025\\0.00025",
+    include_shared_functional_groups: bool = True,
+    per_frame_pixel_spacing: str | None = None,
+    objective_lens_power: float | None = 20.0,
+) -> Dataset:
+    """Build a synthetic multi-frame VL Whole Slide Microscopy Image (#124).
+
+    One pyramid level: a tiled multi-frame instance whose per-tile pixel
+    spacing lives in a functional-groups macro (never a top-level PixelSpacing
+    tag), per PS3.3 C.8.12 — Shared by default, or Per-Frame when
+    `per_frame_pixel_spacing` is given (spacing that varies frame-to-frame
+    lives there instead). `frame_of_reference_uid` is still a top-level tag,
+    shared across a slide's pyramid levels.
+    """
+    ds = _base_dataset(
+        patient_id=patient_id,
+        patient_name=DEFAULT_PATIENT_NAME,
+        patient_birth_date=DEFAULT_BIRTH_DATE,
+        patient_sex="F",
+        study_instance_uid=study_instance_uid,
+        series_instance_uid=series_instance_uid,
+        sop_instance_uid=sop_instance_uid,
+        sop_class_uid=VLWholeSlideMicroscopyImageStorage,
+        study_date="20240315",
+        study_time="120000",
+        study_description="PATHOLOGY SLIDE",
+        series_description="WSI SERIES",
+        modality="SM",
+    )
+    if frame_of_reference_uid is not None:
+        ds.add_new(0x00200052, "UI", frame_of_reference_uid)
+    ds.ImageType = list(image_type)
+    ds.NumberOfFrames = number_of_frames
+    ds.TotalPixelMatrixRows = total_pixel_matrix_rows
+    ds.TotalPixelMatrixColumns = total_pixel_matrix_columns
+    if include_shared_functional_groups:
+        measures = Dataset()
+        if pixel_spacing is not None:
+            measures.add_new(0x00280030, "DS", pixel_spacing)
+        shared = Dataset()
+        shared.PixelMeasuresSequence = [measures]
+        ds.SharedFunctionalGroupsSequence = [shared]
+    if per_frame_pixel_spacing is not None:
+        per_frame_measures = Dataset()
+        per_frame_measures.add_new(0x00280030, "DS", per_frame_pixel_spacing)
+        per_frame_group = Dataset()
+        per_frame_group.PixelMeasuresSequence = [per_frame_measures]
+        ds.PerFrameFunctionalGroupsSequence = [per_frame_group]
+    if objective_lens_power is not None:
+        optical_path = Dataset()
+        optical_path.OpticalPathIdentifier = "1"
+        optical_path.ObjectiveLensPower = objective_lens_power
+        ds.OpticalPathSequence = [optical_path]
+    _add_small_pixel_block(
+        ds, rows=tile_rows, columns=tile_columns,
+        samples_per_pixel=3, photometric_interpretation="RGB", frames=number_of_frames,
+    )
     return ds
 
 
@@ -398,16 +472,26 @@ def _base_dataset(
     return ds
 
 
-def _add_small_pixel_block(ds: Dataset, rows: int, columns: int) -> None:
+def _add_small_pixel_block(
+    ds: Dataset,
+    rows: int,
+    columns: int,
+    *,
+    samples_per_pixel: int = 1,
+    photometric_interpretation: str = "MONOCHROME2",
+    frames: int = 1,
+) -> None:
     ds.Rows = rows
     ds.Columns = columns
-    ds.SamplesPerPixel = 1
-    ds.PhotometricInterpretation = "MONOCHROME2"
+    ds.SamplesPerPixel = samples_per_pixel
+    ds.PhotometricInterpretation = photometric_interpretation
+    if samples_per_pixel > 1:
+        ds.PlanarConfiguration = 0
     ds.BitsAllocated = 8
     ds.BitsStored = 8
     ds.HighBit = 7
     ds.PixelRepresentation = 0
-    ds.PixelData = bytes((i * 7) % 256 for i in range(rows * columns))
+    ds.PixelData = bytes((i * 7) % 256 for i in range(rows * columns * samples_per_pixel * frames))
 
 
 def write_dicom(ds: Dataset, path: str | Path, *, with_preamble: bool = True) -> Path:
