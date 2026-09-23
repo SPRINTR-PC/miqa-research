@@ -82,6 +82,7 @@ env = environ.Env(
     MIRES_ETL_SCRIPT_S3_SECRET_ACCESS_KEY=(str, None),
     MIRES_ETL_SCRIPT_STORAGE_BACKEND=(str, "local"),
     MIRES_ETL_SCRIPT_S3_BUCKET=(str, None),
+    MIRES_ETL_SCRIPT_MAX_SOURCE_BYTES=(int, 256 * 1024),
     MIRES_LOGGING_LEVEL=(str, "INFO"),
     MIRES_LOGGING_DIR=(Path, BASE_DIR / "LocalOnly/Logs"),
     MIRES_OIDC_CLIENT_ID=(str, None),
@@ -169,6 +170,12 @@ ETL_SCRIPT_S3_ENDPOINT_URL: str | None = env("MIRES_ETL_SCRIPT_S3_ENDPOINT_URL")
 ETL_SCRIPT_S3_REGION_NAME: str = env("MIRES_ETL_SCRIPT_S3_REGION_NAME")
 ETL_SCRIPT_S3_ACCESS_KEY_ID: str | None = env("MIRES_ETL_SCRIPT_S3_ACCESS_KEY_ID")
 ETL_SCRIPT_S3_SECRET_ACCESS_KEY: str | None = env("MIRES_ETL_SCRIPT_S3_SECRET_ACCESS_KEY")
+
+# ETL scripts (#144): global default for the max EtlScriptVersion.source size,
+# in bytes. EtlProjectSettings.max_script_source_bytes overrides this per
+# project (null defers here); a native script (project=None) always uses
+# this default, since there's no project to hold an override.
+ETL_SCRIPT_MAX_SOURCE_BYTES: int = env("MIRES_ETL_SCRIPT_MAX_SOURCE_BYTES")
 
 # DICOM ingestion (#123): global default for source retention. A run deletes
 # its source file only once storage is verified, never merely on a successful

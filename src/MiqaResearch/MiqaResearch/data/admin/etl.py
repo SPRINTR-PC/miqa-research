@@ -74,7 +74,7 @@ class EtlProcessedFileAdmin(ModelAdmin):
 
 @admin.register(EtlProjectSettings)
 class EtlProjectSettingsAdmin(ModelAdmin):
-    list_display = ("project", "log_retention_days")
+    list_display = ("project", "log_retention_days", "max_script_source_bytes")
     list_filter = ("project",)
 
     class Meta:

@@ -6,7 +6,7 @@ from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, transaction
 
-from contract.constants.etl import ETL_SCRIPT_ORIGIN_CUSTOM
+from contract.constants.etl import ETL_SCRIPT_ORIGIN_CUSTOM, ETL_SCRIPT_ORIGIN_NATIVE
 from MiqaResearch.data.models import (
     Concept,
     EtlJob,
@@ -22,7 +22,7 @@ from MiqaResearch.data.models import (
     StudyParticipant,
     VisitOccurrence,
 )
-from MiqaResearch.data.models.etl_script import MAX_ETL_SCRIPT_SOURCE_BYTES
+from MiqaResearch.data.models.etl_project_settings import get_max_script_source_bytes
 
 
 @pytest.fixture(autouse=True)
@@ -118,7 +118,7 @@ def test_pipeline_binding_allows_same_bucket_with_a_different_prefix(
     assert other.pk != pipeline_binding.pk
 
 
-# --- EtlScriptVersion: immutable + 256 KB cap ---------------------------
+# --- EtlScriptVersion: immutable + project-configurable size cap --------
 
 @pytest.mark.django_db
 def test_etl_script_version_cannot_be_updated_after_creation(etl_script_version):
@@ -129,11 +129,11 @@ def test_etl_script_version_cannot_be_updated_after_creation(etl_script_version)
 
 
 @pytest.mark.django_db
-def test_etl_script_version_rejects_source_file_over_256kb(etl_script):
+def test_etl_script_version_rejects_source_file_over_the_global_default_cap(etl_script, settings):
     oversized = EtlScriptVersion(
         script=etl_script,
         version=1,
-        source=SimpleUploadedFile("script.py", b"x" * (MAX_ETL_SCRIPT_SOURCE_BYTES + 1)),
+        source=SimpleUploadedFile("script.py", b"x" * (settings.ETL_SCRIPT_MAX_SOURCE_BYTES + 1)),
         sha256="0" * 64,
     )
 
@@ -142,15 +142,62 @@ def test_etl_script_version_rejects_source_file_over_256kb(etl_script):
 
 
 @pytest.mark.django_db
-def test_etl_script_version_accepts_source_file_at_the_256kb_cap(etl_script):
+def test_etl_script_version_accepts_source_file_at_the_global_default_cap(etl_script, settings):
     exact = EtlScriptVersion(
         script=etl_script,
         version=1,
-        source=SimpleUploadedFile("script.py", b"x" * MAX_ETL_SCRIPT_SOURCE_BYTES),
+        source=SimpleUploadedFile("script.py", b"x" * settings.ETL_SCRIPT_MAX_SOURCE_BYTES),
         sha256="0" * 64,
     )
 
     exact.full_clean()  # must not raise
+
+
+@pytest.mark.django_db
+def test_etl_script_version_project_override_lowers_the_effective_cap(research_project, etl_script, settings):
+    EtlProjectSettings.objects.create(project=research_project, max_script_source_bytes=10)
+
+    too_big_for_override = EtlScriptVersion(
+        script=etl_script,
+        version=1,
+        # Well within the global default, but over this project's override.
+        source=SimpleUploadedFile("script.py", b"x" * 11),
+        sha256="0" * 64,
+    )
+
+    with pytest.raises(ValidationError):
+        too_big_for_override.full_clean()
+
+
+@pytest.mark.django_db
+def test_etl_script_version_project_override_can_raise_the_effective_cap(research_project, etl_script, settings):
+    EtlProjectSettings.objects.create(
+        project=research_project, max_script_source_bytes=settings.ETL_SCRIPT_MAX_SOURCE_BYTES + 1000
+    )
+
+    over_global_default_but_within_override = EtlScriptVersion(
+        script=etl_script,
+        version=1,
+        source=SimpleUploadedFile("script.py", b"x" * (settings.ETL_SCRIPT_MAX_SOURCE_BYTES + 500)),
+        sha256="0" * 64,
+    )
+
+    over_global_default_but_within_override.full_clean()  # must not raise
+
+
+@pytest.mark.django_db
+def test_etl_script_version_native_script_uses_the_global_default(settings):
+    native_script = EtlScript.objects.create(name="Native script", origin=ETL_SCRIPT_ORIGIN_NATIVE)
+
+    oversized = EtlScriptVersion(
+        script=native_script,
+        version=1,
+        source=SimpleUploadedFile("script.py", b"x" * (settings.ETL_SCRIPT_MAX_SOURCE_BYTES + 1)),
+        sha256="0" * 64,
+    )
+
+    with pytest.raises(ValidationError):
+        oversized.full_clean()
 
 
 @pytest.mark.django_db
@@ -249,6 +296,22 @@ def test_etl_project_settings_overrides_log_retention_for_a_project(research_pro
     settings_row = EtlProjectSettings.objects.create(project=research_project, log_retention_days=30)
 
     assert settings_row.project_id == research_project.id
+
+
+@pytest.mark.django_db
+def test_get_max_script_source_bytes_falls_back_to_the_global_default_with_no_override(research_project, settings):
+    assert get_max_script_source_bytes(research_project) == settings.ETL_SCRIPT_MAX_SOURCE_BYTES
+
+
+@pytest.mark.django_db
+def test_get_max_script_source_bytes_returns_the_project_override_when_set(research_project):
+    EtlProjectSettings.objects.create(project=research_project, max_script_source_bytes=42)
+
+    assert get_max_script_source_bytes(research_project) == 42
+
+
+def test_get_max_script_source_bytes_returns_the_global_default_for_no_project(settings):
+    assert get_max_script_source_bytes(None) == settings.ETL_SCRIPT_MAX_SOURCE_BYTES
 
 
 @pytest.mark.django_db

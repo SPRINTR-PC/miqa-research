@@ -5,15 +5,9 @@ from django.db import models
 
 from contract.constants.etl import ETL_SCRIPT_ORIGIN_CHOICES
 
+from .etl_project_settings import get_max_script_source_bytes
 from .etl_script_storage import EtlScriptStorage
 from .research_project import ResearchProject
-
-MAX_ETL_SCRIPT_SOURCE_BYTES = 256 * 1024
-
-
-def validate_etl_script_source_size(file):
-    if file.size > MAX_ETL_SCRIPT_SOURCE_BYTES:
-        raise ValidationError(f"Script source must be at most {MAX_ETL_SCRIPT_SOURCE_BYTES} bytes.")
 
 
 def etl_script_version_upload_to(instance, filename):
@@ -72,8 +66,7 @@ class EtlScriptVersion(models.Model):
         EtlScript, on_delete=models.CASCADE, related_name="versions", blank=False, null=False, db_index=True)
     version = models.PositiveIntegerField(blank=False, null=False)
     source = models.FileField(
-        upload_to=etl_script_version_upload_to, storage=EtlScriptStorage(),
-        validators=[validate_etl_script_source_size], blank=False, null=False)
+        upload_to=etl_script_version_upload_to, storage=EtlScriptStorage(), blank=False, null=False)
     sha256 = models.CharField(max_length=64, blank=False, null=False, help_text="SHA-256 hex of the source file bytes.")
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -94,3 +87,13 @@ class EtlScriptVersion(models.Model):
         if not self._state.adding:
             raise ValidationError("EtlScriptVersion is immutable and cannot be updated after creation.")
         super().save(*args, **kwargs)
+
+    def clean(self):
+        super().clean()
+        # The size cap is a per-project setting (with a global default), not
+        # a fixed constant -- so, unlike a plain field validator, it needs
+        # self.script.project and can only be checked here.
+        if self.source and self.script_id:
+            max_bytes = get_max_script_source_bytes(self.script.project)
+            if self.source.size > max_bytes:
+                raise ValidationError({"source": f"Script source must be at most {max_bytes} bytes for this project."})
