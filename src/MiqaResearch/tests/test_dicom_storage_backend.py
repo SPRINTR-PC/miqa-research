@@ -92,19 +92,42 @@ def test_switching_backend_needs_no_new_migration(settings, db):
     call_command("makemigrations", check_changes=True, dry_run=True, verbosity=0)
 
 
+def test_real_rustfs_endpoint_hostname_is_valid_for_boto3():
+    """#171: a recent botocore's `is_valid_endpoint_url` check rejects
+    underscore-containing hostnames, so the default
+    MIRES_TEST_DICOM_S3_ENDPOINT_URL the long_running test below falls back
+    to must resolve to a hostname without one -- construction alone (no
+    network I/O) is enough to trigger the check, so this runs fast and in
+    the default suite, unlike the long_running test itself which needs a
+    live RustFS.
+    """
+    default_endpoint_url = os.environ.get("MIRES_TEST_DICOM_S3_ENDPOINT_URL", "http://miresfs:9000")
+
+    boto3.client(
+        "s3",
+        endpoint_url=default_endpoint_url,
+        region_name="us-east-1",
+        aws_access_key_id="test",
+        aws_secret_access_key="test",
+    )
+
+
 @pytest.mark.long_running
 def test_real_multipart_upload_round_trip_against_rustfs(settings):
     """AC #4: a real multipart upload against the dev-test RustFS container.
 
-    Targets the `mires_fs` service from docker-compose.dev-test.yml. Runs
-    inside `mires_testrunner` (same `mires` docker network) by default;
+    Targets the `mires_fs` service from docker-compose.dev-test.yml, by its
+    `miresfs` hostname/container name (#171: the `mires_fs` service name
+    itself contains an underscore, which a recent botocore rejects as an
+    invalid endpoint hostname -- same fix as `mires_rabbit`'s `miresrabbit`).
+    Runs inside `mires_testrunner` (same `mires` docker network) by default;
     override MIRES_TEST_DICOM_S3_ENDPOINT_URL to point elsewhere (e.g.
     http://localhost:9000 when running outside docker with the service
     port-forwarded).
     """
     settings.DICOM_STORAGE_BACKEND = "s3"
     settings.DICOM_S3_BUCKET = "dicom-long-running-test"
-    settings.DICOM_S3_ENDPOINT_URL = os.environ.get("MIRES_TEST_DICOM_S3_ENDPOINT_URL", "http://mires_fs:9000")
+    settings.DICOM_S3_ENDPOINT_URL = os.environ.get("MIRES_TEST_DICOM_S3_ENDPOINT_URL", "http://miresfs:9000")
     settings.DICOM_S3_REGION_NAME = "us-east-1"
     settings.DICOM_S3_ACCESS_KEY_ID = "MiresAccessKey"
     settings.DICOM_S3_SECRET_ACCESS_KEY = "MiresSecretKey"

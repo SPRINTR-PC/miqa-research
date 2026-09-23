@@ -50,6 +50,12 @@ services:
 
   mires_fs:
     image: rustfs/rustfs:1.0.0
+    # #171: underscore-containing hostnames fail a recent botocore's
+    # is_valid_endpoint_url check, so boto3 clients must reach this
+    # container as `miresfs`, not `mires_fs` -- same fix as mires_rabbit's
+    # container_name/hostname: miresrabbit below.
+    container_name: miresfs
+    hostname: miresfs
     environment:
       - RUSTFS_ACCESS_KEY=MiresAccessKey
       - RUSTFS_SECRET_KEY=MiresSecretKey
