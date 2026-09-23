@@ -300,6 +300,19 @@ services:
       - ./:/app
 
 
+  # ETL sandbox image (#161): built, not run, by the default `docker compose up` -- the
+  # `etl-sandbox-build` profile keeps it out of the default stack. Build with
+  # `docker compose --profile etl-sandbox-build build mires_etl_sandbox_python`, then point
+  # MIRES_SANDBOX_IMAGE_ALLOWLIST at `mires-etl-sandbox-python:dev` for local dev/test.
+  mires_etl_sandbox_python:
+    build:
+      context: .
+      dockerfile: etl_sandbox.Dockerfile
+    image: mires-etl-sandbox-python:dev
+    profiles:
+      - etl-sandbox-build
+
+
 networks:
   mires:
 

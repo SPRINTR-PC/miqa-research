@@ -1,7 +1,7 @@
+import json
 from pathlib import Path
 
 import environ
-from more_itertools.more import lstrip
 
 from contract.constants.celery import (
     QUEUE_CALCULATE_CONSENT_STATISTICS,
@@ -83,6 +83,15 @@ env = environ.Env(
     MIRES_ETL_SCRIPT_STORAGE_BACKEND=(str, "local"),
     MIRES_ETL_SCRIPT_S3_BUCKET=(str, None),
     MIRES_ETL_SCRIPT_MAX_SOURCE_BYTES=(int, 256 * 1024),
+    MIRES_SANDBOX_BACKEND=(str, "compose"),
+    MIRES_SANDBOX_DOCKER_HOST=(str, "unix:///var/run/docker.sock"),
+    MIRES_SANDBOX_IMAGE_ALLOWLIST=(str, "{}"),
+    MIRES_SANDBOX_DEFAULT_TIMEOUT_SECONDS=(int, 10 * 60),
+    MIRES_SANDBOX_DEFAULT_MEMORY_MB=(int, 1024),
+    MIRES_SANDBOX_DEFAULT_CPU_MILLICORES=(int, 1000),
+    MIRES_SANDBOX_DEFAULT_PIDS_LIMIT=(int, 128),
+    MIRES_SANDBOX_MAX_INPUT_BYTES=(int, 15 * 1024 ** 3),
+    MIRES_SANDBOX_MAX_OUTPUT_BYTES=(int, 1 * 1024 ** 3),
     MIRES_LOGGING_LEVEL=(str, "INFO"),
     MIRES_LOGGING_DIR=(Path, BASE_DIR / "LocalOnly/Logs"),
     MIRES_OIDC_CLIENT_ID=(str, None),
@@ -176,6 +185,25 @@ ETL_SCRIPT_S3_SECRET_ACCESS_KEY: str | None = env("MIRES_ETL_SCRIPT_S3_SECRET_AC
 # project (null defers here); a native script (project=None) always uses
 # this default, since there's no project to hold an override.
 ETL_SCRIPT_MAX_SOURCE_BYTES: int = env("MIRES_ETL_SCRIPT_MAX_SOURCE_BYTES")
+
+# ETL sandbox runner (#161, #165): MIRES_SANDBOX_BACKEND selects the SandboxBackend implementation
+# ("compose" here; "kubernetes" is #165). MIRES_SANDBOX_DOCKER_HOST is where the Compose backend's
+# Docker API connection points -- in production a per-worker-host docker-socket-proxy's TCP
+# endpoint, never a raw mounted socket; local dev/test may point it straight at the daemon.
+# MIRES_SANDBOX_IMAGE_ALLOWLIST is a JSON object mapping an image key (language + runtime +
+# release, #147) to the image reference a Script's Binding is actually allowed to run --
+# production should pin a full digest reference there, never a mutable tag. The remaining
+# defaults are the platform's per-run resource ceiling (see MiqaResearch/etl_sandbox/limits.py for
+# how a PipelineBinding may lower, never raise, timeout/memory/CPU below them).
+SANDBOX_BACKEND: str = env("MIRES_SANDBOX_BACKEND")
+SANDBOX_DOCKER_HOST: str = env("MIRES_SANDBOX_DOCKER_HOST")
+SANDBOX_IMAGE_ALLOWLIST: dict[str, str] = json.loads(env("MIRES_SANDBOX_IMAGE_ALLOWLIST"))
+SANDBOX_DEFAULT_TIMEOUT_SECONDS: int = env("MIRES_SANDBOX_DEFAULT_TIMEOUT_SECONDS")
+SANDBOX_DEFAULT_MEMORY_MB: int = env("MIRES_SANDBOX_DEFAULT_MEMORY_MB")
+SANDBOX_DEFAULT_CPU_MILLICORES: int = env("MIRES_SANDBOX_DEFAULT_CPU_MILLICORES")
+SANDBOX_DEFAULT_PIDS_LIMIT: int = env("MIRES_SANDBOX_DEFAULT_PIDS_LIMIT")
+SANDBOX_MAX_INPUT_BYTES: int = env("MIRES_SANDBOX_MAX_INPUT_BYTES")
+SANDBOX_MAX_OUTPUT_BYTES: int = env("MIRES_SANDBOX_MAX_OUTPUT_BYTES")
 
 # DICOM ingestion (#123): global default for source retention. A run deletes
 # its source file only once storage is verified, never merely on a successful
