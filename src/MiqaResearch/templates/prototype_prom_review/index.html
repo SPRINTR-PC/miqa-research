@@ -1,0 +1,398 @@
+{% extends "base.html" %}
+{% load static %}
+{% comment %}
+PROTOTYPE -- wayfinder ticket #180 "PROM review & signing UI". Throwaway; branch prototype/prom-review-signing only.
+Three structurally different variants of reviewing/correcting/signing one OCR'd PROM form, switchable via ?variant=A|B|C.
+  A -- Side-by-side: scan viewer left, full custom-rendered form right, filter chips.
+  B -- Field queue: one field at a time, cropped scan band above the input, flagged fields first.
+  C -- kpforms native: kpforms' own <dynamic-form> prefilled, with a review checklist beside it.
+All state is in memory (reload = reset). The "history" panel shows the ParsedPromForm rows the actions would create.
+{% endcomment %}
+{% block main %}
+{{ fixture|json_script:"fixture" }}
+<style>
+  .pr-wrap { max-width: 1500px; margin: 0 auto; padding: 0 1rem 6rem; }
+  .pr-head { display:flex; flex-wrap:wrap; gap:1rem; align-items:center; justify-content:space-between; padding:.75rem 1rem;
+             background:var(--color-card); border:1px solid var(--color-border); border-radius:10px; }
+  .pr-head h1 { font-size:1.15rem; font-weight:600; margin:0; }
+  .pr-meta { color:var(--color-muted-foreground); font-size:.85rem; }
+  .pr-badge { display:inline-flex; align-items:center; gap:.3rem; padding:.1rem .55rem; border-radius:999px; font-size:.75rem; font-weight:600; border:1px solid currentColor; }
+  .b-failed { color: var(--color-chart-error); }
+  .b-low { color: var(--color-chart-warning); }
+  .b-vlm { color: var(--color-chart-info); }
+  .b-classic { color: var(--color-muted-foreground); }
+  .b-ok { color: var(--color-chart-success); }
+  .b-edited { color: var(--color-primary); }
+  .pr-btn { padding:.45rem .9rem; border-radius:8px; border:1px solid var(--color-border); background:var(--color-card); color:var(--color-foreground); cursor:pointer; font-size:.9rem; }
+  .pr-btn.primary { background:var(--color-primary); color:var(--color-primary-foreground); border-color:var(--color-primary); }
+  .pr-btn:disabled { opacity:.45; cursor:not-allowed; }
+  .pr-card { background:var(--color-card); border:1px solid var(--color-border); border-radius:10px; }
+  .pr-scan { position:relative; }
+  .pr-scan img { width:100%; display:block; border-radius:4px; }
+  .pr-band { position:absolute; left:0; right:0; background:hsl(var(--color-chart-warning-parts) / .25); outline:2px solid var(--color-chart-warning); pointer-events:none; transition: top .15s, height .15s; }
+  .pr-field { padding:.6rem .75rem; border-left:4px solid transparent; border-radius:6px; cursor:pointer; }
+  .pr-field:hover { background:hsl(var(--color-muted-parts) / .15); }
+  .pr-field.focus { background:hsl(var(--color-muted-parts) / .25); }
+  .pr-field.st-failed { border-left-color: var(--color-chart-error); }
+  .pr-field.st-low { border-left-color: var(--color-chart-warning); }
+  .pr-field.st-vlm { border-left-color: var(--color-chart-info); }
+  .pr-field.confirmed { border-left-color: var(--color-chart-success); }
+  .pr-field label.q { display:block; font-size:.9rem; margin-bottom:.35rem; }
+  .pr-field .desc { color:var(--color-muted-foreground); font-size:.78rem; }
+  .pr-field .raw { color:var(--color-muted-foreground); font-size:.75rem; margin-top:.25rem; font-family: ui-monospace, monospace; }
+  .pr-opts { display:flex; flex-wrap:wrap; gap:.3rem .8rem; font-size:.85rem; }
+  .pr-scale { display:flex; gap:2px; }
+  .pr-scale label { width:2rem; text-align:center; padding:.25rem 0; border:1px solid var(--color-border); border-radius:4px; cursor:pointer; font-size:.8rem; }
+  .pr-scale input { display:none; }
+  .pr-scale input:checked + span { font-weight:700; }
+  .pr-scale label:has(input:checked) { background:var(--color-primary); color:var(--color-primary-foreground); }
+  .pr-in { width:100%; padding:.35rem .5rem; border-radius:6px; border:1px solid var(--color-input); background:var(--color-background); color:var(--color-foreground); }
+  .pr-hist { font-size:.82rem; }
+  .pr-hist li { padding:.35rem 0; border-bottom:1px dashed var(--color-border); }
+  .pr-chips { display:flex; gap:.4rem; flex-wrap:wrap; }
+  .pr-chip { padding:.2rem .7rem; border-radius:999px; border:1px solid var(--color-border); cursor:pointer; font-size:.8rem; background:transparent; color:var(--color-foreground); }
+  .pr-chip.on { background:var(--color-foreground); color:var(--color-background); }
+  .pr-sticky { position:sticky; top:4.5rem; }
+  .pr-footer { position:sticky; bottom:3.5rem; display:flex; gap:.6rem; justify-content:flex-end; align-items:center; padding:.6rem 1rem; margin-top:1rem;
+               background:var(--color-card); border:1px solid var(--color-border); border-radius:10px; box-shadow:0 4px 18px rgb(0 0 0 / .25); }
+  .pr-note { font-size:.8rem; color:var(--color-muted-foreground); border:1px dashed var(--color-border); border-radius:8px; padding:.5rem .75rem; }
+  /* A */
+  .va-grid { display:grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr) 260px; gap:1rem; margin-top:1rem; align-items:start; }
+  .va-scanpane { max-height: calc(100vh - 7rem); overflow:auto; padding:.5rem; }
+  .va-section h3 { font-size:.95rem; font-weight:600; margin:.75rem .75rem .25rem; }
+  /* B */
+  .vb-grid { display:grid; grid-template-columns: 240px minmax(0,1fr) 260px; gap:1rem; margin-top:1rem; align-items:start; }
+  .vb-rail { max-height: calc(100vh - 8rem); overflow:auto; font-size:.8rem; padding:.4rem; }
+  .vb-rail div { padding:.25rem .4rem; border-radius:4px; cursor:pointer; display:flex; gap:.4rem; align-items:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .vb-rail div.cur { background:hsl(var(--color-muted-parts) / .3); font-weight:600; }
+  .vb-dot { width:.55rem; height:.55rem; border-radius:50%; flex:none; background:currentColor; }
+  .vb-crop { width:100%; overflow:hidden; border-radius:6px; border:2px solid var(--color-chart-warning); background:#fff; position:relative; }
+  .vb-crop img { position:absolute; left:0; width:100%; }
+  /* C */
+  .vc-grid { display:grid; grid-template-columns: minmax(0,1fr) minmax(0,1.2fr); gap:1rem; margin-top:1rem; align-items:start; }
+  /* switcher */
+  #proto-switcher { position:fixed; bottom:1rem; left:50%; transform:translateX(-50%); z-index:1000; display:flex; align-items:center; gap:.75rem;
+                    background:#111; color:#ff0; border:2px solid #ff0; border-radius:999px; padding:.35rem .9rem; font:600 .85rem ui-monospace, monospace; box-shadow:0 6px 24px rgb(0 0 0 / .5); }
+  #proto-switcher button { background:none; border:none; color:#ff0; font-size:1.1rem; cursor:pointer; }
+  dialog.pr-dlg { border-radius:12px; border:1px solid var(--color-border); background:var(--color-popover); color:var(--color-popover-foreground); max-width:520px; padding:1.25rem; }
+</style>
+
+<div class="pr-wrap">
+  <div class="pr-head">
+    <div>
+      <div class="pr-meta"><a href="#">← Participant SP-0042 · data</a></div>
+      <h1>PROM 1 — Tarm- och vattenkastningsbesvär (SWE) <span class="pr-meta">template v1</span></h1>
+      <div class="pr-meta">Participant <b>SP-0042</b> · Site Umeå · scan uploaded 2026-05-02 by a.uploader · 4 pages · 2.4 MB</div>
+    </div>
+    <div style="display:flex;gap:.6rem;align-items:center">
+      <span id="status-badge"></span>
+      <button class="pr-btn" onclick="document.getElementById('hist-dlg').showModal()">History (<span id="hist-count"></span>)</button>
+    </div>
+  </div>
+  <div id="variant-root"></div>
+</div>
+
+<dialog id="hist-dlg" class="pr-dlg">
+  <h3 style="margin-top:0">ParsedPromForm rows (newest first)</h3>
+  <ol id="hist-list" class="pr-hist" style="list-style:none;padding:0"></ol>
+  <p class="pr-note">Latest row is authoritative. Older rows are read-only history (click → view that version read-only: not built).</p>
+  <button class="pr-btn" onclick="this.closest('dialog').close()">Close</button>
+</dialog>
+
+<dialog id="sign-dlg" class="pr-dlg">
+  <h3 style="margin-top:0">Sign PROM form</h3>
+  <p>You are signing the current values of this form for participant <b>SP-0042</b> as <b>Dr. Site PI (Umeå)</b>.
+     This sets <code>validated_by/at</code>. Any later edit creates a new, unsigned version.</p>
+  <p id="sign-summary" class="pr-meta"></p>
+  <div style="display:flex;gap:.5rem;justify-content:flex-end">
+    <button class="pr-btn" onclick="this.closest('dialog').close()">Cancel</button>
+    <button class="pr-btn primary" onclick="doSign()">Sign</button>
+  </div>
+</dialog>
+
+<div id="proto-switcher">
+  <button id="sw-prev" aria-label="previous variant">←</button>
+  <span id="sw-label"></span>
+  <button id="sw-next" aria-label="next variant">→</button>
+</div>
+
+<script src="{% static 'kpforms.js' %}" type="module"></script>
+<script>
+const FX = JSON.parse(document.getElementById('fixture').textContent);
+const PAGE_URL = i => `{% url 'prototype_prom_review' %}page/${i}.png`;
+const VARIANTS = { A: 'Side-by-side', B: 'Field queue', C: 'kpforms <dynamic-form>' };
+const ME = 'Dr. Site PI (Umeå)';
+
+// ---- flatten template --------------------------------------------------------------
+const FIELDS = [];
+for (const s of FX.template.sections) for (const g of s.inputGroups) for (const f of g.fields) FIELDS.push({ ...f, section: s });
+const FIELD = Object.fromEntries(FIELDS.map(f => [f.id, f]));
+const OCR = Object.fromEntries(FX.data.map(d => [d.fieldId, d.value]));
+
+// ---- in-memory state (what the server would hold) ------------------------------------
+const state = {
+  values: structuredClone(OCR),
+  confirmed: new Set(),       // fields a reviewer has explicitly looked at / confirmed
+  dirty: false,
+  focus: null,
+  rows: [{ n: 1, kind: 'OCR run', at: '2026-05-02 14:03', by: 'pipeline', signedBy: null, signedAt: null }],
+};
+const latest = () => state.rows[state.rows.length - 1];
+
+function status(fid) {
+  const fl = FX.extraction_flags[fid] || {};
+  if (fl.source === 'failed') return 'failed';
+  if (fl.confidence === 'low') return 'low';
+  if (!isValidShape(FIELD[fid], state.values[fid])) return 'failed';  // e.g. two marks on a single-choice scale
+  if (fl.source === 'vlm') return 'vlm';
+  return 'classic';
+}
+const needsReview = fid => ['failed', 'low'].includes(status(fid));
+function isValidShape(f, v) {
+  if (v === undefined) return true;
+  if (['radio', 'ranged-radio'].includes(f.type)) return typeof v === 'string';
+  if (f.type === 'datetime') return /^\d{8}$/.test(String(v).replace(/-/g, ''));
+  if (f.type === 'numeric') return !isNaN(Number(v));
+  return true;
+}
+function visible(f) {
+  const c = f.conditionalVisibility; if (!c) return true;
+  const ref = state.values[c.referenceFieldId]; const refs = c.referenceFieldShowConditions.referenceValues || [];
+  const vals = Array.isArray(ref) ? ref : ref === undefined ? [] : [ref];
+  return vals.some(v => refs.includes(v));
+}
+const pendingReview = () => FIELDS.filter(f => visible(f) && needsReview(f.id) && !state.confirmed.has(f.id));
+
+function badge(fid) {
+  if (state.confirmed.has(fid)) return `<span class="pr-badge b-ok">✓ checked</span>`;
+  const st = status(fid);
+  const txt = { failed: FX.extraction_flags[fid]?.source === 'failed' ? 'not read' : 'invalid read', low: 'low confidence', vlm: 'AI read', classic: 'OCR' }[st];
+  const edited = JSON.stringify(state.values[fid]) !== JSON.stringify(OCR[fid]) ? ` <span class="pr-badge b-edited">edited</span>` : '';
+  return `<span class="pr-badge b-${st}">${txt}</span>${edited}`;
+}
+
+// ---- field input renderer (stand-in for a kpforms-driven server/wc renderer) ---------
+function esc(s) { return String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function inputHtml(f, big = false) {
+  const v = state.values[f.id]; const name = `f-${f.id}`;
+  switch (f.type) {
+    case 'ranged-radio':
+      return `<div class="pr-scale">${f.optionLabelsAndIndices.map(o => `<label><input type="radio" name="${name}" value="${o.value}" ${v === o.value || (Array.isArray(v) && v.includes(o.value)) ? 'checked' : ''} data-fid="${f.id}"><span>${esc(o.label)}</span></label>`).join('')}</div>`;
+    case 'radio':
+      return `<div class="pr-opts">${f.options.map(o => `<label><input type="radio" name="${name}" value="${o.value}" ${v === o.value ? 'checked' : ''} data-fid="${f.id}"> ${esc(o.label)}</label>`).join('')}</div>`;
+    case 'checkbox':
+      return `<div class="pr-opts">${f.options.map(o => `<label><input type="checkbox" name="${name}" value="${o.value}" ${(v || []).includes?.(o.value) ? 'checked' : ''} data-fid="${f.id}"> ${esc(o.label)}</label>`).join('')}</div>`;
+    case 'text':
+      return `<textarea class="pr-in" rows="${big ? 4 : (f.rows || 2)}" data-fid="${f.id}">${esc(v)}</textarea>`;
+    default:
+      return `<input class="pr-in" ${f.type === 'numeric' ? 'inputmode="decimal"' : ''} value="${esc(v)}" placeholder="${f.type === 'datetime' ? 'ÅÅÅÅMMDD' : ''}" data-fid="${f.id}">${f.unit ? ` <span class="pr-meta">${esc(f.unit)}</span>` : ''}`;
+  }
+}
+function readInput(root, fid) {
+  const f = FIELD[fid];
+  if (f.type === 'checkbox') return [...root.querySelectorAll(`input[data-fid="${fid}"]:checked`)].map(i => i.value);
+  if (f.type === 'radio' || f.type === 'ranged-radio') return root.querySelector(`input[data-fid="${fid}"]:checked`)?.value;
+  const el = root.querySelector(`[data-fid="${fid}"]`); return el.value === '' ? undefined : el.value;
+}
+function onEdit(root, fid) {
+  const v = readInput(root, fid);
+  if (v === undefined || (Array.isArray(v) && !v.length)) delete state.values[fid]; else state.values[fid] = v;
+  state.dirty = true; state.confirmed.add(fid); refreshChrome();
+}
+function fieldBlock(f, { big = false } = {}) {
+  const raw = OCR[f.id] !== undefined && needsReview(f.id) ? `<div class="raw">read as: ${esc(JSON.stringify(OCR[f.id]))}</div>` : '';
+  return `<div class="pr-field st-${status(f.id)} ${state.confirmed.has(f.id) ? 'confirmed' : ''} ${state.focus === f.id ? 'focus' : ''}" data-field="${f.id}">
+    <div style="display:flex;justify-content:space-between;gap:.5rem"><label class="q">${esc(f.label)}</label><span>${badge(f.id)}</span></div>
+    ${f.description ? `<div class="desc">${esc(f.description)}</div>` : ''}
+    ${inputHtml(f, big)}${raw}</div>`;
+}
+
+// ---- scan helpers -------------------------------------------------------------------
+function region(fid) { const r = FX.regions[fid]; return r && r.region ? { page: r.page, y0: r.region[1], y1: r.region[3], h: FX.page_sizes[r.page][1] } : null; }
+function scanPages(bandFid) {
+  return FX.page_sizes.map((_, i) => `<div class="pr-scan" data-page="${i}" style="margin-bottom:.75rem"><div class="pr-meta">Page ${i + 1}</div><img src="${PAGE_URL(i)}" loading="lazy"><div class="pr-band" hidden></div></div>`).join('');
+}
+function showBand(container, fid, scroll = true) {
+  container.querySelectorAll('.pr-band').forEach(b => b.hidden = true);
+  const r = region(fid); if (!r) return;
+  const pageEl = container.querySelector(`[data-page="${r.page}"]`); const img = pageEl.querySelector('img'); const band = pageEl.querySelector('.pr-band');
+  const place = () => { const k = img.clientHeight / r.h; band.style.top = (img.offsetTop + r.y0 * k) + 'px'; band.style.height = Math.max(24, (r.y1 - r.y0) * k) + 'px'; band.hidden = false;
+                        if (scroll) container.scrollTo({ top: pageEl.offsetTop + img.offsetTop + r.y0 * k - 80, behavior: 'smooth' }); };
+  img.complete ? place() : img.addEventListener('load', place, { once: true });
+}
+
+// ---- rows / save / sign -------------------------------------------------------------
+function save() {
+  if (!state.dirty) return;
+  state.rows.push({ n: state.rows.length + 1, kind: 'Edited', at: now(), by: ME, signedBy: null, signedAt: null });
+  state.dirty = false; refreshChrome();
+}
+function openSign() {
+  const edited = FIELDS.filter(f => JSON.stringify(state.values[f.id]) !== JSON.stringify(OCR[f.id])).length;
+  document.getElementById('sign-summary').textContent = `${Object.keys(state.values).length} answered · ${edited} corrected vs OCR · ${FIELDS.filter(f => visible(f) && state.values[f.id] === undefined).length} left blank`;
+  document.getElementById('sign-dlg').showModal();
+}
+function doSign() {
+  if (state.dirty) save();
+  Object.assign(latest(), { signedBy: ME, signedAt: now() });
+  document.getElementById('sign-dlg').close(); refreshChrome();
+}
+function now() { return new Date().toISOString().slice(0, 16).replace('T', ' '); }
+function refreshChrome() {
+  const l = latest();
+  document.getElementById('status-badge').innerHTML = l.signedBy
+    ? `<span class="pr-badge b-ok">Signed by ${esc(l.signedBy)} · ${l.signedAt}</span>${state.dirty ? ' <span class="pr-badge b-low">unsaved edits → new unsigned version</span>' : ''}`
+    : `<span class="pr-badge b-low">Unsigned</span>${state.dirty ? ' <span class="pr-badge b-edited">unsaved edits</span>' : ''}`;
+  document.getElementById('hist-count').textContent = state.rows.length;
+  document.getElementById('hist-list').innerHTML = [...state.rows].reverse().map(r =>
+    `<li><b>v${r.n}</b> ${r.kind} · ${r.at} · ${esc(r.by)} ${r.signedBy ? `<span class="pr-badge b-ok">signed ${esc(r.signedBy)} ${r.signedAt}</span>` : '<span class="pr-badge b-low">unsigned</span>'} ${r === l ? '<b>(current)</b>' : ''}</li>`).join('');
+  document.querySelectorAll('[data-pending]').forEach(e => e.textContent = pendingReview().length);
+  document.querySelectorAll('[data-save]').forEach(b => b.disabled = !state.dirty);
+  document.querySelectorAll('[data-sign]').forEach(b => { b.disabled = pendingReview().length > 0 || (!!l.signedBy && !state.dirty); b.title = b.disabled ? 'Check every flagged field first' : ''; });
+  window.onChrome?.();
+}
+function footer(extra = '') {
+  return `<div class="pr-footer">${extra}<span class="pr-meta"><b data-pending></b> flagged field(s) still to check</span>
+    <button class="pr-btn" data-save onclick="save()">Save</button>
+    <button class="pr-btn primary" data-sign onclick="openSign()">Sign…</button></div>`;
+}
+function rowInfo() {
+  return `<div class="pr-card" style="padding:.75rem"><b style="font-size:.9rem">Legend</b>
+    <div style="display:grid;gap:.35rem;margin-top:.4rem;font-size:.8rem">
+    <div><span class="pr-badge b-failed">not read / invalid</span> blank after OCR+AI, or impossible value</div>
+    <div><span class="pr-badge b-low">low confidence</span> AI read, must check</div>
+    <div><span class="pr-badge b-vlm">AI read</span> VLM fallback, high confidence</div>
+    <div><span class="pr-badge b-classic">OCR</span> classic path</div>
+    <div><span class="pr-badge b-ok">✓ checked</span> reviewer touched/confirmed</div></div>
+    <p class="pr-note" style="margin-top:.6rem">Heads-up from real sample_01: classic OCR marks several <i>garbage</i> reads as high confidence (Id, initials, free-text fields picked up neighbouring labels). "Only flagged fields need review" is not safe with today's pipeline.</p></div>`;
+}
+
+// ---- Variant A: side-by-side --------------------------------------------------------
+function variantA(root) {
+  let filter = 'all';
+  root.innerHTML = `<div class="va-grid">
+    <div class="pr-card va-scanpane pr-sticky" id="va-scan">${scanPages()}</div>
+    <div><div class="pr-chips" style="margin-bottom:.5rem" id="va-chips"></div><div class="pr-card" id="va-form"></div>${footer()}</div>
+    <div class="pr-sticky">${rowInfo()}</div></div>`;
+  const scan = root.querySelector('#va-scan'), form = root.querySelector('#va-form'), chips = root.querySelector('#va-chips');
+  function draw() {
+    const counts = { all: FIELDS.filter(visible).length, review: pendingReview().length, ai: FIELDS.filter(f => visible(f) && FX.extraction_flags[f.id]?.source === 'vlm').length };
+    chips.innerHTML = [['all', 'All fields'], ['review', 'Needs review'], ['ai', 'AI-read']].map(([k, t]) => `<button class="pr-chip ${filter === k ? 'on' : ''}" data-filter="${k}">${t} (${counts[k]})</button>`).join('');
+    const keep = f => visible(f) && (filter === 'all' || (filter === 'review' ? needsReview(f.id) && !state.confirmed.has(f.id) : FX.extraction_flags[f.id]?.source === 'vlm'));
+    form.innerHTML = FX.template.sections.map(s => {
+      const fs = FIELDS.filter(f => f.section === s && keep(f)); if (!fs.length) return '';
+      return `<div class="va-section"><h3>${esc(s.title)}</h3>${fs.map(f => fieldBlock(f) + (needsReview(f.id) && !state.confirmed.has(f.id) ? `<div style="margin:-.3rem 0 .4rem 1rem"><button class="pr-chip" data-confirm="${f.id}">Looks right ✓</button></div>` : '')).join('')}</div>`;
+    }).join('') || '<p class="pr-meta" style="padding:1rem">Nothing left to check 🎉</p>';
+  }
+  chips.onclick = e => { const k = e.target.dataset.filter; if (k) { filter = k; draw(); } };
+  form.addEventListener('click', e => {
+    const c = e.target.dataset.confirm; if (c) { state.confirmed.add(c); refreshChrome(); draw(); return; }
+    const fe = e.target.closest('[data-field]'); if (fe) { state.focus = fe.dataset.field; form.querySelectorAll('.pr-field').forEach(x => x.classList.toggle('focus', x === fe)); showBand(scan, state.focus); }
+  });
+  form.addEventListener('change', e => { const fid = e.target.dataset.fid; if (fid) { onEdit(form, fid); draw(); } });
+  window.onChrome = null; draw();
+}
+
+// ---- Variant B: field queue ---------------------------------------------------------
+function variantB(root) {
+  const order = () => { const vis = FIELDS.filter(visible); return [...vis.filter(f => needsReview(f.id)), ...vis.filter(f => !needsReview(f.id))]; };
+  let idx = 0;
+  root.innerHTML = `<div class="vb-grid">
+    <div class="pr-card vb-rail pr-sticky" id="vb-rail"></div>
+    <div><div class="pr-card" style="padding:1rem" id="vb-main"></div>${footer(`<button class="pr-btn" id="vb-bulk">Accept all remaining unflagged</button>`)}</div>
+    <div class="pr-sticky">${rowInfo()}</div></div>`;
+  const rail = root.querySelector('#vb-rail'), main = root.querySelector('#vb-main');
+  function crop(fid) {
+    const r = region(fid); if (!r) return `<div class="pr-note">No region located on the scan for this field — open the full page.</div>`;
+    return `<div class="pr-meta">Page ${r.page + 1}</div><div class="vb-crop" data-crop="${fid}"><img src="${PAGE_URL(r.page)}"></div>`;
+  }
+  function placeCrop() {
+    const box = main.querySelector('[data-crop]'); if (!box) return; const r = region(box.dataset.crop);
+    const pad = 60, y0 = Math.max(0, r.y0 - pad), y1 = Math.min(r.h, r.y1 + pad), k = box.clientWidth / FX.page_sizes[r.page][0];
+    box.style.height = Math.min((y1 - y0) * k, 420) + 'px'; box.querySelector('img').style.top = (-y0 * k) + 'px';
+  }
+  function draw() {
+    const list = order(); idx = Math.min(idx, list.length - 1); const f = list[idx]; state.focus = f.id;
+    const nFlag = list.filter(x => needsReview(x.id)).length;
+    rail.innerHTML = `<div class="pr-meta" style="cursor:default">Needs review (${nFlag})</div>` + list.map((x, i) =>
+      (i === nFlag ? `<div class="pr-meta" style="cursor:default;margin-top:.5rem">Everything else (${list.length - nFlag})</div>` : '') +
+      `<div class="${i === idx ? 'cur' : ''} b-${state.confirmed.has(x.id) ? 'ok' : status(x.id)}" data-i="${i}"><span class="vb-dot"></span><span style="color:var(--color-foreground)">${esc(x.label)}</span></div>`).join('');
+    main.innerHTML = `<div class="pr-meta">Field ${idx + 1} of ${list.length} · ${esc(f.section.title)}</div>
+      ${crop(f.id)}
+      <div style="margin-top:1rem">${fieldBlock(f, { big: true })}</div>
+      <div style="display:flex;gap:.5rem;margin-top:.75rem"><button class="pr-btn" id="vb-prev">← Back</button>
+      <button class="pr-btn primary" id="vb-ok">Confirm &amp; next <kbd>Enter</kbd></button>
+      <span class="pr-meta" style="align-self:center">Keys: Enter confirm · ↑/↓ move · 0–9 pick scale value</span></div>`;
+    main.querySelector('#vb-prev').onclick = () => { idx = Math.max(0, idx - 1); draw(); };
+    main.querySelector('#vb-ok').onclick = confirmNext;
+    main.onchange = e => { const fid = e.target.dataset.fid; if (fid) onEdit(main, fid); };
+    placeCrop(); main.querySelector('.pr-in')?.focus();
+  }
+  function confirmNext() { state.confirmed.add(state.focus); idx++; refreshChrome(); draw(); }
+  rail.onclick = e => { const d = e.target.closest('[data-i]'); if (d) { idx = +d.dataset.i; draw(); } };
+  root.querySelector('#vb-bulk').onclick = () => { FIELDS.filter(f => !needsReview(f.id)).forEach(f => state.confirmed.add(f.id)); refreshChrome(); draw(); };
+  document.onkeydown = e => {
+    if (currentVariant() !== 'B' || document.querySelector('dialog[open]')) return;
+    const typing = e.target.matches('textarea, input.pr-in');
+    if (e.key === 'Enter' && !(typing && e.target.tagName === 'TEXTAREA' && !e.metaKey)) { e.preventDefault(); if (typing) onEdit(main, state.focus); confirmNext(); }
+    else if (!typing && e.key === 'ArrowDown') { idx++; draw(); } else if (!typing && e.key === 'ArrowUp') { idx = Math.max(0, idx - 1); draw(); }
+    else if (!typing && /^\d$/.test(e.key) && FIELD[state.focus].type === 'ranged-radio') { const r = main.querySelector(`input[value="${e.key}"]`); if (r) { r.checked = true; onEdit(main, state.focus); draw(); } }
+  };
+  window.onChrome = null; draw();
+}
+
+// ---- Variant C: kpforms native ------------------------------------------------------
+function variantC(root) {
+  root.innerHTML = `<div class="vc-grid">
+    <div class="pr-card va-scanpane pr-sticky" id="vc-scan">${scanPages()}</div>
+    <div>
+      <div class="pr-card" style="padding:.75rem;margin-bottom:.75rem"><b>Needs review (<span data-pending></span>)</b>
+        <div id="vc-list" style="margin-top:.4rem;display:grid;gap:.25rem;font-size:.85rem"></div>
+        <p class="pr-note" style="margin-top:.5rem">kpforms' <code>&lt;dynamic-form&gt;</code> can prefill (getFormDataUrl) and go read-only (viewOnly), but exposes no per-field
+          highlight/focus API, shows one section at a time, and blocks submit on required-field validation. So the flag list lives outside it, and
+          clicking an item can only move the scan, not the form. "Save" here = the component's own Submit (posts to a stub).</p></div>
+      <dynamic-form id="vc-form" language="sv"></dynamic-form>
+      ${footer()}
+    </div></div>`;
+  const scan = root.querySelector('#vc-scan'), list = root.querySelector('#vc-list');
+  const el = root.querySelector('#vc-form');
+  customElements.whenDefined('dynamic-form').then(() => {
+    el.getFormDataUrl = `{% url 'prototype_prom_review_form_data' %}`;
+    // FINDING: kpforms.js crashes on explicit nulls (conditionalVisibility/tolerance: null) as stored -- needs exclude_none.
+    const noNulls = o => Array.isArray(o) ? o.map(noNulls) : o && typeof o === 'object' ? Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null).map(([k, v]) => [k, noNulls(v)])) : o;
+    el.schema = { guid: 'proto', ...noNulls(FX.template), generatePdfOption: false, generatePdfString: 'PDF', submitFormString: 'Save', submittingString: 'Saving…',
+                  apiConfig: { url: `{% url 'prototype_prom_review_submit' %}`, method: 'POST', successMessage: 'Saved (stub)', errorMessage: 'Save failed' } };
+    el.extraPostHeaders = JSON.stringify({ 'x-csrftoken': '{{ csrf_token }}' });
+  });
+  function draw() {
+    list.innerHTML = FIELDS.filter(f => visible(f) && needsReview(f.id)).map(f =>
+      `<label style="display:flex;gap:.5rem;align-items:center"><input type="checkbox" data-ack="${f.id}" ${state.confirmed.has(f.id) ? 'checked' : ''}>
+       <a href="#" data-jump="${f.id}">${esc(f.section.title)} → ${esc(f.label)}</a> ${badge(f.id)}</label>`).join('');
+  }
+  list.onclick = e => { const j = e.target.dataset.jump; if (j) { e.preventDefault(); showBand(scan, j); } };
+  list.onchange = e => { const a = e.target.dataset.ack; if (a) { e.target.checked ? state.confirmed.add(a) : state.confirmed.delete(a); refreshChrome(); } };
+  // component edits are invisible to us except via its events; treat any input as "dirty"
+  el.addEventListener('input-change', () => { state.dirty = true; refreshChrome(); }, true);
+  el.addEventListener('change', () => { state.dirty = true; refreshChrome(); }, true);
+  window.onChrome = draw; draw();
+}
+
+// ---- switcher -----------------------------------------------------------------------
+const KEYS = Object.keys(VARIANTS);
+const currentVariant = () => { const v = new URLSearchParams(location.search).get('variant'); return KEYS.includes(v) ? v : 'A'; };
+function mount() {
+  const v = currentVariant(); document.getElementById('sw-label').textContent = `${v} — ${VARIANTS[v]}`;
+  document.onkeydown = null; state.focus = null;
+  ({ A: variantA, B: variantB, C: variantC })[v](document.getElementById('variant-root')); refreshChrome();
+}
+function go(step) { const i = (KEYS.indexOf(currentVariant()) + step + KEYS.length) % KEYS.length; const u = new URL(location); u.searchParams.set('variant', KEYS[i]); history.replaceState(null, '', u); mount(); }
+document.getElementById('sw-prev').onclick = () => go(-1);
+document.getElementById('sw-next').onclick = () => go(1);
+window.addEventListener('keydown', e => {
+  if (e.target.closest('input, textarea, [contenteditable], dynamic-form') || document.querySelector('dialog[open]')) return;
+  if (currentVariant() === 'B' && !e.shiftKey) return;  // B uses arrows itself; Shift+←/→ switches there
+  if (e.key === 'ArrowLeft') go(-1); if (e.key === 'ArrowRight') go(1);
+});
+mount();
+</script>
+{% endblock %}

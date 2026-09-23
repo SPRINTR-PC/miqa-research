@@ -65,3 +65,13 @@ if settings.DEBUG:
     from debug_toolbar.toolbar import debug_toolbar_urls
 
     urlpatterns += debug_toolbar_urls()
+
+    # PROTOTYPE (#180) -- throwaway, lives only on branch prototype/prom-review-signing.
+    from MiqaResearch.interfaces.http.views.prototype_prom_review import index as prom_review
+
+    urlpatterns += [
+        path('prototype/prom-review/', prom_review.index, name='prototype_prom_review'),
+        path('prototype/prom-review/page/<int:page_index>.png', prom_review.page, name='prototype_prom_review_page'),
+        path('prototype/prom-review/form-data.json', prom_review.form_data, name='prototype_prom_review_form_data'),
+        path('prototype/prom-review/submit', prom_review.submit, name='prototype_prom_review_submit'),
+    ]

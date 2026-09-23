@@ -1,0 +1,2410 @@
+{
+ "_comment": "PROTOTYPE fixture for #180. Real template + real classic-OCR output/regions for sample_01; VLM results simulated from ground_truth.",
+ "template": {
+  "title": "Frågor om din livssituation och symptom/besvär från tarm och blåsa",
+  "instruction": {
+   "title": null,
+   "text": "Adapterat från PCSS, Q21-35,50 (Ver. 1, 2013) © Fransson & Widmark, Umeå, Sweden samt QLQ BLM 30, Q31-37 (Ver. 1, 1994) © EORTC Quality of Life Study Group. De svar Du lämnar är sekretesskyddade och inga uppgifter rörande enskilda personer kommer att lämnas ut.",
+   "images": null
+  },
+  "sections": [
+   {
+    "id": "uppgifter",
+    "title": "Uppgifter",
+    "instruction": null,
+    "inputGroups": [
+     {
+      "id": "uppgifter_studiepersonal",
+      "title": "Fylls i av studiepersonal",
+      "description": null,
+      "instruction": null,
+      "fields": [
+       {
+        "id": "prom101_studie_id",
+        "label": "Id",
+        "description": "Studie-ID, 6 tecken.",
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "string",
+        "defaultValue": null,
+        "placeholder": null,
+        "tolerance": null
+       },
+       {
+        "id": "prom101_tidpunkt",
+        "label": "Tidpunkt",
+        "description": "Mättidpunkt, 3 tecken.",
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "string",
+        "defaultValue": null,
+        "placeholder": null,
+        "tolerance": null
+       }
+      ]
+     },
+     {
+      "id": "uppgifter_patient",
+      "title": null,
+      "description": null,
+      "instruction": null,
+      "fields": [
+       {
+        "id": "prom101_initialer",
+        "label": "Var vänlig fyll i Dina initialer",
+        "description": null,
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "string",
+        "defaultValue": null,
+        "placeholder": null,
+        "tolerance": null
+       },
+       {
+        "id": "prom101_dagens_datum",
+        "label": "Dagens datum (År, Månad, Dag)",
+        "description": "Format: ÅÅÅÅMMDD, t.ex. 20250515.",
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "datetime",
+        "defaultValue": null,
+        "minValue": null
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "tarmbesvar",
+    "title": "Tarmbesvär (1-16)",
+    "instruction": null,
+    "inputGroups": [
+     {
+      "id": "tarm_skala_fragor",
+      "title": "Frågor 1-10",
+      "description": null,
+      "instruction": {
+       "title": null,
+       "text": "Besvara frågor med markering av lämplig nivå med ☒ eller med text i förekommande fall.",
+       "images": null
+      },
+      "fields": [
+       {
+        "id": "prom101_q1_avforingsproblem",
+        "label": "1. Har Du problem med din avföring?",
+        "description": null,
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "ranged-radio",
+        "optionCount": 11,
+        "optionLabelsAndIndices": [
+         {
+          "label": "0",
+          "value": "0",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "1",
+          "value": "1",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "2",
+          "value": "2",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "3",
+          "value": "3",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "4",
+          "value": "4",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "5",
+          "value": "5",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "6",
+          "value": "6",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "7",
+          "value": "7",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "8",
+          "value": "8",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "9",
+          "value": "9",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "10",
+          "value": "10",
+          "isWithinTolerance": true
+         }
+        ],
+        "defaultValue": null
+       },
+       {
+        "id": "prom101_q2_avforingar_per_dygn",
+        "label": "2. Hur många avföringar har Du per dygn?",
+        "description": "Skala 0 = Inget, 10 = Eller fler.",
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "ranged-radio",
+        "optionCount": 11,
+        "optionLabelsAndIndices": [
+         {
+          "label": "0",
+          "value": "0",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "1",
+          "value": "1",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "2",
+          "value": "2",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "3",
+          "value": "3",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "4",
+          "value": "4",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "5",
+          "value": "5",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "6",
+          "value": "6",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "7",
+          "value": "7",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "8",
+          "value": "8",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "9",
+          "value": "9",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "10",
+          "value": "10",
+          "isWithinTolerance": true
+         }
+        ],
+        "defaultValue": null
+       },
+       {
+        "id": "prom101_q3_skynda_till_toaletten",
+        "label": "3. Måste Du skynda Dig till toaletten på morgonen för att ha avföring?",
+        "description": null,
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "ranged-radio",
+        "optionCount": 11,
+        "optionLabelsAndIndices": [
+         {
+          "label": "0",
+          "value": "0",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "1",
+          "value": "1",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "2",
+          "value": "2",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "3",
+          "value": "3",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "4",
+          "value": "4",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "5",
+          "value": "5",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "6",
+          "value": "6",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "7",
+          "value": "7",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "8",
+          "value": "8",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "9",
+          "value": "9",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "10",
+          "value": "10",
+          "isWithinTolerance": true
+         }
+        ],
+        "defaultValue": null
+       },
+       {
+        "id": "prom101_q4_avforingslackage",
+        "label": "4. Har Du avföringsläckage?",
+        "description": null,
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "ranged-radio",
+        "optionCount": 11,
+        "optionLabelsAndIndices": [
+         {
+          "label": "0",
+          "value": "0",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "1",
+          "value": "1",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "2",
+          "value": "2",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "3",
+          "value": "3",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "4",
+          "value": "4",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "5",
+          "value": "5",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "6",
+          "value": "6",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "7",
+          "value": "7",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "8",
+          "value": "8",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "9",
+          "value": "9",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "10",
+          "value": "10",
+          "isWithinTolerance": true
+         }
+        ],
+        "defaultValue": null
+       },
+       {
+        "id": "prom101_q5_planerar_toalettbesok",
+        "label": "5. Medför Dina avföringsproblem att Du planerar Dina toalettbesök?",
+        "description": null,
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "ranged-radio",
+        "optionCount": 11,
+        "optionLabelsAndIndices": [
+         {
+          "label": "0",
+          "value": "0",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "1",
+          "value": "1",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "2",
+          "value": "2",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "3",
+          "value": "3",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "4",
+          "value": "4",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "5",
+          "value": "5",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "6",
+          "value": "6",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "7",
+          "value": "7",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "8",
+          "value": "8",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "9",
+          "value": "9",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "10",
+          "value": "10",
+          "isWithinTolerance": true
+         }
+        ],
+        "defaultValue": null
+       },
+       {
+        "id": "prom101_q6_gasavgang",
+        "label": "6. Har Du problem med gasavgång?",
+        "description": null,
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "ranged-radio",
+        "optionCount": 11,
+        "optionLabelsAndIndices": [
+         {
+          "label": "0",
+          "value": "0",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "1",
+          "value": "1",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "2",
+          "value": "2",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "3",
+          "value": "3",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "4",
+          "value": "4",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "5",
+          "value": "5",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "6",
+          "value": "6",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "7",
+          "value": "7",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "8",
+          "value": "8",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "9",
+          "value": "9",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "10",
+          "value": "10",
+          "isWithinTolerance": true
+         }
+        ],
+        "defaultValue": null
+       },
+       {
+        "id": "prom101_q7_kramper",
+        "label": "7. Har Du kramper i samband med avföringen?",
+        "description": null,
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "ranged-radio",
+        "optionCount": 11,
+        "optionLabelsAndIndices": [
+         {
+          "label": "0",
+          "value": "0",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "1",
+          "value": "1",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "2",
+          "value": "2",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "3",
+          "value": "3",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "4",
+          "value": "4",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "5",
+          "value": "5",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "6",
+          "value": "6",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "7",
+          "value": "7",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "8",
+          "value": "8",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "9",
+          "value": "9",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "10",
+          "value": "10",
+          "isWithinTolerance": true
+         }
+        ],
+        "defaultValue": null
+       },
+       {
+        "id": "prom101_q8_slem",
+        "label": "8. Har Du slem i avföringen?",
+        "description": null,
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "ranged-radio",
+        "optionCount": 11,
+        "optionLabelsAndIndices": [
+         {
+          "label": "0",
+          "value": "0",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "1",
+          "value": "1",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "2",
+          "value": "2",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "3",
+          "value": "3",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "4",
+          "value": "4",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "5",
+          "value": "5",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "6",
+          "value": "6",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "7",
+          "value": "7",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "8",
+          "value": "8",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "9",
+          "value": "9",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "10",
+          "value": "10",
+          "isWithinTolerance": true
+         }
+        ],
+        "defaultValue": null
+       },
+       {
+        "id": "prom101_q9_blod",
+        "label": "9. Har Du blod i avföringen?",
+        "description": null,
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "ranged-radio",
+        "optionCount": 11,
+        "optionLabelsAndIndices": [
+         {
+          "label": "0",
+          "value": "0",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "1",
+          "value": "1",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "2",
+          "value": "2",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "3",
+          "value": "3",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "4",
+          "value": "4",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "5",
+          "value": "5",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "6",
+          "value": "6",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "7",
+          "value": "7",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "8",
+          "value": "8",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "9",
+          "value": "9",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "10",
+          "value": "10",
+          "isWithinTolerance": true
+         }
+        ],
+        "defaultValue": null
+       },
+       {
+        "id": "prom101_q10_paverkan_daglig_aktivitet",
+        "label": "10. Hur mycket påverkar Dina avföringsproblem Din dagliga aktivitet?",
+        "description": null,
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "ranged-radio",
+        "optionCount": 11,
+        "optionLabelsAndIndices": [
+         {
+          "label": "0",
+          "value": "0",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "1",
+          "value": "1",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "2",
+          "value": "2",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "3",
+          "value": "3",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "4",
+          "value": "4",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "5",
+          "value": "5",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "6",
+          "value": "6",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "7",
+          "value": "7",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "8",
+          "value": "8",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "9",
+          "value": "9",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "10",
+          "value": "10",
+          "isWithinTolerance": true
+         }
+        ],
+        "defaultValue": null
+       }
+      ]
+     },
+     {
+      "id": "tarm_q11_tillfalle",
+      "title": null,
+      "description": null,
+      "instruction": null,
+      "fields": [
+       {
+        "id": "prom101_q11_tillfalle",
+        "label": "11. Vid vilket tillfälle/tillfällen har Du avföringsläckage?",
+        "description": null,
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "checkbox",
+        "options": [
+         {
+          "label": "Inget läckage alls",
+          "value": "inget_lackage_alls",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Hostar, nyser eller skrattar",
+          "value": "hostar_nyser_skrattar",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Lyfter tungt",
+          "value": "lyfter_tungt",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "När Du reser Dig från sittande till stående",
+          "value": "reser_sig_sittande_till_staende",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Vid gasavgång",
+          "value": "vid_gasavgang",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Annat tillfälle",
+          "value": "annat_tillfalle",
+          "isWithinTolerance": true
+         }
+        ],
+        "defaultValues": null,
+        "horizontal": null
+       },
+       {
+        "id": "prom101_q11_annat_tillfalle_text",
+        "label": "Annat tillfälle. Vilket?",
+        "description": null,
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "string",
+        "defaultValue": null,
+        "placeholder": null,
+        "tolerance": null
+       }
+      ]
+     },
+     {
+      "id": "tarm_q12_blojanvandning",
+      "title": null,
+      "description": null,
+      "instruction": null,
+      "fields": [
+       {
+        "id": "prom101_q12_anvander_bloja",
+        "label": "12. Använder Du regelbundet blöja p.g.a avföringsläckage?",
+        "description": null,
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "radio",
+        "options": [
+         {
+          "label": "Nej",
+          "value": "nej",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Ja",
+          "value": "ja",
+          "isWithinTolerance": true
+         }
+        ],
+        "defaultValue": null,
+        "horizontal": null
+       },
+       {
+        "id": "prom101_q12_antal_per_vecka",
+        "label": "Antal/vecka",
+        "description": null,
+        "required": false,
+        "conditionalVisibility": {
+         "referenceFieldId": "prom101_q12_anvander_bloja",
+         "referenceFieldShowConditions": {
+          "id": "prom101_q12_antal_per_vecka-cond-tol",
+          "type": "string",
+          "referenceValues": [
+           "ja"
+          ],
+          "caseSensitive": false,
+          "exactMatch": true
+         }
+        },
+        "predefinedValue": false,
+        "type": "numeric",
+        "defaultValue": null,
+        "unit": "ggr/vecka",
+        "tolerance": null
+       },
+       {
+        "id": "prom101_q12_hur_ofta",
+        "label": "Hur ofta?",
+        "description": null,
+        "required": false,
+        "conditionalVisibility": {
+         "referenceFieldId": "prom101_q12_anvander_bloja",
+         "referenceFieldShowConditions": {
+          "id": "prom101_q12_hur_ofta-cond-tol",
+          "type": "string",
+          "referenceValues": [
+           "ja"
+          ],
+          "caseSensitive": false,
+          "exactMatch": true
+         }
+        },
+        "predefinedValue": false,
+        "type": "checkbox",
+        "options": [
+         {
+          "label": "Vid vistelse utanför hemmet",
+          "value": "vid_vistelse_utanfor_hemmet",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Under dagen",
+          "value": "under_dagen",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Under natten",
+          "value": "under_natten",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Annat tillfälle",
+          "value": "annat_tillfalle",
+          "isWithinTolerance": true
+         }
+        ],
+        "defaultValues": null,
+        "horizontal": null
+       },
+       {
+        "id": "prom101_q12_annat_tillfalle_text",
+        "label": "Annat tillfälle, vilket?",
+        "description": null,
+        "required": false,
+        "conditionalVisibility": {
+         "referenceFieldId": "prom101_q12_hur_ofta",
+         "referenceFieldShowConditions": {
+          "id": "prom101_q12_annat_tillfalle_text-cond-tol",
+          "type": "string",
+          "referenceValues": [
+           "annat_tillfalle"
+          ],
+          "caseSensitive": false,
+          "exactMatch": false
+         }
+        },
+        "predefinedValue": false,
+        "type": "string",
+        "defaultValue": null,
+        "placeholder": null,
+        "tolerance": null
+       }
+      ]
+     },
+     {
+      "id": "tarm_q13_medicin",
+      "title": null,
+      "description": null,
+      "instruction": null,
+      "fields": [
+       {
+        "id": "prom101_q13_medicin_mot_los_avforing",
+        "label": "13. Har Du använt någon medicin mot lös avföring under senaste veckan?",
+        "description": null,
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "checkbox",
+        "options": [
+         {
+          "label": "Nej",
+          "value": "nej",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Ja, Imodium",
+          "value": "ja_imodium",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Ja, Predclysma (cortison i stolgången)",
+          "value": "ja_predclysma",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Ja, annan",
+          "value": "ja_annan",
+          "isWithinTolerance": true
+         }
+        ],
+        "defaultValues": null,
+        "horizontal": null
+       },
+       {
+        "id": "prom101_q13_imodium_antal_per_vecka",
+        "label": "Imodium - Antal/vecka",
+        "description": null,
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "numeric",
+        "defaultValue": null,
+        "unit": "ggr/vecka",
+        "tolerance": null
+       },
+       {
+        "id": "prom101_q13_predclysma_antal_per_vecka",
+        "label": "Predclysma - Antal/vecka",
+        "description": null,
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "numeric",
+        "defaultValue": null,
+        "unit": "ggr/vecka",
+        "tolerance": null
+       },
+       {
+        "id": "prom101_q13_annan_text",
+        "label": "Ja, annan. Vilken?",
+        "description": null,
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "string",
+        "defaultValue": null,
+        "placeholder": null,
+        "tolerance": null
+       }
+      ]
+     },
+     {
+      "id": "tarm_q14_kostvanor",
+      "title": null,
+      "description": null,
+      "instruction": null,
+      "fields": [
+       {
+        "id": "prom101_q14_kostvanor",
+        "label": "14. Har Du speciella kostvanor avseende magen?",
+        "description": null,
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "checkbox",
+        "options": [
+         {
+          "label": "Nej",
+          "value": "nej",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Ja, fettsnål kost",
+          "value": "ja_fettsnal_kost",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Ja, fiberrik kost",
+          "value": "ja_fiberrik_kost",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Ja, mjölkfattig kost",
+          "value": "ja_mjolkfattig_kost",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Ja, annat",
+          "value": "ja_annat",
+          "isWithinTolerance": true
+         }
+        ],
+        "defaultValues": null,
+        "horizontal": null
+       },
+       {
+        "id": "prom101_q14_annat_text",
+        "label": "Ja, annat. Vad?",
+        "description": null,
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "string",
+        "defaultValue": null,
+        "placeholder": null,
+        "tolerance": null
+       }
+      ]
+     },
+     {
+      "id": "tarm_q15_livskvalitet",
+      "title": null,
+      "description": null,
+      "instruction": null,
+      "fields": [
+       {
+        "id": "prom101_q15_livskvalitet",
+        "label": "15. Om Du skulle leva resten av Ditt liv med Dina avföringsproblem som det är just nu, hur skulle Du uppleva detta?",
+        "description": null,
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "radio",
+        "options": [
+         {
+          "label": "Mycket nöjd",
+          "value": "mycket_nojd",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Nöjd",
+          "value": "nojd",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Tillfredsställande",
+          "value": "tillfredsstallande",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Blandade känslor",
+          "value": "blandade_kanslor",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Missbelåten",
+          "value": "missbelaten",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Olycklig",
+          "value": "olycklig",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Förfärligt",
+          "value": "forfarligt",
+          "isWithinTolerance": true
+         }
+        ],
+        "defaultValue": null,
+        "horizontal": null
+       }
+      ]
+     },
+     {
+      "id": "tarm_q16_storsta_problem",
+      "title": null,
+      "description": null,
+      "instruction": null,
+      "fields": [
+       {
+        "id": "prom101_q16_storsta_problem",
+        "label": "16. Om Du har något/några problem med avföringen, vilket eller vilka problem är störst?",
+        "description": "Du kan skriva i fri text eller hänvisa till en tidigare fråga med nummer.",
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "text",
+        "defaultValue": null,
+        "placeholder": null,
+        "markdown": false,
+        "rows": 3
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "vattenkastningsbesvar",
+    "title": "Vattenkastningsbesvär (17-25)",
+    "instruction": null,
+    "inputGroups": [
+     {
+      "id": "vatten_skala_fragor",
+      "title": "Under veckan som gått",
+      "description": null,
+      "instruction": {
+       "title": null,
+       "text": "Patienter berättar ibland att de har följande symptom. Markera i vilken utsträckning som du har haft dessa symptom under den senaste veckan.",
+       "images": null
+      },
+      "fields": [
+       {
+        "id": "prom101_q17_urinera_ofta_dagen",
+        "label": "17. Har du behövt urinera ofta under dagen?",
+        "description": null,
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "ranged-radio",
+        "optionCount": 4,
+        "optionLabelsAndIndices": [
+         {
+          "label": "Inte alls",
+          "value": "1",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Lite",
+          "value": "2",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "En hel del",
+          "value": "3",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Mycket",
+          "value": "4",
+          "isWithinTolerance": true
+         }
+        ],
+        "defaultValue": null
+       },
+       {
+        "id": "prom101_q18_urinera_ofta_natten",
+        "label": "18. Har du behövt urinera ofta under natten?",
+        "description": null,
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "ranged-radio",
+        "optionCount": 4,
+        "optionLabelsAndIndices": [
+         {
+          "label": "Inte alls",
+          "value": "1",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Lite",
+          "value": "2",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "En hel del",
+          "value": "3",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Mycket",
+          "value": "4",
+          "isWithinTolerance": true
+         }
+        ],
+        "defaultValue": null
+       },
+       {
+        "id": "prom101_q19_skynda_till_toaletten",
+        "label": "19. Måste du skynda dig till toaletten när du kände att du behövde urinera?",
+        "description": null,
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "ranged-radio",
+        "optionCount": 4,
+        "optionLabelsAndIndices": [
+         {
+          "label": "Inte alls",
+          "value": "1",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Lite",
+          "value": "2",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "En hel del",
+          "value": "3",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Mycket",
+          "value": "4",
+          "isWithinTolerance": true
+         }
+        ],
+        "defaultValue": null
+       },
+       {
+        "id": "prom101_q20_somnproblem_pga_urinering",
+        "label": "20. Har du haft svårt att få tillräckligt med sömn för att du måste stiga upp ofta om natten och urinera?",
+        "description": null,
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "ranged-radio",
+        "optionCount": 4,
+        "optionLabelsAndIndices": [
+         {
+          "label": "Inte alls",
+          "value": "1",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Lite",
+          "value": "2",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "En hel del",
+          "value": "3",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Mycket",
+          "value": "4",
+          "isWithinTolerance": true
+         }
+        ],
+        "defaultValue": null
+       },
+       {
+        "id": "prom101_q21_besvarligt_ga_hemifran",
+        "label": "21. Har det varit besvärligt att gå hemifrån, för att du måste vara i närheten av en toalett hela tiden?",
+        "description": null,
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "ranged-radio",
+        "optionCount": 4,
+        "optionLabelsAndIndices": [
+         {
+          "label": "Inte alls",
+          "value": "1",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Lite",
+          "value": "2",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "En hel del",
+          "value": "3",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Mycket",
+          "value": "4",
+          "isWithinTolerance": true
+         }
+        ],
+        "defaultValue": null
+       },
+       {
+        "id": "prom101_q22_urinlackage",
+        "label": "22. Har du haft urinläckage?",
+        "description": null,
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "ranged-radio",
+        "optionCount": 4,
+        "optionLabelsAndIndices": [
+         {
+          "label": "Inte alls",
+          "value": "1",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Lite",
+          "value": "2",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "En hel del",
+          "value": "3",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Mycket",
+          "value": "4",
+          "isWithinTolerance": true
+         }
+        ],
+        "defaultValue": null
+       },
+       {
+        "id": "prom101_q23_smarta_sveda_urinering",
+        "label": "23. Har du känt smärta eller sveda i samband med urinering?",
+        "description": null,
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "ranged-radio",
+        "optionCount": 4,
+        "optionLabelsAndIndices": [
+         {
+          "label": "Inte alls",
+          "value": "1",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Lite",
+          "value": "2",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "En hel del",
+          "value": "3",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Mycket",
+          "value": "4",
+          "isWithinTolerance": true
+         }
+        ],
+        "defaultValue": null
+       }
+      ]
+     },
+     {
+      "id": "vatten_q24_livskvalitet",
+      "title": null,
+      "description": null,
+      "instruction": {
+       "title": null,
+       "text": "Besvara frågor med markering av lämplig nivå med ☒ eller med text i förekommande fall.",
+       "images": null
+      },
+      "fields": [
+       {
+        "id": "prom101_q24_livskvalitet",
+        "label": "24. Om Du skulle leva resten av Ditt liv med Dina vattenkastningsbesvär som det är just nu, hur skulle Du uppleva detta?",
+        "description": null,
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "radio",
+        "options": [
+         {
+          "label": "Mycket nöjd",
+          "value": "mycket_nojd",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Nöjd",
+          "value": "nojd",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Tillfredsställande",
+          "value": "tillfredsstallande",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Blandade känslor",
+          "value": "blandade_kanslor",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Missbelåten",
+          "value": "missbelaten",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Olycklig",
+          "value": "olycklig",
+          "isWithinTolerance": true
+         },
+         {
+          "label": "Förfärligt",
+          "value": "forfarligt",
+          "isWithinTolerance": true
+         }
+        ],
+        "defaultValue": null,
+        "horizontal": null
+       }
+      ]
+     },
+     {
+      "id": "vatten_q25_storsta_problem",
+      "title": null,
+      "description": null,
+      "instruction": null,
+      "fields": [
+       {
+        "id": "prom101_q25_storsta_problem",
+        "label": "25. Om Du har något/några problem med vattenkastningen, vilket eller vilka problem är störst?",
+        "description": "Du kan skriva i fri text eller hänvisa till en tidigare fråga med nummer.",
+        "required": false,
+        "conditionalVisibility": null,
+        "predefinedValue": false,
+        "type": "text",
+        "defaultValue": null,
+        "placeholder": null,
+        "markdown": false,
+        "rows": 3
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "data": [
+  {
+   "fieldId": "prom101_studie_id",
+   "value": "Dagens datum (Ar, 2 o lo"
+  },
+  {
+   "fieldId": "prom101_initialer",
+   "value": "Dagens datum (Ar, 2 o lo"
+  },
+  {
+   "fieldId": "prom101_dagens_datum",
+   "value": "t.ex 20250515"
+  },
+  {
+   "fieldId": "prom101_q1_avforingsproblem",
+   "value": "8"
+  },
+  {
+   "fieldId": "prom101_q2_avforingar_per_dygn",
+   "value": "5"
+  },
+  {
+   "fieldId": "prom101_q3_skynda_till_toaletten",
+   "value": "7"
+  },
+  {
+   "fieldId": "prom101_q5_planerar_toalettbesok",
+   "value": "1"
+  },
+  {
+   "fieldId": "prom101_q10_paverkan_daglig_aktivitet",
+   "value": [
+    "0",
+    "1"
+   ]
+  },
+  {
+   "fieldId": "prom101_q11_annat_tillfalle_text",
+   "value": "PCSS (Ver. 1, 2005) Fransson Widmand, hed, Sweden”"
+  },
+  {
+   "fieldId": "prom101_q12_antal_per_vecka",
+   "value": 38
+  },
+  {
+   "fieldId": "prom101_q12_annat_tillfalle_text",
+   "value": "PCSS (Ver. 1, 2005) Fransson Widmand, hed, Sweden”"
+  },
+  {
+   "fieldId": "prom101_q13_medicin_mot_los_avforing",
+   "value": [
+    "ja_predclysma"
+   ]
+  },
+  {
+   "fieldId": "prom101_q13_imodium_antal_per_vecka",
+   "value": "M Ja, Predelysma (cortison i stolgången) Antal/vecka fo"
+  },
+  {
+   "fieldId": "prom101_q13_predclysma_antal_per_vecka",
+   "value": 7
+  },
+  {
+   "fieldId": "prom101_q13_annan_text",
+   "value": "14. Har Du speciella kostvanor CO"
+  },
+  {
+   "fieldId": "prom101_q14_annat_text",
+   "value": "15. Om Du skulle leva resten av Ditt liv med Dina avföringsproblem CJ Mycket nöjd MH Nöjd Tillfredsstallande OJ Blandade känslor det är just hur skulle Du [FT"
+  },
+  {
+   "fieldId": "prom101_q16_storsta_problem",
+   "value": "(du kan skriva i fri text eller hänvisa serteanntttnnesnnneenetnennnnttntttntnnsnnsntnnnnnen titties till en tidigare fråga med seventeen terns neritic tate etter nummer"
+  },
+  {
+   "fieldId": "prom101_q18_urinera_ofta_natten",
+   "value": "2"
+  },
+  {
+   "fieldId": "prom101_q19_skynda_till_toaletten",
+   "value": "1"
+  },
+  {
+   "fieldId": "prom101_q23_smarta_sveda_urinering",
+   "value": "1"
+  },
+  {
+   "fieldId": "prom101_q25_storsta_problem",
+   "value": "(du kan skriva i fri text eller hänvisa serteanntttnnesnnneenetnennnnttntttntnnsnnsntnnnnnen titties till en tidigare fråga med seventeen terns neritic tate etter nummer"
+  },
+  {
+   "fieldId": "prom101_q4_avforingslackage",
+   "value": "3"
+  },
+  {
+   "fieldId": "prom101_q6_gasavgang",
+   "value": "9"
+  },
+  {
+   "fieldId": "prom101_q7_kramper",
+   "value": "4"
+  },
+  {
+   "fieldId": "prom101_q8_slem",
+   "value": "6"
+  },
+  {
+   "fieldId": "prom101_q9_blod",
+   "value": "1"
+  },
+  {
+   "fieldId": "prom101_q12_anvander_bloja",
+   "value": "ja"
+  },
+  {
+   "fieldId": "prom101_q15_livskvalitet",
+   "value": "missbelaten"
+  },
+  {
+   "fieldId": "prom101_q17_urinera_ofta_dagen",
+   "value": "3"
+  },
+  {
+   "fieldId": "prom101_q20_somnproblem_pga_urinering",
+   "value": "4"
+  },
+  {
+   "fieldId": "prom101_q21_besvarligt_ga_hemifran",
+   "value": "2"
+  },
+  {
+   "fieldId": "prom101_q24_livskvalitet",
+   "value": "olycklig"
+  }
+ ],
+ "extraction_flags": {
+  "prom101_studie_id": {
+   "source": "classic",
+   "attempted": [
+    "classic"
+   ],
+   "confidence": "high"
+  },
+  "prom101_tidpunkt": {
+   "source": "failed",
+   "attempted": [
+    "classic",
+    "vlm"
+   ]
+  },
+  "prom101_initialer": {
+   "source": "classic",
+   "attempted": [
+    "classic"
+   ],
+   "confidence": "high"
+  },
+  "prom101_dagens_datum": {
+   "source": "classic",
+   "attempted": [
+    "classic"
+   ],
+   "confidence": "high"
+  },
+  "prom101_q1_avforingsproblem": {
+   "source": "vlm",
+   "attempted": [
+    "classic",
+    "vlm"
+   ],
+   "confidence": "high"
+  },
+  "prom101_q2_avforingar_per_dygn": {
+   "source": "vlm",
+   "attempted": [
+    "classic",
+    "vlm"
+   ],
+   "confidence": "high"
+  },
+  "prom101_q3_skynda_till_toaletten": {
+   "source": "classic",
+   "attempted": [
+    "classic"
+   ],
+   "confidence": "high"
+  },
+  "prom101_q4_avforingslackage": {
+   "source": "vlm",
+   "attempted": [
+    "classic",
+    "vlm"
+   ],
+   "confidence": "high"
+  },
+  "prom101_q5_planerar_toalettbesok": {
+   "source": "vlm",
+   "attempted": [
+    "classic",
+    "vlm"
+   ],
+   "confidence": "high"
+  },
+  "prom101_q6_gasavgang": {
+   "source": "vlm",
+   "attempted": [
+    "classic",
+    "vlm"
+   ],
+   "confidence": "high"
+  },
+  "prom101_q7_kramper": {
+   "source": "vlm",
+   "attempted": [
+    "classic",
+    "vlm"
+   ],
+   "confidence": "low"
+  },
+  "prom101_q8_slem": {
+   "source": "vlm",
+   "attempted": [
+    "classic",
+    "vlm"
+   ],
+   "confidence": "high"
+  },
+  "prom101_q9_blod": {
+   "source": "vlm",
+   "attempted": [
+    "classic",
+    "vlm"
+   ],
+   "confidence": "high"
+  },
+  "prom101_q10_paverkan_daglig_aktivitet": {
+   "source": "classic",
+   "attempted": [
+    "classic"
+   ],
+   "confidence": "high"
+  },
+  "prom101_q11_tillfalle": {
+   "source": "failed",
+   "attempted": [
+    "classic",
+    "vlm"
+   ]
+  },
+  "prom101_q11_annat_tillfalle_text": {
+   "source": "classic",
+   "attempted": [
+    "classic"
+   ],
+   "confidence": "high"
+  },
+  "prom101_q12_anvander_bloja": {
+   "source": "vlm",
+   "attempted": [
+    "classic",
+    "vlm"
+   ],
+   "confidence": "high"
+  },
+  "prom101_q12_antal_per_vecka": {
+   "source": "vlm",
+   "attempted": [
+    "classic",
+    "vlm"
+   ],
+   "confidence": "low"
+  },
+  "prom101_q12_hur_ofta": {
+   "source": "failed",
+   "attempted": [
+    "classic"
+   ]
+  },
+  "prom101_q12_annat_tillfalle_text": {
+   "source": "classic",
+   "attempted": [
+    "classic"
+   ],
+   "confidence": "high"
+  },
+  "prom101_q13_medicin_mot_los_avforing": {
+   "source": "vlm",
+   "attempted": [
+    "classic",
+    "vlm"
+   ],
+   "confidence": "high"
+  },
+  "prom101_q13_imodium_antal_per_vecka": {
+   "source": "classic",
+   "attempted": [
+    "classic",
+    "vlm"
+   ],
+   "confidence": "high"
+  },
+  "prom101_q13_predclysma_antal_per_vecka": {
+   "source": "vlm",
+   "attempted": [
+    "classic",
+    "vlm"
+   ],
+   "confidence": "high"
+  },
+  "prom101_q13_annan_text": {
+   "source": "classic",
+   "attempted": [
+    "classic"
+   ],
+   "confidence": "high"
+  },
+  "prom101_q14_kostvanor": {
+   "source": "failed",
+   "attempted": [
+    "classic"
+   ]
+  },
+  "prom101_q14_annat_text": {
+   "source": "classic",
+   "attempted": [
+    "classic"
+   ],
+   "confidence": "high"
+  },
+  "prom101_q15_livskvalitet": {
+   "source": "vlm",
+   "attempted": [
+    "classic",
+    "vlm"
+   ],
+   "confidence": "low"
+  },
+  "prom101_q16_storsta_problem": {
+   "source": "classic",
+   "attempted": [
+    "classic"
+   ],
+   "confidence": "high"
+  },
+  "prom101_q17_urinera_ofta_dagen": {
+   "source": "vlm",
+   "attempted": [
+    "classic",
+    "vlm"
+   ],
+   "confidence": "high"
+  },
+  "prom101_q18_urinera_ofta_natten": {
+   "source": "vlm",
+   "attempted": [
+    "classic",
+    "vlm"
+   ],
+   "confidence": "high"
+  },
+  "prom101_q19_skynda_till_toaletten": {
+   "source": "vlm",
+   "attempted": [
+    "classic",
+    "vlm"
+   ],
+   "confidence": "high"
+  },
+  "prom101_q20_somnproblem_pga_urinering": {
+   "source": "vlm",
+   "attempted": [
+    "classic",
+    "vlm"
+   ],
+   "confidence": "high"
+  },
+  "prom101_q21_besvarligt_ga_hemifran": {
+   "source": "vlm",
+   "attempted": [
+    "classic",
+    "vlm"
+   ],
+   "confidence": "high"
+  },
+  "prom101_q22_urinlackage": {
+   "source": "failed",
+   "attempted": [
+    "classic",
+    "vlm"
+   ]
+  },
+  "prom101_q23_smarta_sveda_urinering": {
+   "source": "vlm",
+   "attempted": [
+    "classic",
+    "vlm"
+   ],
+   "confidence": "high"
+  },
+  "prom101_q24_livskvalitet": {
+   "source": "vlm",
+   "attempted": [
+    "classic",
+    "vlm"
+   ],
+   "confidence": "high"
+  },
+  "prom101_q25_storsta_problem": {
+   "source": "classic",
+   "attempted": [
+    "classic"
+   ],
+   "confidence": "high"
+  }
+ },
+ "regions": {
+  "prom101_studie_id": {
+   "page": 0,
+   "region": [
+    0,
+    1313,
+    2471,
+    1442
+   ]
+  },
+  "prom101_tidpunkt": {
+   "page": 0,
+   "region": null
+  },
+  "prom101_initialer": {
+   "page": 0,
+   "region": [
+    0,
+    1323,
+    2471,
+    1443
+   ]
+  },
+  "prom101_dagens_datum": {
+   "page": 0,
+   "region": [
+    0,
+    1497,
+    2471,
+    3509
+   ]
+  },
+  "prom101_q1_avforingsproblem": {
+   "page": 1,
+   "region": [
+    0,
+    481,
+    2488,
+    601
+   ]
+  },
+  "prom101_q2_avforingar_per_dygn": {
+   "page": 1,
+   "region": [
+    0,
+    609,
+    2488,
+    675
+   ]
+  },
+  "prom101_q3_skynda_till_toaletten": {
+   "page": 1,
+   "region": [
+    0,
+    769,
+    2488,
+    776
+   ]
+  },
+  "prom101_q4_avforingslackage": {
+   "page": 1,
+   "region": [
+    0,
+    865,
+    2488,
+    949
+   ]
+  },
+  "prom101_q5_planerar_toalettbesok": {
+   "page": 1,
+   "region": [
+    0,
+    1080,
+    2488,
+    1266
+   ]
+  },
+  "prom101_q6_gasavgang": {
+   "page": 1,
+   "region": [
+    0,
+    469,
+    2488,
+    542
+   ]
+  },
+  "prom101_q7_kramper": {
+   "page": 1,
+   "region": [
+    0,
+    1422,
+    2488,
+    1542
+   ]
+  },
+  "prom101_q8_slem": {
+   "page": 1,
+   "region": [
+    0,
+    1433,
+    2488,
+    1516
+   ]
+  },
+  "prom101_q9_blod": {
+   "page": 1,
+   "region": [
+    0,
+    1555,
+    2488,
+    1642
+   ]
+  },
+  "prom101_q10_paverkan_daglig_aktivitet": {
+   "page": 1,
+   "region": [
+    0,
+    1729,
+    2488,
+    2013
+   ]
+  },
+  "prom101_q11_tillfalle": {
+   "page": 1,
+   "region": [
+    0,
+    865,
+    2488,
+    985
+   ]
+  },
+  "prom101_q11_annat_tillfalle_text": {
+   "page": 1,
+   "region": [
+    0,
+    2043,
+    2488,
+    2163
+   ]
+  },
+  "prom101_q12_anvander_bloja": {
+   "page": 2,
+   "region": [
+    0,
+    474,
+    2475,
+    594
+   ]
+  },
+  "prom101_q12_antal_per_vecka": {
+   "page": 2,
+   "region": [
+    0,
+    479,
+    2475,
+    510
+   ]
+  },
+  "prom101_q12_hur_ofta": {
+   "page": 2,
+   "region": [
+    0,
+    548,
+    2475,
+    866
+   ]
+  },
+  "prom101_q12_annat_tillfalle_text": {
+   "page": 1,
+   "region": [
+    0,
+    2043,
+    2488,
+    3467
+   ]
+  },
+  "prom101_q13_medicin_mot_los_avforing": {
+   "page": 2,
+   "region": [
+    0,
+    1010,
+    2475,
+    1130
+   ]
+  },
+  "prom101_q13_imodium_antal_per_vecka": {
+   "page": 2,
+   "region": [
+    0,
+    1006,
+    2475,
+    1276
+   ]
+  },
+  "prom101_q13_predclysma_antal_per_vecka": {
+   "page": 2,
+   "region": [
+    0,
+    479,
+    2475,
+    599
+   ]
+  },
+  "prom101_q13_annan_text": {
+   "page": 2,
+   "region": [
+    0,
+    1310,
+    2475,
+    1356
+   ]
+  },
+  "prom101_q14_kostvanor": {
+   "page": 2,
+   "region": [
+    0,
+    1441,
+    2475,
+    1501
+   ]
+  },
+  "prom101_q14_annat_text": {
+   "page": 2,
+   "region": [
+    0,
+    1600,
+    2475,
+    1720
+   ]
+  },
+  "prom101_q15_livskvalitet": {
+   "page": 2,
+   "region": [
+    0,
+    1716,
+    2475,
+    1836
+   ]
+  },
+  "prom101_q16_storsta_problem": {
+   "page": 2,
+   "region": [
+    0,
+    2027,
+    2475,
+    2147
+   ]
+  },
+  "prom101_q17_urinera_ofta_dagen": {
+   "page": 3,
+   "region": [
+    0,
+    871,
+    2488,
+    933
+   ]
+  },
+  "prom101_q18_urinera_ofta_natten": {
+   "page": 3,
+   "region": [
+    0,
+    977,
+    2488,
+    1048
+   ]
+  },
+  "prom101_q19_skynda_till_toaletten": {
+   "page": 3,
+   "region": [
+    0,
+    1144,
+    2488,
+    1211
+   ]
+  },
+  "prom101_q20_somnproblem_pga_urinering": {
+   "page": 3,
+   "region": [
+    0,
+    1319,
+    2488,
+    1378
+   ]
+  },
+  "prom101_q21_besvarligt_ga_hemifran": {
+   "page": 3,
+   "region": [
+    0,
+    1480,
+    2488,
+    1550
+   ]
+  },
+  "prom101_q22_urinlackage": {
+   "page": 3,
+   "region": [
+    0,
+    1595,
+    2488,
+    1654
+   ]
+  },
+  "prom101_q23_smarta_sveda_urinering": {
+   "page": 3,
+   "region": [
+    0,
+    1774,
+    2488,
+    3500
+   ]
+  },
+  "prom101_q24_livskvalitet": {
+   "page": 2,
+   "region": [
+    0,
+    1716,
+    2475,
+    1896
+   ]
+  },
+  "prom101_q25_storsta_problem": {
+   "page": 2,
+   "region": [
+    0,
+    2027,
+    2475,
+    3509
+   ]
+  }
+ },
+ "page_sizes": [
+  [
+   2471,
+   3509
+  ],
+  [
+   2488,
+   3467
+  ],
+  [
+   2475,
+   3509
+  ],
+  [
+   2488,
+   3500
+  ]
+ ],
+ "ground_truth": [
+  {
+   "fieldId": "prom101_initialer",
+   "value": "TD"
+  },
+  {
+   "fieldId": "prom101_dagens_datum",
+   "value": "20260501"
+  },
+  {
+   "fieldId": "prom101_q1_avforingsproblem",
+   "value": "8"
+  },
+  {
+   "fieldId": "prom101_q2_avforingar_per_dygn",
+   "value": "5"
+  },
+  {
+   "fieldId": "prom101_q3_skynda_till_toaletten",
+   "value": "7"
+  },
+  {
+   "fieldId": "prom101_q4_avforingslackage",
+   "value": "3"
+  },
+  {
+   "fieldId": "prom101_q5_planerar_toalettbesok",
+   "value": "1"
+  },
+  {
+   "fieldId": "prom101_q6_gasavgang",
+   "value": "9"
+  },
+  {
+   "fieldId": "prom101_q7_kramper",
+   "value": "4"
+  },
+  {
+   "fieldId": "prom101_q8_slem",
+   "value": "6"
+  },
+  {
+   "fieldId": "prom101_q9_blod",
+   "value": "1"
+  },
+  {
+   "fieldId": "prom101_q10_paverkan_daglig_aktivitet",
+   "value": "0"
+  },
+  {
+   "fieldId": "prom101_q11_tillfalle",
+   "value": [
+    "annat_tillfalle"
+   ]
+  },
+  {
+   "fieldId": "prom101_q11_annat_tillfalle_text",
+   "value": "När jag sjunger"
+  },
+  {
+   "fieldId": "prom101_q12_anvander_bloja",
+   "value": "ja"
+  },
+  {
+   "fieldId": "prom101_q12_antal_per_vecka",
+   "value": 38
+  },
+  {
+   "fieldId": "prom101_q12_hur_ofta",
+   "value": [
+    "under_dagen"
+   ]
+  },
+  {
+   "fieldId": "prom101_q13_medicin_mot_los_avforing",
+   "value": [
+    "ja_predclysma"
+   ]
+  },
+  {
+   "fieldId": "prom101_q13_predclysma_antal_per_vecka",
+   "value": 7
+  },
+  {
+   "fieldId": "prom101_q14_kostvanor",
+   "value": [
+    "ja_annat"
+   ]
+  },
+  {
+   "fieldId": "prom101_q14_annat_text",
+   "value": "glutenfattig"
+  },
+  {
+   "fieldId": "prom101_q15_livskvalitet",
+   "value": "missbelaten"
+  },
+  {
+   "fieldId": "prom101_q16_storsta_problem",
+   "value": "ont i magen"
+  },
+  {
+   "fieldId": "prom101_q17_urinera_ofta_dagen",
+   "value": "3"
+  },
+  {
+   "fieldId": "prom101_q18_urinera_ofta_natten",
+   "value": "2"
+  },
+  {
+   "fieldId": "prom101_q19_skynda_till_toaletten",
+   "value": "1"
+  },
+  {
+   "fieldId": "prom101_q20_somnproblem_pga_urinering",
+   "value": "4"
+  },
+  {
+   "fieldId": "prom101_q21_besvarligt_ga_hemifran",
+   "value": "2"
+  },
+  {
+   "fieldId": "prom101_q22_urinlackage",
+   "value": "3"
+  },
+  {
+   "fieldId": "prom101_q23_smarta_sveda_urinering",
+   "value": "1"
+  },
+  {
+   "fieldId": "prom101_q24_livskvalitet",
+   "value": "olycklig"
+  },
+  {
+   "fieldId": "prom101_q25_storsta_problem",
+   "value": "stiga upp på natten"
+  }
+ ]
+}
