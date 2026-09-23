@@ -76,6 +76,13 @@ env = environ.Env(
     MIRES_EMAIL_NOREPLY_SENDER=(str, "noreply@miqaresearch.se"),
     MIRES_EID_CLIENT_ID=(str, None),
     MIRES_EID_CLIENT_SECRET=(str, None),
+    MIRES_ETL_SCRIPT_S3_ENDPOINT_URL=(str, None),
+    MIRES_ETL_SCRIPT_S3_REGION_NAME=(str, "us-east-1"),
+    MIRES_ETL_SCRIPT_S3_ACCESS_KEY_ID=(str, None),
+    MIRES_ETL_SCRIPT_S3_SECRET_ACCESS_KEY=(str, None),
+    MIRES_ETL_SCRIPT_STORAGE_BACKEND=(str, "local"),
+    MIRES_ETL_SCRIPT_S3_BUCKET=(str, None),
+    MIRES_ETL_SCRIPT_MAX_SOURCE_BYTES=(int, 256 * 1024),
     MIRES_LOGGING_LEVEL=(str, "INFO"),
     MIRES_LOGGING_DIR=(Path, BASE_DIR / "LocalOnly/Logs"),
     MIRES_OIDC_CLIENT_ID=(str, None),
@@ -151,6 +158,24 @@ DICOM_S3_SECRET_ACCESS_KEY: str | None = env("MIRES_DICOM_S3_SECRET_ACCESS_KEY")
 # affected -- no other file storage in the app.
 DICOM_STORAGE_BACKEND: str = env("MIRES_DICOM_STORAGE_BACKEND")
 DICOM_S3_BUCKET: str | None = env("MIRES_DICOM_S3_BUCKET")
+
+# ETL scripts (#144): same local/s3 toggle as DICOM_STORAGE_BACKEND above, but
+# a separate setting and bucket -- an EtlScriptVersion's source is a small,
+# operator-curated program, not patient data, and belongs in its own
+# location. Read by data.models.etl_script's EtlScriptStorage on every
+# operation. Only EtlScriptVersion.source is affected.
+ETL_SCRIPT_STORAGE_BACKEND: str = env("MIRES_ETL_SCRIPT_STORAGE_BACKEND")
+ETL_SCRIPT_S3_BUCKET: str | None = env("MIRES_ETL_SCRIPT_S3_BUCKET")
+ETL_SCRIPT_S3_ENDPOINT_URL: str | None = env("MIRES_ETL_SCRIPT_S3_ENDPOINT_URL")
+ETL_SCRIPT_S3_REGION_NAME: str = env("MIRES_ETL_SCRIPT_S3_REGION_NAME")
+ETL_SCRIPT_S3_ACCESS_KEY_ID: str | None = env("MIRES_ETL_SCRIPT_S3_ACCESS_KEY_ID")
+ETL_SCRIPT_S3_SECRET_ACCESS_KEY: str | None = env("MIRES_ETL_SCRIPT_S3_SECRET_ACCESS_KEY")
+
+# ETL scripts (#144): global default for the max EtlScriptVersion.source size,
+# in bytes. EtlProjectSettings.max_script_source_bytes overrides this per
+# project (null defers here); a native script (project=None) always uses
+# this default, since there's no project to hold an override.
+ETL_SCRIPT_MAX_SOURCE_BYTES: int = env("MIRES_ETL_SCRIPT_MAX_SOURCE_BYTES")
 
 # DICOM ingestion (#123): global default for source retention. A run deletes
 # its source file only once storage is verified, never merely on a successful
