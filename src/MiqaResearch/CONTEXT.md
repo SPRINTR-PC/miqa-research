@@ -55,6 +55,10 @@ session expired, login failed), the authenticated user, IP address, session key,
 authentication method (oidc, local, mfa), timestamp, and optional metadata.
 Events are emitted via Django's built-in `user_logged_in`, `user_logged_out`,
 and `user_login_failed` signals, plus the inactivity-timeout middleware.
+It also records **data-access events** — opening a participant's data view,
+opening the DICOM viewer, each image-series fetch, PROM Signing, re-linking a
+PROM to another participant, and every Identity Reveal — which are kept far
+longer than authentication events (see ADR 0024).
 
 ### Bearer Token
 A long-lived API credential (distinct from OAuth2 access tokens) stored as a
@@ -218,9 +222,62 @@ _Avoid_: Target, quota
 The association between a User and a Site within the context of a specific
 Research Project, used to determine which Site(s)' status to show that user
 on their project dashboard alongside the project-wide view. A User may hold
-more than one Site Assignment on the same project. Does not exist in the
-codebase yet; introduced by the Dashboard feature. See ADR 0019.
+more than one Site Assignment on the same project. Recorded as the optional
+Site on a user's project role; a role with no Site covers every Site of the
+project. See ADR 0019 and Participant Visibility.
 _Avoid_: Site membership, clinic membership
+
+### Participant Visibility
+Which Study Participants a user may see data for within a Research Project:
+the union over the user's project roles. Project Admin and Principal
+Investigator see every participant regardless of any Site on their role (for
+them the Site is only a Site Assignment); for other roles, a role with no Site
+sees every participant and a role with a Site sees only participants holding a
+consent at that Site. Any consent counts, revoked or not — data gathered while
+consent was in force stays viewable. A participant with consents at several
+Sites is visible to each of those Sites; one with no consent yet is visible
+only to all-Sites users. Every per-participant table, view, and image honours
+it; project-wide aggregates (e.g. the "All sites" chart) are not sensitive and
+do not.
+
+### Site PI
+A principal investigator responsible for one Site of a Research Project. Always
+tied to a Site: sees only that Site's participants (see Participant Visibility)
+and may sign PROMs for them, but has none of the project-level powers of the
+Principal Investigator (e.g. editing Site Assignments or Data Collection Goals).
+_Avoid_: Local PI
+
+### Identity Reveal
+An explicit, per-request action by which a permitted user displays a Study
+Participant's name and personal identifier instead of the alias. Never shown
+by default — even to roles allowed to see them — and every reveal is audit
+logged. Looking a participant up by exact personal identifier (e.g. when
+linking an uploaded PROM form) also counts as a reveal. Permitted: Project
+Admin, Principal Investigator, Site PI and Participant Recruiter, only for
+participants within their Participant Visibility. A reveal is per participant
+and lasts only for the current page; the user must state a reason.
+_Avoid_: Unmask, de-pseudonymize
+
+### Data Kind
+A kind of research data held per Study Participant that the project's Data
+view counts, sizes, and lists — initially Study Participants themselves,
+PROM Forms, and Dicom Series; later e.g. annotations and segmentations.
+Each kind knows its own count, size, per-participant presence, and how its
+data is displayed. Several kinds may be carved from the same stored records
+(e.g. imaging series vs. annotation/segmentation series). Distinct from ETL
+Datatype: a Datatype describes how data *arrives*, a Data Kind describes what
+is *held*; a Datatype may name the Data Kind it feeds, but participants, PROM
+Forms and viewer-made annotations have no Datatype at all.
+_Avoid_: Data type (ambiguous with column/field types)
+
+### PROM Signing
+A human reviewer's confirmation that a PROM form's OCR-extracted data —
+possibly after manual correction — is correct, recording who signed and when.
+Correcting an already-signed form produces a new, unsigned version; the
+latest version is authoritative and earlier ones remain as history. A
+signature covers the extracted data, not which Study Participant the form
+belongs to — re-linking a form does not unsign it.
+_Avoid_: Approve, validate (in UI)
 
 ### Study Participant
 The person enrolled in a Research Project, represented by the `StudyParticipant`
@@ -442,6 +499,26 @@ scripts run in-process.
 | 0021 | Chart Event Callback resolution: client-side registry, lazy fire-time lookup | Accepted |
 | 0022 | Chart Palette: fixed categorical set, brand-anchoring rejected; live-derived sequential ramp | Accepted |
 | 0023 | Chart Grid: combined dataUrl, shared per-type trace-builder functions, subplot-attributed events | Accepted |
+| 0024 | Data-access audit events kept 10 years, separate from 90-day auth-event retention | Accepted |
+
+### ADR 0024 — Data-access audit events kept 10 years, separate from 90-day auth-event retention
+
+**Context**: ADR 0010 set a single 90-day retention for the Audit Log, which
+then held only authentication events. The Data panel (wayfinder map: Project
+Data panel — design spec, issue #175; decided in issue #181) adds
+data-access events: participant data view opens, viewer opens, WADO fetches,
+PROM Signing, PROM re-linking and Identity Reveal. Questions about who looked
+at a participant's health data or identity arise long after 90 days.
+
+**Decision**: Data-access events stay in the same `AuditLog` table but are
+purged on their own setting, `DATA_ACCESS_AUDIT_RETENTION_DAYS`, which
+defaults to 10 years. Authentication events keep `AUDIT_LOG_RETENTION_DAYS`
+(90 days).
+
+**Consequences**:
+- `purge_old_audit_logs` must apply retention per event-type group.
+- The table grows with data access. WADO fetches are logged once per
+  session and series to bound volume, and denied fetches are always logged.
 
 ### ADR 0023 — Chart Grid: combined dataUrl, shared per-type trace-builder functions, subplot-attributed events
 
