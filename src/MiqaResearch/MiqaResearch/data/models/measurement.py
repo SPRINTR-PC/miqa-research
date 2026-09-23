@@ -2,6 +2,7 @@ from uuid import uuid7
 from django.db import models
 from .study_participant import StudyParticipant
 from .concept import Concept
+from .etl_job import EtlJob
 from .visit_occurrence import VisitOccurrence
 from .dicom_series import DicomSeries
 
@@ -117,6 +118,17 @@ class Measurement(models.Model):
         blank=True,
         related_name="measurements",
         help_text="Link to the DicomSeries (Image Occurrence) this measurement was derived from."
+    )
+
+    # Extension: ETL provenance (#144). Nulled, never cascaded, on EtlJob
+    # deletion -- a Job is disposable history; the row it produced is not.
+    etl_job = models.ForeignKey(
+        EtlJob,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="measurements",
+        help_text="The EtlJob that loaded this row, if it was loaded by the ETL framework."
     )
 
     class Meta:

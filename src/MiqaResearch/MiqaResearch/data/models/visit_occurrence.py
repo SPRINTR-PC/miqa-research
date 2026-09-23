@@ -2,6 +2,7 @@ from uuid import uuid7
 from django.db import models
 from .study_participant import StudyParticipant
 from .concept import Concept
+from .etl_job import EtlJob
 
 
 class VisitOccurrence(models.Model):
@@ -75,6 +76,17 @@ class VisitOccurrence(models.Model):
         blank=True,
         related_name="next_visits",
         help_text="A foreign key to the VISIT_OCCURRENCE table of the visit immediately preceding this visit."
+    )
+
+    # Extension: ETL provenance (#144). Nulled, never cascaded, on EtlJob
+    # deletion -- a Job is disposable history; the row it produced is not.
+    etl_job = models.ForeignKey(
+        EtlJob,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="visit_occurrences",
+        help_text="The EtlJob that loaded this row, if it was loaded by the ETL framework."
     )
 
     class Meta:

@@ -1,4 +1,14 @@
 from .consent import ParticipantConsentAdmin
+from .etl import (
+    EtlJobAdmin,
+    EtlJobInputAdmin,
+    EtlLocationGrantAdmin,
+    EtlProcessedFileAdmin,
+    EtlProjectSettingsAdmin,
+    EtlScriptAdmin,
+    EtlScriptVersionAdmin,
+    PipelineBindingAdmin,
+)
 from .research_project import (
     ResearchProjectAdmin,
     ResearchProjectClinicMapAdmin,
