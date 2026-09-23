@@ -73,14 +73,15 @@ def test_throughput_many_small_files_meets_acceptance_threshold(benchmark, setti
 @pytest.mark.long_running
 def test_large_series_via_s3_backend_meets_acceptance_threshold(benchmark, settings, tmp_path, db):
     """AC #2: one very large synthetic file/series, ingested through the real
-    S3-compatible backend (RustFS, docker-compose.dev-test.yml's mires_fs --
-    same real-backend precedent as test_dicom_storage_backend.py's
-    long_running multipart test), explicit acceptance threshold.
+    S3-compatible backend (RustFS, docker-compose.dev-test.yml's mires_fs
+    service, reached by its `miresfs` hostname -- same real-backend
+    precedent as test_dicom_storage_backend.py's long_running multipart
+    test), explicit acceptance threshold.
     """
     settings.DICOM_ALLOWED_SOURCE_ROOTS = [tmp_path]
     settings.DICOM_STORAGE_BACKEND = "s3"
     settings.DICOM_S3_BUCKET = "dicom-perf-large-file-test"
-    settings.DICOM_S3_ENDPOINT_URL = os.environ.get("MIRES_TEST_DICOM_S3_ENDPOINT_URL", "http://mires_fs:9000")
+    settings.DICOM_S3_ENDPOINT_URL = os.environ.get("MIRES_TEST_DICOM_S3_ENDPOINT_URL", "http://miresfs:9000")
     settings.DICOM_S3_REGION_NAME = "us-east-1"
     settings.DICOM_S3_ACCESS_KEY_ID = "MiresAccessKey"
     settings.DICOM_S3_SECRET_ACCESS_KEY = "MiresSecretKey"
@@ -135,11 +136,11 @@ def test_concurrent_ingestion_runs_via_real_task_dispatch_complete_correctly_and
 
     Storage stays local (the default), pointed at a scratch media root via
     the worker's MIRES_MEDIA_ROOT (docker-compose.dev-test.yml) -- not at
-    S3/RustFS, whose `mires_fs` hostname trips a separate pre-existing,
-    out-of-scope botocore endpoint-validation issue in this environment
-    (reproduced against the already-merged AC #4 RustFS test in
-    test_dicom_storage_backend.py, #171). This test removes that scratch
-    media root afterward, same as it does its own source scratch root.
+    S3/RustFS, so this test (dispatch/concurrency, AC #3) stays independent
+    of the real RustFS container the AC #4 test in
+    test_dicom_storage_backend.py already exercises. This test removes that
+    scratch media root afterward, same as it does its own source scratch
+    root.
 
     Uses `transactional_db`, not `db`: the default `db` fixture wraps the
     test in one outer transaction rolled back at the end, so a separate
