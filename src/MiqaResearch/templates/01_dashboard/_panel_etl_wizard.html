@@ -1,52 +1,36 @@
 {% get_current_language as LANGUAGE_CODE %}
-{% comment %}
-Preview of the binding wizard's steps and fields (wayfinder #150). Disabled throughout: the
-ETL data model, script registry and sandbox runner (wayfinder #140) haven't landed yet, so
-there's nothing to submit to. Remove the `disabled`/preview framing once #140's data-model and
-orchestrator tickets are implemented and a real create-binding endpoint exists.
-{% endcomment %}
 <div class="rounded-lg border bg-card text-card-foreground etl-wizard">
-  <details open class="etl-wizard-step">
-    <summary><strong>1. {% translate "Datatype" %}</strong><span class="text-sm text-muted-foreground">{% translate "what kind of data this pipeline produces" %}</span></summary>
-    <div class="etl-wizard-step-body">
-      <p class="text-sm text-muted-foreground mb-2">{% translate "Users pick from platform-registered datatypes — a datatype is code, not something defined here." %}</p>
-      <div class="etl-radio-row">
-        <label class="etl-radio-card"><input type="radio" name="etl-wizard-datatype" checked disabled> <strong>{% translate "Measurement" %}</strong><span class="text-sm text-muted-foreground">{% translate "Lab results, vitals, scores" %}</span></label>
-        <label class="etl-radio-card"><input type="radio" name="etl-wizard-datatype" disabled> <strong>{% translate "Visit Occurrence" %}</strong><span class="text-sm text-muted-foreground">{% translate "Clinic visit / encounter records" %}</span></label>
+  <form method="post" hx-post="{% url 'dashboard_tab_etl_bindings_create' project.id %}" hx-target="#etl-section-panel" hx-swap="innerHTML" style="padding:1rem;">
+    {% csrf_token %}
+    {% if not location_grants %}
+      <p class="text-sm text-muted-foreground">{% translate "No buckets granted to this project yet -- ask an Admin to add an EtlLocationGrant before creating a binding." %}</p>
+    {% endif %}
+    <label class="etl-field"><span>{% translate "Source bucket" %}</span>{{ binding_create_form.source_bucket }}
+      {% for error in binding_create_form.source_bucket.errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
+    </label>
+    <label class="etl-field"><span>{% translate "Source prefix" %}</span>{{ binding_create_form.source_prefix }}
+      {% for error in binding_create_form.source_prefix.errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
+    </label>
+    <label class="etl-field"><span>{% translate "Script & version" %}</span>{{ binding_create_form.script_version }}
+      {% for error in binding_create_form.script_version.errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
+    </label>
+    <p class="text-sm text-muted-foreground mb-2">{% translate "Bindings pin one immutable version. Publishing a script edit creates a new version -- it never changes an existing one in place." %}</p>
+    <label class="etl-field"><span>{% translate "Raw bucket" %}</span>{{ binding_create_form.raw_bucket }}
+      {% for error in binding_create_form.raw_bucket.errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
+    </label>
+    <label class="etl-field"><span>{% translate "Raw prefix" %}</span>{{ binding_create_form.raw_prefix }}
+      {% for error in binding_create_form.raw_prefix.errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
+    </label>
+    <details class="etl-wizard-step">
+      <summary>{% translate "Sandbox overrides (optional -- may only lower the platform default, never raise it)" %}</summary>
+      <div class="etl-wizard-step-body">
+        <label class="etl-field"><span>{% translate "Timeout (seconds)" %}</span>{{ binding_create_form.timeout_seconds_override }}</label>
+        <label class="etl-field"><span>{% translate "Memory (MB)" %}</span>{{ binding_create_form.memory_mb_override }}</label>
+        <label class="etl-field"><span>{% translate "CPU (millicores)" %}</span>{{ binding_create_form.cpu_millicores_override }}</label>
       </div>
-    </div>
-  </details>
-  <details class="etl-wizard-step">
-    <summary>{% include 'components/icon.html' with icon_name='database' icon_classes='h-4 w-4' %}<strong>2. {% translate "Source bucket" %}</strong></summary>
-    <div class="etl-wizard-step-body">
-      <label class="etl-field"><span>{% translate "RustFS bucket" %}</span><select disabled><option>{% translate "No buckets granted to this project yet" %}</option></select></label>
-      <p class="text-sm text-muted-foreground">{% translate "Only buckets this project has been granted (Admin-managed) will be listed." %}</p>
-    </div>
-  </details>
-  <details class="etl-wizard-step">
-    <summary>{% include 'components/icon.html' with icon_name='pencil' icon_classes='h-4 w-4' %}<strong>3. {% translate "Script & version" %}</strong></summary>
-    <div class="etl-wizard-step-body">
-      <label class="etl-field"><span>{% translate "Script" %}</span><select disabled><option>{% translate "No scripts registered yet" %}</option></select></label>
-      <label class="etl-field"><span>{% translate "Version" %}</span><select disabled><option>—</option></select></label>
-      <p class="text-sm text-muted-foreground">{% translate "Bindings pin one immutable version. Publishing a script edit creates a new version — it never changes an existing one in place." %}</p>
-    </div>
-  </details>
-  <details class="etl-wizard-step">
-    <summary>{% include 'components/icon.html' with icon_name='filter' icon_classes='h-4 w-4' %}<strong>4. {% translate "Grouping" %}</strong></summary>
-    <div class="etl-wizard-step-body">
-      <div class="etl-radio-row">
-        <label class="etl-radio-card"><input type="radio" name="etl-wizard-grouping" checked disabled> <strong>{% translate "Per file" %}</strong><span class="text-sm text-muted-foreground">{% translate "Each new file is its own job" %}</span></label>
-        <label class="etl-radio-card"><input type="radio" name="etl-wizard-grouping" disabled> <strong>{% translate "Per folder" %}</strong><span class="text-sm text-muted-foreground">{% translate "Waits for a folder to go quiet, then runs all its files as one job" %}</span></label>
-      </div>
-    </div>
-  </details>
-  <details class="etl-wizard-step">
-    <summary>{% include 'components/icon.html' with icon_name='upload' icon_classes='h-4 w-4' %}<strong>5. {% translate "Raw bucket & review" %}</strong></summary>
-    <div class="etl-wizard-step-body space-y-3">
-      <p class="text-sm">{% translate "Successful files move to a raw bucket fixed per datatype and are verified by checksum before the source is deleted." %}</p>
-      <label class="flex items-center gap-2 text-sm"><input type="checkbox" checked disabled> {% translate "Keep source file after a successful run" %}</label>
-      <button class="btn" type="button" disabled title="{% translate "Needs the ETL data model (wayfinder #140) first" %}">{% include 'components/icon.html' with icon_name='plus' icon_classes='h-4 w-4' %}{% translate "Create binding" %}</button>
-      <p class="text-sm text-muted-foreground">{% translate "Runs sandboxed: no network, read-only input, resource limits." %}</p>
-    </div>
-  </details>
+    </details>
+    {% for error in binding_create_form.non_field_errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
+    <button class="btn" type="submit">{% include 'components/icon.html' with icon_name='plus' icon_classes='h-4 w-4' %}{% translate "Create binding" %}</button>
+    <p class="text-sm text-muted-foreground">{% translate "Runs sandboxed: no network, read-only input, resource limits." %}</p>
+  </form>
 </div>

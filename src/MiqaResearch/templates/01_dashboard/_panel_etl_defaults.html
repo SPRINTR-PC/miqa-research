@@ -1,9 +1,38 @@
 {% get_current_language as LANGUAGE_CODE %}
-<p class="text-sm text-muted-foreground">{% translate "Built-in scripts available to every project. Enabled by default; an Admin can disable one for this project." %}</p>
+<p class="text-sm text-muted-foreground">{% translate "Built-in scripts available to every project. Enabled by default; an Admin can override log retention and script size limits for this project below." %}</p>
 <div class="rounded-lg border bg-card text-card-foreground shadow-sm">
-  <div class="p-6 py-16 text-center text-muted-foreground space-y-2">
-    {% include "components/icon.html" with icon_name="shield-check" %}
-    <p class="font-medium">{% translate "No built-in scripts registered yet" %}</p>
-    <p class="text-sm">{% translate "This will catalog every native script the platform ships once the script registry lands." %}</p>
-  </div>
+  {% if native_scripts %}
+    <ul class="etl-list">
+      {% for script in native_scripts %}
+        <li>
+          <div>
+            <p class="font-medium">{{ script.name }}</p>
+            <p class="text-sm text-muted-foreground">{{ script.description }}</p>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="p-6 py-16 text-center text-muted-foreground space-y-2">
+      {% include "components/icon.html" with icon_name="shield-check" %}
+      <p class="font-medium">{% translate "No built-in scripts registered yet" %}</p>
+      <p class="text-sm">{% translate "This will catalog every native script the platform ships once the script registry lands." %}</p>
+    </div>
+  {% endif %}
 </div>
+
+{% if settings_form %}
+<div class="rounded-lg border bg-card text-card-foreground shadow-sm p-6">
+  <p class="font-medium mb-2">{% translate "Project overrides (Admin only)" %}</p>
+  <form method="post" hx-post="{% url 'dashboard_tab_etl_defaults_update' project.id %}" hx-target="#etl-section-panel" hx-swap="innerHTML">
+    {% csrf_token %}
+    {% for field in settings_form %}
+      <label class="etl-field"><span>{{ field.label }}</span>{{ field }}
+        {% for error in field.errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
+      </label>
+    {% endfor %}
+    {% for error in settings_form.non_field_errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
+    <button class="btn" type="submit">{% translate "Save overrides" %}</button>
+  </form>
+</div>
+{% endif %}

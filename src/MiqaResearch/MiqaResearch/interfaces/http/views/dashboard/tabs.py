@@ -4,12 +4,29 @@ from django.http import HttpResponse
 from django.shortcuts import render
 from django.template.loader import render_to_string
 
-from MiqaResearch.readers.participant_consent_reader import get_project_consent_count, \
-    get_project_consent_participant_count, user_can_view_consent_pid
+from MiqaResearch.interfaces.http.forms.etl import (
+    EtlBindingCreateForm,
+    EtlProjectSettingsForm,
+    EtlScriptCreateForm,
+)
+from MiqaResearch.readers.etl_reader import (
+    get_bindable_script_version_choices,
+    get_native_scripts,
+    get_project_bindings,
+    get_project_custom_scripts,
+    get_project_location_grants,
+    get_project_max_script_source_bytes,
+    get_project_settings,
+)
+from MiqaResearch.readers.participant_consent_reader import (
+    get_project_consent_count,
+    get_project_consent_participant_count,
+    user_can_view_consent_pid,
+)
 from MiqaResearch.readers.research_project_reader import get_project_connected_clinics
-from .htmx_auth import htmx_login_required
-from .project import get_user_project_or_404
 
+from .htmx_auth import htmx_login_required
+from .project import get_user_etl_project_or_404, get_user_project_or_404
 
 SUBTAB_PLOTS = "consent-statistics-plots"
 SUBTAB_TABLE = "consent-statistics-table"
@@ -166,33 +183,72 @@ async def goals(request, project_id):
     )
 
 
+async def etl_section_context(project, permissions, section) -> dict:
+    """Section-specific read data and unbound manage forms for the ETL Pipelines tab. Forms are
+    only built for a section's manage-capable viewers -- a read-only viewer gets the listings but
+    no form, so a template can key rendering of manage controls off the form's presence alone.
+    """
+    context = {'etl_permissions': permissions}
+
+    if section == ETL_SECTION_SCRIPTS:
+        context['custom_scripts'] = await get_project_custom_scripts(project)
+        context['native_scripts'] = await get_native_scripts()
+        if permissions.can_manage:
+            max_source_bytes = await get_project_max_script_source_bytes(project)
+            context['script_create_form'] = EtlScriptCreateForm(max_source_bytes=max_source_bytes)
+
+    elif section == ETL_SECTION_BINDINGS:
+        context['bindings'] = await get_project_bindings(project)
+        if permissions.can_manage:
+            location_grants = await get_project_location_grants(project)
+            context['location_grants'] = location_grants
+            context['binding_create_form'] = EtlBindingCreateForm(
+                location_grants=location_grants,
+                script_version_choices=await get_bindable_script_version_choices(project),
+            )
+
+    elif section == ETL_SECTION_DEFAULTS:
+        context['native_scripts'] = await get_native_scripts()
+        if permissions.can_manage_admin_only:
+            settings_obj = await get_project_settings(project)
+            initial = {
+                'log_retention_days': settings_obj.log_retention_days,
+                'max_script_source_bytes': settings_obj.max_script_source_bytes,
+            } if settings_obj else {}
+            context['settings_form'] = EtlProjectSettingsForm(initial=initial)
+
+    return context
+
+
 @htmx_login_required
 async def etl_pipelines(request, project_id):
-    research_project = await get_user_project_or_404(request, project_id)
+    research_project, permissions = await get_user_etl_project_or_404(request, project_id)
     etl_section = _etl_section(request)
+    section_context = await etl_section_context(research_project, permissions, etl_section)
 
     if _is_partial_request(request):
         return _htmx_tab_response(
             request, '01_dashboard/_panel_etl_pipelines.html', research_project, 'etl-pipelines',
-            extra_context={'etl_section': etl_section},
+            extra_context={'etl_section': etl_section} | section_context,
         )
 
     return render(
         request,
         '01_dashboard/project.html',
-        {'project': research_project, 'active_tab': 'etl-pipelines', 'etl_section': etl_section},
+        {'project': research_project, 'active_tab': 'etl-pipelines', 'etl_section': etl_section} | section_context,
     )
 
 
 @htmx_login_required
 async def etl_pipelines_content(request, project_id):
-    research_project = await get_user_project_or_404(request, project_id)
+    research_project, permissions = await get_user_etl_project_or_404(request, project_id)
 
     if _is_partial_request(request):
         etl_section = _etl_section(request)
+        section_context = await etl_section_context(research_project, permissions, etl_section)
         return _htmx_tab_response(
             request, _ETL_SECTION_PANELS[etl_section], research_project, 'etl-pipelines',
-            extra_context={'etl_section': etl_section}, with_sidebar=True,
+            extra_context={'etl_section': etl_section} | section_context, with_sidebar=True,
         )
 
     return await etl_pipelines(request, project_id)

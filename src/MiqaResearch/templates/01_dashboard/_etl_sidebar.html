@@ -1,7 +1,5 @@
 {% get_current_language as LANGUAGE_CODE %}
 <nav id="etl-sidebar" class="etl-sidebar"{% if oob %} hx-swap-oob="true"{% endif %}>
-  <span class="etl-sidebar-link" aria-disabled="true" title="{% translate "Needs the ETL data model (wayfinder #140) first" %}">{% include 'components/icon.html' with icon_name='plus' icon_classes='h-4 w-4' %}{% translate "New binding" %}</span>
-  <div style="height:.5rem;"></div>
   <a class="etl-sidebar-link{% if etl_section == 'bindings' %} active{% endif %}" aria-current="{% if etl_section == 'bindings' %}page{% else %}false{% endif %}"
     href="{% url 'dashboard_tab_etl_pipelines_content' project.id %}?section=bindings"
     hx-get="{% url 'dashboard_tab_etl_pipelines_content' project.id %}?section=bindings" hx-target="#etl-section-panel" hx-swap="innerHTML" hx-push-url="true" hx-sync="#dashboard-tab-panel:replace"

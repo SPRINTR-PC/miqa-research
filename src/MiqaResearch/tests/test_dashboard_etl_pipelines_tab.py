@@ -1,9 +1,10 @@
 """
 ETL Pipelines dashboard tab (wayfinder #150): a third project tab with a section sidebar
-(Bindings/Scripts/Jobs/Defaults), folded in ahead of the ETL data model (wayfinder #140) landing.
-Every section is a genuine empty state — there is nothing to list yet — and the binding wizard is
-a disabled preview of the flow, not a working form. Driven through the real views, as consent
-statistics and goals are in test_dashboard_tabs.py.
+(Bindings/Scripts/Jobs/Defaults). Navigation/rendering structure for an Admin, who can see every
+section's empty state and (Bindings/Scripts/Defaults) its manage controls; Jobs stays an empty
+state -- it's wired once Jobs exist (wayfinder ticket 8). Role-boundary and manage-action behavior
+live in test_etl_permissions.py and the section-specific test_dashboard_etl_*.py files. Driven
+through the real views, as consent statistics and goals are in test_dashboard_tabs.py.
 """
 import re
 
@@ -117,16 +118,18 @@ def test_switching_to_the_etl_pipelines_tab_defaults_to_bindings(client, project
     assert SECTION_ICON["bindings"] in body
 
 
-# --- Binding wizard preview ------------------------------------------------------------------------------------------
+# --- Binding wizard ---------------------------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-def test_bindings_section_shows_a_disabled_wizard_preview_behind_a_disclosure(client, project):
+def test_bindings_section_shows_a_working_wizard_behind_a_disclosure_for_a_manager(client, project):
     body = client.get(_content_url(project, "bindings")).content.decode()
 
     assert "New binding" in body
     assert "etl-wizard" in body
-    assert re.search(r'<button class="btn" type="button" disabled[^>]*>.*?Create binding', body, re.DOTALL)
+    button = re.search(r'<button class="btn" type="submit">.*?Create binding.*?</button>', body, re.DOTALL)
+    assert button is not None
+    assert "disabled" not in button.group(0)
 
 
 @pytest.mark.django_db

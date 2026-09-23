@@ -6,6 +6,8 @@ from django.db import models
 from contract.constants.audit_log import AUTH_METHOD_CHOICES, EVENT_TYPE_CHOICES
 from helpers.http import get_client_ip
 
+from .research_project import ResearchProject
+
 User = get_user_model()
 
 
@@ -20,6 +22,7 @@ class AuditLogManager(models.Manager):
         ip_address=None,
         session_key=None,
         metadata=None,
+        project=None,
     ):
         if request is not None:
             ip_address = ip_address or get_client_ip(request)
@@ -33,6 +36,7 @@ class AuditLogManager(models.Manager):
             session_key=session_key,
             auth_method=auth_method,
             metadata=metadata or {},
+            project=project,
         )
 
 
@@ -45,6 +49,9 @@ class AuditLog(models.Model):
     session_key = models.CharField(max_length=40, null=True, blank=True)
     auth_method = models.CharField(max_length=16, choices=AUTH_METHOD_CHOICES, null=True, blank=True)
     metadata = models.JSONField(default=dict, blank=True)
+    project = models.ForeignKey(
+        ResearchProject, on_delete=models.SET_NULL, null=True, blank=True, db_index=True,
+        help_text="The project an event is scoped to, e.g. an ETL management action; null for account-level events.")
 
     objects = AuditLogManager()
 
