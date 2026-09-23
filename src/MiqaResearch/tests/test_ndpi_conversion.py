@@ -10,6 +10,7 @@ proprietary 64-bit-offset TIFF hybrid layout and Hamamatsu's private strip
 tags -- even opentile's own test suite downloads real files rather than
 synthesizing them (its tests/download_test_images.py).
 """
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -88,6 +89,40 @@ class TestConvertNdpiToDicom:
         ):
             with pytest.raises(NdpiConversionError, match="boom"):
                 convert_ndpi_to_dicom(source, tmp_path / "out")
+
+
+def test_importing_ndpi_conversion_does_not_leave_pydicom_validation_globally_strict():
+    """`wsidicomizer` sets pydicom's *global* validation config to strict as a bare
+    import-time side effect (`wsidicomizer.dicomizer_source` runs
+    `pydicom.config.enforce_valid_values = True` and `pydicom.config.future_behavior()`
+    at module scope, process-wide, with nothing to undo it). Left unchecked, merely
+    importing this module -- even without ever calling convert_ndpi_to_dicom -- would
+    stricten every other DICOM read/write sharing the process for good, including the
+    ingestion pipeline's tolerant (warn-not-raise) handling of real-world non-conformant
+    tag values. Runs in a subprocess since the leak is only observable on this module's
+    very first import in a process -- pytest has already imported it once by the time
+    any in-process test runs.
+    """
+    script = (
+        "import os\n"
+        "os.environ.setdefault('MIRES_FERNET_KEY', 'EiGdHopiKZdBZwVCP4dVJitPrrDnOuGAd94W4EZpwQc=')\n"
+        "os.environ.setdefault('MIRES_SENSITIVE_DATA_HASH_KEY', 'H2QCB14temR-C2JnLORSE5TxPwLd8iy3YygNPQ-corA=')\n"
+        "os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'MiqaResearch.settings')\n"
+        "import django\n"
+        "django.setup()\n"
+        "import pydicom.config as c\n"
+        "before = (int(c.settings.reading_validation_mode), int(c.settings.writing_validation_mode), "
+        "c.INVALID_KEYWORD_BEHAVIOR)\n"
+        "import MiqaResearch.tasks.dicom_handling.ndpi_conversion\n"
+        "after = (int(c.settings.reading_validation_mode), int(c.settings.writing_validation_mode), "
+        "c.INVALID_KEYWORD_BEHAVIOR)\n"
+        "assert before == after, f'pydicom validation config leaked: {before} -> {after}'\n"
+    )
+    result = subprocess.run(
+        ["uv", "run", "python", "-c", script],
+        cwd=Path(__file__).resolve().parent.parent, capture_output=True, text=True)
+
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_ingestion_pipeline_treats_ndpi_files_like_any_non_dicom_file(research_project, tmp_path):

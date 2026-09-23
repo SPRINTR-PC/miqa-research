@@ -193,6 +193,10 @@ async def _create_project_with_same_day_multi_type_consents() -> tuple[ResearchP
         clinic=clinic, consent_type=consent_type_alpha,
     )
 
+    # The plot reader reads ConsentDailyActiveSummary, not ParticipantConsent directly --
+    # without this rebuild the summary table stays empty for this project.
+    await sync_to_async(_run_query_and_update_summary)(str(project.id))
+
     return project, clinic
 
 
