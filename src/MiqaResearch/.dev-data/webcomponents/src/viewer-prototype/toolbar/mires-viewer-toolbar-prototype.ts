@@ -95,7 +95,8 @@ export class MiresViewerToolbarPrototype extends LitElement {
     .lr.nums input { width: 100%; min-width: 0; background: #0b0d10; color: inherit; border: 1px solid #2b323c; border-radius: 3px; padding: 2px 4px; }
     .lr input[type=range] { width: 140px; vertical-align: middle; }
     button.x { padding: 0 6px; }
-    button.save { width: 100%; margin: 4px 0 6px; padding: 7px; text-align: left; }
+    .saves { display: flex; gap: 6px; }
+    button.save { flex: 1; margin: 4px 0 6px; padding: 7px; text-align: left; }
     button.save.dirty { background: #1f6feb; border-color: #1f6feb; color: #fff; }
     button.save .dot { color: #ffcc66; }
     .seg { display: flex; gap: 6px; align-items: center; padding: 3px 6px; border-radius: 4px; cursor: pointer; font-size: 12px; }
@@ -283,8 +284,8 @@ export class MiresViewerToolbarPrototype extends LitElement {
             : html`${num("W", ww, (x) => s.setLayerRange(i, wc - x / 2, wc + x / 2))}${num("L", wc, (x) => s.setLayerRange(i, x - ww / 2, x + ww / 2))}`}</div>
           <div class="lr"><select @change=${(e: any) => s.setLayerColormap(i, e.target.value)}>
             ${COLORMAPS.map((n) => html`<option value=${n} ?selected=${n === L.colormap}>${n}</option>`)}</select></div>
-          ${i > 0 ? html`${this.curveEditor(i)}
-            <div class="lr"><label>Overall × <input type="range" min="0" max="1" step="0.05" .value=${String(L.opacity)} @input=${(e: any) => s.setLayerOpacity(i, Number(e.target.value))}></label></div>` : nothing}
+          ${this.curveEditor(i)}
+          <div class="lr"><label>Overall × <input type="range" min="0" max="1" step="0.05" .value=${String(L.opacity)} @input=${(e: any) => s.setLayerOpacity(i, Number(e.target.value))}></label></div>
         </div>`;
       })}
       <div class="B-cal" style="color:#8a94a0">Selected layer (blue): right-drag window/level, presets and keys 0–8 apply to it.</div>
@@ -343,10 +344,9 @@ export class MiresViewerToolbarPrototype extends LitElement {
       <div class="B-rail">${groups.filter(([, g]) => g.length).map(([n, g]) => html`<h6>${n}</h6>${g.map((t) => this.toolBtn(t, html`${t.icon}<kbd>${t.key}</kbd>`))}`)}</div>
       ${this.grid()}
       <div class="B-insp">
-        ${this.ready() && this.role === "annotator" ? html`<button class="save ${this.s.dirty ? "dirty" : ""}" ?disabled=${!this.s.dirty}
-            @click=${() => (this.open = "save")} title="Save Annotations and Segmentations (Ctrl/⌘+S)">
-            💾 Save${this.s.dirty ? html` <span class="dot">●</span> unsaved changes` : " — nothing to save"}</button>` : nothing}
-        ${this.ready() && this.isVol() && (this.s.isSegTool(this.s.primary) || this.s.segments.length) ? this.segPanel() : nothing}
+        ${this.ready() && this.role === "annotator" ? html`<div class="saves">
+          ${this.saveBtn("save-ann", "Annotations", this.s.annDirty)}${this.saveBtn("save-seg", "Segmentation", this.s.segDirty)}</div>` : nothing}
+        ${this.ready() && this.s.canSegment() && (this.s.isSegTool(this.s.primary) || this.s.segments.length) ? this.segPanel() : nothing}
         ${this.isVol() && this.ready() ? html`<h5>Layout</h5><div class="B-layouts">
           ${(["axial", "sagittal", "coronal"] as const).map((o) => html`<button class=${this.s.layout === "1x1" && this.s.orientation === o ? "on" : ""} @click=${() => this.s.setOrientation(o)}><b>▢</b>${o}</button>`)}
           <button class=${this.s.layout === "1x3" ? "on" : ""} @click=${() => this.s.setLayout("1x3")}><b>▢▤</b>3 views + ✚</button></div><div class="B-cal" style="color:#8a94a0">Double-click a small view to swap it into the big one.</div>` : nothing}
@@ -357,30 +357,36 @@ export class MiresViewerToolbarPrototype extends LitElement {
         ${infos.map((v) => html`<div class="B-cal"><b>${v.label}</b>: ${v.badge ? html`<span class="badge ${v.badgeLevel}">${v.badge}</span>` : "mm"}<br><span style="color:#8a94a0">${v.badgeLegend}</span></div>`)}
         <h5>Mouse</h5>${BINDINGS_HELP.workstation.map((b) => html`<div class="B-cal">${b}</div>`)}
       </div>
-      ${this.open === "save" ? this.saveDialog() : nothing}
+      ${this.open.startsWith("save") ? this.saveDialog(this.open) : nothing}
     </div>`;
   }
 
   // ---------- segmentation, opacity curve, save (B) ----------
   @state() private thr = { lower: NaN, upper: NaN, slices: 0 };
 
+  private saveBtn(kind: string, label: string, dirty: number) {
+    return html`<button class="save ${dirty ? "dirty" : ""}" ?disabled=${!dirty} @click=${() => (this.open = kind)}
+      title="Save ${label} (Ctrl/⌘+S shows both)">💾 ${label}${dirty ? html` <span class="dot">●</span>` : ""}</button>`;
+  }
+
   private segPanel() {
     const s = this.s;
-    const L = s.layers[s.activeLayer];
+    const L = s.layers[s.activeLayer] ?? { key: "CT" };
     const pt = s.series(L.key).modality === "PT";
     const lower = Number.isNaN(this.thr.lower) ? (pt ? 2.5 : 300) : this.thr.lower;
     const upper = Number.isNaN(this.thr.upper) ? (pt ? 100 : 3000) : this.thr.upper;
-    return html`<h5>Segmentation <span style="text-transform:none;color:#8a94a0">on ${s.layers[0].key} geometry</span></h5>
+    return html`<h5>Segmentation <span style="text-transform:none;color:#8a94a0">on ${s.layers[0]?.key ?? "CT"} geometry</span></h5>
       ${s.segments.map((sg) => html`<div class="seg ${sg.index === s.activeSegment ? "act" : ""}" @click=${() => s.setActiveSegment(sg.index)}>
         <span class="sw" style="background:${s.segmentColor(sg.index)}"></span>${sg.label}</div>`)}
       <button @click=${() => s.addSegment()}>+ Segment</button>
-      ${s.primary === "Brush" || s.primary.endsWith("Scissors") ? html`<div class="lr"><label>Brush size <input type="range" min="2" max="60" .value=${String(s.brushSize)} @input=${(e: any) => s.setBrushSize(Number(e.target.value))}> ${s.brushSize}</label></div>` : nothing}
+      ${s.primary === "Brush" || s.primary === "Eraser" ? html`<div class="lr"><label>Brush size <input type="range" min="2" max="60" .value=${String(s.brushSize)} @input=${(e: any) => s.setBrushSize(Number(e.target.value))}> ${s.brushSize}</label></div>` : nothing}
       ${s.primary === "RectangleROIThreshold" ? html`<div class="thr">
         <div class="B-cal">Draw rectangles, then fill voxels of the <b>selected layer (${L.key})</b> in range into the active segment.</div>
         <div class="lr nums"><label>${pt ? "SUV" : "HU"} <input type="number" step="0.1" .value=${String(lower)} @change=${(e: any) => (this.thr = { ...this.thr, lower: Number(e.target.value) })}></label>
           <label>– <input type="number" step="0.1" .value=${String(upper)} @change=${(e: any) => (this.thr = { ...this.thr, upper: Number(e.target.value) })}></label></div>
         <div class="lr nums"><label>± slices <input type="number" min="0" .value=${String(this.thr.slices)} @change=${(e: any) => (this.thr = { ...this.thr, slices: Number(e.target.value) })}></label></div>
-        <button @click=${() => s.runThreshold(lower, upper, this.thr.slices)}>Run threshold</button></div>` : nothing}`;
+        <button @click=${() => s.runThreshold(lower, upper, this.thr.slices)}>Run threshold</button></div>` : nothing}
+      ${s.isSegTool(s.primary) && s.primary !== "Eraser" && s.primary !== "RectangleROIThreshold" ? html`<div class="B-cal" style="color:#8a94a0">Right-drag erases with the same shape.</div>` : nothing}`;
   }
 
   @state() private curveDrag: { layer: number; idx: number } | null = null;
@@ -388,8 +394,11 @@ export class MiresViewerToolbarPrototype extends LitElement {
 
   private curveDomain(i: number): [number, number] {
     const s = this.s;
-    if (s.series(s.layers[i].key).modality === "PT") return [0, Math.max(10, ...s.layers[i].curve.map((p) => p.value))];
-    return [-1000, 2000];
+    const mod = s.series(s.layers[i].key).modality, pts = s.layers[i].curve.map((p) => p.value);
+    if (mod === "PT") return [0, Math.max(10, ...pts)];
+    if (mod === "CT") return [-1000, Math.max(2000, ...pts)];
+    const r = s.layerRange(i); // MR etc.: arbitrary units, scale from the window
+    return [Math.min(0, r.lower ?? 0, ...pts), Math.max(1, (r.upper ?? 1) * 2, ...pts)];
   }
 
   /** Opacity transfer curve: click to add a breakpoint, drag to move, double-click to remove. */
@@ -397,7 +406,8 @@ export class MiresViewerToolbarPrototype extends LitElement {
     const s = this.s, L = s.layers[i];
     const W = 226, H = 90, P = 6;
     const [d0, d1] = this.curveDomain(i);
-    const unit = s.series(L.key).modality === "PT" ? "SUV" : "HU";
+    const mod = s.series(L.key).modality;
+    const unit = mod === "PT" ? "SUV" : mod === "CT" ? "HU" : "value";
     const X = (v: number) => P + ((v - d0) / (d1 - d0)) * (W - 2 * P);
     const Y = (o: number) => H - P - o * (H - 2 * P);
     const toData = (e: PointerEvent | MouseEvent, svg: SVGSVGElement) => {
@@ -447,23 +457,29 @@ export class MiresViewerToolbarPrototype extends LitElement {
       <div class="curve-btns">
         <button @click=${() => s.setLayerCurve(i, [])}>Flat</button>
         <button @click=${() => s.setLayerCurve(i, [{ value: r.lower ?? d0, opacity: 0 }, { value: r.upper ?? d1, opacity: 1 }])}>Ramp over window</button>
+        ${unit === "HU" ? html`<button @click=${() => s.setLayerCurve(i, [{ value: -1000, opacity: 0 }, { value: -200, opacity: 0 }, { value: 0, opacity: 1 }])}>Hide air/lung</button>` : nothing}
         ${unit === "SUV" ? html`<button @click=${() => s.setLayerCurve(i, [{ value: 0, opacity: 0 }, { value: 2, opacity: 0 }, { value: 4, opacity: 1 }])}>SUV 2→4</button>` : nothing}
       </div></div>`;
   }
 
-  private saveDialog() {
-    const sum = this.s.saveSummary();
-    const meas = Object.entries(sum.measurements);
-    return html`<div class="C-overlay" @click=${() => (this.open = "")}><div class="C-box" @click=${(e: Event) => e.stopPropagation()}>
+  private saveDialog(kind: string) {
+    const ann = kind !== "save-seg" ? this.s.annotationSummary() : undefined;
+    const seg = kind !== "save-ann" ? this.s.segmentationSummary() : undefined;
+    const close = () => (this.open = "");
+    const saveBtn = (k: "annotations" | "segmentation", dirty: number) => html`<p style="text-align:right;margin:4px 0">
+      <button class="on" ?disabled=${!dirty} @click=${() => { this.s.markSaved(k); if (kind !== "save-both" || (!this.s.annDirty && !this.s.segDirty)) close(); }}>
+        ${dirty ? `Save ${k}` : "Saved"}</button></p>`;
+    return html`<div class="C-overlay" @click=${close}><div class="C-box" @click=${(e: Event) => e.stopPropagation()}>
       <h4 style="margin:0 0 8px">Save to the Research Project</h4>
-      <div class="B-cal">Source series: <b>${sum.base}</b> (the new objects reference it)</div>
-      <h5>Annotations → DICOM SR (TID 1500)</h5>
-      ${meas.length ? meas.map(([k, n]) => html`<div class="B-cal">${n} × ${k}</div>`) : html`<div class="B-cal" style="color:#8a94a0">none</div>`}
-      <h5>Segmentations → DICOM SEG</h5>
-      ${sum.segments.length ? sum.segments.map((sg) => html`<div class="B-cal"><span class="sw" style="background:${this.s.segmentColor(sg.index)}"></span>${sg.label}: ${sg.voxels.toLocaleString()} voxels</div>`) : html`<div class="B-cal" style="color:#8a94a0">none</div>`}
-      <div class="B-cal" style="color:#8a94a0;margin-top:8px">Built in the browser, sanitized server-side and re-ingested as new Dicom Series. Saving a second time supersedes the previous version.</div>
-      <p style="display:flex;gap:8px;justify-content:flex-end"><button @click=${() => (this.open = "")}>Cancel</button>
-        <button class="on" @click=${() => { this.s.markSaved(); this.open = ""; }}>Save</button></p>
+      <div class="B-cal">Source series: <b>${(ann ?? seg)!.base}</b> (the new object references it)</div>
+      ${ann ? html`<h5>Annotations → DICOM SR (TID 1500)</h5>
+        ${Object.entries(ann.measurements).length ? Object.entries(ann.measurements).map(([k, n]) => html`<div class="B-cal">${n} × ${k}</div>`) : html`<div class="B-cal" style="color:#8a94a0">none</div>`}
+        ${saveBtn("annotations", this.s.annDirty)}` : nothing}
+      ${seg ? html`<h5>Segmentation → DICOM SEG</h5>
+        ${seg.segments.length ? seg.segments.map((sg) => html`<div class="B-cal"><span class="sw" style="background:${this.s.segmentColor(sg.index)}"></span>${sg.label}: ${sg.voxels.toLocaleString()} voxels</div>`) : html`<div class="B-cal" style="color:#8a94a0">none</div>`}
+        ${saveBtn("segmentation", this.s.segDirty)}` : nothing}
+      <div class="B-cal" style="color:#8a94a0;margin-top:8px">Each is built in the browser, sanitized server-side and re-ingested as its own Dicom Series. Saving again supersedes that object's previous version.</div>
+      <p style="text-align:right"><button @click=${close}>Close</button></p>
     </div></div>`;
   }
 
@@ -517,7 +533,7 @@ export class MiresViewerToolbarPrototype extends LitElement {
   private onKey(e: KeyboardEvent) {
     if (this.ready() && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s" && this.variant === "B" && this.role === "annotator") {
       e.preventDefault();
-      if (this.s.dirty) this.open = "save";
+      if (this.s.annDirty || this.s.segDirty) this.open = "save-both";
       return;
     }
     if (!this.ready() || e.metaKey || e.ctrlKey || e.altKey) return;
