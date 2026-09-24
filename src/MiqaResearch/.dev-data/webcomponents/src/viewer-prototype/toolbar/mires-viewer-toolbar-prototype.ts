@@ -8,7 +8,7 @@
 // Shadow DOM kept (#191): head-injected WSI CSS is mirrored into the shadow root.
 import { LitElement, css, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import { BINDINGS_HELP, Stage, type Mode, type Preset, type Role, type SimCal, type ToolDef, type ViewportInfo } from "./stage.js";
+import { BINDINGS_HELP, Stage, COLORMAPS, type Mode, type Preset, type Role, type SimCal, type ToolDef, type ViewportInfo } from "./stage.js";
 
 @customElement("mires-viewer-toolbar-prototype")
 export class MiresViewerToolbarPrototype extends LitElement {
@@ -71,6 +71,31 @@ export class MiresViewerToolbarPrototype extends LitElement {
     .B-presets button { font-size: 12px; text-align: left; }
     .B-cal { font-size: 12px; margin: 4px 0; line-height: 1.4; }
 
+    .B-series { width: 190px; background: #0f1318; border-right: 1px solid #262c35; overflow-y: auto; padding: 6px; }
+    .B-series h5, .B-insp h5 { margin: 8px 0 6px; font-size: 10px; text-transform: uppercase; color: #6c7684; }
+    .ser { display: flex; gap: 6px; align-items: center; padding: 6px; border: 1px solid #262c35; border-radius: 4px; margin-bottom: 4px; cursor: grab; background: #151a21; }
+    .ser:hover { border-color: #1f6feb; } .ser.shown { background: #16233a; }
+    .ser-mod { font: 600 11px ui-monospace, monospace; background: #2b323c; border-radius: 3px; padding: 6px 4px; min-width: 22px; text-align: center; }
+    .ser-txt { display: flex; flex-direction: column; min-width: 0; font-size: 12px; } .ser-txt span { color: #7a8591; font-size: 10px; }
+    .ser-txt b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+    .chip { margin-left: auto; font-size: 9px; text-transform: uppercase; background: #2b323c; border-radius: 3px; padding: 1px 4px; color: #aab; }
+    .chip.ov2 { background: #5a3d0a; color: #ffcc66; }
+    .hint { color: #6c7684; font-size: 11px; }
+    .dz { position: absolute; inset: 0; z-index: 25; display: grid; grid-template-rows: 1fr 1fr; gap: 4px; padding: 4px; background: #0008; }
+    .dz-half { border: 2px dashed #5b6b80; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: #dde; font-size: 16px; }
+    .dz-half small { font-size: 12px; color: #9aa6b4; }
+    .dz-half.hot { border-color: #1f6feb; background: #1f6feb33; }
+    .dz-half.no { border-color: #6b2f2f; color: #a77; background: #2a0f0f55; }
+    .layer { border: 1px solid #262c35; border-radius: 4px; padding: 6px; margin-bottom: 6px; cursor: pointer; }
+    .layer.act { border-color: #1f6feb; background: #1f6feb14; }
+    .lh { display: flex; justify-content: space-between; align-items: center; gap: 6px; font-size: 12px; margin-bottom: 4px; }
+    .lh span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .lr { margin: 4px 0; font-size: 12px; } .lr select { width: 100%; background: #1b2027; color: inherit; border: 1px solid #2b323c; border-radius: 4px; padding: 3px; }
+    .lr.nums { display: flex; gap: 6px; } .lr.nums label { display: flex; gap: 4px; align-items: center; flex: 1; }
+    .lr.nums input { width: 100%; min-width: 0; background: #0b0d10; color: inherit; border: 1px solid #2b323c; border-radius: 3px; padding: 2px 4px; }
+    .lr input[type=range] { width: 140px; vertical-align: middle; }
+    button.x { padding: 0 6px; }
+
     /* C — chromeless */
     .C-hud { position: absolute; top: 0; left: 0; right: 0; display: flex; gap: 4px; justify-content: center; padding: 6px; opacity: 0; transition: opacity .15s; z-index: 6; }
     .cell:hover .C-hud { opacity: 1; }
@@ -132,12 +157,16 @@ export class MiresViewerToolbarPrototype extends LitElement {
       ${split ? html`<div class="divider" title="Drag to resize" @pointerdown=${this.startSplitDrag}></div>` : nothing}
       ${ids.map((id) => {
         const v = infos.find((i) => i.id === id);
-        return html`<div class="cell c-${id} ${id === "wsi" ? "wsi-cell" : ""}">
+        const main = id === "ax" || ids.length === 1;
+        return html`<div class="cell c-${id} ${id === "wsi" ? "wsi-cell" : ""}"
+            @dblclick=${split && id !== "ax" ? () => this.s.swapWithMain(id) : null}
+            title=${split && id !== "ax" ? "Double-click: show in the big view" : ""}>
           <div class="vp" id=${id} @contextmenu=${(e: Event) => e.preventDefault()}></div>
+          ${this.dragKey && main ? this.dropZones() : nothing}
           ${v ? html`
             <div class="ov tl">${v.label}</div>
             ${this.mode === "wsi" ? nothing : html`<div class="ov bl">${v.voi}</div>`}
-            ${v.badge ? html`<div class="ov tr"><span class="badge ${v.badgeLevel}">${v.badgeLevel === "warn" ? "⚠ " : ""}${v.badge}</span><div class="legend">${v.badgeLegend}</div></div>` : nothing}
+            ${v.badge && this.variant !== "B" ? html`<div class="ov tr"><span class="badge ${v.badgeLevel}">${v.badgeLevel === "warn" ? "⚠ " : ""}${v.badge}</span><div class="legend">${v.badgeLegend}</div></div>` : nothing}
             ${hud ? hud(v) : nothing}` : nothing}
         </div>`;
       })}
@@ -182,10 +211,72 @@ export class MiresViewerToolbarPrototype extends LitElement {
   }
 
   private fusionSlider() {
-    if (this.mode !== "fusion" || !this.ready()) return nothing;
-    return html`<label style="display:flex;gap:6px;align-items:center">PET opacity
-      <input type="range" min="0" max="1" step="0.05" .value=${String(this.s.fusionOpacity)}
-        @input=${(e: any) => this.s.setFusionOpacity(Number(e.target.value))}></label>`;
+    if (!this.ready() || !this.isVol() || this.s.layers.length < 2) return nothing;
+    const i = this.s.layers.length - 1;
+    return html`<label style="display:flex;gap:6px;align-items:center">${this.s.layers[i].key} opacity
+      <input type="range" min="0" max="1" step="0.05" .value=${String(this.s.layers[i].opacity)}
+        @input=${(e: any) => this.s.setLayerOpacity(i, Number(e.target.value))}></label>`;
+  }
+
+  // ---------- series list + drag-and-drop (B) ----------
+  @state() private dragKey = "";
+  @state() private dropZone = "";
+
+  private seriesPanel() {
+    if (!this.ready()) return html`<div class="B-series"></div>`;
+    const inView = (k: string) => this.s.layers.findIndex((L) => L.key === k);
+    return html`<div class="B-series"><h5>Series</h5>
+      ${this.s.catalog.map((c) => {
+        const n = inView(c.key);
+        return html`<div class="ser ${n >= 0 ? "shown" : ""}" draggable="true"
+            @dragstart=${(e: DragEvent) => { e.dataTransfer!.setData("text/plain", c.key); e.dataTransfer!.effectAllowed = "copyMove"; this.dragKey = c.key; }}
+            @dragend=${() => { this.dragKey = ""; this.dropZone = ""; }}
+            @dblclick=${() => this.s.replace(c.key)} title="Drag onto the big view: top half fuses, bottom half replaces. Double-click: replace.">
+          <div class="ser-mod">${c.modality}</div>
+          <div class="ser-txt"><b>${c.description || c.key}</b><span>${c.count} ${c.volumetric ? "images" : "frames"} · FoR …${c.frameOfReference.slice(-6)}</span></div>
+          ${n === 0 ? html`<span class="chip">base</span>` : n > 0 ? html`<span class="chip ov2">overlay</span>` : nothing}
+        </div>`;
+      })}
+      <p class="hint">Drag a series onto the big view.<br>Top half: fuse · bottom half: replace.</p>
+    </div>`;
+  }
+
+  private dropZones() {
+    const key = this.dragKey;
+    const zone = (kind: "fuse" | "replace", label: string, why: string) => html`<div
+        class="dz-half ${why ? "no" : ""} ${this.dropZone === kind ? "hot" : ""}"
+        @dragover=${(e: DragEvent) => { if (why) return; e.preventDefault(); e.dataTransfer!.dropEffect = kind === "fuse" ? "copy" : "move"; this.dropZone = kind; }}
+        @dragleave=${() => (this.dropZone = "")}
+        @drop=${(e: DragEvent) => { e.preventDefault(); const k = e.dataTransfer!.getData("text/plain") || key; this.dragKey = ""; this.dropZone = ""; kind === "fuse" ? this.s.fuse(k) : this.s.replace(k); }}>
+      <b>${label}</b><small>${why || (kind === "fuse" ? `overlay ${key} on all views` : `show only ${key}`)}</small></div>`;
+    return html`<div class="dz">${zone("fuse", "⊕ Fuse / overlay", this.s.fuseBlocker(key))}${zone("replace", "⇄ Replace", this.s.replaceBlocker(key))}</div>`;
+  }
+
+  private layersPanel() {
+    const s = this.s;
+    return html`<h5>Layers</h5>
+      ${s.layers.map((L, i) => {
+        const mod = s.series(L.key).modality;
+        const r = s.layerRange(i);
+        const lo = r.lower ?? 0, hi = r.upper ?? 0;
+        const ww = hi - lo, wc = (hi + lo) / 2;
+        const num = (label: string, v: number, set: (x: number) => void, step = 1) => html`<label>${label}
+          <input type="number" step=${step} .value=${v.toFixed(step < 1 ? 1 : 0)} @change=${(e: any) => set(Number(e.target.value))}></label>`;
+        return html`<div class="layer ${s.activeLayer === i ? "act" : ""}" @click=${() => s.activeLayer !== i && s.setActiveLayer(i)}>
+          <div class="lh"><span><b>${L.key}</b> ${s.series(L.key).description}</span>
+            ${i === 0 ? html`<span class="chip">base</span>` : html`<button class="x" title="Remove overlay" @click=${(e: Event) => { e.stopPropagation(); s.removeLayer(i); }}>×</button>`}</div>
+          <div class="lr"><select @change=${(e: any) => { const p = s.presetsForLayer(i).find((x) => x.id === e.target.value); if (p) { s.setActiveLayer(i); s.applyPreset(p); } e.target.value = ""; }}>
+              <option value="">Window preset…</option>${s.presetsForLayer(i).map((p) => html`<option value=${p.id}>${p.label}</option>`)}</select></div>
+          <div class="lr nums">${mod === "PT"
+            ? html`${num("SUV", lo, (x) => s.setLayerRange(i, x, hi), 0.1)}${num("–", hi, (x) => s.setLayerRange(i, lo, x), 0.1)}`
+            : html`${num("W", ww, (x) => s.setLayerRange(i, wc - x / 2, wc + x / 2))}${num("L", wc, (x) => s.setLayerRange(i, x - ww / 2, x + ww / 2))}`}</div>
+          <div class="lr"><select @change=${(e: any) => s.setLayerColormap(i, e.target.value)}>
+            ${COLORMAPS.map((n) => html`<option value=${n} ?selected=${n === L.colormap}>${n}</option>`)}</select></div>
+          ${i > 0 ? html`<div class="lr"><label>Opacity <input type="range" min="0" max="1" step="0.05" .value=${String(L.opacity)} @input=${(e: any) => s.setLayerOpacity(i, Number(e.target.value))}></label></div>` : nothing}
+        </div>`;
+      })}
+      <div class="B-cal" style="color:#8a94a0">Selected layer (blue): right-drag window/level, presets and keys 0–8 apply to it.</div>
+      <p><button @click=${() => s.invert()}>Invert</button> <button @click=${() => s.reset()}>Reset view</button></p>`;
   }
 
   private dropdown(id: string, label: unknown, items: unknown) {
@@ -235,16 +326,16 @@ export class MiresViewerToolbarPrototype extends LitElement {
     ];
     const infos = this.ready() ? this.s.info() : [];
     return html`<div class="main">
+      ${this.seriesPanel()}
       <div class="B-rail">${groups.filter(([, g]) => g.length).map(([n, g]) => html`<h6>${n}</h6>${g.map((t) => this.toolBtn(t, html`${t.icon}<kbd>${t.key}</kbd>`))}`)}</div>
       ${this.grid()}
       <div class="B-insp">
         ${this.isVol() && this.ready() ? html`<h5>Layout</h5><div class="B-layouts">
           ${(["axial", "sagittal", "coronal"] as const).map((o) => html`<button class=${this.s.layout === "1x1" && this.s.orientation === o ? "on" : ""} @click=${() => this.s.setOrientation(o)}><b>▢</b>${o}</button>`)}
-          <button class=${this.s.layout === "1x3" ? "on" : ""} @click=${() => this.s.setLayout("1x3")}><b>▢▤</b>3 views + ✚</button></div>` : nothing}
-        ${this.presets().length ? html`<h5>Window presets</h5><div class="B-presets">
+          <button class=${this.s.layout === "1x3" ? "on" : ""} @click=${() => this.s.setLayout("1x3")}><b>▢▤</b>3 views + ✚</button></div><div class="B-cal" style="color:#8a94a0">Double-click a small view to swap it into the big one.</div>` : nothing}
+        ${this.isVol() && this.ready() ? this.layersPanel() : this.presets().length ? html`<h5>Window presets</h5><div class="B-presets">
           ${this.presets().map((p) => html`<button @click=${() => this.s.applyPreset(p)}>${p.label} <kbd>${p.key}</kbd></button>`)}</div>
           <p><button @click=${() => this.s.invert()}>Invert</button> <button @click=${() => this.s.reset()}>Reset view</button></p>` : html`<h5>View</h5><button @click=${() => this.s?.reset()}>Reset view</button>`}
-        ${this.mode === "fusion" ? html`<h5>Fusion</h5>${this.fusionSlider()}<div class="B-cal">CT: grayscale · PET: hsv, SUVbw</div>` : nothing}
         <h5>Measurement units</h5>
         ${infos.map((v) => html`<div class="B-cal"><b>${v.label}</b>: ${v.badge ? html`<span class="badge ${v.badgeLevel}">${v.badge}</span>` : "mm"}<br><span style="color:#8a94a0">${v.badgeLegend}</span></div>`)}
         <h5>Mouse</h5>${BINDINGS_HELP.workstation.map((b) => html`<div class="B-cal">${b}</div>`)}
