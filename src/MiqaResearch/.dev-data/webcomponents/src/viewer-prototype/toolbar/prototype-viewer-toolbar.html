@@ -1,0 +1,51 @@
+<!doctype html>
+<!-- PROTOTYPE — throwaway (#201). Served from static:
+     /static/js/webcomponents/prototype-viewer-toolbar.html?variant=A|B|C&mode=stack|mpr|fusion|wsi&role=annotator|viewer&simcal=|proj|ermf|none|us -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>PROTOTYPE viewer toolbar</title>
+<style data-page>
+  html, body { margin: 0; height: 100%; background: #0b0d10; font: 12px system-ui, sans-serif; }
+  body { display: flex; flex-direction: column; }
+  #scenario { background: #fffbe6; color: #333; padding: 4px 8px; display: flex; gap: 12px; align-items: center; border-bottom: 2px dashed #c90; }
+  #scenario b { color: #a60; }
+  #host { flex: 1; min-height: 0; display: flex; flex-direction: column; padding-bottom: 52px; }
+  mires-viewer-toolbar-prototype { flex: 1; min-height: 0; }
+  #switcher { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); background: #ffd54a; color: #111;
+    border-radius: 999px; padding: 6px 14px; display: flex; gap: 12px; align-items: center; box-shadow: 0 4px 16px #0008; z-index: 9999; font-weight: 600; }
+  #switcher button { background: none; border: 0; font-size: 18px; cursor: pointer; }
+</style>
+</head>
+<body>
+<div id="scenario"><b>PROTOTYPE #201</b>
+  <label>Series (entry contract) <select id="mode"><option value="stack">CT stack (2D)</option><option value="mpr">CT three views</option><option value="fusion">PET/CT fusion</option><option value="wsi">WSI pathology</option></select></label>
+  <label>Role <select id="role"><option value="annotator">Annotator/PI/Admin</option><option value="viewer">View-only</option></select></label>
+  <label>Simulated calibration (stack) <select id="simcal"><option value="">tomographic mm (badge hidden)</option><option value="proj">Proj (X-ray, uncorrected)</option><option value="ermf">ERMF</option><option value="none">none → px</option><option value="us">US region</option></select></label>
+</div>
+<div id="host"></div>
+<div id="switcher"><button id="prev">←</button><span id="label"></span><button id="next">→</button></div>
+<script type="module">
+  const variants = { A: "Top toolbar (OHIF-style)", B: "Tool rail + inspector (workstation mouse)", C: "Chromeless, keyboard-first" };
+  const keys = Object.keys(variants);
+  const params = new URLSearchParams(location.search);
+  const v = keys.includes(params.get("variant")) ? params.get("variant") : "A";
+  const get = (k, d) => params.get(k) ?? d;
+  for (const k of ["mode", "role", "simcal"]) {
+    const sel = document.getElementById(k);
+    sel.value = get(k, sel.options[k === "mode" ? 1 : 0].value);
+    sel.onchange = () => { params.set(k, sel.value); location.search = params; };
+  }
+  document.getElementById("label").textContent = `${v} — ${variants[v]}`;
+  const go = (d) => { params.set("variant", keys[(keys.indexOf(v) + d + keys.length) % keys.length]); location.search = params; };
+  document.getElementById("prev").onclick = () => go(-1);
+  document.getElementById("next").onclick = () => go(1);
+  // switcher: arrows only when the viewer is not focused (viewer owns the keyboard)
+  addEventListener("keydown", (e) => { if (e.target !== document.body) return; if (e.key === "ArrowLeft") go(-1); if (e.key === "ArrowRight") go(1); });
+  await import("./mireswc-viewer.js");
+  const el = document.createElement("mires-viewer-toolbar-prototype");
+  Object.assign(el, { variant: v, mode: get("mode", "mpr"), role: get("role", "annotator"), simcal: get("simcal", "") });
+  document.getElementById("host").appendChild(el);
+</script>
+</body>
+</html>
