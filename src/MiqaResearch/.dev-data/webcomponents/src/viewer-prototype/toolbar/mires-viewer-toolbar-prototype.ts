@@ -33,6 +33,12 @@ export class MiresViewerToolbarPrototype extends LitElement {
     .grid { flex: 1; display: grid; gap: 2px; background: #222; min-width: 0; }
     .grid.n1 { grid-template-columns: 1fr; }
     .grid.n3 { grid-template-columns: 1fr 1fr 1fr; }
+    .grid.b3 { grid-template-columns: var(--split) 6px 1fr; grid-template-rows: 1fr 1fr; gap: 0; }
+    .grid.b3 .c-ax { grid-area: 1 / 1 / 3 / 2; }
+    .grid.b3 .divider { grid-area: 1 / 2 / 3 / 3; background: #262c35; cursor: col-resize; touch-action: none; }
+    .grid.b3 .divider:hover { background: #1f6feb; }
+    .grid.b3 .c-sag { grid-area: 1 / 3 / 2 / 4; border-bottom: 2px solid #222; }
+    .grid.b3 .c-cor { grid-area: 2 / 3 / 3 / 4; }
     .cell { position: relative; background: #000; min-width: 0; min-height: 0; }
     .vp { position: absolute; inset: 0; width: 100%; height: 100%; }
     .ov { position: absolute; font: 12px ui-monospace, monospace; color: #cfd6de; pointer-events: none; text-shadow: 0 0 3px #000; z-index: 5; }
@@ -120,10 +126,13 @@ export class MiresViewerToolbarPrototype extends LitElement {
   private grid(hud?: (v: ViewportInfo) => unknown) {
     const ids = this.ready() ? this.s.viewportIds() : this.mode === "stack" ? ["stack"] : this.mode === "wsi" ? ["wsi"] : ["ax", "sag", "cor"];
     const infos = this.ready() ? this.s.info() : [];
-    return html`<div class="grid ${ids.length === 3 ? "n3" : "n1"}">
+    // B: main view left, other two stacked on the right, draggable split (#201 feedback)
+    const split = this.variant === "B" && ids.length === 3;
+    return html`<div class="grid ${split ? "b3" : ids.length === 3 ? "n3" : "n1"}" style=${split ? `--split:${this.splitPct}%` : ""}>
+      ${split ? html`<div class="divider" title="Drag to resize" @pointerdown=${this.startSplitDrag}></div>` : nothing}
       ${ids.map((id) => {
         const v = infos.find((i) => i.id === id);
-        return html`<div class="cell ${id === "wsi" ? "wsi-cell" : ""}">
+        return html`<div class="cell c-${id} ${id === "wsi" ? "wsi-cell" : ""}">
           <div class="vp" id=${id} @contextmenu=${(e: Event) => e.preventDefault()}></div>
           ${v ? html`
             <div class="ov tl">${v.label}</div>
@@ -134,6 +143,29 @@ export class MiresViewerToolbarPrototype extends LitElement {
       })}
     </div>`;
   }
+
+  @state() private splitPct = (() => {
+    try { return Number(localStorage.getItem("mires-viewer-split")) || 66; } catch { return 66; }
+  })();
+
+  private startSplitDrag = (e: PointerEvent) => {
+    const divider = e.currentTarget as HTMLElement;
+    const grid = divider.parentElement!;
+    divider.setPointerCapture(e.pointerId);
+    const move = (ev: PointerEvent) => {
+      const r = grid.getBoundingClientRect();
+      this.splitPct = Math.round(Math.min(85, Math.max(25, ((ev.clientX - r.left) / r.width) * 100)));
+      this.updateComplete.then(() => this.s.engine.resize(true, true));
+    };
+    const up = () => {
+      divider.removeEventListener("pointermove", move);
+      divider.removeEventListener("pointerup", up);
+      try { localStorage.setItem("mires-viewer-split", String(this.splitPct)); } catch { /* per-viewer convenience only */ }
+    };
+    divider.addEventListener("pointermove", move);
+    divider.addEventListener("pointerup", up);
+    e.preventDefault();
+  };
 
   private toolBtn(t: ToolDef, content: unknown = t.label) {
     return html`<button class=${this.s?.primary === t.id ? "on" : ""} title="${t.label} (${t.key.toUpperCase()})"
@@ -208,7 +240,7 @@ export class MiresViewerToolbarPrototype extends LitElement {
       <div class="B-insp">
         ${this.isVol() && this.ready() ? html`<h5>Layout</h5><div class="B-layouts">
           ${(["axial", "sagittal", "coronal"] as const).map((o) => html`<button class=${this.s.layout === "1x1" && this.s.orientation === o ? "on" : ""} @click=${() => this.s.setOrientation(o)}><b>▢</b>${o}</button>`)}
-          <button class=${this.s.layout === "1x3" ? "on" : ""} @click=${() => this.s.setLayout("1x3")}><b>▢▢▢</b>3 views + ✚</button></div>` : nothing}
+          <button class=${this.s.layout === "1x3" ? "on" : ""} @click=${() => this.s.setLayout("1x3")}><b>▢▤</b>3 views + ✚</button></div>` : nothing}
         ${this.presets().length ? html`<h5>Window presets</h5><div class="B-presets">
           ${this.presets().map((p) => html`<button @click=${() => this.s.applyPreset(p)}>${p.label} <kbd>${p.key}</kbd></button>`)}</div>
           <p><button @click=${() => this.s.invert()}>Invert</button> <button @click=${() => this.s.reset()}>Reset view</button></p>` : html`<h5>View</h5><button @click=${() => this.s?.reset()}>Reset view</button>`}

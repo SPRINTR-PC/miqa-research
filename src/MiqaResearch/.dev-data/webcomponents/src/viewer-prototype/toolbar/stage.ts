@@ -255,7 +255,8 @@ export class Stage {
       else await this.setupVolumes();
     }
     eventTarget.addEventListener(T.Enums.Events.ANNOTATION_COMPLETED, this.onAnnotationCompleted as any);
-    new ResizeObserver(() => this.engine.resize(true, true)).observe(el(this.viewportIds()[0]).parentElement!);
+    const ro = new ResizeObserver(() => this.engine.resize(true, true));
+    ro.observe(el(this.viewportIds()[0]).parentElement!.parentElement!); // grid
     (window as any).__tb = this;
     (window as any).cornerstoneTools = csTools;
     this.onChange();
