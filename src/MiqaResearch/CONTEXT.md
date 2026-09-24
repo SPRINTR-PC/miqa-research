@@ -261,7 +261,7 @@ _Avoid_: Unmask, de-pseudonymize
 ### Data Kind
 A kind of research data held per Study Participant that the project's Data
 view counts, sizes, and lists — initially Study Participants themselves,
-PROM Forms, and Dicom Series; later e.g. annotations and segmentations.
+PROM Forms, Dicom Series, Annotations and Segmentations.
 Each kind knows its own count, size, per-participant presence, and how its
 data is displayed. Several kinds may be carved from the same stored records
 (e.g. imaging series vs. annotation/segmentation series). Distinct from ETL
@@ -278,6 +278,45 @@ latest version is authoritative and earlier ones remain as history. A
 signature covers the extracted data, not which Study Participant the form
 belongs to — re-linking a form does not unsign it.
 _Avoid_: Approve, validate (in UI)
+
+### Annotation
+A DICOM object (SR or ANN) marking regions, points or measurements on one or
+more Dicom Series of a Study Participant, held as its own Dicom Series. Made in
+the viewer by an Annotator, Principal Investigator, Site PI or Project Admin,
+or arriving through ingestion (then it has no author). A Data Kind.
+_Avoid_: Label, markup, measurement (as the object's name)
+
+### Segmentation
+A DICOM object (SEG or RTSTRUCT) labelling voxels or contours as structures on
+one or more Dicom Series, held as its own Dicom Series. Authored and ingested
+like an Annotation. A Data Kind.
+_Avoid_: Mask, label map (as the object's name)
+
+### Supersede
+Replacing an Annotation or Segmentation with a new version that points to its
+predecessor; objects never change in place, and each has one linear version
+chain whose head is current. Authors supersede their own; Principal
+Investigator, Site PI (in its Sites) and Project Admin may supersede anyone's.
+_Avoid_: Edit, overwrite
+
+### Retire
+Hiding an Annotation or Segmentation from use while keeping it and its history.
+Same rights as Supersede. Only deleting the participant's or project's data
+removes it.
+_Avoid_: Delete
+
+### Blinded Annotation
+A per-project setting (set by Principal Investigator or Project Admin, audit
+logged) under which every user sees only their own Annotations and
+Segmentations, and ingested ones are hidden. Aggregate counts are unaffected.
+_Avoid_: Masked review
+
+### Blinding Reveal
+An explicit, audit-logged action by which a Principal Investigator, Site PI or
+Project Admin, under Blinded Annotation, shows others' Annotations and
+Segmentations for one participant for the current viewer session. Annotators
+can never reveal.
+_Avoid_: Unblind (as a project-wide switch)
 
 ### Study Participant
 The person enrolled in a Research Project, represented by the `StudyParticipant`
@@ -501,6 +540,38 @@ scripts run in-process.
 | 0023 | Chart Grid: combined dataUrl, shared per-type trace-builder functions, subplot-attributed events | Accepted |
 | 0024 | Data-access audit events kept 10 years, separate from 90-day auth-event retention | Accepted |
 | 0025 | ETL orchestrator: SandboxBackend.run() stays blocking, no async start/poll split | Accepted |
+| 0026 | Viewer-made Annotations and Segmentations stored as re-ingested DICOM objects, with Blinded Annotation | Accepted |
+
+### ADR 0026 — Viewer-made Annotations and Segmentations stored as re-ingested DICOM objects, with Blinded Annotation
+
+**Context**: The DICOM viewer (wayfinder map: DICOM viewer web component —
+design spec, issue #176; decided in issue #189) lets users create Annotations
+and Segmentations. The alternatives were Cornerstone JSON (lossless in the
+viewer but tied to it, with no interoperability), a new model holding the
+bytes, or standard DICOM derived objects (research in issue #188).
+Inter-rater studies also need raters who cannot see each other's work.
+
+**Decision**: The browser builds SR (TID 1500) and SEG (BINARY) objects with
+the Cornerstone adapters. The server sanitizes them, rewrites UIDs and
+patient/study tags from the database, and ingests them as ordinary Dicom
+Series in the source Dicom Study. ANN is built server-side with highdicom.
+A provenance record per object holds its author (none if ingested), its
+source series (many, same Frame of Reference), its predecessor, and whether
+it is retired. Objects never change: Supersede makes a new version in one
+linear chain, and a save on a stale head is rejected. Retire replaces delete.
+Drafts live only in the browser (IndexedDB). A per-project Blinded Annotation
+flag limits every user to their own work. A PI, Site PI or Admin can override
+it with a per-participant, per-session Blinding Reveal, which is audit logged.
+
+**Consequences**:
+- WADO-RS, Participant Visibility and the viewer serve Annotations and
+  Segmentations with no extra code. The Annotation and Segmentation Data
+  Kinds are split out of Dicom Series by modality (SR/ANN vs SEG/RTSTRUCT)
+  and count only the head of each chain.
+- Browser-built objects must never be trusted: they go through the same
+  sanitizer as ingestion.
+- Create, Supersede, Retire, Blinding Reveal and blinding-flag changes are
+  data-access audit events (ADR 0024).
 
 ### ADR 0025 — ETL orchestrator: SandboxBackend.run() stays blocking, no async start/poll split
 
