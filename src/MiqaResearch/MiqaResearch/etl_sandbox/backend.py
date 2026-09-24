@@ -37,4 +37,7 @@ def get_sandbox_backend() -> SandboxBackend:
     if backend_name == "compose":
         from .compose_backend import ComposeSandboxBackend
         return ComposeSandboxBackend()
+    if backend_name == "kubernetes":
+        from .kubernetes_backend import KubernetesSandboxBackend
+        return KubernetesSandboxBackend()
     raise ValueError(f"Unknown MIRES_SANDBOX_BACKEND: {backend_name!r}")
