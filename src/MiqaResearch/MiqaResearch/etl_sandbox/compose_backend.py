@@ -13,8 +13,6 @@ always remove the container -- a crashed worker's own leftovers are `sweep()`'s 
 method's.
 """
 import io
-import json
-import tarfile
 
 import docker
 from docker.errors import NotFound
@@ -23,8 +21,8 @@ from requests.exceptions import ReadTimeout
 
 from MiqaResearch.etl_shim import contract
 
+from ._staging import build_sandbox_archive, check_input_size, read_output_from_tar
 from .backend import SandboxBackend
-from .exceptions import SandboxInputTooLarge
 from .images import resolve_sandbox_image
 from .spec import SandboxRunResult, SandboxRunSpec
 
@@ -43,7 +41,7 @@ class ComposeSandboxBackend(SandboxBackend):
 
     def run(self, spec: SandboxRunSpec) -> SandboxRunResult:
         image = resolve_sandbox_image(spec.image_key)
-        _check_input_size(spec)
+        check_input_size(spec)
 
         client = self._get_client()
         container = client.containers.create(
@@ -60,7 +58,7 @@ class ComposeSandboxBackend(SandboxBackend):
             detach=True,
         )
         try:
-            container.put_archive(SANDBOX_ROOT, _build_input_archive(spec))
+            container.put_archive(SANDBOX_ROOT, build_sandbox_archive(spec))
             container.start()
             killed = False
             try:
@@ -107,29 +105,6 @@ def _container_name(run_id: str) -> str:
     return f"{CONTAINER_NAME_PREFIX}{run_id}"
 
 
-def _check_input_size(spec: SandboxRunSpec) -> None:
-    total = len(spec.script_source) + sum(len(content) for content in spec.input_files.values())
-    if total > spec.limits.max_input_bytes:
-        raise SandboxInputTooLarge(
-            f"Run {spec.run_id}'s staged input is {total} bytes, over the {spec.limits.max_input_bytes} byte cap.")
-
-
-def _build_input_archive(spec: SandboxRunSpec) -> bytes:
-    buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w") as tar:
-        _add_bytes(tar, contract.MANIFEST_FILENAME, json.dumps(spec.manifest).encode())
-        _add_bytes(tar, contract.SCRIPT_FILENAME, spec.script_source)
-        for relative_path, content in spec.input_files.items():
-            _add_bytes(tar, f"{contract.INPUT_DIRNAME}/{relative_path}", content)
-    return buf.getvalue()
-
-
-def _add_bytes(tar: tarfile.TarFile, name: str, content: bytes) -> None:
-    info = tarfile.TarInfo(name=name)
-    info.size = len(content)
-    tar.addfile(info, io.BytesIO(content))
-
-
 def _retrieve_output(container, *, max_bytes: int) -> tuple[bytes | None, bytes]:
     try:
         stream, _ = container.get_archive(f"{SANDBOX_ROOT}/{contract.OUTPUT_DIRNAME}")
@@ -143,19 +118,5 @@ def _retrieve_output(container, *, max_bytes: int) -> tuple[bytes | None, bytes]
         if size > max_bytes:
             return None, b""
         buf.write(chunk)
-    buf.seek(0)
 
-    result_jsonl, log = None, b""
-    with tarfile.open(fileobj=buf, mode="r") as tar:
-        result_jsonl = _read_member(tar, f"{contract.OUTPUT_DIRNAME}/{contract.RESULT_FILENAME}")
-        log = _read_member(tar, f"{contract.OUTPUT_DIRNAME}/{contract.LOG_FILENAME}") or b""
-    return result_jsonl, log
-
-
-def _read_member(tar: tarfile.TarFile, name: str) -> bytes | None:
-    try:
-        member = tar.getmember(name)
-    except KeyError:
-        return None
-    extracted = tar.extractfile(member)
-    return extracted.read() if extracted else None
+    return read_output_from_tar(buf.getvalue())

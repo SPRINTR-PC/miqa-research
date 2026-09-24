@@ -37,6 +37,7 @@ dependencies = [
     "django-storages>=1.14.6",
     "wsidicomizer>=0.30.0",
     "docker>=7.2.0",
+    "kubernetes>=31.0.0",
 ]
 
 [dependency-groups]

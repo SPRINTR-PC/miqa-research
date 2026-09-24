@@ -92,6 +92,11 @@ env = environ.Env(
     MIRES_SANDBOX_DEFAULT_PIDS_LIMIT=(int, 128),
     MIRES_SANDBOX_MAX_INPUT_BYTES=(int, 15 * 1024 ** 3),
     MIRES_SANDBOX_MAX_OUTPUT_BYTES=(int, 1 * 1024 ** 3),
+    MIRES_SANDBOX_K8S_NAMESPACE=(str, "mires-etl-sandbox"),
+    MIRES_SANDBOX_K8S_STAGER_IMAGE=(str, "busybox:1.36"),
+    MIRES_SANDBOX_K8S_SELF_TEST_TTL_SECONDS=(int, 300),
+    MIRES_SANDBOX_K8S_EGRESS_PROBE_HOST=(str, "1.1.1.1"),
+    MIRES_SANDBOX_K8S_EGRESS_PROBE_PORT=(int, 443),
     MIRES_LOGGING_LEVEL=(str, "INFO"),
     MIRES_LOGGING_DIR=(Path, BASE_DIR / "LocalOnly/Logs"),
     MIRES_OIDC_CLIENT_ID=(str, None),
@@ -187,7 +192,7 @@ ETL_SCRIPT_S3_SECRET_ACCESS_KEY: str | None = env("MIRES_ETL_SCRIPT_S3_SECRET_AC
 ETL_SCRIPT_MAX_SOURCE_BYTES: int = env("MIRES_ETL_SCRIPT_MAX_SOURCE_BYTES")
 
 # ETL sandbox runner (#161, #165): MIRES_SANDBOX_BACKEND selects the SandboxBackend implementation
-# ("compose" here; "kubernetes" is #165). MIRES_SANDBOX_DOCKER_HOST is where the Compose backend's
+# ("compose" or "kubernetes"). MIRES_SANDBOX_DOCKER_HOST is where the Compose backend's
 # Docker API connection points -- in production a per-worker-host docker-socket-proxy's TCP
 # endpoint, never a raw mounted socket; local dev/test may point it straight at the daemon.
 # MIRES_SANDBOX_IMAGE_ALLOWLIST is a JSON object mapping an image key (language + runtime +
@@ -204,6 +209,22 @@ SANDBOX_DEFAULT_CPU_MILLICORES: int = env("MIRES_SANDBOX_DEFAULT_CPU_MILLICORES"
 SANDBOX_DEFAULT_PIDS_LIMIT: int = env("MIRES_SANDBOX_DEFAULT_PIDS_LIMIT")
 SANDBOX_MAX_INPUT_BYTES: int = env("MIRES_SANDBOX_MAX_INPUT_BYTES")
 SANDBOX_MAX_OUTPUT_BYTES: int = env("MIRES_SANDBOX_MAX_OUTPUT_BYTES")
+
+# ETL sandbox runner, Kubernetes backend (#165): SANDBOX_K8S_NAMESPACE is the dedicated namespace the
+# backend creates its per-run PVC/Pods/Job in (and idempotently ensures exists, along with a
+# namespace-wide default-deny-egress NetworkPolicy). SANDBOX_K8S_STAGER_IMAGE is the small trusted
+# utility image used by the short-lived transfer pods that move bytes on/off a run's PVC via pod-exec
+# streaming (never the Script's own image, so it doesn't go through SANDBOX_IMAGE_ALLOWLIST) --
+# production should still pin this to a digest, just not through the Script allowlist. The self-test
+# settings configure the backend's own fail-closed health probe (see kubernetes_backend.py): a
+# throwaway pod under the same NetworkPolicy must fail to reach EGRESS_PROBE_HOST:EGRESS_PROBE_PORT,
+# cached for SELF_TEST_TTL_SECONDS -- confirmed necessary this session (#165's research spike) because
+# a misconfigured CNI (e.g. kind's default kindnet) silently does not enforce NetworkPolicy at all.
+SANDBOX_K8S_NAMESPACE: str = env("MIRES_SANDBOX_K8S_NAMESPACE")
+SANDBOX_K8S_STAGER_IMAGE: str = env("MIRES_SANDBOX_K8S_STAGER_IMAGE")
+SANDBOX_K8S_SELF_TEST_TTL_SECONDS: int = env("MIRES_SANDBOX_K8S_SELF_TEST_TTL_SECONDS")
+SANDBOX_K8S_EGRESS_PROBE_HOST: str = env("MIRES_SANDBOX_K8S_EGRESS_PROBE_HOST")
+SANDBOX_K8S_EGRESS_PROBE_PORT: int = env("MIRES_SANDBOX_K8S_EGRESS_PROBE_PORT")
 
 # DICOM ingestion (#123): global default for source retention. A run deletes
 # its source file only once storage is verified, never merely on a successful
