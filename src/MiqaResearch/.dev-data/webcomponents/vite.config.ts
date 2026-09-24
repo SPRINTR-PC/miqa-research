@@ -3,7 +3,11 @@ import { resolve } from "node:path";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  // PROTOTYPE (#191): relative base so worker/WASM URLs resolve under /static/
+  base: "./",
   publicDir: false,
+  worker: { format: "es" },
+  optimizeDeps: { exclude: ["@cornerstonejs/dicom-image-loader"] },
   define: {
     global: "globalThis",
   },
@@ -31,6 +35,7 @@ export default defineConfig({
       input: {
         "mireswc": resolve(__dirname, "src/mireswc.ts"),
         "mireswc-charts": resolve(__dirname, "src/mireswc-charts.ts"),
+        "mireswc-viewer": resolve(__dirname, "src/mireswc-viewer.ts"),
       },
       output: {
         entryFileNames: "[name].js",

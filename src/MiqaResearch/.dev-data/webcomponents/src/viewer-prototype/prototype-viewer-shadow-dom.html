@@ -1,0 +1,48 @@
+<!doctype html>
+<!-- PROTOTYPE — throwaway (#191). Served from Django static:
+     /static/js/webcomponents/prototype-viewer-shadow-dom.html?variant=shadow|light|shadow-mirrored -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>PROTOTYPE viewer: Shadow vs light DOM</title>
+<style data-page>
+  body { margin: 16px 16px 80px; font: 13px system-ui, sans-serif; background: #fafafa; }
+  #log { font: 12px ui-monospace, monospace; white-space: pre-wrap; background: #111; color: #ddd; padding: 8px; max-height: 260px; overflow: auto; }
+  .FAIL { color: #f66; } .ok { color: #6d6; } .info { color: #8cf; }
+  /* light variant: Lit static styles don't apply outside a shadow root */
+  mires-viewer-prototype[variant=light] .row { display: flex; gap: 8px; margin: 8px 0 24px; flex-wrap: wrap; }
+  mires-viewer-prototype[variant=light] .vp { width: 380px; height: 380px; background: #000; position: relative; }
+  mires-viewer-prototype[variant=light] .wsi { width: 780px; height: 520px; background: #202; position: relative; }
+  #switcher { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: #222; color: #fff;
+    border-radius: 999px; padding: 6px 12px; display: flex; gap: 12px; align-items: center; box-shadow: 0 4px 16px #0006; z-index: 9999; }
+  #switcher button { background: none; border: 0; color: #fff; font-size: 18px; cursor: pointer; }
+</style>
+</head>
+<body>
+<h2>PROTOTYPE — Cornerstone3D in <span id="vname"></span></h2>
+<div id="log"></div>
+<div id="host"></div>
+<div id="switcher"><button id="prev">←</button><span id="label"></span><button id="next">→</button></div>
+<script type="module">
+  const variants = { shadow: "Shadow DOM", light: "Light DOM", "shadow-mirrored": "Shadow DOM + mirrored head CSS" };
+  const keys = Object.keys(variants);
+  const params = new URLSearchParams(location.search);
+  const v = keys.includes(params.get("variant")) ? params.get("variant") : "shadow";
+  document.getElementById("vname").textContent = variants[v];
+  document.getElementById("label").textContent = `${v} — ${variants[v]}`;
+  const go = (d) => { params.set("variant", keys[(keys.indexOf(v) + d + keys.length) % keys.length]); location.search = params; };
+  document.getElementById("prev").onclick = () => go(-1);
+  document.getElementById("next").onclick = () => go(1);
+  addEventListener("keydown", (e) => { if (e.key === "ArrowLeft") go(-1); if (e.key === "ArrowRight") go(1); });
+  const log = document.getElementById("log");
+  const line = (s, t) => { const d = document.createElement("div"); d.className = s; d.textContent = t; log.appendChild(d); };
+  addEventListener("proto-report", (e) => line(e.detail.status, `[${e.detail.status}] ${e.detail.name}: ${e.detail.detail}`));
+  addEventListener("error", (e) => line("FAIL", `[window.error] ${e.message}`));
+  addEventListener("unhandledrejection", (e) => line("FAIL", `[unhandledrejection] ${e.reason?.stack ?? e.reason}`));
+  await import("./mireswc-viewer.js");
+  const el = document.createElement("mires-viewer-prototype");
+  el.variant = v; el.setAttribute("variant", v);
+  document.getElementById("host").appendChild(el);
+</script>
+</body>
+</html>

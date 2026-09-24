@@ -6,11 +6,18 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:viewer-prototype": "vite build && rm -rf ../../static/js/webcomponents/dmv && mkdir -p ../../static/js/webcomponents/dmv && cp node_modules/dicom-microscopy-viewer/dist/dynamic-import/*.js node_modules/dicom-microscopy-viewer/dist/dynamic-import/*.wasm ../../static/js/webcomponents/dmv/ && cp src/viewer-prototype/prototype-viewer-shadow-dom.html ../../static/js/webcomponents/",
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run"
   },
   "dependencies": {
+    "@cornerstonejs/core": "5.10.11",
+    "@cornerstonejs/dicom-image-loader": "5.10.11",
+    "@cornerstonejs/metadata": "5.10.11",
+    "@cornerstonejs/tools": "5.10.11",
+    "dicom-microscopy-viewer": "0.48.24",
+    "dicomweb-client": "0.11.3",
     "katex": "^0.18.7",
     "lit": "^3.3.2",
     "mathjs": "^15.2.0",
