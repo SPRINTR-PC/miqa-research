@@ -5,6 +5,7 @@
 import {
   Enums,
   RenderingEngine,
+  cache as csCache,
   eventTarget,
   init as csInit,
   metaData,
@@ -48,7 +49,7 @@ export interface ToolDef {
   id: string; // CS3D tool name
   label: string;
   key: string; // keyboard shortcut
-  group: "navigate" | "measure" | "annotate" | "calibrate";
+  group: "navigate" | "measure" | "annotate" | "calibrate" | "segment";
   icon: string;
   annotateOnly?: boolean;
 }
@@ -68,13 +69,19 @@ const TOOLS: Record<string, ToolDef> = {
   Freehand: { id: T.PlanarFreehandROITool.toolName, label: "Freehand ROI", key: "f", group: "measure", icon: "✎" },
   Arrow: { id: T.ArrowAnnotateTool.toolName, label: "Arrow + text", key: "t", group: "annotate", icon: "➚", annotateOnly: true },
   Calibrate: { id: CalibrateTool.toolName, label: "Calibrate (User)", key: "c", group: "calibrate", icon: "⟷", annotateOnly: true },
+  Brush: { id: T.BrushTool.toolName, label: "Brush", key: "g", group: "segment", icon: "🖌", annotateOnly: true },
+  RectScissors: { id: T.RectangleScissorsTool.toolName, label: "Rectangle scissors", key: "q", group: "segment", icon: "⬚", annotateOnly: true },
+  CircleScissors: { id: T.CircleScissorsTool.toolName, label: "Circle scissors", key: "j", group: "segment", icon: "◌", annotateOnly: true },
+  SphereScissors: { id: T.SphereScissorsTool.toolName, label: "Sphere scissors (3D)", key: "y", group: "segment", icon: "⬤", annotateOnly: true },
+  ThresholdROI: { id: T.RectangleROIThresholdTool.toolName, label: "Rectangle ROI threshold", key: "m", group: "segment", icon: "▦", annotateOnly: true },
 };
+const SEG_TOOLS = ["Brush", "RectScissors", "CircleScissors", "SphereScissors", "ThresholdROI"];
 
 /** Proposed tool set per viewport type (the thing #201 decides). */
 export const TOOLSETS: Record<Mode, string[]> = {
   stack: ["WindowLevel", "Pan", "Zoom", "StackScroll", "Length", "Angle", "Bidirectional", "Probe", "RectangleROI", "EllipticalROI", "Freehand", "Arrow", "Calibrate"],
-  mpr: ["Crosshairs", "WindowLevel", "Pan", "Zoom", "StackScroll", "Length", "Angle", "Bidirectional", "Probe", "RectangleROI", "EllipticalROI", "Freehand", "Arrow"],
-  fusion: ["Crosshairs", "WindowLevel", "Pan", "Zoom", "StackScroll", "Length", "Probe", "RectangleROI", "EllipticalROI", "Arrow"],
+  mpr: ["Crosshairs", "WindowLevel", "Pan", "Zoom", "StackScroll", "Length", "Angle", "Bidirectional", "Probe", "RectangleROI", "EllipticalROI", "Freehand", "Arrow", ...SEG_TOOLS],
+  fusion: ["Crosshairs", "WindowLevel", "Pan", "Zoom", "StackScroll", "Length", "Probe", "RectangleROI", "EllipticalROI", "Arrow", ...SEG_TOOLS],
   wsi: ["Pan", "Zoom", "Length", "RectangleROI", "EllipticalROI", "Freehand", "Arrow"],
 };
 
@@ -142,6 +149,7 @@ function initCornerstone() {
       T.WindowLevelTool, T.PanTool, T.ZoomTool, T.StackScrollTool, T.CrosshairsTool, T.LengthTool,
       T.AngleTool, T.BidirectionalTool, T.ProbeTool, T.RectangleROITool, T.EllipticalROITool,
       T.PlanarFreehandROITool, T.ArrowAnnotateTool, CalibrateTool,
+      T.BrushTool, T.RectangleScissorsTool, T.CircleScissorsTool, T.SphereScissorsTool, T.RectangleROIThresholdTool,
     ].forEach((t) => T.addTool(t as any));
   })();
   return initPromise;
@@ -225,7 +233,10 @@ export interface Layer {
   colormap: string;
   lower?: number;
   upper?: number;
+  /** overall opacity multiplier (overlays) */
   opacity: number;
+  /** opacity transfer curve in data units (HU / SUV); empty = flat */
+  curve: { value: number; opacity: number }[];
 }
 
 const VIEW_IDS = ["ax", "sag", "cor"] as const;
@@ -248,6 +259,12 @@ export class Stage {
   layers: Layer[] = [];
   /** layer index that presets and right-drag W/L act on */
   activeLayer = 0;
+  /** segments of the current base series' labelmap (#201: tools only; list UI belongs to #202) */
+  segments: { index: number; label: string }[] = [];
+  activeSegment = 1;
+  brushSize = 15;
+  /** unsaved Annotations/Segmentations since last save */
+  dirty = 0;
   private tg!: csTools.Types.IToolGroup;
   private ids: Record<string, string[]> = {};
   private client: any = new api.DICOMwebClient({ url: WADO_ROOT } as any);
@@ -290,6 +307,9 @@ export class Stage {
       await this.setupVolumes();
     }
     eventTarget.addEventListener(T.Enums.Events.ANNOTATION_COMPLETED, this.onAnnotationCompleted as any);
+    for (const ev of [T.Enums.Events.ANNOTATION_MODIFIED, T.Enums.Events.ANNOTATION_REMOVED, T.Enums.Events.SEGMENTATION_DATA_MODIFIED]) {
+      eventTarget.addEventListener(ev, () => { this.dirty++; this.onChange(); });
+    }
     const ro = new ResizeObserver(() => this.engine.resize(true, true));
     ro.observe(el(this.viewportIds()[0]).parentElement!.parentElement!); // grid
     (window as any).__tb = this;
@@ -324,7 +344,9 @@ export class Stage {
       volumeId: `cornerstoneStreamingImageVolume:${key}`,
       colormap: base ? "Grayscale" : pt ? "hsv" : "Black-Body Radiation",
       ...(pt ? { lower: 0, upper: 5 } : {}),
-      opacity: base ? 1 : 0.5,
+      opacity: base ? 1 : pt ? 1 : 0.5,
+      // PET overlay default: transparent up to SUV 2, fully opaque from SUV 4
+      curve: !base && pt ? [{ value: 0, opacity: 0 }, { value: 2, opacity: 0 }, { value: 4, opacity: 1 }] : [],
     };
   }
 
@@ -381,7 +403,7 @@ export class Stage {
     }
   }
   private isAnnotationTool(n: string) {
-    return !["WindowLevel", "Pan", "Zoom", "StackScroll", "Crosshairs"].includes(n);
+    return !["WindowLevel", "Pan", "Zoom", "StackScroll", "Crosshairs"].includes(n) && !this.isSegTool(n) || n === T.RectangleROIThresholdTool.toolName;
   }
 
   /** Right-drag W/L for an overlay layer (active layer > 0), workstation scheme only. */
@@ -446,13 +468,16 @@ export class Stage {
     }
     await setVolumesForViewports(this.engine, this.layers.map((L) => ({ volumeId: L.volumeId })), this.viewportIds());
     this.layers.forEach((_, i) => this.applyLayerDisplay(i));
+    if (T.segmentation.state.getSegmentation(this.segId())) await this.ensureSegmentation();
   }
 
   private applyLayerDisplay(i: number) {
     const L = this.layers[i];
     for (const id of this.viewportIds()) {
       const vp = this.engine.getViewport(id) as any;
-      const props: any = { colormap: { name: L.colormap, opacity: i === 0 ? 1 : L.opacity } };
+      const cm: any = { name: L.colormap, opacity: i === 0 ? 1 : L.opacity };
+      if (i > 0 && L.curve.length >= 2) cm.opacityMapping = L.curve;
+      const props: any = { colormap: cm };
       if (L.lower !== undefined) props.voiRange = { lower: L.lower, upper: L.upper };
       vp.setProperties(props, L.volumeId);
       vp.render();
@@ -481,6 +506,11 @@ export class Stage {
   }
   setLayerOpacity(i: number, o: number) {
     this.layers[i].opacity = o;
+    this.applyLayerDisplay(i);
+    this.onChange();
+  }
+  setLayerCurve(i: number, curve: { value: number; opacity: number }[]) {
+    this.layers[i].curve = [...curve].sort((a, b) => a.value - b.value);
     this.applyLayerDisplay(i);
     this.onChange();
   }
@@ -522,7 +552,7 @@ export class Stage {
     const why = this.replaceBlocker(key);
     if (why) return this.log(`can't replace with ${key}: ${why}`);
     this.layers = [this.newLayer(key, true)];
-    if (this.series(key).modality === "PT") Object.assign(this.layers[0], { colormap: "Grayscale", lower: 0, upper: 5 });
+    if (this.series(key).modality === "PT") Object.assign(this.layers[0], { colormap: "Grayscale", lower: 0, upper: 5, curve: [] });
     await this.applyLayers();
     this.activeLayer = 0;
     this.applyBindings();
@@ -556,11 +586,97 @@ export class Stage {
     this.setPrimary(T.PanTool.toolName);
   }
 
+  segId() { return `seg-${this.layers[0]?.key}`; }
+  isSegTool(tool: string) { return SEG_TOOLS.some((k) => TOOLS[k].id === tool); }
+
+  /** Labelmap on the base series' geometry, created on first use and shown on every view. */
+  async ensureSegmentation() {
+    if (!this.isVolumeMode()) return;
+    const S = T.segmentation;
+    const segId = this.segId();
+    if (!S.state.getSegmentation(segId)) {
+      await volumeLoader.createAndCacheDerivedLabelmapVolume(this.layers[0].volumeId, { volumeId: `${segId}-labelmap` } as any);
+      S.addSegmentations([{ segmentationId: segId, representation: { type: T.Enums.SegmentationRepresentations.Labelmap, data: { volumeId: `${segId}-labelmap` } as any } }]);
+      this.segments = [{ index: 1, label: "Segment 1" }];
+      this.activeSegment = 1;
+    }
+    const map: Record<string, any[]> = {};
+    for (const id of this.viewportIds()) {
+      if (!S.state.getSegmentationRepresentations(id, { segmentationId: segId })?.length) map[id] = [{ segmentationId: segId }];
+    }
+    if (Object.keys(map).length) await S.addLabelmapRepresentationToViewportMap(map);
+    S.activeSegmentation.setActiveSegmentation(this.viewportIds()[0], segId);
+    for (const id of this.viewportIds()) S.activeSegmentation.setActiveSegmentation(id, segId);
+    S.segmentIndex.setActiveSegmentIndex(segId, this.activeSegment);
+    T.utilities.segmentation.setBrushSizeForToolGroup("tb", this.brushSize);
+  }
+
+  addSegment() {
+    const index = Math.max(0, ...this.segments.map((x) => x.index)) + 1;
+    this.segments.push({ index, label: `Segment ${index}` });
+    this.setActiveSegment(index);
+  }
+  setActiveSegment(index: number) {
+    this.activeSegment = index;
+    T.segmentation.segmentIndex.setActiveSegmentIndex(this.segId(), index);
+    this.onChange();
+  }
+  segmentColor(index: number): string {
+    try {
+      const c = T.segmentation.config.color.getSegmentIndexColor(this.viewportIds()[0], this.segId(), index);
+      if (c) return `rgb(${c[0]},${c[1]},${c[2]})`;
+    } catch { /* not yet */ }
+    return "#888";
+  }
+  setBrushSize(px: number) {
+    this.brushSize = px;
+    T.utilities.segmentation.setBrushSizeForToolGroup("tb", px);
+    this.onChange();
+  }
+
+  /** Fill the active segment where the active layer is inside [lower, upper], within the drawn threshold rectangles. */
+  runThreshold(lower: number, upper: number, slices: number) {
+    const uids = T.annotation.state.getAllAnnotations()
+      .filter((a: any) => a.metadata.toolName === T.RectangleROIThresholdTool.toolName)
+      .map((a: any) => a.annotationUID);
+    if (!uids.length) return this.log("threshold: draw a rectangle with the ROI threshold tool first");
+    const segVol: any = (csCache as any).getVolume(`${this.segId()}-labelmap`);
+    const vol: any = (csCache as any).getVolume(this.layers[this.activeLayer].volumeId);
+    T.utilities.segmentation.rectangleROIThresholdVolumeByRange(uids, segVol, [{ volume: vol, lower, upper }] as any,
+      { overwrite: false, segmentationId: this.segId(), segmentIndex: this.activeSegment, numSlicesToProject: slices } as any);
+    T.utilities.segmentation.triggerSegmentationRender();
+    this.log(`threshold ${this.layers[this.activeLayer].key} ${lower}–${upper} → segment ${this.activeSegment}`);
+    this.dirty++;
+    this.onChange();
+  }
+
+  /** What Save would write (#189: browser builds SR/SEG, server sanitizes and re-ingests). */
+  saveSummary() {
+    const anns = T.annotation.state.getAllAnnotations().filter((a: any) =>
+      !["Crosshairs", T.RectangleROIThresholdTool.toolName].includes(a.metadata.toolName));
+    const byTool: Record<string, number> = {};
+    anns.forEach((a: any) => (byTool[a.metadata.toolName] = (byTool[a.metadata.toolName] ?? 0) + 1));
+    const segVol: any = this.isVolumeMode() ? (csCache as any).getVolume(`${this.segId()}-labelmap`) : undefined;
+    const voxels: Record<number, number> = {};
+    if (segVol) {
+      const vm = segVol.voxelManager, n = vm.getScalarDataLength();
+      for (let i = 0; i < n; i++) { const v = vm.getAtIndex(i); if (v) voxels[v] = (voxels[v] ?? 0) + 1; }
+    }
+    return {
+      base: this.layers[0]?.key ?? "CT",
+      measurements: byTool,
+      measurementCount: anns.length,
+      segments: this.segments.map((sg) => ({ ...sg, voxels: voxels[sg.index] ?? 0 })).filter((sg) => sg.voxels > 0),
+    };
+  }
+  markSaved() { this.dirty = 0; this.log("saved (simulated): SR + SEG built in browser, sent for re-ingest"); this.onChange(); }
+
   setPrimary(tool: string) {
     if (tool === T.CrosshairsTool.toolName && this.viewportIds().length < 2) {
       this.log("Crosshairs need the 1×3 layout");
       return;
     }
+    if (this.isSegTool(tool)) void this.ensureSegmentation().catch((e) => this.log(`segmentation: ${e.message}`));
     this.primary = tool;
     this.applyBindings();
     this.onChange();

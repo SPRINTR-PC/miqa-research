@@ -6,7 +6,7 @@
 //   C — Chromeless, keyboard-first: full-bleed viewports, per-viewport hover HUD,
 //       Space = command palette, ? = shortcut sheet.
 // Shadow DOM kept (#191): head-injected WSI CSS is mirrored into the shadow root.
-import { LitElement, css, html, nothing } from "lit";
+import { LitElement, css, html, nothing, svg } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { BINDINGS_HELP, Stage, COLORMAPS, type Mode, type Preset, type Role, type SimCal, type ToolDef, type ViewportInfo } from "./stage.js";
 
@@ -95,6 +95,17 @@ export class MiresViewerToolbarPrototype extends LitElement {
     .lr.nums input { width: 100%; min-width: 0; background: #0b0d10; color: inherit; border: 1px solid #2b323c; border-radius: 3px; padding: 2px 4px; }
     .lr input[type=range] { width: 140px; vertical-align: middle; }
     button.x { padding: 0 6px; }
+    button.save { width: 100%; margin: 4px 0 6px; padding: 7px; text-align: left; }
+    button.save.dirty { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+    button.save .dot { color: #ffcc66; }
+    .seg { display: flex; gap: 6px; align-items: center; padding: 3px 6px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+    .seg.act { background: #1f6feb33; }
+    .sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
+    .thr { border-top: 1px solid #262c35; margin-top: 6px; padding-top: 4px; }
+    .curve { background: #0b0d10; border: 1px solid #2b323c; border-radius: 3px; cursor: crosshair; touch-action: none; display: block; }
+    .curve-h, .curve-axis { display: flex; justify-content: space-between; font-size: 10px; color: #8a94a0; }
+    .curve-read { color: #cfd6de; }
+    .curve-btns { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; } .curve-btns button { font-size: 11px; padding: 2px 6px; }
 
     /* C — chromeless */
     .C-hud { position: absolute; top: 0; left: 0; right: 0; display: flex; gap: 4px; justify-content: center; padding: 6px; opacity: 0; transition: opacity .15s; z-index: 6; }
@@ -272,7 +283,8 @@ export class MiresViewerToolbarPrototype extends LitElement {
             : html`${num("W", ww, (x) => s.setLayerRange(i, wc - x / 2, wc + x / 2))}${num("L", wc, (x) => s.setLayerRange(i, x - ww / 2, x + ww / 2))}`}</div>
           <div class="lr"><select @change=${(e: any) => s.setLayerColormap(i, e.target.value)}>
             ${COLORMAPS.map((n) => html`<option value=${n} ?selected=${n === L.colormap}>${n}</option>`)}</select></div>
-          ${i > 0 ? html`<div class="lr"><label>Opacity <input type="range" min="0" max="1" step="0.05" .value=${String(L.opacity)} @input=${(e: any) => s.setLayerOpacity(i, Number(e.target.value))}></label></div>` : nothing}
+          ${i > 0 ? html`${this.curveEditor(i)}
+            <div class="lr"><label>Overall × <input type="range" min="0" max="1" step="0.05" .value=${String(L.opacity)} @input=${(e: any) => s.setLayerOpacity(i, Number(e.target.value))}></label></div>` : nothing}
         </div>`;
       })}
       <div class="B-cal" style="color:#8a94a0">Selected layer (blue): right-drag window/level, presets and keys 0–8 apply to it.</div>
@@ -323,6 +335,7 @@ export class MiresViewerToolbarPrototype extends LitElement {
       ["Nav", ts.filter((t) => t.group === "navigate")],
       ["Measure", ts.filter((t) => t.group === "measure")],
       ["Annot.", ts.filter((t) => t.group === "annotate" || t.group === "calibrate")],
+      ["Segment", ts.filter((t) => t.group === "segment")],
     ];
     const infos = this.ready() ? this.s.info() : [];
     return html`<div class="main">
@@ -330,6 +343,10 @@ export class MiresViewerToolbarPrototype extends LitElement {
       <div class="B-rail">${groups.filter(([, g]) => g.length).map(([n, g]) => html`<h6>${n}</h6>${g.map((t) => this.toolBtn(t, html`${t.icon}<kbd>${t.key}</kbd>`))}`)}</div>
       ${this.grid()}
       <div class="B-insp">
+        ${this.ready() && this.role === "annotator" ? html`<button class="save ${this.s.dirty ? "dirty" : ""}" ?disabled=${!this.s.dirty}
+            @click=${() => (this.open = "save")} title="Save Annotations and Segmentations (Ctrl/⌘+S)">
+            💾 Save${this.s.dirty ? html` <span class="dot">●</span> unsaved changes` : " — nothing to save"}</button>` : nothing}
+        ${this.ready() && this.isVol() && (this.s.isSegTool(this.s.primary) || this.s.segments.length) ? this.segPanel() : nothing}
         ${this.isVol() && this.ready() ? html`<h5>Layout</h5><div class="B-layouts">
           ${(["axial", "sagittal", "coronal"] as const).map((o) => html`<button class=${this.s.layout === "1x1" && this.s.orientation === o ? "on" : ""} @click=${() => this.s.setOrientation(o)}><b>▢</b>${o}</button>`)}
           <button class=${this.s.layout === "1x3" ? "on" : ""} @click=${() => this.s.setLayout("1x3")}><b>▢▤</b>3 views + ✚</button></div><div class="B-cal" style="color:#8a94a0">Double-click a small view to swap it into the big one.</div>` : nothing}
@@ -340,7 +357,114 @@ export class MiresViewerToolbarPrototype extends LitElement {
         ${infos.map((v) => html`<div class="B-cal"><b>${v.label}</b>: ${v.badge ? html`<span class="badge ${v.badgeLevel}">${v.badge}</span>` : "mm"}<br><span style="color:#8a94a0">${v.badgeLegend}</span></div>`)}
         <h5>Mouse</h5>${BINDINGS_HELP.workstation.map((b) => html`<div class="B-cal">${b}</div>`)}
       </div>
+      ${this.open === "save" ? this.saveDialog() : nothing}
     </div>`;
+  }
+
+  // ---------- segmentation, opacity curve, save (B) ----------
+  @state() private thr = { lower: NaN, upper: NaN, slices: 0 };
+
+  private segPanel() {
+    const s = this.s;
+    const L = s.layers[s.activeLayer];
+    const pt = s.series(L.key).modality === "PT";
+    const lower = Number.isNaN(this.thr.lower) ? (pt ? 2.5 : 300) : this.thr.lower;
+    const upper = Number.isNaN(this.thr.upper) ? (pt ? 100 : 3000) : this.thr.upper;
+    return html`<h5>Segmentation <span style="text-transform:none;color:#8a94a0">on ${s.layers[0].key} geometry</span></h5>
+      ${s.segments.map((sg) => html`<div class="seg ${sg.index === s.activeSegment ? "act" : ""}" @click=${() => s.setActiveSegment(sg.index)}>
+        <span class="sw" style="background:${s.segmentColor(sg.index)}"></span>${sg.label}</div>`)}
+      <button @click=${() => s.addSegment()}>+ Segment</button>
+      ${s.primary === "Brush" || s.primary.endsWith("Scissors") ? html`<div class="lr"><label>Brush size <input type="range" min="2" max="60" .value=${String(s.brushSize)} @input=${(e: any) => s.setBrushSize(Number(e.target.value))}> ${s.brushSize}</label></div>` : nothing}
+      ${s.primary === "RectangleROIThreshold" ? html`<div class="thr">
+        <div class="B-cal">Draw rectangles, then fill voxels of the <b>selected layer (${L.key})</b> in range into the active segment.</div>
+        <div class="lr nums"><label>${pt ? "SUV" : "HU"} <input type="number" step="0.1" .value=${String(lower)} @change=${(e: any) => (this.thr = { ...this.thr, lower: Number(e.target.value) })}></label>
+          <label>– <input type="number" step="0.1" .value=${String(upper)} @change=${(e: any) => (this.thr = { ...this.thr, upper: Number(e.target.value) })}></label></div>
+        <div class="lr nums"><label>± slices <input type="number" min="0" .value=${String(this.thr.slices)} @change=${(e: any) => (this.thr = { ...this.thr, slices: Number(e.target.value) })}></label></div>
+        <button @click=${() => s.runThreshold(lower, upper, this.thr.slices)}>Run threshold</button></div>` : nothing}`;
+  }
+
+  @state() private curveDrag: { layer: number; idx: number } | null = null;
+  @state() private curveHover = "";
+
+  private curveDomain(i: number): [number, number] {
+    const s = this.s;
+    if (s.series(s.layers[i].key).modality === "PT") return [0, Math.max(10, ...s.layers[i].curve.map((p) => p.value))];
+    return [-1000, 2000];
+  }
+
+  /** Opacity transfer curve: click to add a breakpoint, drag to move, double-click to remove. */
+  private curveEditor(i: number) {
+    const s = this.s, L = s.layers[i];
+    const W = 226, H = 90, P = 6;
+    const [d0, d1] = this.curveDomain(i);
+    const unit = s.series(L.key).modality === "PT" ? "SUV" : "HU";
+    const X = (v: number) => P + ((v - d0) / (d1 - d0)) * (W - 2 * P);
+    const Y = (o: number) => H - P - o * (H - 2 * P);
+    const toData = (e: PointerEvent | MouseEvent, svg: SVGSVGElement) => {
+      const r = svg.getBoundingClientRect();
+      const v = d0 + ((e.clientX - r.left - P) / (W - 2 * P)) * (d1 - d0);
+      const o = (H - P - (e.clientY - r.top)) / (H - 2 * P);
+      return { value: +Math.min(d1, Math.max(d0, v)).toFixed(unit === "SUV" ? 1 : 0), opacity: +Math.min(1, Math.max(0, o)).toFixed(2) };
+    };
+    const pts = L.curve.length ? L.curve : [{ value: d0, opacity: 1 }, { value: d1, opacity: 1 }];
+    const line = [{ value: d0, opacity: pts[0].opacity }, ...pts, { value: d1, opacity: pts[pts.length - 1].opacity }]
+      .map((p) => `${X(p.value)},${Y(p.opacity)}`).join(" ");
+    const r = s.layerRange(i);
+    return html`<div class="lr"><div class="curve-h"><span>Opacity curve</span><span class="curve-read">${this.curveHover}</span></div>
+      <svg class="curve" width=${W} height=${H}
+        @pointerdown=${(e: PointerEvent) => {
+          const svg = e.currentTarget as SVGSVGElement;
+          const idx = Number((e.target as Element).getAttribute("data-idx") ?? -1);
+          svg.setPointerCapture(e.pointerId);
+          if (idx >= 0) { this.curveDrag = { layer: i, idx }; return; }
+          const p = toData(e, svg);
+          const next = [...pts, p].sort((a, b) => a.value - b.value);
+          s.setLayerCurve(i, next);
+          this.curveDrag = { layer: i, idx: next.indexOf(p) };
+        }}
+        @pointermove=${(e: PointerEvent) => {
+          const p = toData(e, e.currentTarget as SVGSVGElement);
+          this.curveHover = `${unit} ${p.value} → ${Math.round(p.opacity * 100)}%`;
+          if (!this.curveDrag || this.curveDrag.layer !== i) return;
+          const next = pts.map((q, n) => (n === this.curveDrag!.idx ? p : q));
+          s.setLayerCurve(i, next);
+          this.curveDrag = { layer: i, idx: s.layers[i].curve.indexOf(next[this.curveDrag.idx]) };
+        }}
+        @pointerup=${() => (this.curveDrag = null)}
+        @pointerleave=${() => (this.curveHover = "")}
+        @dblclick=${(e: MouseEvent) => {
+          // pointer capture retargets dblclick to the svg: find the nearest breakpoint instead
+          const r0 = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+          const dist = (q: { value: number; opacity: number }) => Math.hypot(X(q.value) - (e.clientX - r0.left), Y(q.opacity) - (e.clientY - r0.top));
+          const near = pts.reduce((best, q, n) => (dist(q) < dist(pts[best]) ? n : best), 0);
+          if (dist(pts[near]) <= 10 && pts.length > 2) s.setLayerCurve(i, pts.filter((_, n) => n !== near));
+        }}>
+        ${r.lower !== undefined ? svgBand(X(r.lower!), X(r.upper!), H) : nothing}
+        ${svgPoly(line, W, H)}
+        ${pts.map((p, n) => svgPoint(X(p.value), Y(p.opacity), n))}
+      </svg>
+      <div class="curve-axis"><span>${d0}</span><span>${unit}</span><span>${d1}</span></div>
+      <div class="curve-btns">
+        <button @click=${() => s.setLayerCurve(i, [])}>Flat</button>
+        <button @click=${() => s.setLayerCurve(i, [{ value: r.lower ?? d0, opacity: 0 }, { value: r.upper ?? d1, opacity: 1 }])}>Ramp over window</button>
+        ${unit === "SUV" ? html`<button @click=${() => s.setLayerCurve(i, [{ value: 0, opacity: 0 }, { value: 2, opacity: 0 }, { value: 4, opacity: 1 }])}>SUV 2→4</button>` : nothing}
+      </div></div>`;
+  }
+
+  private saveDialog() {
+    const sum = this.s.saveSummary();
+    const meas = Object.entries(sum.measurements);
+    return html`<div class="C-overlay" @click=${() => (this.open = "")}><div class="C-box" @click=${(e: Event) => e.stopPropagation()}>
+      <h4 style="margin:0 0 8px">Save to the Research Project</h4>
+      <div class="B-cal">Source series: <b>${sum.base}</b> (the new objects reference it)</div>
+      <h5>Annotations → DICOM SR (TID 1500)</h5>
+      ${meas.length ? meas.map(([k, n]) => html`<div class="B-cal">${n} × ${k}</div>`) : html`<div class="B-cal" style="color:#8a94a0">none</div>`}
+      <h5>Segmentations → DICOM SEG</h5>
+      ${sum.segments.length ? sum.segments.map((sg) => html`<div class="B-cal"><span class="sw" style="background:${this.s.segmentColor(sg.index)}"></span>${sg.label}: ${sg.voxels.toLocaleString()} voxels</div>`) : html`<div class="B-cal" style="color:#8a94a0">none</div>`}
+      <div class="B-cal" style="color:#8a94a0;margin-top:8px">Built in the browser, sanitized server-side and re-ingested as new Dicom Series. Saving a second time supersedes the previous version.</div>
+      <p style="display:flex;gap:8px;justify-content:flex-end"><button @click=${() => (this.open = "")}>Cancel</button>
+        <button class="on" @click=${() => { this.s.markSaved(); this.open = ""; }}>Save</button></p>
+    </div></div>`;
   }
 
   // ---------- C: chromeless / keyboard-first ----------
@@ -391,6 +515,11 @@ export class MiresViewerToolbarPrototype extends LitElement {
 
   // ---------- keyboard (all variants; C surfaces it) ----------
   private onKey(e: KeyboardEvent) {
+    if (this.ready() && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s" && this.variant === "B" && this.role === "annotator") {
+      e.preventDefault();
+      if (this.s.dirty) this.open = "save";
+      return;
+    }
     if (!this.ready() || e.metaKey || e.ctrlKey || e.altKey) return;
     const k = e.key.toLowerCase();
     if (this.variant === "C" && k === " ") { this.paletteQuery = ""; this.open = "palette"; e.preventDefault(); return; }
@@ -410,3 +539,7 @@ export class MiresViewerToolbarPrototype extends LitElement {
     if (p) this.s.applyPreset(p);
   }
 }
+
+const svgBand = (x0: number, x1: number, h: number) => svg`<rect x=${Math.min(x0, x1)} y="0" width=${Math.abs(x1 - x0)} height=${h} fill="#1f6feb22"></rect>`;
+const svgPoly = (pts: string, w: number, h: number) => svg`<polygon points="${pts} ${w - 6},${h - 6} 6,${h - 6}" fill="#ffcc6622"></polygon><polyline points=${pts} fill="none" stroke="#ffcc66" stroke-width="1.5"></polyline>`;
+const svgPoint = (x: number, y: number, n: number) => svg`<circle data-idx=${n} cx=${x} cy=${y} r="5" fill="#ffcc66" stroke="#000" style="cursor:grab"></circle>`;
