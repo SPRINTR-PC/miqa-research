@@ -318,6 +318,14 @@ Segmentations for one participant for the current viewer session. Annotators
 can never reveal.
 _Avoid_: Unblind (as a project-wide switch)
 
+### Spacing Calibration
+How trustworthy an image's pixel-to-millimetre scale is: tomographic,
+magnification-corrected, detector-plane, ultrasound-region, user-calibrated,
+unverified, or absent (measurements in pixels). Shown on every measurement and
+saved with it in an Annotation. Uncalibrated measurements are never recorded
+as millimetres.
+_Avoid_: Pixel spacing (as the trust level), scale
+
 ### Study Participant
 The person enrolled in a Research Project, represented by the `StudyParticipant`
 model. It is the only person/subject identity in this codebase — imaging data
