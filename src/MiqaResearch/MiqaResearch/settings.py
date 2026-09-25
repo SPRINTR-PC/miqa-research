@@ -7,6 +7,8 @@ from contract.constants.celery import (
     QUEUE_CALCULATE_CONSENT_STATISTICS,
     QUEUE_DICOM_INGESTION,
     QUEUE_EMAIL,
+    QUEUE_ETL_POLL,
+    QUEUE_ETL_RUN,
     QUEUE_GET_CONSENTS,
     QUEUE_OCR,
 )
@@ -97,6 +99,14 @@ env = environ.Env(
     MIRES_SANDBOX_K8S_SELF_TEST_TTL_SECONDS=(int, 300),
     MIRES_SANDBOX_K8S_EGRESS_PROBE_HOST=(str, "1.1.1.1"),
     MIRES_SANDBOX_K8S_EGRESS_PROBE_PORT=(int, 443),
+    MIRES_ETL_S3_ENDPOINT_URL=(str, None),
+    MIRES_ETL_S3_REGION_NAME=(str, "us-east-1"),
+    MIRES_ETL_S3_ACCESS_KEY_ID=(str, None),
+    MIRES_ETL_S3_SECRET_ACCESS_KEY=(str, None),
+    MIRES_ETL_POLL_INTERVAL_SECONDS=(int, 30),
+    MIRES_ETL_LOG_RETENTION_DAYS=(int, 30),
+    MIRES_ETL_JOB_MAX_AUTO_RETRIES=(int, 3),
+    MIRES_ETL_JOB_STUCK_GRACE_SECONDS=(int, 300),
     MIRES_LOGGING_LEVEL=(str, "INFO"),
     MIRES_LOGGING_DIR=(Path, BASE_DIR / "LocalOnly/Logs"),
     MIRES_OIDC_CLIENT_ID=(str, None),
@@ -225,6 +235,25 @@ SANDBOX_K8S_STAGER_IMAGE: str = env("MIRES_SANDBOX_K8S_STAGER_IMAGE")
 SANDBOX_K8S_SELF_TEST_TTL_SECONDS: int = env("MIRES_SANDBOX_K8S_SELF_TEST_TTL_SECONDS")
 SANDBOX_K8S_EGRESS_PROBE_HOST: str = env("MIRES_SANDBOX_K8S_EGRESS_PROBE_HOST")
 SANDBOX_K8S_EGRESS_PROBE_PORT: int = env("MIRES_SANDBOX_K8S_EGRESS_PROBE_PORT")
+
+# ETL orchestrator (#162): one platform-wide S3-compatible credential used to list/read every
+# project's source buckets (per-project isolation is enforced in application code via
+# EtlLocationGrant, not per-bucket IAM). ETL_POLL_INTERVAL_SECONDS is the Celery-beat fan-out
+# cadence (one poll per PipelineBinding). ETL_LOG_RETENTION_DAYS is the global default for the
+# daily log-prune task; EtlProjectSettings.log_retention_days overrides it per project.
+# ETL_JOB_MAX_AUTO_RETRIES caps automatic retry of infra-class failures only (e.g. the configured
+# SandboxBackend being unreachable) -- a script-class failure (bad exit code) or a config-class
+# runner error (unknown image key, oversized input) never auto-retries. ETL_JOB_STUCK_GRACE_SECONDS
+# is the extra grace period, on top of the Job's own resolved sandbox timeout, before a Job stuck
+# in "running" (its worker vanished mid-run, with no heartbeat mechanism) is recovered.
+ETL_S3_ENDPOINT_URL: str | None = env("MIRES_ETL_S3_ENDPOINT_URL")
+ETL_S3_REGION_NAME: str | None = env("MIRES_ETL_S3_REGION_NAME")
+ETL_S3_ACCESS_KEY_ID: str | None = env("MIRES_ETL_S3_ACCESS_KEY_ID")
+ETL_S3_SECRET_ACCESS_KEY: str | None = env("MIRES_ETL_S3_SECRET_ACCESS_KEY")
+ETL_POLL_INTERVAL_SECONDS: int = env("MIRES_ETL_POLL_INTERVAL_SECONDS")
+ETL_LOG_RETENTION_DAYS: int = env("MIRES_ETL_LOG_RETENTION_DAYS")
+ETL_JOB_MAX_AUTO_RETRIES: int = env("MIRES_ETL_JOB_MAX_AUTO_RETRIES")
+ETL_JOB_STUCK_GRACE_SECONDS: int = env("MIRES_ETL_JOB_STUCK_GRACE_SECONDS")
 
 # DICOM ingestion (#123): global default for source retention. A run deletes
 # its source file only once storage is verified, never merely on a successful
@@ -568,7 +597,10 @@ FERNET_KEY, SENSITIVE_DATA_HASH_KEY = (
 TASKS = {
     "default": {
         "BACKEND": "django_tasks_celery.CeleryBackend", # See: https://github.com/oliverhaas/django-tasks-celery
-        "QUEUES": ["default", QUEUE_OCR, QUEUE_EMAIL, QUEUE_GET_CONSENTS, QUEUE_CALCULATE_CONSENT_STATISTICS, QUEUE_DICOM_INGESTION],
+        "QUEUES": [
+            "default", QUEUE_OCR, QUEUE_EMAIL, QUEUE_GET_CONSENTS, QUEUE_CALCULATE_CONSENT_STATISTICS,
+            QUEUE_DICOM_INGESTION, QUEUE_ETL_POLL, QUEUE_ETL_RUN,
+        ],
     }
 }
 CELERY_BROKER_URL = env("MIRES_CELERY_BROKER_URL", default="amqp://guest:guest@miresrabbit:5672//")
