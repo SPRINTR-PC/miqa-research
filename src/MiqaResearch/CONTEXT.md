@@ -384,6 +384,18 @@ duplicate-detection intact. Also called HashUID (CTP-style).
 _Avoid_: Anonymization (that strips identifying data without preserving per-project linkage)
 See Dicom File.
 
+### De-identification Profile
+The single, system-wide set of rules that removes or replaces identifying
+attributes in DICOM headers wherever the platform exposes them — the stored
+metadata dump and everything served to the viewer or bound machine clients
+under `read`. Based on the DICOM PS3.15 Basic Profile, keeping patient
+characteristics, full dates, device and institution identity, safe private
+attributes and a small set of structural descriptors. Patient name and ID are
+replaced by the Study Participant's pseudonym; all instance UIDs undergo UID
+Pseudonymization. Not configurable per Research Project. Does not touch pixel
+data: burned-in text is only flagged. See ADR 0028.
+_Avoid_: PHI tags, sanitizer (implementation), anonymization profile
+
 ### Chart Grouping
 One of possibly several alternative groupings of the same underlying dataset
 that a chart web component's `dataUrl` endpoint can return in a single
@@ -574,6 +586,51 @@ scripts run in-process.
 | 0025 | ETL orchestrator: SandboxBackend.run() stays blocking, no async start/poll split | Accepted |
 | 0026 | Viewer-made Annotations and Segmentations stored as re-ingested DICOM objects, with Blinded Annotation | Accepted |
 | 0027 | Machine clients bound to one project; Project Admins may grant raw DICOM access | Accepted |
+| 0028 | De-identification Profile: PS3.15 Basic with retention options, fixed system-wide | Accepted |
+
+### ADR 0028 — De-identification Profile: PS3.15 Basic with retention options, fixed system-wide
+
+**Context**: The shared sanitizer, used by the ingestion metadata dump and by
+WADO-RS at serve time, stripped only 19 hand-picked tags. That left 153 PS3.15
+Basic Profile gaps (AccessionNumber, OriginalAttributesSequence,
+IconImageSequence, observer names, …), every private tag, and 45 unrewritten
+UID tags (wayfinder map: DICOM viewer web component — design spec, issue #176;
+research #204, decided in #205). The viewer needs SUV inputs, spacing,
+series descriptions and cross-object UID references. The alternatives were
+keeping the 19-tag list, strict Basic with date shifting, or a profile chosen
+per project.
+
+**Decision**: One fixed De-identification Profile, driven by the PS3.15
+Table E.1-1 data: Basic Profile + Retain Patient Characteristics + Retain
+Longitudinal Temporal Information with Full Dates + Retain Device Identity +
+Retain Institution Identity + Retain Safe Private, plus a local exception for
+GE (0009,xx0D) (`GEMS_PETD_01`) post-injection datetime. Every instance UID
+in E.1-1 is rewritten with the per-project HashUID; class and transfer-syntax
+UIDs aren't. PatientName and PatientID are replaced with the Study
+Participant's pseudonym. A fixed allowlist of structural descriptors
+(Study/Series Description, ProtocolName, BodyPartExamined) is kept as-is and
+other free-text descriptors are removed. Served headers carry
+`PatientIdentityRemoved=YES` and `DeidentificationMethod` plus codes for only
+the options actually applied, and the text notes the descriptor deviation.
+The same profile applies to the metadata dump, and a backfill task
+re-sanitizes existing dumps. The viewer flags series with burned-in
+annotation (`BurnedInAnnotation=YES`, or missing on SC/US) and doesn't
+scrub pixels.
+
+**Consequences**:
+- Full dates rather than shifted dates: the app already stores and shows
+  real study dates, so a shift applied only when serving would put the
+  viewer out of step with the app and protect almost nothing. Date shifting
+  would have to be a decision for the whole app.
+- Keeping descriptors without cleaning them isn't Clean Descriptors
+  conformance. That residual risk is accepted because the series list needs
+  them.
+- Rewriting every UID keeps SEG/SR references to their source images
+  resolvable once the source UIDs are pseudonyms.
+- The raw-bytes endpoints (`dicom:raw`, ADR 0027) still return the original
+  files. The profile governs `read` only.
+- Supersedes decision 3 of the WADO-RS ticket (#190): "reuse
+  `PHI_TAG_KEYWORDS` exactly".
 
 ### ADR 0027 — Machine clients bound to one project; Project Admins may grant raw DICOM access
 
