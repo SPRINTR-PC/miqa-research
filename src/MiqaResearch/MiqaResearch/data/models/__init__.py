@@ -10,6 +10,7 @@ from .etl_job import EtlJob, EtlJobInput
 from .etl_processed_file import EtlProcessedFile
 from .etl_project_settings import EtlProjectSettings
 from .etl_location_grant import EtlLocationGrant
+from .etl_pending_group import EtlPendingGroup
 from .visit_occurrence import VisitOccurrence
 from .dicom_study import DicomStudy
 from .dicom_series import DicomSeries

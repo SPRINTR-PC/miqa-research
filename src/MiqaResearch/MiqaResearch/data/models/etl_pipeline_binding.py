@@ -2,6 +2,8 @@ from uuid import uuid7
 
 from django.db import models
 
+from contract.constants.etl import PIPELINE_BINDING_GROUPING_CHOICES, PIPELINE_BINDING_GROUPING_FILE
+
 from .etl_script import EtlScriptVersion
 from .research_project import ResearchProject
 
@@ -13,6 +15,20 @@ class PipelineBinding(models.Model):
         blank=False, null=False, db_index=True)
     source_bucket = models.CharField(max_length=200, blank=False, null=False)
     source_prefix = models.CharField(max_length=500, blank=True, default="")
+    grouping_mode = models.CharField(
+        max_length=10, choices=PIPELINE_BINDING_GROUPING_CHOICES, default=PIPELINE_BINDING_GROUPING_FILE,
+        blank=False, null=False,
+        help_text="\"file\": each new source file queues its own Job immediately. \"folder\": each "
+                   "immediate child directory under source_prefix is tracked to quiescence before "
+                   "queueing one Job for the whole directory.")
+    quiescence_seconds = models.PositiveIntegerField(
+        default=300,
+        help_text="Folder-grouped bindings only: how long a directory must see no new files before "
+                   "its Job is queued.")
+    config = models.JSONField(
+        default=dict, blank=True,
+        help_text="Config values passed to the Script's manifest.json and snapshotted onto every EtlJob "
+                   "queued from this Binding.")
     script_version = models.ForeignKey(
         EtlScriptVersion, on_delete=models.PROTECT, related_name="pipeline_bindings", blank=False, null=False,
         help_text="The pinned Script Version this Binding runs; a script edit elsewhere never changes it.")
