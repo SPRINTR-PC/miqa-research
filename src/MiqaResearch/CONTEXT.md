@@ -326,6 +326,19 @@ saved with it in an Annotation. Uncalibrated measurements are never recorded
 as millimetres.
 _Avoid_: Pixel spacing (as the trust level), scale
 
+### Related Series
+The other Dicom Series of the same Study Participant that the viewer offers
+beside the ones it opened, to fuse or to show instead. Limited by Participant
+Visibility like any series.
+_Avoid_: Study list, other scans
+
+### Fusion
+Showing one or more overlay Dicom Series on top of a base series in the viewer,
+each with its own window, colormap and opacity. Only series sharing the base's
+Frame of Reference can be fused; nothing is registered or resampled into a new
+series. Annotations and Segmentations made on a fusion reference the base.
+_Avoid_: Registration, blend, overlay (as the whole view)
+
 ### Study Participant
 The person enrolled in a Research Project, represented by the `StudyParticipant`
 model. It is the only person/subject identity in this codebase — imaging data
