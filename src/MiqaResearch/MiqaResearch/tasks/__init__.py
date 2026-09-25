@@ -1,3 +1,10 @@
 from .consent.participant_consent import fetch_participant_consent
 from .dicom_handling.tasks import ingest_dicom_source
+from .etl_orchestrator.tasks import (
+    fan_out_etl_polls,
+    poll_pipeline_binding,
+    prune_etl_job_logs,
+    recover_stuck_etl_jobs,
+    run_etl_job,
+)
 from .ocr import run_ocr_on_prom_data
