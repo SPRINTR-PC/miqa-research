@@ -1,12 +1,15 @@
 import os
 
 from celery import Celery
+from celery.schedules import crontab
 from kombu import Queue
 
 from contract.constants.celery import (
     QUEUE_CALCULATE_CONSENT_STATISTICS,
     QUEUE_DICOM_INGESTION,
     QUEUE_EMAIL,
+    QUEUE_ETL_POLL,
+    QUEUE_ETL_RUN,
     QUEUE_GET_CONSENTS,
     QUEUE_OCR,
 )
@@ -25,6 +28,8 @@ app.conf.task_queues = (
     Queue(QUEUE_GET_CONSENTS, queue_arguments={"x-queue-type": "quorum"}, routing_key="data.get.consent.#"),
     Queue(QUEUE_OCR, queue_arguments={"x-queue-type": "quorum"}, routing_key="analysis.ocr.#"),
     Queue(QUEUE_DICOM_INGESTION, queue_arguments={"x-queue-type": "quorum"}, routing_key="analysis.dicom.#"),
+    Queue(QUEUE_ETL_POLL, queue_arguments={"x-queue-type": "quorum"}, routing_key="etl.poll.#"),
+    Queue(QUEUE_ETL_RUN, queue_arguments={"x-queue-type": "quorum"}, routing_key="etl.run.#"),
 )
 app.conf.broker_transport_options = {'confirm_publish': True}
 # Ingestion runs over large folders/S3 prefixes are far more variable in
@@ -39,6 +44,27 @@ app.conf.task_annotations = {
     "MiqaResearch.tasks.dicom_handling.tasks.ingest_dicom_source": {
         "time_limit": DICOM_INGESTION_TASK_TIME_LIMIT,
         "soft_time_limit": DICOM_INGESTION_TASK_SOFT_TIME_LIMIT,
+    },
+}
+# ETL orchestrator (#162): fan_out_etl_polls is the one Celery-beat-scheduled entry point in the
+# codebase so far -- there's no existing django_celery_beat.PeriodicTask precedent to follow, so
+# this seeds the DatabaseScheduler's PeriodicTask rows via the static beat_schedule dict, which it
+# syncs in on startup (and which stays authoritative for these three entries; an operator editing
+# them via /django-admin instead is not expected to persist across a scheduler restart).
+from django.conf import settings as _django_settings  # noqa: E402
+
+app.conf.beat_schedule = {
+    "etl-fan-out-polls": {
+        "task": "MiqaResearch.tasks.etl_orchestrator.tasks.fan_out_etl_polls",
+        "schedule": _django_settings.ETL_POLL_INTERVAL_SECONDS,
+    },
+    "etl-recover-stuck-jobs": {
+        "task": "MiqaResearch.tasks.etl_orchestrator.tasks.recover_stuck_etl_jobs",
+        "schedule": 60.0,
+    },
+    "etl-prune-job-logs": {
+        "task": "MiqaResearch.tasks.etl_orchestrator.tasks.prune_etl_job_logs",
+        "schedule": crontab(hour=2, minute=0),
     },
 }
 app.autodiscover_tasks([

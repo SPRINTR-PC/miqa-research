@@ -1,8 +1,13 @@
 from uuid import uuid7
 
 from django.db import models
+from django.db.models import Q
 
-from contract.constants.etl import ETL_JOB_STATUS_CHOICES, ETL_JOB_STATUS_PENDING
+from contract.constants.etl import (
+    ETL_JOB_STATUS_CHOICES,
+    ETL_JOB_STATUS_PENDING,
+    ETL_JOB_STATUS_RUNNING,
+)
 
 from .etl_pipeline_binding import PipelineBinding
 from .etl_script import EtlScriptVersion
@@ -18,6 +23,12 @@ class EtlJob(models.Model):
     status = models.CharField(
         max_length=10, choices=ETL_JOB_STATUS_CHOICES, default=ETL_JOB_STATUS_PENDING,
         blank=False, null=False, db_index=True)
+    attempt = models.PositiveIntegerField(
+        default=1, help_text="1 for the original run; incremented for each capped auto-retry.")
+    retry_of = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, related_name="retries", blank=True, null=True,
+        help_text="The EtlJob this one automatically retries, for an infra-class failure. Null for attempt 1 "
+                   "or a manual retry.")
     config_snapshot = models.JSONField(
         default=dict, blank=True, help_text="Snapshot of the Binding's config at the time this Job was queued.")
     sandbox_image_digest = models.CharField(max_length=200, blank=True, default="")
@@ -30,6 +41,13 @@ class EtlJob(models.Model):
     class Meta:
         db_table = "mires_etl_job"
         ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["binding"],
+                condition=Q(status__in=[ETL_JOB_STATUS_PENDING, ETL_JOB_STATUS_RUNNING]),
+                name="mires_etl_job_one_active_per_binding",
+            ),
+        ]
 
     def __str__(self):
         return f"EtlJob {self.id} ({self.status})"

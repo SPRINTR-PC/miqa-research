@@ -1,6 +1,5 @@
 from django.utils.translation import gettext_lazy
 
-
 ETL_SCRIPT_ORIGIN_NATIVE = "native"
 ETL_SCRIPT_ORIGIN_CUSTOM = "custom"
 
@@ -19,4 +18,12 @@ ETL_JOB_STATUS_CHOICES = [
     (ETL_JOB_STATUS_RUNNING, gettext_lazy("Running")),
     (ETL_JOB_STATUS_SUCCEEDED, gettext_lazy("Succeeded")),
     (ETL_JOB_STATUS_FAILED, gettext_lazy("Failed")),
+]
+
+PIPELINE_BINDING_GROUPING_FILE = "file"
+PIPELINE_BINDING_GROUPING_FOLDER = "folder"
+
+PIPELINE_BINDING_GROUPING_CHOICES = [
+    (PIPELINE_BINDING_GROUPING_FILE, gettext_lazy("Per file")),
+    (PIPELINE_BINDING_GROUPING_FOLDER, gettext_lazy("Folder, with quiescence wait")),
 ]

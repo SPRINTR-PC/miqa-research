@@ -34,6 +34,10 @@ class EtlScript(models.Model):
         # its EtlScripts past the "no hard delete" rule enforced below.
         ResearchProject, on_delete=models.PROTECT, related_name="etl_scripts", blank=True, null=True,
         help_text="Owning project for a custom script; null for a native (global) script.")
+    datatype_name = models.CharField(
+        max_length=100, blank=True, default="",
+        help_text="Name of the registered ETL Datatype (MiqaResearch.etl_datatypes) this script's "
+                   "output rows conform to. Stable across the script's versions.")
     archived_at = models.DateTimeField(
         blank=True, null=True, help_text="Scripts are archived, never hard-deleted.")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -68,6 +72,10 @@ class EtlScriptVersion(models.Model):
     source = models.FileField(
         upload_to=etl_script_version_upload_to, storage=EtlScriptStorage(), blank=False, null=False)
     sha256 = models.CharField(max_length=64, blank=False, null=False, help_text="SHA-256 hex of the source file bytes.")
+    image_key = models.CharField(
+        max_length=100, blank=True, default="",
+        help_text="Sandbox image key (language + runtime + release) this Version's source is written "
+                   "against; resolved through the platform's image allowlist at run time.")
     created_at = models.DateTimeField(auto_now_add=True)
 
     objects = EtlScriptVersionQuerySet.as_manager()

@@ -6,12 +6,19 @@ from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, transaction
 
-from contract.constants.etl import ETL_SCRIPT_ORIGIN_CUSTOM, ETL_SCRIPT_ORIGIN_NATIVE
+from contract.constants.etl import (
+    ETL_JOB_STATUS_FAILED,
+    ETL_JOB_STATUS_SUCCEEDED,
+    ETL_SCRIPT_ORIGIN_CUSTOM,
+    ETL_SCRIPT_ORIGIN_NATIVE,
+    PIPELINE_BINDING_GROUPING_FILE,
+)
 from MiqaResearch.data.models import (
     Concept,
     EtlJob,
     EtlJobInput,
     EtlLocationGrant,
+    EtlPendingGroup,
     EtlProcessedFile,
     EtlProjectSettings,
     EtlScript,
@@ -22,7 +29,7 @@ from MiqaResearch.data.models import (
     StudyParticipant,
     VisitOccurrence,
 )
-from MiqaResearch.data.models.etl_project_settings import get_max_script_source_bytes
+from MiqaResearch.data.models.etl_project_settings import get_log_retention_days, get_max_script_source_bytes
 
 
 @pytest.fixture(autouse=True)
@@ -299,6 +306,24 @@ def test_etl_project_settings_overrides_log_retention_for_a_project(research_pro
 
 
 @pytest.mark.django_db
+def test_get_log_retention_days_falls_back_to_the_global_default_with_no_override(research_project, settings):
+    settings.ETL_LOG_RETENTION_DAYS = 30
+    assert get_log_retention_days(research_project) == 30
+
+
+@pytest.mark.django_db
+def test_get_log_retention_days_returns_the_project_override_when_set(research_project):
+    EtlProjectSettings.objects.create(project=research_project, log_retention_days=7)
+
+    assert get_log_retention_days(research_project) == 7
+
+
+def test_get_log_retention_days_returns_the_global_default_for_no_project(settings):
+    settings.ETL_LOG_RETENTION_DAYS = 30
+    assert get_log_retention_days(None) == 30
+
+
+@pytest.mark.django_db
 def test_get_max_script_source_bytes_falls_back_to_the_global_default_with_no_override(research_project, settings):
     assert get_max_script_source_bytes(research_project) == settings.ETL_SCRIPT_MAX_SOURCE_BYTES
 
@@ -321,6 +346,95 @@ def test_etl_location_grant_scopes_a_bucket_to_a_project(research_project):
     assert grant.project_id == research_project.id
 
 
+# --- Orchestrator schema additions (#162) ---------------------------------
+
+@pytest.mark.django_db
+def test_etl_script_datatype_name_defaults_to_empty(etl_script):
+    assert etl_script.datatype_name == ""
+
+
+@pytest.mark.django_db
+def test_etl_script_version_image_key_defaults_to_empty(etl_script_version):
+    assert etl_script_version.image_key == ""
+
+
+@pytest.mark.django_db
+def test_pipeline_binding_grouping_mode_defaults_to_file(pipeline_binding):
+    assert pipeline_binding.grouping_mode == PIPELINE_BINDING_GROUPING_FILE
+
+
+@pytest.mark.django_db
+def test_pipeline_binding_quiescence_seconds_has_a_sensible_default(pipeline_binding):
+    assert pipeline_binding.quiescence_seconds == 300
+
+
+@pytest.mark.django_db
+def test_pipeline_binding_config_defaults_to_empty_dict(pipeline_binding):
+    assert pipeline_binding.config == {}
+
+
+@pytest.mark.django_db
+def test_etl_job_attempt_defaults_to_one(etl_job):
+    assert etl_job.attempt == 1
+
+
+@pytest.mark.django_db
+def test_etl_job_retry_of_defaults_to_none(etl_job):
+    assert etl_job.retry_of is None
+
+
+@pytest.mark.django_db
+def test_etl_job_retry_of_links_to_the_original_job(etl_job):
+    etl_job.status = ETL_JOB_STATUS_FAILED
+    etl_job.save()
+
+    retry = EtlJob.objects.create(
+        binding=etl_job.binding, script_version=etl_job.script_version, attempt=2, retry_of=etl_job,
+    )
+
+    assert retry.retry_of_id == etl_job.id
+
+
+@pytest.mark.django_db
+def test_only_one_active_etl_job_per_binding_is_allowed(etl_job):
+    # etl_job fixture is already status=pending (the model default) for its binding.
+    with pytest.raises(IntegrityError):
+        with transaction.atomic():
+            EtlJob.objects.create(binding=etl_job.binding, script_version=etl_job.script_version)
+
+
+@pytest.mark.django_db
+def test_a_second_job_is_allowed_once_the_first_is_no_longer_active(etl_job):
+    etl_job.status = ETL_JOB_STATUS_SUCCEEDED
+    etl_job.save()
+
+    second = EtlJob.objects.create(binding=etl_job.binding, script_version=etl_job.script_version)
+
+    assert second.pk != etl_job.pk
+
+
+@pytest.mark.django_db
+def test_etl_pending_group_tracks_quiescence_state(pipeline_binding):
+    from django.utils import timezone
+
+    group = EtlPendingGroup.objects.create(
+        binding=pipeline_binding, group_key="2026-09-01", last_seen_at=timezone.now())
+
+    assert group.binding_id == pipeline_binding.id
+
+
+@pytest.mark.django_db
+def test_etl_pending_group_rejects_duplicate_binding_and_group_key(pipeline_binding):
+    from django.utils import timezone
+
+    EtlPendingGroup.objects.create(binding=pipeline_binding, group_key="2026-09-01", last_seen_at=timezone.now())
+
+    with pytest.raises(IntegrityError):
+        with transaction.atomic():
+            EtlPendingGroup.objects.create(
+                binding=pipeline_binding, group_key="2026-09-01", last_seen_at=timezone.now())
+
+
 # --- Django admin registration -------------------------------------------
 
 def test_all_etl_models_are_registered_in_django_admin():
@@ -333,5 +447,6 @@ def test_all_etl_models_are_registered_in_django_admin():
         EtlProcessedFile,
         EtlProjectSettings,
         EtlLocationGrant,
+        EtlPendingGroup,
     ):
         assert admin.site.is_registered(model), f"{model.__name__} is not registered in Django admin"

@@ -500,6 +500,25 @@ scripts run in-process.
 | 0022 | Chart Palette: fixed categorical set, brand-anchoring rejected; live-derived sequential ramp | Accepted |
 | 0023 | Chart Grid: combined dataUrl, shared per-type trace-builder functions, subplot-attributed events | Accepted |
 | 0024 | Data-access audit events kept 10 years, separate from 90-day auth-event retention | Accepted |
+| 0025 | ETL orchestrator: SandboxBackend.run() stays blocking, no async start/poll split | Accepted |
+
+### ADR 0025 — ETL orchestrator: SandboxBackend.run() stays blocking, no async start/poll split
+
+**Context**: The ETL orchestrator (#162) runs each Job's sandbox execution inside a single
+`QUEUE_ETL_RUN` Celery task, calling `SandboxBackend.run()` and waiting for it to return --
+blocking that task for up to the Binding's resolved sandbox timeout (10 minutes by default). An
+async alternative -- splitting `SandboxBackend` into a `start()` plus a separate poll-for-status
+task -- was named and explicitly deferred during the pipeline's spec (issue #156, decision #146).
+
+**Decision**: `run()` stays synchronous and blocking within its own Celery task. A task that never
+returns (worker crash, node eviction) is recovered by a separate timeout-plus-grace sweep
+(`recover_stuck_etl_jobs`), not by the run task reporting its own heartbeat.
+
+**Consequences**:
+- A `QUEUE_ETL_RUN` worker is occupied for the whole sandbox run; the queue's own worker
+  concurrency, not this task, bounds how many Jobs run at once.
+- Revisiting this toward an async start/poll split would reopen #146 (Sandbox runner spec) and
+  change the `SandboxBackend` interface itself, not just the orchestrator.
 
 ### ADR 0024 — Data-access audit events kept 10 years, separate from 90-day auth-event retention
 

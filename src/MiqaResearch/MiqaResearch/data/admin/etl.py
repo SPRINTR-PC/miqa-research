@@ -5,6 +5,7 @@ from MiqaResearch.data.models import (
     EtlJob,
     EtlJobInput,
     EtlLocationGrant,
+    EtlPendingGroup,
     EtlProcessedFile,
     EtlProjectSettings,
     EtlScript,
@@ -89,3 +90,13 @@ class EtlLocationGrantAdmin(ModelAdmin):
 
     class Meta:
         model = EtlLocationGrant
+
+
+@admin.register(EtlPendingGroup)
+class EtlPendingGroupAdmin(ModelAdmin):
+    list_display = ("binding", "group_key", "last_seen_at")
+    list_filter = ("binding",)
+    search_fields = ("group_key",)
+
+    class Meta:
+        model = EtlPendingGroup
