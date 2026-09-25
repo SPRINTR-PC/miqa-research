@@ -9,7 +9,12 @@ import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 
-from contract.constants.etl import ETL_JOB_STATUS_FAILED, ETL_JOB_STATUS_PENDING, ETL_JOB_STATUS_RUNNING, ETL_SCRIPT_ORIGIN_CUSTOM
+from contract.constants.etl import (
+    ETL_JOB_STATUS_FAILED,
+    ETL_JOB_STATUS_PENDING,
+    ETL_JOB_STATUS_RUNNING,
+    ETL_SCRIPT_ORIGIN_CUSTOM,
+)
 from MiqaResearch.data.models import EtlJob, EtlScript, EtlScriptVersion, PipelineBinding, ResearchProject
 from MiqaResearch.tasks.etl_orchestrator import stuck
 

@@ -10,7 +10,14 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 
 from contract.constants.etl import ETL_SCRIPT_ORIGIN_CUSTOM
-from MiqaResearch.data.models import EtlJob, EtlProjectSettings, EtlScript, EtlScriptVersion, PipelineBinding, ResearchProject
+from MiqaResearch.data.models import (
+    EtlJob,
+    EtlProjectSettings,
+    EtlScript,
+    EtlScriptVersion,
+    PipelineBinding,
+    ResearchProject,
+)
 from MiqaResearch.tasks.etl_orchestrator import log_retention
 
 

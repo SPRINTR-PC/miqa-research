@@ -1,6 +1,5 @@
 from django.utils.translation import gettext_lazy
 
-
 ETL_SCRIPT_ORIGIN_NATIVE = "native"
 ETL_SCRIPT_ORIGIN_CUSTOM = "custom"
 

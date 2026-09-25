@@ -190,8 +190,10 @@ def test_run_job_builds_the_spec_from_the_script_version_and_binding_config(
 
 # --- Script-class failures: never auto-retried ----------------------------
 
-@pytest.mark.parametrize("exit_code", [contract.EXIT_SCRIPT_ERROR, contract.EXIT_CONTRACT_VIOLATION, contract.EXIT_TIMEOUT_OR_KILLED])
-def test_run_job_script_class_exit_codes_fail_without_creating_a_retry(monkeypatch, job, job_input, s3_input, exit_code):
+@pytest.mark.parametrize(
+    "exit_code", [contract.EXIT_SCRIPT_ERROR, contract.EXIT_CONTRACT_VIOLATION, contract.EXIT_TIMEOUT_OR_KILLED])
+def test_run_job_script_class_exit_codes_fail_without_creating_a_retry(
+        monkeypatch, job, job_input, s3_input, exit_code):
     backend = FakeSandboxBackend(result=_failure_result(exit_code, log=b"it went wrong"))
     monkeypatch.setattr(runner, "get_sandbox_backend", lambda: backend)
 
@@ -238,4 +240,5 @@ def _success_result(result_jsonl: bytes):
 
 def _failure_result(exit_code: int, *, log: bytes):
     from MiqaResearch.etl_sandbox import SandboxRunResult
-    return SandboxRunResult(exit_code=exit_code, result_jsonl=None, log=log, killed=(exit_code == contract.EXIT_TIMEOUT_OR_KILLED))
+    killed = exit_code == contract.EXIT_TIMEOUT_OR_KILLED
+    return SandboxRunResult(exit_code=exit_code, result_jsonl=None, log=log, killed=killed)

@@ -99,7 +99,8 @@ def test_file_mode_a_new_file_queues_a_job_immediately(research_project, etl_scr
     assert job is not None
     assert job.binding_id == binding.id
     assert job.config_snapshot == binding.config
-    assert list(EtlJobInput.objects.filter(job=job).values_list("bucket", "key")) == [("bucket", "incoming-prefix/a.csv")]
+    assert list(EtlJobInput.objects.filter(job=job).values_list("bucket", "key")) == [
+        ("bucket", "incoming-prefix/a.csv")]
     assert EtlProcessedFile.objects.filter(binding=binding, key="incoming-prefix/a.csv").exists()
 
 

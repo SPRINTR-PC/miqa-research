@@ -15,7 +15,6 @@ from moto import mock_aws
 
 from contract.constants.etl import (
     ETL_JOB_STATUS_FAILED,
-    ETL_JOB_STATUS_PENDING,
     ETL_JOB_STATUS_RUNNING,
     ETL_JOB_STATUS_SUCCEEDED,
     ETL_SCRIPT_ORIGIN_CUSTOM,

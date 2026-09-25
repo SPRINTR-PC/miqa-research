@@ -105,8 +105,10 @@ def test_config_class_exceptions_fail_permanently_without_a_retry(monkeypatch, j
     assert not EtlJob.objects.filter(retry_of=job).exists()
 
 
-def test_an_infra_class_exception_queues_a_capped_auto_retry(monkeypatch, job, job_input, s3_input, fake_run_etl_job_task):
-    monkeypatch.setattr(runner, "get_sandbox_backend", lambda: _RaisingBackend(ConnectionError("no route to backend")))
+def test_an_infra_class_exception_queues_a_capped_auto_retry(
+        monkeypatch, job, job_input, s3_input, fake_run_etl_job_task):
+    monkeypatch.setattr(
+        runner, "get_sandbox_backend", lambda: _RaisingBackend(ConnectionError("no route to backend")))
 
     finished = runner.run_job(str(job.id))
 
