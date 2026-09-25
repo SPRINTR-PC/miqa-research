@@ -76,11 +76,13 @@ const TOOLS: Record<string, ToolDef> = {
   SphereScissors: { id: T.SphereScissorsTool.toolName, label: "Sphere scissors (3D)", key: "y", group: "segment", icon: "⬤", annotateOnly: true },
   ThresholdROI: { id: T.RectangleROIThresholdTool.toolName, label: "Rectangle ROI threshold", key: "m", group: "segment", icon: "▦", annotateOnly: true },
   Eraser: { id: "Eraser", label: "Eraser (or right-drag with a segment tool)", key: "d", group: "segment", icon: "⌫", annotateOnly: true },
+  Polygon: { id: "PolygonSeg", label: "Polygon (click vertices, double-click or click first point to close)", key: "k", group: "segment", icon: "⬠", annotateOnly: true },
 };
-const SEG_TOOLS = ["Brush", "Eraser", "RectScissors", "CircleScissors", "SphereScissors", "ThresholdROI"];
+const SEG_TOOLS = ["Brush", "Eraser", "Polygon", "RectScissors", "CircleScissors", "SphereScissors", "ThresholdROI"];
 /** Right-drag with a segment tool erases with the same shape (#201 feedback). */
 const ERASE_PARTNER: Record<string, string> = {
   [T.BrushTool.toolName]: "Eraser",
+  PolygonSeg: "PolygonSegErase",
   [T.RectangleScissorsTool.toolName]: `${T.RectangleScissorsTool.toolName}Erase`,
   [T.CircleScissorsTool.toolName]: `${T.CircleScissorsTool.toolName}Erase`,
   [T.SphereScissorsTool.toolName]: `${T.SphereScissorsTool.toolName}Erase`,
@@ -158,7 +160,7 @@ function initCornerstone() {
       T.WindowLevelTool, T.PanTool, T.ZoomTool, T.StackScrollTool, T.CrosshairsTool, T.LengthTool,
       T.AngleTool, T.BidirectionalTool, T.ProbeTool, T.RectangleROITool, T.EllipticalROITool,
       T.PlanarFreehandROITool, T.ArrowAnnotateTool, CalibrateTool,
-      T.BrushTool, T.RectangleScissorsTool, T.CircleScissorsTool, T.SphereScissorsTool, T.RectangleROIThresholdTool,
+      T.SplineROITool, T.BrushTool, T.RectangleScissorsTool, T.CircleScissorsTool, T.SphereScissorsTool, T.RectangleROIThresholdTool,
     ].forEach((t) => T.addTool(t as any));
   })();
   return initPromise;
@@ -318,7 +320,7 @@ export class Stage {
       await this.setupVolumes();
     }
     eventTarget.addEventListener(T.Enums.Events.ANNOTATION_COMPLETED, this.onAnnotationCompleted as any);
-    const helper = ["Crosshairs", T.RectangleROIThresholdTool.toolName, CalibrateTool.toolName];
+    const helper = ["Crosshairs", T.RectangleROIThresholdTool.toolName, CalibrateTool.toolName, "PolygonSeg", "PolygonSegErase"];
     for (const ev of [T.Enums.Events.ANNOTATION_COMPLETED, T.Enums.Events.ANNOTATION_MODIFIED, T.Enums.Events.ANNOTATION_REMOVED]) {
       eventTarget.addEventListener(ev, (e: any) => {
         if (helper.includes(e.detail?.annotation?.metadata?.toolName)) return;
@@ -378,12 +380,16 @@ export class Stage {
           getReferenceLineDraggableRotatable: () => true,
           getReferenceLineSlabThicknessControlsOn: () => false,
         });
-      } else if (t.id !== "Eraser") this.tg.addTool(t.id);
+      } else if (t.id !== "Eraser" && t.id !== "PolygonSeg") this.tg.addTool(t.id);
     }
     if (this.tools().some((t) => t.group === "segment")) {
       this.tg.addToolInstance("Eraser", T.BrushTool.toolName, { activeStrategy: "ERASE_INSIDE_CIRCLE" });
+      // Polygon = linear-spline contour, rasterized into the labelmap on completion (see fillPolygon)
+      const poly = { calculateStats: false, spline: { type: "LINEAR", drawPreviewEnabled: true } };
+      this.tg.addToolInstance("PolygonSeg", T.SplineROITool.toolName, poly);
+      this.tg.addToolInstance("PolygonSegErase", T.SplineROITool.toolName, poly);
       for (const [tool, erase] of Object.entries(ERASE_PARTNER)) {
-        if (erase !== "Eraser") this.tg.addToolInstance(erase, tool, { activeStrategy: "ERASE_INSIDE" });
+        if (erase !== "Eraser" && tool !== "PolygonSeg") this.tg.addToolInstance(erase, tool, { activeStrategy: "ERASE_INSIDE" });
       }
     }
     // fixed secondary bindings (needs the navigate tools present even if hidden from the toolbar)
@@ -714,6 +720,60 @@ export class Stage {
     T.segmentation.triggerSegmentationEvents.triggerSegmentationDataModified(this.segId());
   }
 
+  /** Rasterize a closed polygon into the labelmap on its view plane (value 0 = erase), then drop the contour. */
+  private fillPolygon(a: any, value: number) {
+    const pts: number[][] = a.data.contour?.polyline ?? a.data.handles.points;
+    T.annotation.state.removeAnnotation(a.annotationUID);
+    const inside = (x: number, y: number, poly: number[][]) => {
+      let c = false;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const [xi, yi] = poly[i], [xj, yj] = poly[j];
+        if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c;
+      }
+      return c;
+    };
+    let n = 0;
+    if (this.mode === "stack") {
+      const refId = a.metadata.referencedImageId;
+      const k = this.ids.CT.indexOf(refId);
+      const lm: any = csCache.getImage(this.stackLabelmapIds[k]);
+      const img: any = csCache.getImage(refId);
+      if (!lm || !img) return this.log("polygon: image not loaded");
+      const poly = pts.map((p) => utilities.worldToImageCoords(refId, p as any) as number[]);
+      const xs = poly.map((p) => p[0]), ys = poly.map((p) => p[1]);
+      for (let r = Math.max(0, Math.floor(Math.min(...ys))); r <= Math.min(img.rows - 1, Math.ceil(Math.max(...ys))); r++) {
+        for (let c = Math.max(0, Math.floor(Math.min(...xs))); c <= Math.min(img.columns - 1, Math.ceil(Math.max(...xs))); c++) {
+          if (inside(c, r, poly) && (value || lm.voxelManager.getAtIndex(r * img.columns + c) === this.activeSegment)) {
+            lm.voxelManager.setAtIndex(r * img.columns + c, value); n++;
+          }
+        }
+      }
+    } else {
+      const seg: any = (csCache as any).getVolume(`${this.segId()}-labelmap`);
+      const ijk = pts.map((p) => seg.imageData.worldToIndex(p) as number[]);
+      const span = [0, 1, 2].map((ax) => Math.max(...ijk.map((p) => p[ax])) - Math.min(...ijk.map((p) => p[ax])));
+      const normal = span.indexOf(Math.min(...span));
+      if (span[normal] > 1) return this.log("polygon: oblique planes not supported in the prototype");
+      const [ua, va] = [0, 1, 2].filter((ax) => ax !== normal);
+      const k = Math.round(ijk.reduce((sum, p) => sum + p[normal], 0) / ijk.length);
+      const poly = ijk.map((p) => [p[ua], p[va]]);
+      const dims = seg.dimensions, strides = [1, dims[0], dims[0] * dims[1]];
+      const us = poly.map((p) => p[0]), vs = poly.map((p) => p[1]);
+      for (let v = Math.max(0, Math.floor(Math.min(...vs))); v <= Math.min(dims[va] - 1, Math.ceil(Math.max(...vs))); v++) {
+        for (let u = Math.max(0, Math.floor(Math.min(...us))); u <= Math.min(dims[ua] - 1, Math.ceil(Math.max(...us))); u++) {
+          if (!inside(u, v, poly)) continue;
+          const idx = u * strides[ua] + v * strides[va] + k * strides[normal];
+          if (value || seg.voxelManager.getAtIndex(idx) === this.activeSegment) { seg.voxelManager.setAtIndex(idx, value); n++; }
+        }
+      }
+      seg.modified?.();
+    }
+    T.segmentation.triggerSegmentationEvents.triggerSegmentationDataModified(this.segId());
+    T.utilities.segmentation.triggerSegmentationRender();
+    this.log(`polygon: ${value ? "filled" : "erased"} ${n} voxels ${value ? `→ segment ${value}` : `of segment ${this.activeSegment}`}`);
+    this.onChange();
+  }
+
   /** What Save would write (#189: browser builds SR/SEG, server sanitizes and re-ingests). */
   annotationSummary() {
     const anns = T.annotation.state.getAllAnnotations().filter((a: any) =>
@@ -843,6 +903,10 @@ export class Stage {
 
   private onAnnotationCompleted = (evt: CustomEvent) => {
     const a = evt.detail.annotation;
+    if (a.metadata.toolName === "PolygonSeg" || a.metadata.toolName === "PolygonSegErase") {
+      this.fillPolygon(a, a.metadata.toolName === "PolygonSeg" ? this.activeSegment : 0);
+      return;
+    }
     if (a.metadata.toolName !== CalibrateTool.toolName) {
       this.log(`annotation: ${a.metadata.toolName}`);
       return;

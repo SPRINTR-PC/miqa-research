@@ -171,7 +171,7 @@ export class MiresViewerToolbarPrototype extends LitElement {
         const v = infos.find((i) => i.id === id);
         const main = id === "ax" || ids.length === 1;
         return html`<div class="cell c-${id} ${id === "wsi" ? "wsi-cell" : ""}"
-            @dblclick=${split && id !== "ax" ? () => this.s.swapWithMain(id) : null}
+            @dblclick=${split && id !== "ax" ? () => this.s.primary !== "PolygonSeg" && this.s.swapWithMain(id) : null}
             title=${split && id !== "ax" ? "Double-click: show in the big view" : ""}>
           <div class="vp" id=${id} @contextmenu=${(e: Event) => e.preventDefault()}></div>
           ${this.dragKey && main ? this.dropZones() : nothing}
@@ -386,7 +386,8 @@ export class MiresViewerToolbarPrototype extends LitElement {
           <label>– <input type="number" step="0.1" .value=${String(upper)} @change=${(e: any) => (this.thr = { ...this.thr, upper: Number(e.target.value) })}></label></div>
         <div class="lr nums"><label>± slices <input type="number" min="0" .value=${String(this.thr.slices)} @change=${(e: any) => (this.thr = { ...this.thr, slices: Number(e.target.value) })}></label></div>
         <button @click=${() => s.runThreshold(lower, upper, this.thr.slices)}>Run threshold</button></div>` : nothing}
-      ${s.isSegTool(s.primary) && s.primary !== "Eraser" && s.primary !== "RectangleROIThreshold" ? html`<div class="B-cal" style="color:#8a94a0">Right-drag erases with the same shape.</div>` : nothing}`;
+      ${s.primary === "PolygonSeg" ? html`<div class="B-cal" style="color:#8a94a0">Click to add vertices; double-click or click the first vertex to close and fill. Backspace removes the last vertex. Draw with the right button to erase the active segment inside the polygon.</div>`
+        : s.isSegTool(s.primary) && s.primary !== "Eraser" && s.primary !== "RectangleROIThreshold" ? html`<div class="B-cal" style="color:#8a94a0">Right-drag erases with the same shape.</div>` : nothing}`;
   }
 
   @state() private curveDrag: { layer: number; idx: number } | null = null;
