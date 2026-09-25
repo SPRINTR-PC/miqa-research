@@ -66,6 +66,10 @@ app.conf.beat_schedule = {
         "task": "MiqaResearch.tasks.etl_orchestrator.tasks.prune_etl_job_logs",
         "schedule": crontab(hour=2, minute=0),
     },
+    "etl-retry-source-cleanup": {
+        "task": "MiqaResearch.tasks.etl_orchestrator.tasks.retry_etl_source_cleanup",
+        "schedule": 60.0,
+    },
 }
 app.autodiscover_tasks([
     "MiqaResearch.tasks"

@@ -460,7 +460,10 @@ per folder), and a Raw Bucket destination.
 
 ### Raw Bucket
 The bucket where source files are moved (copy, verify, then delete source) after
-a successful ETL Job. Default behaviour; per-binding toggle to keep sources.
+a successful ETL Job, nested under the Job's id. No opt-out: every successful
+Job's inputs are moved. A source delete that keeps failing retries with capped
+backoff, then escalates (staff/Admin/Data-Manager email + audit event) and
+leaves the source in place for manual handling.
 
 ### ETL Job
 One run of one Script Version over one group of input files. Records script

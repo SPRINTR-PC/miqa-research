@@ -4,6 +4,7 @@ pattern). The last test exercises the true end-to-end path through the actual ta
 drop a file, poll queues a Job and dispatches its run, the run succeeds and loads a row --
 without a human triggering anything, per #162's own stated goal.
 """
+import hashlib
 import json
 from datetime import date, timedelta
 
@@ -14,6 +15,8 @@ from django.utils import timezone
 from moto import mock_aws
 
 from contract.constants.etl import (
+    ETL_JOB_INPUT_MOVE_STATUS_MOVED,
+    ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_PENDING,
     ETL_JOB_STATUS_FAILED,
     ETL_JOB_STATUS_RUNNING,
     ETL_JOB_STATUS_SUCCEEDED,
@@ -22,6 +25,7 @@ from contract.constants.etl import (
 from MiqaResearch.data.models import (
     Concept,
     EtlJob,
+    EtlLocationGrant,
     EtlScript,
     EtlScriptVersion,
     Measurement,
@@ -170,6 +174,49 @@ def test_prune_etl_job_logs_reports_the_pruned_count(binding, script_version, se
     result = tasks.prune_etl_job_logs.func()
 
     assert result == {"pruned": 1}
+
+
+# --- move_etl_job_inputs_to_raw_bucket / retry_etl_source_cleanup (#163) --
+
+@mock_aws
+def test_move_etl_job_inputs_to_raw_bucket_delegates_to_the_mover(binding, script_version):
+    from MiqaResearch.data.models import EtlJobInput
+
+    client = boto3.client("s3", region_name="us-east-1")
+    client.create_bucket(Bucket="incoming")
+    client.create_bucket(Bucket="raw")
+    client.put_object(Bucket="incoming", Key="redcap/a.csv", Body=b"data")
+    EtlLocationGrant.objects.create(project=binding.project, bucket="incoming", prefix="")
+    EtlLocationGrant.objects.create(project=binding.project, bucket="raw", prefix="")
+    job = EtlJob.objects.create(binding=binding, script_version=script_version)
+    job_input = EtlJobInput.objects.create(
+        job=job, bucket="incoming", key="redcap/a.csv",
+        sha256=hashlib.sha256(b"data").hexdigest(), size_bytes=4)
+
+    result = tasks.move_etl_job_inputs_to_raw_bucket.func(str(job.id))
+
+    assert result == {"job_id": str(job.id)}
+    job_input.refresh_from_db()
+    assert job_input.move_status == ETL_JOB_INPUT_MOVE_STATUS_MOVED
+
+
+def test_retry_etl_source_cleanup_reports_the_swept_job_count(binding, script_version, settings):
+    from MiqaResearch.data.models import EtlJobInput
+
+    job = EtlJob.objects.create(binding=binding, script_version=script_version)
+    EtlJobInput.objects.create(
+        job=job, bucket="incoming", key="redcap/a.csv", sha256="0" * 64, size_bytes=4,
+        move_status=ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_PENDING, cleanup_attempts=1,
+        cleanup_next_attempt_at=timezone.now() - timedelta(seconds=1))
+    EtlLocationGrant.objects.create(project=binding.project, bucket="incoming", prefix="")
+    EtlLocationGrant.objects.create(project=binding.project, bucket="raw", prefix="")
+
+    with mock_aws():
+        client = boto3.client("s3", region_name="us-east-1")
+        client.create_bucket(Bucket="incoming")
+        result = tasks.retry_etl_source_cleanup.func()
+
+    assert result == {"jobs_swept": 1}
 
 
 # --- True end-to-end: poll -> queue -> run -> succeed -> loaded row -------

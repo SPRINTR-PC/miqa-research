@@ -107,6 +107,9 @@ env = environ.Env(
     MIRES_ETL_LOG_RETENTION_DAYS=(int, 30),
     MIRES_ETL_JOB_MAX_AUTO_RETRIES=(int, 3),
     MIRES_ETL_JOB_STUCK_GRACE_SECONDS=(int, 300),
+    MIRES_ETL_SOURCE_CLEANUP_MAX_ATTEMPTS=(int, 5),
+    MIRES_ETL_SOURCE_CLEANUP_BACKOFF_BASE_SECONDS=(int, 60),
+    MIRES_ETL_SOURCE_CLEANUP_BACKOFF_MAX_SECONDS=(int, 3600),
     MIRES_LOGGING_LEVEL=(str, "INFO"),
     MIRES_LOGGING_DIR=(Path, BASE_DIR / "LocalOnly/Logs"),
     MIRES_OIDC_CLIENT_ID=(str, None),
@@ -254,6 +257,14 @@ ETL_POLL_INTERVAL_SECONDS: int = env("MIRES_ETL_POLL_INTERVAL_SECONDS")
 ETL_LOG_RETENTION_DAYS: int = env("MIRES_ETL_LOG_RETENTION_DAYS")
 ETL_JOB_MAX_AUTO_RETRIES: int = env("MIRES_ETL_JOB_MAX_AUTO_RETRIES")
 ETL_JOB_STUCK_GRACE_SECONDS: int = env("MIRES_ETL_JOB_STUCK_GRACE_SECONDS")
+
+# ETL raw-bucket move (#163): a successful Job's inputs are copied to the raw bucket, verified,
+# then the source is deleted. ETL_SOURCE_CLEANUP_MAX_ATTEMPTS caps the capped-backoff retry of
+# that source delete (backoff = base * 2**(attempts-1), capped at the max); on cap exhaustion the
+# input is escalated (one-time staff/Admin/Data-Manager email + audit event) and left in place.
+ETL_SOURCE_CLEANUP_MAX_ATTEMPTS: int = env("MIRES_ETL_SOURCE_CLEANUP_MAX_ATTEMPTS")
+ETL_SOURCE_CLEANUP_BACKOFF_BASE_SECONDS: int = env("MIRES_ETL_SOURCE_CLEANUP_BACKOFF_BASE_SECONDS")
+ETL_SOURCE_CLEANUP_BACKOFF_MAX_SECONDS: int = env("MIRES_ETL_SOURCE_CLEANUP_BACKOFF_MAX_SECONDS")
 
 # DICOM ingestion (#123): global default for source retention. A run deletes
 # its source file only once storage is verified, never merely on a successful

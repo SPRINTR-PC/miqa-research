@@ -9,6 +9,7 @@ EVENT_TYPE_ETL_SCRIPT_VERSION_CREATED = "etl_script_version_created"
 EVENT_TYPE_ETL_SCRIPT_ARCHIVED = "etl_script_archived"
 EVENT_TYPE_ETL_BINDING_CREATED = "etl_binding_created"
 EVENT_TYPE_ETL_SETTINGS_UPDATED = "etl_settings_updated"
+EVENT_TYPE_ETL_SOURCE_CLEANUP_STUCK = "etl_source_cleanup_stuck"
 
 EVENT_TYPE_CHOICES = [
     (EVENT_TYPE_LOGIN, "Login"),
@@ -22,6 +23,7 @@ EVENT_TYPE_CHOICES = [
     (EVENT_TYPE_ETL_SCRIPT_ARCHIVED, "ETL script archived"),
     (EVENT_TYPE_ETL_BINDING_CREATED, "ETL pipeline binding created"),
     (EVENT_TYPE_ETL_SETTINGS_UPDATED, "ETL project settings updated"),
+    (EVENT_TYPE_ETL_SOURCE_CLEANUP_STUCK, "ETL raw-bucket source cleanup stuck"),
 ]
 
 AUTH_METHOD_LOCAL = "local"

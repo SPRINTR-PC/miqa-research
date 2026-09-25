@@ -27,3 +27,15 @@ PIPELINE_BINDING_GROUPING_CHOICES = [
     (PIPELINE_BINDING_GROUPING_FILE, gettext_lazy("Per file")),
     (PIPELINE_BINDING_GROUPING_FOLDER, gettext_lazy("Folder, with quiescence wait")),
 ]
+
+ETL_JOB_INPUT_MOVE_STATUS_PENDING = "pending"
+ETL_JOB_INPUT_MOVE_STATUS_MOVED = "moved"
+ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_PENDING = "source_cleanup_pending"
+ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_STUCK = "source_cleanup_stuck"
+
+ETL_JOB_INPUT_MOVE_STATUS_CHOICES = [
+    (ETL_JOB_INPUT_MOVE_STATUS_PENDING, gettext_lazy("Not yet moved")),
+    (ETL_JOB_INPUT_MOVE_STATUS_MOVED, gettext_lazy("Moved")),
+    (ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_PENDING, gettext_lazy("Source cleanup pending (retrying)")),
+    (ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_STUCK, gettext_lazy("Source cleanup stuck (needs manual handling)")),
+]

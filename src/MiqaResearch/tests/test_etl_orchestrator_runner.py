@@ -162,6 +162,38 @@ def test_run_job_on_success_loads_rows_and_marks_the_job_succeeded(
     assert measurement.etl_job_id == job.id
 
 
+def test_run_job_on_success_enqueues_the_raw_bucket_move(
+        monkeypatch, job, job_input, s3_input, study_participant, measurement_concept):
+    """#163: a successful Job's inputs get moved to the raw bucket -- dispatched, not run inline,
+    matching the sandbox-run task's own queue/dispatch shape."""
+    from MiqaResearch.tasks.etl_orchestrator import tasks
+
+    enqueued = []
+    monkeypatch.setattr(tasks, "move_etl_job_inputs_to_raw_bucket", type("T", (), {
+        "enqueue": staticmethod(lambda job_id: enqueued.append(job_id))})())
+    backend = FakeSandboxBackend(result=_success_result(_measurement_row_jsonl(study_participant, measurement_concept)))
+    monkeypatch.setattr(runner, "get_sandbox_backend", lambda: backend)
+
+    runner.run_job(str(job.id))
+
+    assert enqueued == [str(job.id)]
+
+
+def test_run_job_on_script_failure_does_not_enqueue_a_raw_bucket_move(monkeypatch, job, job_input, s3_input):
+    from MiqaResearch.tasks.etl_orchestrator import tasks
+
+    enqueued = []
+    monkeypatch.setattr(tasks, "move_etl_job_inputs_to_raw_bucket", type("T", (), {
+        "enqueue": staticmethod(lambda job_id: enqueued.append(job_id))})())
+    backend = FakeSandboxBackend(result=_failure_result(contract.EXIT_SCRIPT_ERROR, log=b"boom"))
+    monkeypatch.setattr(runner, "get_sandbox_backend", lambda: backend)
+
+    finished = runner.run_job(str(job.id))
+
+    assert finished.status == ETL_JOB_STATUS_FAILED
+    assert enqueued == []
+
+
 def test_run_job_updates_job_input_sha256_and_size_from_fetched_bytes(
         monkeypatch, job, job_input, s3_input, study_participant, measurement_concept):
     backend = FakeSandboxBackend(result=_success_result(_measurement_row_jsonl(study_participant, measurement_concept)))
