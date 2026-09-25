@@ -240,6 +240,16 @@ only to all-Sites users. Every per-participant table, view, and image honours
 it; project-wide aggregates (e.g. the "All sites" chart) are not sensitive and
 do not.
 
+### Client Binding
+The tie between a machine-to-machine API client (client-credentials, no user)
+and exactly one Research Project, optionally narrowed to one Site. The client
+sees participants as a role with that Site would (see Participant Visibility);
+under Blinded Annotation it sees no Annotations or Segmentations. An unbound
+client sees no participant data. A binding belongs to the project, not the
+person who issued it, and is managed by an Admin or that project's Project
+Admin. See ADR 0027.
+_Avoid_: client scope, project scope
+
 ### Site PI
 A principal investigator responsible for one Site of a Research Project. Always
 tied to a Site: sees only that Site's participants (see Participant Visibility)
@@ -563,6 +573,35 @@ scripts run in-process.
 | 0024 | Data-access audit events kept 10 years, separate from 90-day auth-event retention | Accepted |
 | 0025 | ETL orchestrator: SandboxBackend.run() stays blocking, no async start/poll split | Accepted |
 | 0026 | Viewer-made Annotations and Segmentations stored as re-ingested DICOM objects, with Blinded Annotation | Accepted |
+| 0027 | Machine clients bound to one project; Project Admins may grant raw DICOM access | Accepted |
+
+### ADR 0027 — Machine clients bound to one project; Project Admins may grant raw DICOM access
+
+**Context**: Machine-to-machine (client-credentials) callers of the WADO-RS
+endpoints were gated only by the global `read` scope, with no Participant
+Visibility check (wayfinder map: DICOM viewer web component — design spec,
+issue #176; decided in issue #203). The raw-bytes endpoints return the stored
+files with their original UIDs and full PHI (#115). The alternatives were
+leaving it as it was, a scope per project, or turning off M2M WADO.
+
+**Decision**: Each client has a Client Binding to exactly one Research
+Project, with an optional Site, and gets that Site's Participant Visibility on
+WADO-RS; an unbound client gets 404. Under Blinded Annotation, bound clients
+get 404 on Annotation and Segmentation series. The raw-bytes endpoints need a
+new `dicom:raw` scope; `read` alone gets only sanitized `/metadata` and
+`/frames`. An Admin, or a Project Admin for their own project, issues,
+rotates and revokes clients, picks the Site, and grants `read` and
+`dicom:raw`; the bound project can't be changed. Clients belong to the
+project and outlive the issuer's role.
+
+**Consequences**:
+- A Project Admin can release full PHI to a machine without an Admin. Every
+  client change is audit-logged, and `dicom:raw` grants and revocations are
+  data-access audit events (ADR 0024).
+- Access is audited once per client, series and access token, whether it is
+  metadata, frames or raw bytes.
+- For now, only WADO-RS honours the binding; the other `read` endpoints stay
+  global until a follow-up applies it.
 
 ### ADR 0026 — Viewer-made Annotations and Segmentations stored as re-ingested DICOM objects, with Blinded Annotation
 
