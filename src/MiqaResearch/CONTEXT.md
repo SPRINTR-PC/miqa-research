@@ -336,7 +336,8 @@ _Avoid_: Study list, other scans
 Showing one or more overlay Dicom Series on top of a base series in the viewer,
 each with its own window, colormap and opacity. Only series sharing the base's
 Frame of Reference can be fused; nothing is registered or resampled into a new
-series. Annotations and Segmentations made on a fusion reference the base.
+series. Annotations and Segmentations made on a fusion reference every series
+in view; a Segmentation's voxel grid is the base's.
 _Avoid_: Registration, blend, overlay (as the whole view)
 
 ### Study Participant
