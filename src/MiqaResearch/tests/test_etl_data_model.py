@@ -29,7 +29,7 @@ from MiqaResearch.data.models import (
     StudyParticipant,
     VisitOccurrence,
 )
-from MiqaResearch.data.models.etl_project_settings import get_max_script_source_bytes
+from MiqaResearch.data.models.etl_project_settings import get_log_retention_days, get_max_script_source_bytes
 
 
 @pytest.fixture(autouse=True)
@@ -303,6 +303,24 @@ def test_etl_project_settings_overrides_log_retention_for_a_project(research_pro
     settings_row = EtlProjectSettings.objects.create(project=research_project, log_retention_days=30)
 
     assert settings_row.project_id == research_project.id
+
+
+@pytest.mark.django_db
+def test_get_log_retention_days_falls_back_to_the_global_default_with_no_override(research_project, settings):
+    settings.ETL_LOG_RETENTION_DAYS = 30
+    assert get_log_retention_days(research_project) == 30
+
+
+@pytest.mark.django_db
+def test_get_log_retention_days_returns_the_project_override_when_set(research_project):
+    EtlProjectSettings.objects.create(project=research_project, log_retention_days=7)
+
+    assert get_log_retention_days(research_project) == 7
+
+
+def test_get_log_retention_days_returns_the_global_default_for_no_project(settings):
+    settings.ETL_LOG_RETENTION_DAYS = 30
+    assert get_log_retention_days(None) == 30
 
 
 @pytest.mark.django_db

@@ -45,3 +45,22 @@ def get_max_script_source_bytes(project):
             return override
 
     return django_settings.ETL_SCRIPT_MAX_SOURCE_BYTES
+
+
+def get_log_retention_days(project):
+    """How many days an EtlJob's log is kept for `project` before the daily prune task clears it:
+    that project's EtlProjectSettings.log_retention_days if set, else the global
+    MIRES_ETL_LOG_RETENTION_DAYS default."""
+    from django.conf import settings as django_settings
+
+    if project is not None:
+        override = (
+            EtlProjectSettings.objects
+            .filter(project=project)
+            .values_list("log_retention_days", flat=True)
+            .first()
+        )
+        if override is not None:
+            return override
+
+    return django_settings.ETL_LOG_RETENTION_DAYS
