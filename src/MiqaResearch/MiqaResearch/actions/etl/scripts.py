@@ -1,6 +1,7 @@
 """Writes for the ETL Scripts section (#158): create/edit/archive a custom Script, add a Version.
 Callers must pre-validate input (see `MiqaResearch.interfaces.http.forms.etl`) -- these functions
-assume `name`/`description`/`source` are already well-formed and only enforce the business rules
+assume `name`/`description`/`source` are already well-formed (including `source`'s extension
+naming a supported language, which picks the Version's sandbox `image_key`, #166) and only enforce the business rules
 that need a DB round trip: the Script's project/origin/archived state.
 """
 from django.db.models import Max
@@ -14,6 +15,7 @@ from contract.constants.audit_log import (
 )
 from contract.constants.etl import ETL_SCRIPT_ORIGIN_CUSTOM
 from MiqaResearch.data.models import EtlScript, EtlScriptVersion, ResearchProject
+from MiqaResearch.etl_sandbox.images import image_key_for_script_filename
 
 from ._hashing import sha256_of_upload
 from .audit import record_etl_event
@@ -31,7 +33,8 @@ async def create_custom_script(*, project, user, request, name, description, sou
     script = await EtlScript.objects.acreate(
         name=name, description=description, origin=ETL_SCRIPT_ORIGIN_CUSTOM, project=project)
     await EtlScriptVersion.objects.acreate(
-        script=script, version=1, source=source, sha256=sha256_of_upload(source))
+        script=script, version=1, source=source, sha256=sha256_of_upload(source),
+        image_key=image_key_for_script_filename(source.name))
     await record_etl_event(
         EVENT_TYPE_ETL_SCRIPT_CREATED, user=user, request=request, project=project,
         metadata={"etl_script_id": str(script.id)})
@@ -54,7 +57,8 @@ async def create_script_version(*, project, user, request, script, source) -> Et
     latest = await script.versions.aaggregate(latest_version=Max("version"))
     next_version = (latest["latest_version"] or 0) + 1
     version = await EtlScriptVersion.objects.acreate(
-        script=script, version=next_version, source=source, sha256=sha256_of_upload(source))
+        script=script, version=next_version, source=source, sha256=sha256_of_upload(source),
+        image_key=image_key_for_script_filename(source.name))
     await record_etl_event(
         EVENT_TYPE_ETL_SCRIPT_VERSION_CREATED, user=user, request=request, project=project,
         metadata={"etl_script_id": str(script.id), "etl_script_version_id": str(version.id)})

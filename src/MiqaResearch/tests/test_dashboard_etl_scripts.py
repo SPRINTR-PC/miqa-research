@@ -21,6 +21,7 @@ from contract.constants.etl import ETL_SCRIPT_ORIGIN_CUSTOM, ETL_SCRIPT_ORIGIN_N
 from MiqaResearch.data.models import (
     AuditLog,
     EtlScript,
+    EtlScriptVersion,
     ResearchProject,
     ResearchProjectRole,
     ResearchProjectUserRoleMap,
@@ -254,3 +255,42 @@ def test_an_archived_scripts_manage_controls_no_longer_render(project):
     row = re.search(r"<li>.*?Gone.*?</li>", body, re.DOTALL)
     assert row is not None
     assert "Archive" not in row.group(0)
+
+
+# --- Language / sandbox image (#166) --------------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(("filename", "image_key"), [("import.py", "python-etl-v1"), ("import.R", "r-etl-v1")])
+def test_a_new_scripts_version_runs_on_the_image_for_its_source_files_language(project, settings, filename, image_key):
+    settings.ETL_SCRIPT_IMAGE_KEYS = {".py": "python-etl-v1", ".r": "r-etl-v1"}
+    client = _client_as(_user_with_role(project, "Data Manager"))
+
+    client.post(
+        _create_url(project), {"name": "Lab import", "description": "", "source": _upload(filename=filename)}, **HTMX)
+
+    assert EtlScriptVersion.objects.get().image_key == image_key
+
+
+@pytest.mark.django_db
+def test_a_new_version_runs_on_the_image_for_its_own_source_files_language(project, settings):
+    settings.ETL_SCRIPT_IMAGE_KEYS = {".py": "python-etl-v1", ".r": "r-etl-v1"}
+    script = EtlScript.objects.create(name="Lab import", origin=ETL_SCRIPT_ORIGIN_CUSTOM, project=project)
+    client = _client_as(_user_with_role(project, "Data Manager"))
+
+    client.post(_version_url(project, script), {"source": _upload(b"main <- function(ctx) NULL", "v2.R")}, **HTMX)
+
+    assert EtlScriptVersion.objects.get(script=script).image_key == "r-etl-v1"
+
+
+@pytest.mark.django_db
+def test_a_source_file_in_an_unsupported_language_is_rejected_with_a_form_error(project, settings):
+    settings.ETL_SCRIPT_IMAGE_KEYS = {".py": "python-etl-v1", ".r": "r-etl-v1"}
+    client = _client_as(_user_with_role(project, "Data Manager"))
+
+    response = client.post(
+        _create_url(project), {"name": "Lab import", "description": "", "source": _upload(filename="import.sh")},
+        **HTMX)
+
+    assert not EtlScript.objects.exists()
+    assert "must be a .py or .r file" in response.content.decode()

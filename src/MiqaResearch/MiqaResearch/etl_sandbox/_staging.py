@@ -1,5 +1,5 @@
 """Input/output staging logic shared by every `SandboxBackend` (#161, #165): the input-size gate, the
-`/sandbox` tar layout (`manifest.json`, `script.py`, `input/*`), and output-archive parsing. Kept
+`/sandbox` tar layout (`manifest.json`, `script.py`/`script.R`, `input/*`), and output-archive parsing. Kept
 backend-agnostic (no Docker or Kubernetes import) so both backends enforce identical limits and read the
 same contract -- neither gets a separate, looser path.
 """
@@ -24,7 +24,7 @@ def build_sandbox_archive(spec: SandboxRunSpec) -> bytes:
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w") as tar:
         _add_bytes(tar, contract.MANIFEST_FILENAME, json.dumps(spec.manifest).encode())
-        _add_bytes(tar, contract.SCRIPT_FILENAME, spec.script_source)
+        _add_bytes(tar, contract.script_filename(spec.image_key), spec.script_source)
         for relative_path, content in spec.input_files.items():
             _add_bytes(tar, f"{contract.INPUT_DIRNAME}/{relative_path}", content)
     return buf.getvalue()
