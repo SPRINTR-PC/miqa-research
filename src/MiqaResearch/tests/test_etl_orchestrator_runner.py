@@ -220,6 +220,18 @@ def test_run_job_builds_the_spec_from_the_script_version_and_binding_config(
     assert spec.input_files == {"export.csv": b"col_a,col_b\n1,2\n"}
 
 
+def test_a_queued_job_runs_with_the_config_it_was_queued_with_even_after_the_binding_changes(
+        monkeypatch, job, job_input, s3_input, binding, study_participant, measurement_concept):
+    binding.config = {"delimiter": ";"}
+    binding.save(update_fields=["config"])
+    backend = FakeSandboxBackend(result=_success_result(_measurement_row_jsonl(study_participant, measurement_concept)))
+    monkeypatch.setattr(runner, "get_sandbox_backend", lambda: backend)
+
+    runner.run_job(str(job.id))
+
+    assert backend.received_spec.manifest["config"] == {"delimiter": ","}
+
+
 # --- Script-class failures: never auto-retried ----------------------------
 
 @pytest.mark.parametrize(

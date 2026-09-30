@@ -13,6 +13,7 @@ src/*
   * [Who can do what](#heading-etl-pipelines-access)
   * [Creating a custom script](#heading-etl-pipelines-scripts)
   * [Creating a Pipeline Binding](#heading-etl-pipelines-bindings)
+    * [Editing a binding](#heading-etl-pipelines-binding-edit)
   * [What happens when a file arrives](#heading-etl-pipelines-lifecycle)
   * [Following jobs and reading logs](#heading-etl-pipelines-jobs)
   * [Retrying a failed job](#heading-etl-pipelines-retry)

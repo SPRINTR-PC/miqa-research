@@ -58,7 +58,8 @@ The tab has four sections, listed in the sidebar on its left: **Bindings**, **Sc
 To change the name or description, click **Edit** next to the script. To change the code
 itself, use **Add version**, choose the new file and click **Upload version**. Bindings that
 already use an older version continue to use it. A new binding can use the new version right
-away. Switching an existing binding to it is currently done by the platform administrator.
+away. To switch an existing binding to it, see
+[Editing a binding](#heading-etl-pipelines-binding-edit).
 
 An Admin can **Archive** a script that is no longer needed. An archived script can no longer be
 edited or chosen for a new binding. Scripts are never deleted, so every past job can still be
@@ -101,6 +102,13 @@ A binding tells the platform to watch a location and process what arrives there.
    - **Script & version**: the script to run and the exact version to use.
    - **Raw bucket** and **Raw prefix**: where processed files are moved after a successful
      job.
+   - **Grouping**: **Per file** runs one job for each new file. **Folder, with quiescence wait**
+     waits until a folder has stopped receiving files, then processes the whole folder as one
+     job.
+   - **Quiescence** (folder grouping only): how many seconds a folder must go without a new file
+     before it counts as complete. Leave it empty for the default of 300 seconds (5 minutes).
+   - **Script config** (optional): settings passed to the script as a JSON object, for example
+     `{"delimiter": ";"}`. Anything other than a JSON object is rejected.
    - **Sandbox overrides** (optional): a lower time limit (seconds), memory limit (MB) or CPU
      limit (millicores) for this binding. These can only be lower than the platform limits,
      never higher.
@@ -111,11 +119,19 @@ been granted access to that source bucket/prefix"*, or if there is a notice that
 granted yet, ask your platform administrator to grant the bucket to the project. Each source
 location can belong to only one binding.
 
-:::{note}
-A new binding processes **each file on its own**. A binding can also be set to wait for a whole
-folder to finish arriving and then process the folder as one job. A binding can also pass
-settings to its script. Both of these are currently set up by the platform administrator.
-:::
+(heading-etl-pipelines-binding-edit)=
+### Editing a binding
+
+Admins and Data Managers can click **Edit** next to a binding to change its script version,
+raw destination, grouping, quiescence, script config or sandbox overrides. Click **Save** to
+apply. Every edit is recorded in the project's audit log.
+
+- The **source bucket and prefix can't be changed**. To watch a different location, create a
+  new binding.
+- Jobs that are already queued or running keep the script version and config they started with.
+  The edit applies to jobs created afterwards.
+- Changing the grouping also applies to files that have arrived but haven't been processed yet.
+  After a switch to folder grouping, their folders start a fresh quiescence wait.
 
 (heading-etl-pipelines-lifecycle)=
 ## What happens when a file arrives
@@ -192,9 +208,9 @@ finish, then try again. Every retry is recorded in the project's audit log.
 
 :::{note}
 Retry fixes problems in the data or on the platform side. If the script itself was wrong,
-retrying runs the same faulty version again. Upload a corrected version first. A binding cannot
-yet be edited on the tab, so ask your platform administrator to switch the binding to the new
-version. New files are then processed with it.
+retrying runs the same faulty version again. Upload a corrected version first, then
+[edit the binding](#heading-etl-pipelines-binding-edit) to use it. New files are then processed
+with it.
 :::
 
 (heading-etl-pipelines-defaults)=

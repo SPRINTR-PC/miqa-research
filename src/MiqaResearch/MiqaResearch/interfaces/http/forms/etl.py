@@ -8,6 +8,8 @@ from django import forms
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 
+from contract.constants.etl import PIPELINE_BINDING_GROUPING_CHOICES, PIPELINE_BINDING_GROUPING_FILE
+
 
 class _ScriptSourceSizeMixin:
     """Shared `source` checks for the two forms that accept an EtlScriptVersion upload: its size,
@@ -64,20 +66,52 @@ class EtlScriptVersionCreateForm(_ScriptSourceSizeMixin, forms.Form):
     source = forms.FileField()
 
 
-class EtlBindingCreateForm(forms.Form):
-    source_bucket = forms.CharField(max_length=200)
-    source_prefix = forms.CharField(max_length=500, required=False)
-    script_version = forms.ChoiceField()
+class EtlBindingEditForm(forms.Form):
+    """Everything about a Binding but its source bucket/prefix, which is its identity and never
+    changes (#224). `EtlBindingCreateForm` adds the source fields on top."""
+    script_version = forms.ChoiceField(label=_("Script & version"))
     raw_bucket = forms.CharField(max_length=200)
     raw_prefix = forms.CharField(max_length=500, required=False)
-    timeout_seconds_override = forms.IntegerField(required=False, min_value=1)
-    memory_mb_override = forms.IntegerField(required=False, min_value=1)
-    cpu_millicores_override = forms.IntegerField(required=False, min_value=1)
+    grouping_mode = forms.ChoiceField(
+        label=_("Grouping"), choices=PIPELINE_BINDING_GROUPING_CHOICES, initial=PIPELINE_BINDING_GROUPING_FILE)
+    quiescence_seconds = forms.IntegerField(
+        label=_("Quiescence (seconds, folder grouping only)"), required=False, min_value=1)
+    config = forms.JSONField(label=_("Script config (JSON object)"), required=False, widget=forms.Textarea)
+    timeout_seconds_override = forms.IntegerField(label=_("Timeout override (seconds)"), required=False, min_value=1)
+    memory_mb_override = forms.IntegerField(label=_("Memory override (MB)"), required=False, min_value=1)
+    cpu_millicores_override = forms.IntegerField(label=_("CPU override (millicores)"), required=False, min_value=1)
 
     def __init__(self, *args, location_grants, script_version_choices, **kwargs):
         self.location_grants = location_grants
         super().__init__(*args, **kwargs)
         self.fields["script_version"].choices = script_version_choices
+
+    def clean_config(self):
+        config = self.cleaned_data["config"]
+        if config is None:
+            return {}
+        if not isinstance(config, dict):
+            raise forms.ValidationError(_("Script config must be a JSON object, e.g. {\"delimiter\": \";\"}."))
+        return config
+
+    def clean(self):
+        from MiqaResearch.readers.etl_reader import location_grant_allows
+
+        cleaned = super().clean()
+        raw_bucket = cleaned.get("raw_bucket")
+        if raw_bucket and not location_grant_allows(
+                self.location_grants, raw_bucket, cleaned.get("raw_prefix") or ""):
+            self.add_error(
+                "raw_bucket",
+                _("This project has not been granted access to that raw bucket/prefix."))
+        return cleaned
+
+
+class EtlBindingCreateForm(EtlBindingEditForm):
+    source_bucket = forms.CharField(max_length=200)
+    source_prefix = forms.CharField(max_length=500, required=False)
+
+    field_order = ["source_bucket", "source_prefix"]
 
     def clean(self):
         from MiqaResearch.readers.etl_reader import location_grant_allows
@@ -89,12 +123,6 @@ class EtlBindingCreateForm(forms.Form):
             self.add_error(
                 "source_bucket",
                 _("This project has not been granted access to that source bucket/prefix."))
-        raw_bucket = cleaned.get("raw_bucket")
-        if raw_bucket and not location_grant_allows(
-                self.location_grants, raw_bucket, cleaned.get("raw_prefix") or ""):
-            self.add_error(
-                "raw_bucket",
-                _("This project has not been granted access to that raw bucket/prefix."))
         return cleaned
 
 
