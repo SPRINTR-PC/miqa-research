@@ -572,6 +572,29 @@ The isolated, ephemeral container in which custom ETL Scripts execute: no
 network, read-only staged input, resource-limited, no credentials. Built-in
 scripts run in-process.
 
+### User Manual
+The in-app guide for people operating MIQA Research (researchers, PIs, Data
+Managers, Annotators). Readable by any signed-in user. May exist in several
+languages.
+_Avoid_: help, docs, user guide
+
+### Technical Manual
+The in-app guide for people deploying and maintaining MIQA Research
+(architecture, configuration, operations). Readable only by Superusers and
+Staff Users; to everyone else it does not exist. May exist in several
+languages.
+_Avoid_: developer docs, admin guide
+
+### Superuser
+A system-wide administrator of the MIQA Research installation, independent of
+any Research Project role. May be granted through Role Mapping.
+_Avoid_: admin (ambiguous with the project Admin role)
+
+### Staff User
+A user flagged as staff of the MIQA Research installation, independent of any
+Research Project role. Not necessarily a Superuser.
+_Avoid_: admin, operator
+
 ## Decisions (ADRs)
 
 | ADR | Title | Status |
@@ -604,6 +627,38 @@ scripts run in-process.
 | 0026 | Viewer-made Annotations and Segmentations stored as re-ingested DICOM objects, with Blinded Annotation | Accepted |
 | 0027 | Machine clients bound to one project; Project Admins may grant raw DICOM access | Accepted |
 | 0028 | De-identification Profile: PS3.15 Basic with retention options, fixed system-wide | Accepted |
+| 0029 | Manuals translated via gettext `.po` from one English source; language follows the app, not the URL | Accepted |
+
+### ADR 0029 — Manuals translated via gettext `.po` from one English source; language follows the app, not the URL
+
+**Context**: The User Manual and Technical Manual start in English only, but
+must be able to exist in several languages (wayfinder map: in-app User &
+Technical Manuals, issue #227; research #229, decided in #231). The
+alternatives were one MyST source tree per language, per-language suffix
+files, runtime translation, a manual-only language switcher, and a language
+segment in manual URLs (`i18n_patterns`).
+
+**Decision**: Each manual has one English MyST source tree. Translations are
+gettext `.po` catalogues (sphinx-intl) committed under
+`locale/<lang>/LC_MESSAGES/`, and `.mo` files are compiled during
+`sphinx-build`. A language is built for a manual only when that manual has
+`locale/<lang>/`; English is always built. The manual follows the app's
+active language (`LocaleMiddleware`, no `i18n_patterns`). URLs carry no
+language segment. When the language or a translation is missing, the reader
+gets English.
+
+**Why**: Per-language source trees go stale silently and let toctrees and
+anchors drift, which breaks deep links. gettext falls back one paragraph at a
+time, so a partial translation never produces a 404 or an out-of-date page.
+Language-neutral URLs keep one deep link valid for every reader.
+
+**Consequences**:
+- Pages served in a language other than English that contain untranslated
+  paragraphs show a page-level "not yet translated" notice.
+- Editing English text orphans that paragraph's translation, which falls back
+  to English. CI warns about stale `.po` catalogues but does not fail.
+- `LocaleMiddleware` and `LANGUAGES` are added as plumbing. An app-wide
+  language picker is out of scope for the manuals effort.
 
 ### ADR 0028 — De-identification Profile: PS3.15 Basic with retention options, fixed system-wide
 
