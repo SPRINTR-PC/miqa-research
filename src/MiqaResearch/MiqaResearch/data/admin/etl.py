@@ -55,8 +55,8 @@ class EtlJobAdmin(ModelAdmin):
 
 @admin.register(EtlJobInput)
 class EtlJobInputAdmin(ModelAdmin):
-    list_display = ("job", "bucket", "key", "moved_at")
-    list_filter = ("job",)
+    list_display = ("job", "bucket", "key", "move_status", "cleanup_attempts", "moved_at")
+    list_filter = ("job", "move_status")
     search_fields = ("bucket", "key")
 
     class Meta:

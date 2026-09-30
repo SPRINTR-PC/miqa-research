@@ -89,6 +89,7 @@ def _finalize(job: EtlJob, result) -> EtlJob:
             job.log = (job.log + f"\n[orchestrator] loader rejected the result: {exc}").strip()
         else:
             job.status = ETL_JOB_STATUS_SUCCEEDED
+            _enqueue_raw_bucket_move(job)
     else:
         # Exit 1 (script error), 2 (contract violation), 3 (timeout/killed): all script-class,
         # none auto-retry (#156's spec text groups them explicitly under "manual retry").
@@ -106,6 +107,13 @@ def _load_result(job: EtlJob, result_jsonl: bytes | None) -> None:
     load_jsonl(
         datatype_name=job.script_version.script.datatype_name,
         project=job.binding.project, etl_job=job, jsonl_text=body)
+
+
+def _enqueue_raw_bucket_move(job: EtlJob) -> None:
+    """#163: on success, the Job's inputs get moved to the raw bucket. Deferred import to avoid
+    the same circular-import shape as retry.py's `.tasks` import (tasks.py -> runner.py)."""
+    from .tasks import move_etl_job_inputs_to_raw_bucket
+    move_etl_job_inputs_to_raw_bucket.enqueue(str(job.id))
 
 
 def _relative_key(binding, key: str) -> str:
