@@ -532,7 +532,9 @@ that takes staged input files and produces rows for one ETL Datatype. Both
 languages follow the same contract: `main(ctx)` yields (Python) or `emit()`s
 (R) rows, which are validated against the Datatype's schema in the sandbox. Belongs to a Research Project, managed by
 its Admins and Data Managers. Built-in (default) scripts are global and
-read-only. Every save produces an immutable **Script Version**.
+read-only. Every save produces an immutable **Script Version**. Its Datatype is
+chosen when the Script is created and never changes, because Bindings and past Jobs
+depend on it.
 
 ### Script Version
 An immutable, content-hashed snapshot of an ETL Script. Pipeline Bindings pin a

@@ -98,6 +98,22 @@ def test_a_read_only_role_sees_bindings_but_no_wizard(project):
 
 
 @pytest.mark.django_db
+def test_each_binding_shows_the_datatype_its_script_produces(project):
+    script = EtlScript.objects.create(
+        name="Visit import", origin=ETL_SCRIPT_ORIGIN_CUSTOM, project=project, datatype_name="visit_occurrence")
+    version = EtlScriptVersion.objects.create(
+        script=script, version=1,
+        source=SimpleUploadedFile("script.py", b"print()", content_type="text/x-python"), sha256="0" * 64)
+    PipelineBinding.objects.create(
+        project=project, source_bucket="incoming", source_prefix="visits/", script_version=version, raw_bucket="raw")
+    client = _client_as(_user_with_role(project, "Investigator"))  # read-only: no wizard listing script choices
+
+    body = client.get(_bindings_url(project)).content.decode()
+
+    assert "visit_occurrence" in body
+
+
+@pytest.mark.django_db
 def test_a_read_only_role_cannot_post_a_create_action(project, native_version):
     client = _client_as(_user_with_role(project, "PI"))
     EtlLocationGrant.objects.create(project=project, bucket="incoming", prefix="")

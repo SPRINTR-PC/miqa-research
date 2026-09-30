@@ -80,7 +80,7 @@ async def etl_scripts_create(request, project_id):
         await create_custom_script(
             project=research_project, user=user, request=request,
             name=form.cleaned_data['name'], description=form.cleaned_data['description'],
-            source=form.cleaned_data['source'],
+            datatype_name=form.cleaned_data['datatype'], source=form.cleaned_data['source'],
         )
         form = EtlScriptCreateForm(max_source_bytes=max_source_bytes)
 
@@ -106,6 +106,7 @@ async def etl_script_edit(request, project_id, script_id):
         error = await _attempt(update_custom_script(
             project=research_project, user=user, request=request, script=script,
             name=form.cleaned_data['name'], description=form.cleaned_data['description'],
+            datatype_name=form.cleaned_data['datatype'],
         ))
 
     return await _rerender_section(request, research_project, permissions, ETL_SECTION_SCRIPTS, manage_error=error)

@@ -32,15 +32,32 @@ class _ScriptSourceSizeMixin:
         return source
 
 
+def _datatype_choices() -> list[tuple[str, str]]:
+    """The registered ETL Datatypes (#223) -- an in-memory registry, so no DB query in an async view."""
+    from MiqaResearch.etl_datatypes import registered_datatype_names
+
+    return [(name, name) for name in registered_datatype_names()]
+
+
 class EtlScriptCreateForm(_ScriptSourceSizeMixin, forms.Form):
     name = forms.CharField(max_length=100)
     description = forms.CharField(required=False, widget=forms.Textarea)
+    datatype = forms.ChoiceField(label=_("Datatype"))
     source = forms.FileField()
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["datatype"].choices = _datatype_choices()
 
 
 class EtlScriptEditForm(forms.Form):
     name = forms.CharField(max_length=100)
     description = forms.CharField(required=False, widget=forms.Textarea)
+    datatype = forms.ChoiceField(required=False)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["datatype"].choices = [("", ""), *_datatype_choices()]
 
 
 class EtlScriptVersionCreateForm(_ScriptSourceSizeMixin, forms.Form):
