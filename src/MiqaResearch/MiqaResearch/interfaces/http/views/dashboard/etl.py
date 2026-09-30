@@ -15,6 +15,7 @@ from MiqaResearch.actions.etl.scripts import (
     archive_custom_script,
     create_custom_script,
     create_script_version,
+    customize_native_script,
     update_custom_script,
 )
 from MiqaResearch.actions.etl.settings import update_etl_project_settings
@@ -142,6 +143,20 @@ async def etl_script_archive(request, project_id, script_id):
     script = await aget_object_or_404(EtlScript, id=script_id)
     user = await request.auser()
     error = await _attempt(archive_custom_script(project=research_project, user=user, request=request, script=script))
+
+    return await _rerender_section(request, research_project, permissions, ETL_SECTION_SCRIPTS, manage_error=error)
+
+
+@htmx_login_required
+async def etl_script_customize(request, project_id, script_id):
+    research_project, permissions = await get_user_etl_project_or_404(request, project_id)
+    if not permissions.can_manage:
+        return HttpResponseForbidden()
+
+    native_script = await aget_object_or_404(EtlScript, id=script_id)
+    user = await request.auser()
+    error = await _attempt(customize_native_script(
+        project=research_project, user=user, request=request, native_script=native_script))
 
     return await _rerender_section(request, research_project, permissions, ETL_SECTION_SCRIPTS, manage_error=error)
 

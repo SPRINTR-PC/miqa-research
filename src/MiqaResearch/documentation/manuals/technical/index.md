@@ -19,6 +19,7 @@ src/*
   * [Script contract](#heading-etl-contract)
   * [Raw bucket move](#heading-etl-raw-bucket)
   * [Permissions and audit](#heading-etl-permissions)
+  * [Native Scripts](#heading-etl-native-scripts)
   * [Configuration reference](#heading-etl-configuration)
   * [Current limitations](#heading-etl-limitations)
 

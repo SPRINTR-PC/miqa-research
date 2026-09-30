@@ -12,6 +12,7 @@ src/*
 * [ETL Pipelines](#heading-etl-pipelines)
   * [Who can do what](#heading-etl-pipelines-access)
   * [Creating a custom script](#heading-etl-pipelines-scripts)
+    * [Native scripts](#heading-etl-pipelines-native)
   * [Creating a Pipeline Binding](#heading-etl-pipelines-bindings)
     * [Editing a binding](#heading-etl-pipelines-binding-edit)
   * [What happens when a file arrives](#heading-etl-pipelines-lifecycle)

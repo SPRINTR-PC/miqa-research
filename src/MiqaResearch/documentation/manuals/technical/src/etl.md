@@ -51,16 +51,42 @@ def load_measurement_rows(*, project, etl_job, rows) -> LoadResult:
 
 Registering the same name twice raises `DatatypeAlreadyRegistered`.
 
-Two Datatypes are shipped. Both target OMOP CDM v5.4 tables:
+Three Datatypes are shipped. The first two target OMOP CDM v5.4 tables:
 
 | Datatype | Target model | Natural key (upsert) |
 |---|---|---|
 | `measurement` | `Measurement` | person, `measurement_concept_id`, `measurement_date`, `measurement_source_value` |
 | `visit_occurrence` | `VisitOccurrence` | person, `visit_concept_id`, `visit_start_date`, `visit_source_value` |
+| `participant_consent` | `ParticipantConsent` | participant, consent type, `consent_signed_date` |
 
 Rows are upserted on these natural keys, so re-running the same batch updates rows in place
 instead of creating duplicates. Every loaded row records the `EtlJob` that wrote it
 (`etl_job` foreign key).
+
+### Participant consent
+
+`participant_consent` differs from the other Datatypes in three ways
+([ADR 0031](#heading-etl-adr-0031)):
+
+- **Unknown participants are created.** A row must carry `person_source_value`. If no Study
+  Participant in the project matches it, one is created in the Binding's project, with the
+  row's `name` and a generated `alias1`. This happens inside the Job's single transaction, so
+  a bad row rolls the new participants back too.
+- **Consent types are per project.** `consent_type` is a label that is looked up, and created
+  if missing, within the Binding's project. `ParticipantConsentType` is unique on
+  `(research_project, label)` (migration 0023).
+- **Clinics** are looked up by `clinic_code` and created if missing.
+
+The other row fields are `consent_signed_date`, `status`, `consent_revoked_date`,
+`participant_information_version` and `source`. A re-imported row updates the existing consent
+in place, so a revocation in a later export is recorded.
+
+(heading-etl-adr-0031)=
+:::{note}
+**ADR 0031.** Consent is how a person enters a study, so for this Datatype an unknown
+personnummer is expected rather than an error. Participants created earlier by the legacy
+SamtyckenUmu task have no project and are not matched.
+:::
 
 ### Participant references and concepts
 
@@ -104,7 +130,8 @@ erDiagram
 
 `EtlScript` (ETL Script)
 : A named program with an `origin` of `native` or `custom`.
-  - **Native** scripts are global (`project` is null) and read-only.
+  - **Native** scripts are global (`project` is null) and read-only. See
+    [Native Scripts](#heading-etl-native-scripts).
   - **Custom** scripts belong to one Research Project.
   - `datatype_name` names the ETL Datatype that the Script's rows conform to. It is chosen,
     from the registry, when the Script is created, and it can't be changed afterwards. A Script
@@ -538,7 +565,7 @@ names, descriptions or bucket paths:
 
 | Event type | Recorded when |
 |---|---|
-| `etl_script_created` | A custom Script (and its version 1) is created. |
+| `etl_script_created` | A custom Script (and its version 1) is created, including by Customizing a Native Script (then with `customized_from`). |
 | `etl_script_updated` | A Script's name or description is edited. |
 | `etl_script_version_created` | A new Version is uploaded. |
 | `etl_script_archived` | A Script is archived. |
@@ -547,6 +574,68 @@ names, descriptions or bucket paths:
 | `etl_settings_updated` | The project's ETL overrides are changed. |
 | `etl_job_manual_retry` | A failed Job is manually retried. |
 | `etl_source_cleanup_stuck` | A raw-bucket source delete gave up (system event, no user). |
+
+(heading-etl-native-scripts)=
+## Native Scripts
+
+Native Scripts ship with the codebase in `MiqaResearch/etl_native_scripts/`
+([ADR 0030](#heading-etl-adr-0030)). `NATIVE_SCRIPTS` lists each one's name, Datatype,
+description and source file. The sources are self-contained (standard library only), because
+they run in the sandbox as `script.py` and a Customized copy has to keep working on its own.
+
+**Sync.** `sync_native_etl_scripts` runs after every `migrate`, through `post_migrate`, and can
+also be run on demand with `manage.py sync_native_etl_scripts`. It mirrors the list into
+`EtlScript` rows (origin `native`, no project, keyed by name):
+
+- A new immutable Version is published only when a source's SHA-256 changes. Bindings keep the
+  Version they pinned until a manager re-pins them.
+- A Native Script that is removed from the list is archived, never deleted.
+- `MIRES_ETL_SYNC_NATIVE_SCRIPTS_ON_MIGRATE=False` turns off the automatic sync. Tests do this.
+
+**Customize.** Native Scripts are available to every project, with no per-project toggle.
+Admins and Data Managers can **Customize** one (`actions/etl/scripts.customize_native_script`).
+This creates a project-owned custom Script with the same name, description and Datatype, whose
+version 1 is a copy of the Native Script's latest Version. The copy does not follow later
+upgrades of the Native Script.
+
+(heading-etl-adr-0030)=
+:::{note}
+**ADR 0030.** Keeping Native Scripts in code keeps them reviewed and versioned with the
+platform. Syncing them into immutable Versions keeps every Job reproducible. Customizing by
+copying means one project's change never reaches another project's pipelines.
+:::
+
+### CSV → participant consent
+
+The first Native Script (`csv_participant_consent.py`) produces `participant_consent` rows. By
+default it reads the SamtyckenUmu consent export:
+
+- **Fixed columns:** `Personnummer`, `Namn`, `Status`, `Signerat`, `Återtaget`, `klinik` and
+  `participant_information_version`. `Senast Uppdaterad` and `Kommentar` are ignored.
+- **Consent columns:** every other column is a consent type, and a cell of `Ja` means the
+  consent was given.
+- **Dates** are local times in `Europe/Stockholm`, as `YYYY-MM-DD HH:MM[:SS]`.
+- **Personnummer** has its dashes removed.
+
+A Binding's config can override any of these:
+
+```json
+{
+  "delimiter": ";",
+  "encoding": "utf-8-sig",
+  "timezone": "Europe/Stockholm",
+  "consented_values": ["yes"],
+  "source": "Lab export",
+  "columns": {
+    "person_source_value": "ssn", "name": "full_name", "status": "state",
+    "signed": "signed_at", "revoked": "revoked_at", "clinic": "site",
+    "participant_information_version": "info_version", "ignore": ["notes"]
+  }
+}
+```
+
+A CSV missing a required column (person, signed date or clinic) fails the Job with exit 1 and
+a message naming the missing column. Config isn't validated against a schema yet (#238).
 
 (heading-etl-configuration)=
 ## Configuration reference
@@ -570,6 +659,7 @@ they are loaded.
 | `MIRES_ETL_SCRIPT_S3_BUCKET`, `_ENDPOINT_URL`, `_REGION_NAME`, `_ACCESS_KEY_ID`, `_SECRET_ACCESS_KEY` | *(none)*, region `us-east-1` | S3 settings for Script source storage when the backend is `s3`. |
 | `MIRES_ETL_SCRIPT_MAX_SOURCE_BYTES` | `262144` (256 KiB) | Default maximum Script source size (per-project override under Defaults). |
 | `MIRES_ETL_SCRIPT_IMAGE_KEYS` | `{".py": "python-etl-v1", ".r": "r-etl-v1"}` | Maps a file extension to a sandbox image key. |
+| `MIRES_ETL_SYNC_NATIVE_SCRIPTS_ON_MIGRATE` | `True` | Sync Native Scripts from the codebase after every `migrate`. |
 | `MIRES_SANDBOX_BACKEND` | `compose` | `compose` or `kubernetes`. |
 | `MIRES_SANDBOX_IMAGE_ALLOWLIST` | `{}` | JSON object mapping an image key to an image reference. Must list every key in use. |
 | `MIRES_SANDBOX_DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker API for the Compose backend. Use a socket proxy in production. |
@@ -589,10 +679,9 @@ they are loaded.
 
 The following reflects the code as shipped. Each gap has a follow-up issue:
 
-- **No native Scripts are shipped**
-  ([#226](https://github.com/SPRINTR-PC/miqa-research/issues/226)). None are seeded, and
-  per-project enable or override of native Scripts isn't built. When native Scripts exist, they
-  will run through the Sandbox Runner like custom ones.
+- **Binding config isn't validated against a schema**
+  ([#238](https://github.com/SPRINTR-PC/miqa-research/issues/238)). Config is a free-form JSON
+  object, so a wrong key only shows up as a failed Job.
 
 `EtlLocationGrant` rows are managed only in the Django admin. This is intended: grants are
 operator-managed per #156.

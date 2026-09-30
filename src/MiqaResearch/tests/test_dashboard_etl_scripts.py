@@ -383,3 +383,72 @@ def test_a_source_file_in_an_unsupported_language_is_rejected_with_a_form_error(
 
     assert not EtlScript.objects.exists()
     assert "must be a .py or .r file" in response.content.decode()
+
+
+# --- Customize a native script (#226) -------------------------------------------------------------------------------
+
+
+def _customize_url(project, script):
+    return reverse("dashboard_tab_etl_script_customize", args=[project.id, script.id])
+
+
+def _native_script_with_versions(*sources):
+    script = EtlScript.objects.create(
+        name="CSV → participant consent", description="Reads consent exports.", origin=ETL_SCRIPT_ORIGIN_NATIVE,
+        project=None, datatype_name="participant_consent")
+    for number, source in enumerate(sources, start=1):
+        EtlScriptVersion.objects.create(
+            script=script, version=number, source=_upload(source, "csv_participant_consent.py"),
+            sha256=str(number) * 64, image_key="python-etl-v1")
+    return script
+
+
+@pytest.mark.django_db
+def test_customizing_a_native_script_copies_its_latest_version_into_a_project_script(project):
+    native = _native_script_with_versions(b"# v1", b"# v2")
+    user = _user_with_role(project, "Data Manager")
+
+    _client_as(user).post(_customize_url(project, native), **HTMX)
+
+    copy = EtlScript.objects.get(project=project, origin=ETL_SCRIPT_ORIGIN_CUSTOM)
+    assert copy.datatype_name == "participant_consent"
+    assert copy.description == "Reads consent exports."
+    version = copy.versions.get()
+    assert version.version == 1
+    assert version.source.read() == b"# v2"
+    assert version.image_key == "python-etl-v1"
+    entry = AuditLog.objects.get(event_type=EVENT_TYPE_ETL_SCRIPT_CREATED)
+    assert entry.user_id == user.id
+    assert entry.metadata == {
+        "etl_script_id": str(copy.id), "datatype": "participant_consent", "customized_from": str(native.id)}
+
+
+@pytest.mark.django_db
+def test_a_read_only_role_cannot_customize_a_native_script(project):
+    native = _native_script_with_versions(b"# v1")
+
+    response = _client_as(_user_with_role(project, "Investigator")).post(_customize_url(project, native), **HTMX)
+
+    assert response.status_code == 403
+    assert not EtlScript.objects.filter(project=project).exists()
+
+
+@pytest.mark.django_db
+def test_only_a_native_script_can_be_customized(project):
+    custom = EtlScript.objects.create(name="Own", origin=ETL_SCRIPT_ORIGIN_CUSTOM, project=project)
+
+    response = _client_as(_user_with_role(project, "Data Manager")).post(_customize_url(project, custom), **HTMX)
+
+    assert EtlScript.objects.filter(project=project).count() == 1
+    assert "Only an active native Script can be customized." in response.content.decode()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(("role_name", "can_customize"), [("Data Manager", True), ("Investigator", False)])
+def test_only_managers_are_offered_customize_on_a_native_script(project, role_name, can_customize):
+    native = _native_script_with_versions(b"# v1")
+
+    body = _client_as(_user_with_role(project, role_name)).get(_scripts_url(project)).content.decode()
+
+    assert "participant_consent" in body
+    assert (_customize_url(project, native) in body) is can_customize

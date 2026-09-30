@@ -531,10 +531,17 @@ A user-authored program (Python or R, picked by the uploaded file's extension)
 that takes staged input files and produces rows for one ETL Datatype. Both
 languages follow the same contract: `main(ctx)` yields (Python) or `emit()`s
 (R) rows, which are validated against the Datatype's schema in the sandbox. Belongs to a Research Project, managed by
-its Admins and Data Managers. Built-in (default) scripts are global and
+its Admins and Data Managers. **Native Scripts** are the exception: global and
 read-only. Every save produces an immutable **Script Version**. Its Datatype is
 chosen when the Script is created and never changes, because Bindings and past Jobs
 depend on it.
+
+### Native Script
+An ETL Script shipped with the platform rather than written by a project:
+global, read-only, and available to every project. A project that needs a
+variation **Customizes** it, which copies it into a new project-owned ETL Script;
+the Native Script itself never changes per project.
+_Avoid_: Built-in script, default script
 
 ### Script Version
 An immutable, content-hashed snapshot of an ETL Script. Pipeline Bindings pin a
@@ -568,9 +575,9 @@ Binding's current one). It starts at attempt 1 and isn't linked as an
 auto-retry. Refused while the Binding already has an active Job. Audited.
 
 ### Sandbox Runner
-The isolated, ephemeral container in which custom ETL Scripts execute: no
-network, read-only staged input, resource-limited, no credentials. Built-in
-scripts run in-process.
+The isolated, ephemeral container in which every ETL Script executes, Native
+or custom alike: no network, read-only staged input, resource-limited, no
+credentials.
 
 ### User Manual
 The in-app guide for people operating MIQA Research (researchers, PIs, Data
@@ -628,6 +635,57 @@ _Avoid_: admin, operator
 | 0027 | Machine clients bound to one project; Project Admins may grant raw DICOM access | Accepted |
 | 0028 | De-identification Profile: PS3.15 Basic with retention options, fixed system-wide | Accepted |
 | 0029 | Manuals translated via gettext `.po` from one English source; language follows the app, not the URL | Accepted |
+| 0030 | Native ETL Scripts shipped as code and synced on migrate; per-project override is a Customize copy | Accepted |
+| 0031 | Participant-consent ETL loads create unknown participants; consent types are per project | Accepted |
+
+### ADR 0031 — Participant-consent ETL loads create unknown participants; consent types are per project
+
+**Context**: Every ETL Datatype so far treats a Participant Reference that
+matches nobody as a hard error for the whole Job. The first Native Script
+(issue #226) loads participant consent, meant to replace the SamtyckenUmu
+consent task. Consent is how a person *enters* a study, so an unknown
+personnummer is the normal case, not a fault. Consent types were also unique
+by label across all projects, and the legacy task filed new ones under one
+configured project.
+
+**Decision**: The `participant_consent` Datatype creates an unknown
+participant in the Binding's project, with a generated pseudonym, inside the
+Job's single transaction. Its rows must therefore carry `person_source_value`.
+Consent types are unique per project, and are looked up and created within the
+Binding's project. A re-imported consent is updated in place, so a later
+revocation reaches the database.
+
+**Consequences**:
+- An ETL Job can now add participants to a project. That is limited to this
+  Datatype, and a bad row still rolls back every participant the Job created.
+- Two projects can each own a consent type with the same label. The legacy
+  task's global label lookup keeps working only while a label exists in one
+  project.
+- Participants the legacy task created without a project aren't matched.
+  Their consents re-imported through ETL create project-scoped participants.
+
+### ADR 0030 — Native ETL Scripts shipped as code and synced on migrate; per-project override is a Customize copy
+
+**Context**: Issue #156 calls for Native (built-in) ETL Scripts that are global,
+read-only and always available, and that a project can "enable or override".
+Issue #226 shipped the first one. We had to decide where Native Scripts live, how
+their versions are published, and what "override" means, while keeping
+Bindings reproducible (they pin an immutable Script Version).
+
+**Decision**: A Native Script's source lives in the codebase, self-contained
+and stdlib-only. After every migrate (the ADR 0013 precedent) and through
+`sync_native_etl_scripts`, the platform mirrors them into the database. It
+publishes a new immutable Version only when the source changes, and archives a
+Native Script dropped from the code instead of deleting it. Native Scripts are
+always available to every project, with no per-project toggle. "Override" means
+**Customize**: an Admin or Data Manager copies the latest Version into a new
+project-owned custom Script with the same Datatype.
+
+**Consequences**:
+- An upgrade that changes a Native Script never changes a running pipeline.
+  Bindings keep their pinned Version until a manager re-pins them.
+- A Customized copy doesn't follow later upgrades of its Native Script.
+- A per-project disable toggle can be added later without changing this model.
 
 ### ADR 0029 — Manuals translated via gettext `.po` from one English source; language follows the app, not the URL
 

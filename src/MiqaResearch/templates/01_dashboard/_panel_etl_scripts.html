@@ -72,7 +72,7 @@
     <div class="p-6 py-16 text-center text-muted-foreground space-y-2">
       {% include "components/icon.html" with icon_name="pencil" %}
       <p class="font-medium">{% translate "No scripts registered yet" %}</p>
-      <p class="text-sm">{% translate "Built-in and custom scripts will be listed here once the script registry lands." %}</p>
+      <p class="text-sm">{% translate "Create a custom script above, or customize a native script below." %}</p>
     </div>
   {% endif %}
 </div>
@@ -86,8 +86,17 @@
           <div>
             <p class="font-medium">{{ script.name }}</p>
             <p class="text-sm text-muted-foreground">{{ script.description }}</p>
+            <p class="text-sm text-muted-foreground">{% translate "Datatype" %}: {{ script.datatype_name }}</p>
           </div>
-          <span class="text-sm text-muted-foreground">{% translate "Native · read-only" %}</span>
+          <div class="etl-manage-actions">
+            <span class="text-sm text-muted-foreground">{% translate "Native · read-only" %}</span>
+            {% if etl_permissions.can_manage %}
+            <form method="post" hx-post="{% url 'dashboard_tab_etl_script_customize' project.id script.id %}" hx-target="#etl-section-panel" hx-swap="innerHTML">
+              {% csrf_token %}
+              <button class="btn" type="submit" title="{% translate 'Copy this script into a custom script your project can edit' %}">{% include 'components/icon.html' with icon_name='pencil' icon_classes='h-4 w-4' %}{% translate "Customize" %}</button>
+            </form>
+            {% endif %}
+          </div>
         </li>
       {% endfor %}
     </ul>
