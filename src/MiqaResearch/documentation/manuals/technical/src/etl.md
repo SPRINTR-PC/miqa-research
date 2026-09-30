@@ -128,9 +128,17 @@ erDiagram
   - The source location is `source_bucket` plus `source_prefix`, which must be unique across
     all Bindings. The Binding also holds `raw_bucket` and `raw_prefix`.
   - `script_version` is pinned. Editing the Script later creates a new version and never
-    changes an existing Binding.
+    changes an existing Binding. A manager can re-pin the Binding through **Edit**.
+  - Everything except the source location can be edited on the tab
+    (`actions/etl/bindings.update_pipeline_binding`), with the same grant, usable-version and
+    lower-only rules as creation. An edit never affects a Job that is already queued: the runner
+    uses the Job's own `script_version` and `config_snapshot`.
+  - Changing `grouping_mode` re-derives the pending folder groups
+    (`polling.rehome_backlog_after_grouping_change`). A switch to folder starts fresh quiescence
+    windows for files that were seen but not yet queued. A switch to per-file drops the groups.
   - `grouping_mode` is `file` or `folder`, with a `quiescence_seconds` window for folders.
-  - `config` is a JSON object passed to the Script.
+  - `config` is a JSON object passed to the Script as `ctx.config`. It is not yet validated
+    against a per-Script-Version schema.
   - Optional overrides for sandbox timeout, memory and CPU can only **lower** the platform
     defaults.
 
@@ -213,7 +221,7 @@ Binding.
 3. Builds a `SandboxRunSpec` from:
    - the Job id;
    - the Script Version's `image_key` and source;
-   - the manifest `{"datatype": <script.datatype_name>, "config": <binding.config>}`;
+   - the manifest `{"datatype": <script.datatype_name>, "config": <job.config_snapshot>}`;
    - the Binding's resolved limits;
    - the input bytes, keyed by path relative to `source_prefix`.
 4. Calls `get_sandbox_backend().run(spec)`, which blocks this Celery task for the whole run
@@ -492,7 +500,7 @@ source file is then left in place for manual handling, and the platform, once on
 | Role | Access |
 |---|---|
 | Superuser, Admin | Everything, including admin-only actions: archiving a Script and editing the project's ETL overrides under Defaults. |
-| Data Manager | Create and edit custom Scripts, upload Versions, create Bindings, retry failed Jobs. |
+| Data Manager | Create and edit custom Scripts, upload Versions, create and edit Bindings, retry failed Jobs. |
 | PI, Investigator | Read-only: every section is listed, but no manage controls are rendered or accepted. |
 | Any other role | No access. The tab returns 404. |
 
@@ -519,6 +527,7 @@ names, descriptions or bucket paths:
 | `etl_script_version_created` | A new Version is uploaded. |
 | `etl_script_archived` | A Script is archived. |
 | `etl_binding_created` | A Pipeline Binding is created. |
+| `etl_binding_updated` | A Pipeline Binding is edited. |
 | `etl_settings_updated` | The project's ETL overrides are changed. |
 | `etl_job_manual_retry` | A failed Job is manually retried. |
 | `etl_source_cleanup_stuck` | A raw-bucket source delete gave up (system event, no user). |
@@ -564,11 +573,6 @@ they are loaded.
 
 The following reflects the code as shipped. Each gap has a follow-up issue:
 
-- **Grouping, config and Binding edits are missing from the UI**
-  ([#224](https://github.com/SPRINTR-PC/miqa-research/issues/224)). The wizard doesn't set
-  `grouping_mode`, `quiescence_seconds` or `config`, so a new Binding is per-file with an empty
-  config. An existing Binding can't be edited or re-pinned to a newer Script Version. Until then,
-  make these changes in the Django admin.
 - **`SandboxBackend.sweep()` is never scheduled**
   ([#225](https://github.com/SPRINTR-PC/miqa-research/issues/225)). Orphaned sandbox containers
   or Kubernetes Jobs have to be cleaned up by operators.

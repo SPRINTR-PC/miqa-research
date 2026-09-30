@@ -8,7 +8,7 @@ view the tab; a view whose action needs more than that (manage, or admin-only ma
 from django.http import Http404, HttpResponseForbidden
 from django.shortcuts import aget_object_or_404
 
-from MiqaResearch.actions.etl.bindings import create_pipeline_binding
+from MiqaResearch.actions.etl.bindings import create_pipeline_binding, update_pipeline_binding
 from MiqaResearch.actions.etl.exceptions import EtlActionError
 from MiqaResearch.actions.etl.jobs import retry_failed_job
 from MiqaResearch.actions.etl.scripts import (
@@ -18,9 +18,10 @@ from MiqaResearch.actions.etl.scripts import (
     update_custom_script,
 )
 from MiqaResearch.actions.etl.settings import update_etl_project_settings
-from MiqaResearch.data.models import EtlScript
+from MiqaResearch.data.models import EtlScript, PipelineBinding
 from MiqaResearch.interfaces.http.forms.etl import (
     EtlBindingCreateForm,
+    EtlBindingEditForm,
     EtlProjectSettingsForm,
     EtlScriptCreateForm,
     EtlScriptEditForm,
@@ -165,6 +166,9 @@ async def etl_bindings_create(request, project_id):
                 script_version_id=form.cleaned_data['script_version'],
                 raw_bucket=form.cleaned_data['raw_bucket'],
                 raw_prefix=form.cleaned_data['raw_prefix'],
+                grouping_mode=form.cleaned_data['grouping_mode'],
+                quiescence_seconds=form.cleaned_data['quiescence_seconds'],
+                config=form.cleaned_data['config'],
                 timeout_seconds_override=form.cleaned_data['timeout_seconds_override'],
                 memory_mb_override=form.cleaned_data['memory_mb_override'],
                 cpu_millicores_override=form.cleaned_data['cpu_millicores_override'],
@@ -179,6 +183,38 @@ async def etl_bindings_create(request, project_id):
         request, _ETL_SECTION_PANELS[ETL_SECTION_BINDINGS], research_project, 'etl-pipelines',
         extra_context={'etl_section': ETL_SECTION_BINDINGS} | section_context, with_sidebar=True,
     )
+
+
+@htmx_login_required
+async def etl_binding_edit(request, project_id, binding_id):
+    research_project, permissions = await get_user_etl_project_or_404(request, project_id)
+    if not permissions.can_manage:
+        return HttpResponseForbidden()
+
+    binding = await aget_object_or_404(PipelineBinding, id=binding_id, project=research_project)
+    user = await request.auser()
+    form = EtlBindingEditForm(
+        request.POST,
+        location_grants=await get_project_location_grants(research_project),
+        script_version_choices=await get_bindable_script_version_choices(research_project),
+    )
+    if form.is_valid():
+        error = await _attempt(update_pipeline_binding(
+            project=research_project, user=user, request=request, binding=binding,
+            script_version_id=form.cleaned_data['script_version'],
+            raw_bucket=form.cleaned_data['raw_bucket'],
+            raw_prefix=form.cleaned_data['raw_prefix'],
+            grouping_mode=form.cleaned_data['grouping_mode'],
+            quiescence_seconds=form.cleaned_data['quiescence_seconds'],
+            config=form.cleaned_data['config'],
+            timeout_seconds_override=form.cleaned_data['timeout_seconds_override'],
+            memory_mb_override=form.cleaned_data['memory_mb_override'],
+            cpu_millicores_override=form.cleaned_data['cpu_millicores_override'],
+        ))
+    else:
+        error = " ".join(message for messages in form.errors.values() for message in messages)
+
+    return await _rerender_section(request, research_project, permissions, ETL_SECTION_BINDINGS, manage_error=error)
 
 
 @htmx_login_required

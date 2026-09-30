@@ -34,6 +34,19 @@ def poll_binding(binding) -> EtlJob | None:
     return _poll_per_file(binding)
 
 
+def rehome_backlog_after_grouping_change(binding) -> None:
+    """#224: re-derive `binding`'s pending folder groups after its grouping mode was edited. Folder
+    polling only ever tracks *newly* seen files, so without this, files already in the ledger but
+    not yet queued would be stranded by a switch to folder grouping. Their groups start a fresh
+    quiescence window now. A switch to per-file just drops the groups -- per-file polling queues
+    every unassigned file on its own."""
+    EtlPendingGroup.objects.filter(binding=binding).delete()
+    if binding.grouping_mode == PIPELINE_BINDING_GROUPING_FOLDER:
+        backlog = list(_unassigned_files(binding))
+        if backlog:
+            _touch_pending_groups(binding, backlog)
+
+
 def _poll_per_file(binding) -> EtlJob | None:
     files = list(_unassigned_files(binding)[:1])
     if not files:

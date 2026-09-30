@@ -3,7 +3,8 @@
 Fetches each input's bytes (stamping the real SHA-256/size onto its EtlJobInput row -- the
 poller only ever wrote placeholders, since hashing at poll time would mean fetching every object
 twice), builds the sandbox contract's manifest (`{"datatype": ..., "config": ...}`) and
-SandboxRunSpec from the Binding + pinned Script Version, and runs it through the configured
+SandboxRunSpec from the Job's own pinned Script Version and config snapshot (#224: a Binding edit
+never changes a Job already queued), and runs it through the configured
 SandboxBackend. On exit 0 the result (header line dropped, per etl_shim.contract's manifest/result
 shape) is handed to the real Datatype loader (#159) inside its own all-or-nothing transaction.
 Every other exit code (1 script error / 2 contract violation / 3 timeout-or-killed) fails the Job
@@ -60,7 +61,7 @@ def run_job(job_id: str) -> EtlJob:
     spec = SandboxRunSpec(
         run_id=str(job.id),
         image_key=job.script_version.image_key,
-        manifest={"datatype": script.datatype_name, "config": binding.config},
+        manifest={"datatype": script.datatype_name, "config": job.config_snapshot},
         script_source=job.script_version.source.read(),
         limits=resolve_limits(binding),
         input_files=input_files,

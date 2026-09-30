@@ -1,5 +1,6 @@
 {% get_current_language as LANGUAGE_CODE %}
 <p class="text-sm text-muted-foreground">{% translate "Each binding connects one source bucket to one script, producing one datatype. Project Admins and Data Managers only." %}</p>
+{% if manage_error %}<p class="etl-form-error">{{ manage_error }}</p>{% endif %}
 {% if binding_create_form %}
 <details>
   <summary class="btn" style="display:inline-flex;width:fit-content;cursor:pointer;">{% include 'components/icon.html' with icon_name='plus' icon_classes='h-4 w-4' %}{% translate "New binding" %}</summary>
@@ -16,7 +17,23 @@
             <p class="text-sm text-muted-foreground">{% translate "Script" %}: {{ binding.script_version.script.name }} v{{ binding.script_version.version }}</p>
             <p class="text-sm text-muted-foreground">{% translate "Datatype" %}: {% if binding.script_version.script.datatype_name %}{{ binding.script_version.script.datatype_name }}{% else %}{% translate "not set" %}{% endif %}</p>
             <p class="text-sm text-muted-foreground">{% translate "Raw destination" %}: {{ binding.raw_bucket }}/{{ binding.raw_prefix }}</p>
+            <p class="text-sm text-muted-foreground">{% translate "Grouping" %}: {{ binding.get_grouping_mode_display }}{% if binding.grouping_mode == 'folder' %} ({{ binding.quiescence_seconds }} s){% endif %}</p>
           </div>
+          {% if binding.edit_form %}
+          <div class="etl-manage-actions">
+            <details>
+              <summary class="btn">{% translate "Edit" %}</summary>
+              <form method="post" hx-post="{% url 'dashboard_tab_etl_binding_edit' project.id binding.id %}" hx-target="#etl-section-panel" hx-swap="innerHTML">
+                {% csrf_token %}
+                <p class="text-sm text-muted-foreground">{% translate "The source location can't be changed -- create a new binding instead. Jobs already queued keep the version and config they were queued with." %}</p>
+                {% for field in binding.edit_form %}
+                  <label class="etl-field"><span>{{ field.label }}</span>{{ field }}</label>
+                {% endfor %}
+                <button class="btn" type="submit">{% translate "Save" %}</button>
+              </form>
+            </details>
+          </div>
+          {% endif %}
         </li>
       {% endfor %}
     </ul>

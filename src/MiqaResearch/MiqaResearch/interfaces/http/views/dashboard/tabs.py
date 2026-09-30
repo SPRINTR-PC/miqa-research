@@ -7,6 +7,7 @@ from django.template.loader import render_to_string
 from MiqaResearch.etl_datatypes import registered_datatype_names
 from MiqaResearch.interfaces.http.forms.etl import (
     EtlBindingCreateForm,
+    EtlBindingEditForm,
     EtlProjectSettingsForm,
     EtlScriptCreateForm,
 )
@@ -185,6 +186,18 @@ async def goals(request, project_id):
     )
 
 
+def _binding_edit_initial(binding) -> dict:
+    return {
+        'script_version': str(binding.script_version_id),
+        'raw_bucket': binding.raw_bucket, 'raw_prefix': binding.raw_prefix,
+        'grouping_mode': binding.grouping_mode, 'quiescence_seconds': binding.quiescence_seconds,
+        'config': binding.config,
+        'timeout_seconds_override': binding.timeout_seconds_override,
+        'memory_mb_override': binding.memory_mb_override,
+        'cpu_millicores_override': binding.cpu_millicores_override,
+    }
+
+
 async def etl_section_context(project, permissions, section) -> dict:
     """Section-specific read data and unbound manage forms for the ETL Pipelines tab. Forms are
     only built for a section's manage-capable viewers -- a read-only viewer gets the listings but
@@ -204,11 +217,16 @@ async def etl_section_context(project, permissions, section) -> dict:
         context['bindings'] = await get_project_bindings(project)
         if permissions.can_manage:
             location_grants = await get_project_location_grants(project)
+            script_version_choices = await get_bindable_script_version_choices(project)
             context['location_grants'] = location_grants
             context['binding_create_form'] = EtlBindingCreateForm(
-                location_grants=location_grants,
-                script_version_choices=await get_bindable_script_version_choices(project),
+                location_grants=location_grants, script_version_choices=script_version_choices,
             )
+            for binding in context['bindings']:
+                binding.edit_form = EtlBindingEditForm(
+                    location_grants=location_grants, script_version_choices=script_version_choices,
+                    initial=_binding_edit_initial(binding), auto_id=f"id_binding_{binding.id}_%s",
+                )
 
     elif section == ETL_SECTION_JOBS:
         context['jobs'] = await get_project_jobs(project)
