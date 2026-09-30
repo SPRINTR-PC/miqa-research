@@ -70,6 +70,10 @@ app.conf.beat_schedule = {
         "task": "MiqaResearch.tasks.etl_orchestrator.tasks.retry_etl_source_cleanup",
         "schedule": 60.0,
     },
+    "etl-sweep-orphaned-sandboxes": {
+        "task": "MiqaResearch.tasks.etl_orchestrator.tasks.sweep_orphaned_sandboxes",
+        "schedule": 300.0,
+    },
 }
 app.autodiscover_tasks([
     "MiqaResearch.tasks"

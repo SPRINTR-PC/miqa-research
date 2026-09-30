@@ -352,20 +352,27 @@ def test_cancel_is_a_no_op_when_nothing_exists_for_that_run_id(allowlisted):
     backend.cancel("r1")  # must not raise
 
 
-def test_sweep_removes_every_job_pod_and_pvc_carrying_the_sandbox_label(allowlisted):
-    backend, core_v1, batch_v1, networking_v1, _ = _backend()
-    job_a = MagicMock()
-    batch_v1.list_namespaced_job.return_value.items = [job_a]
-    pod_a = MagicMock()
-    core_v1.list_namespaced_pod.return_value.items = [pod_a]
-    pvc_a = MagicMock()
-    core_v1.list_namespaced_persistent_volume_claim.return_value.items = [pvc_a]
+def _labelled(name, run_id=None):
+    resource = MagicMock()
+    resource.metadata.name = name
+    resource.metadata.labels = {"mires.etl.sandbox": "1"} | ({"mires.etl.run_id": run_id} if run_id else {})
+    return resource
 
-    backend.sweep()
+
+def test_sweep_removes_orphaned_jobs_pods_and_pvcs_but_keeps_live_runs_and_the_probe_pod(allowlisted):
+    backend, core_v1, batch_v1, networking_v1, _ = _backend()
+    batch_v1.list_namespaced_job.return_value.items = [
+        _labelled("mires-etl-orphan", "orphan"), _labelled("mires-etl-live", "live")]
+    core_v1.list_namespaced_pod.return_value.items = [
+        _labelled("mires-etl-orphan-drain", "orphan"), _labelled("mires-etl-live-stage", "live"),
+        _labelled("mires-etl-egress-probe")]
+    core_v1.list_namespaced_persistent_volume_claim.return_value.items = [
+        _labelled("mires-etl-orphan", "orphan"), _labelled("mires-etl-live", "live")]
+
+    backend.sweep(live_run_ids=lambda: {"live"})
 
     batch_v1.list_namespaced_job.assert_called_once_with("mires-etl-sandbox", label_selector="mires.etl.sandbox=1")
     batch_v1.delete_namespaced_job.assert_called_once_with(
-        job_a.metadata.name, "mires-etl-sandbox", propagation_policy="Foreground")
-    core_v1.delete_namespaced_pod.assert_called_once_with(pod_a.metadata.name, "mires-etl-sandbox")
-    core_v1.delete_namespaced_persistent_volume_claim.assert_called_once_with(
-        pvc_a.metadata.name, "mires-etl-sandbox")
+        "mires-etl-orphan", "mires-etl-sandbox", propagation_policy="Foreground")
+    core_v1.delete_namespaced_pod.assert_called_once_with("mires-etl-orphan-drain", "mires-etl-sandbox")
+    core_v1.delete_namespaced_persistent_volume_claim.assert_called_once_with("mires-etl-orphan", "mires-etl-sandbox")

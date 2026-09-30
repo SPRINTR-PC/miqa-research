@@ -186,6 +186,7 @@ The `app.conf.beat_schedule` in `MiqaResearch/celery.py` seeds these beat entrie
 | `recover_stuck_etl_jobs` | every 60 s | Stuck-job recovery (below). |
 | `retry_etl_source_cleanup` | every 60 s | Retries raw-bucket moves whose backoff is due. |
 | `prune_etl_job_logs` | daily 02:00 | Clears Job logs past their retention window. |
+| `sweep_orphaned_sandboxes` | every 300 s | Removes sandboxes left behind by crashed workers (below). |
 
 ### Polling
 
@@ -252,6 +253,20 @@ fails such Jobs and sends them through the infra-class retry path above. The Job
 the same `is_stuck()` rule to show "Stuck" before the sweep has run. "Stuck" is computed for
 display only and is never stored as a status.
 
+### Orphaned sandbox cleanup
+
+Stuck-job recovery fails the Job, but the dead worker's sandbox (a container, or a Kubernetes
+Job with its pods and PVC) is still there. `sweep_orphaned_sandboxes`
+(`tasks/etl_orchestrator/sandbox_sweep.py`) calls `SandboxBackend.sweep()`, which removes every
+labelled sandbox whose run id doesn't belong to a `pending` or `running` Job.
+
+- A stuck Job's sandbox is kept until stuck recovery has failed the Job, and removed on the next
+  pass after that.
+- The backend lists its sandboxes **before** asking which runs are live. A run that starts
+  between the two steps is therefore never mistaken for an orphan.
+- Only resources with a `mires.etl.run_id` label are swept. The Kubernetes egress probe pod has
+  no run id and is left to `_ensure_healthy`.
+
 ### Manual Retry
 
 An Admin or Data Manager can retry a `failed` Job from the Jobs panel
@@ -293,15 +308,16 @@ resources, and holds no credentials. Its only input is the staged sandbox direct
 class SandboxBackend(abc.ABC):
     def run(self, spec: SandboxRunSpec) -> SandboxRunResult: ...
     def cancel(self, run_id: str) -> None: ...
-    def sweep(self) -> None: ...
+    def sweep(self, *, live_run_ids: Callable[[], set[str]]) -> None: ...
 ```
 
 - **`run()`** returns `SandboxRunResult(exit_code, result_jsonl, log, killed)`. A Script's own
   failure is reported through `exit_code`. `run()` raises only for runner-level problems, where
   no container was ever started.
 - **`cancel()`** removes a single run.
-- **`sweep()`** removes containers left behind by a crashed worker. It finds them by the
-  `mires.etl.sandbox=1` label.
+- **`sweep()`** removes sandboxes left behind by a crashed worker. It finds them by the
+  `mires.etl.sandbox=1` label and keeps any whose `mires.etl.run_id` is in `live_run_ids()`. See
+  [Orphaned sandbox cleanup](#heading-etl-orchestrator).
 
 `MIRES_SANDBOX_BACKEND` selects the implementation (`compose` or `kubernetes`).
 
@@ -573,9 +589,6 @@ they are loaded.
 
 The following reflects the code as shipped. Each gap has a follow-up issue:
 
-- **`SandboxBackend.sweep()` is never scheduled**
-  ([#225](https://github.com/SPRINTR-PC/miqa-research/issues/225)). Orphaned sandbox containers
-  or Kubernetes Jobs have to be cleaned up by operators.
 - **No native Scripts are shipped**
   ([#226](https://github.com/SPRINTR-PC/miqa-research/issues/226)). None are seeded, and
   per-project enable or override of native Scripts isn't built. When native Scripts exist, they
