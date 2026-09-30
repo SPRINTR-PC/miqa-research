@@ -8,7 +8,7 @@ from django.tasks import task
 from contract.constants.celery import QUEUE_ETL_POLL, QUEUE_ETL_RUN
 from MiqaResearch.data.models import EtlJob, PipelineBinding
 
-from . import log_retention, polling, raw_bucket_mover, runner, stuck
+from . import log_retention, polling, raw_bucket_mover, runner, sandbox_sweep, stuck
 
 
 @task(queue_name=QUEUE_ETL_POLL)
@@ -47,6 +47,13 @@ def move_etl_job_inputs_to_raw_bucket(job_id: str) -> dict:
 def recover_stuck_etl_jobs() -> dict:
     recovered = stuck.recover_stuck_jobs()
     return {"recovered": len(recovered)}
+
+
+@task(queue_name=QUEUE_ETL_POLL)
+def sweep_orphaned_sandboxes() -> dict:
+    """#225: removes sandboxes whose EtlJob is no longer pending or running."""
+    sandbox_sweep.sweep_orphaned_sandboxes()
+    return {}
 
 
 @task(queue_name=QUEUE_ETL_POLL)

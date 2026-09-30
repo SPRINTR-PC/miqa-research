@@ -311,14 +311,34 @@ def test_cancel_is_a_no_op_when_no_container_exists_for_that_run_id(allowlisted)
     backend.cancel("r1")  # must not raise
 
 
-def test_sweep_removes_every_container_carrying_the_sandbox_label(allowlisted):
+def _labelled_container(run_id=None):
+    container = MagicMock()
+    container.labels = {"mires.etl.sandbox": "1"} | ({"mires.etl.run_id": run_id} if run_id else {})
+    return container
+
+
+def test_sweep_removes_orphaned_sandbox_containers_but_keeps_live_runs(allowlisted):
     client = MagicMock()
-    leftover_a, leftover_b = MagicMock(), MagicMock()
-    client.containers.list.return_value = [leftover_a, leftover_b]
+    orphan, live = _labelled_container("orphan-run"), _labelled_container("live-run")
+    client.containers.list.return_value = [orphan, live]
     backend = ComposeSandboxBackend(client=client)
 
-    backend.sweep()
+    backend.sweep(live_run_ids=lambda: {"live-run"})
 
     client.containers.list.assert_called_once_with(all=True, filters={"label": "mires.etl.sandbox=1"})
-    leftover_a.remove.assert_called_once_with(force=True)
-    leftover_b.remove.assert_called_once_with(force=True)
+    orphan.remove.assert_called_once_with(force=True)
+    live.remove.assert_not_called()
+
+
+def test_sweep_asks_which_runs_are_live_only_after_listing_so_a_run_starting_meanwhile_is_kept(allowlisted):
+    client = MagicMock()
+    client.containers.list.return_value = [_labelled_container("started-meanwhile")]
+    backend = ComposeSandboxBackend(client=client)
+
+    def live_run_ids():
+        assert client.containers.list.called, "live runs must be read after listing"
+        return {"started-meanwhile"}
+
+    backend.sweep(live_run_ids=live_run_ids)
+
+    client.containers.list.return_value[0].remove.assert_not_called()

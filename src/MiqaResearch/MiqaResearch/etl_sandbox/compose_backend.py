@@ -13,6 +13,7 @@ always remove the container -- a crashed worker's own leftovers are `sweep()`'s 
 method's.
 """
 import io
+from collections.abc import Callable
 
 import docker
 from docker.errors import NotFound
@@ -89,10 +90,13 @@ class ComposeSandboxBackend(SandboxBackend):
             return
         container.remove(force=True)
 
-    def sweep(self) -> None:
+    def sweep(self, *, live_run_ids: Callable[[], set[str]]) -> None:
         client = self._get_client()
-        for container in client.containers.list(all=True, filters={"label": f"{SANDBOX_LABEL}=1"}):
-            container.remove(force=True)
+        containers = client.containers.list(all=True, filters={"label": f"{SANDBOX_LABEL}=1"})
+        live = live_run_ids()
+        for container in containers:
+            if container.labels.get(RUN_ID_LABEL) not in live:
+                container.remove(force=True)
 
     def _get_client(self) -> docker.DockerClient:
         if self._client is None:

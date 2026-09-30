@@ -4,6 +4,7 @@ against this interface, never against a backend's own internals, and its own uni
 it against a fake implementation rather than a real container runtime.
 """
 import abc
+from collections.abc import Callable
 
 from .spec import SandboxRunResult, SandboxRunSpec
 
@@ -24,9 +25,11 @@ class SandboxBackend(abc.ABC):
         """
 
     @abc.abstractmethod
-    def sweep(self) -> None:
-        """Remove any sandbox container left behind by a crashed worker -- discovered via the
-        backend's own bookkeeping (e.g. a label), not via in-memory state.
+    def sweep(self, *, live_run_ids: Callable[[], set[str]]) -> None:
+        """Remove any sandbox left behind by a crashed worker -- discovered via the backend's own
+        bookkeeping (e.g. a label), not via in-memory state. A resource whose run id is in
+        `live_run_ids()` is kept. That callback is only called *after* listing, so a run that
+        starts between the two steps is never mistaken for an orphan (#225).
         """
 
 

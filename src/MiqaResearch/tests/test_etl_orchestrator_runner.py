@@ -45,7 +45,7 @@ class FakeSandboxBackend:
     def cancel(self, run_id):
         raise AssertionError("not exercised by the runner")
 
-    def sweep(self):
+    def sweep(self, *, live_run_ids):
         raise AssertionError("not exercised by the runner")
 
 

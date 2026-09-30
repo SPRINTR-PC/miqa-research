@@ -17,6 +17,7 @@ check the policy object exists -- it runs a real, fail-closed egress probe befor
 """
 import math
 import time
+from collections.abc import Callable
 
 from kubernetes import client as k8s
 from kubernetes.client.exceptions import ApiException
@@ -102,17 +103,27 @@ class KubernetesSandboxBackend(SandboxBackend):
             if exc.status != HTTP_NOT_FOUND:
                 raise
 
-    def sweep(self) -> None:
+    def sweep(self, *, live_run_ids: Callable[[], set[str]]) -> None:
+        """Only resources carrying a run-id label are ever swept -- the egress probe pod has none
+        and is managed by `_ensure_healthy` itself."""
         namespace = self._namespace()
         label_selector = f"{SANDBOX_LABEL}=1"
-        for job in self._batch_v1.list_namespaced_job(namespace, label_selector=label_selector).items:
-            self._batch_v1.delete_namespaced_job(
-                job.metadata.name, namespace, propagation_policy="Foreground")
-        for pod in self._core_v1.list_namespaced_pod(namespace, label_selector=label_selector).items:
-            self._core_v1.delete_namespaced_pod(pod.metadata.name, namespace)
-        for pvc in self._core_v1.list_namespaced_persistent_volume_claim(
-                namespace, label_selector=label_selector).items:
-            self._core_v1.delete_namespaced_persistent_volume_claim(pvc.metadata.name, namespace)
+        jobs = self._batch_v1.list_namespaced_job(namespace, label_selector=label_selector).items
+        pods = self._core_v1.list_namespaced_pod(namespace, label_selector=label_selector).items
+        pvcs = self._core_v1.list_namespaced_persistent_volume_claim(namespace, label_selector=label_selector).items
+        live = live_run_ids()
+
+        def orphaned(resource) -> bool:
+            run_id = (resource.metadata.labels or {}).get(RUN_ID_LABEL)
+            return run_id is not None and run_id not in live
+
+        for job in filter(orphaned, jobs):
+            _ignore_not_found(
+                self._batch_v1.delete_namespaced_job, job.metadata.name, namespace, propagation_policy="Foreground")
+        for pod in filter(orphaned, pods):
+            _ignore_not_found(self._core_v1.delete_namespaced_pod, pod.metadata.name, namespace)
+        for pvc in filter(orphaned, pvcs):
+            _ignore_not_found(self._core_v1.delete_namespaced_persistent_volume_claim, pvc.metadata.name, namespace)
 
     # --- PVC --------------------------------------------------------------
 
@@ -408,6 +419,15 @@ class KubernetesSandboxBackend(SandboxBackend):
     def _namespace(self) -> str:
         from django.conf import settings
         return settings.SANDBOX_K8S_NAMESPACE
+
+
+def _ignore_not_found(delete, *args, **kwargs) -> None:
+    """A Job's Foreground deletion can already have removed its pod by the time we get to it."""
+    try:
+        delete(*args, **kwargs)
+    except ApiException as exc:
+        if exc.status != HTTP_NOT_FOUND:
+            raise
 
 
 def _pvc_size_gi(limits) -> int:

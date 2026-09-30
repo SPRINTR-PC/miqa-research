@@ -153,3 +153,29 @@ def main(ctx):
 
     assert result.exit_code == contract.EXIT_TIMEOUT_OR_KILLED
     assert result.killed is True
+
+
+@pytest.mark.long_running
+def test_sweep_removes_an_orphaned_sandbox_container_and_keeps_a_live_one(docker_client):
+    labels = {"mires.etl.sandbox": "1"}
+    orphan = docker_client.containers.create(
+        IMAGE_REF, name="mires-etl-it-sweep-orphan", labels=labels | {"mires.etl.run_id": "it-sweep-orphan"})
+    live = docker_client.containers.create(
+        IMAGE_REF, name="mires-etl-it-sweep-live", labels=labels | {"mires.etl.run_id": "it-sweep-live"})
+    try:
+        def every_run_but_the_orphan_is_live():
+            # Other sandboxes on this daemon (another test run, a local dev stack) must survive this test.
+            existing = docker_client.containers.list(all=True, filters={"label": "mires.etl.sandbox=1"})
+            return {container.labels.get("mires.etl.run_id") for container in existing} - {"it-sweep-orphan"}
+
+        ComposeSandboxBackend(client=docker_client).sweep(live_run_ids=every_run_but_the_orphan_is_live)
+
+        remaining = {container.name for container in docker_client.containers.list(all=True)}
+        assert "mires-etl-it-sweep-orphan" not in remaining
+        assert "mires-etl-it-sweep-live" in remaining
+    finally:
+        for container in (orphan, live):
+            try:
+                container.remove(force=True)
+            except docker.errors.NotFound:
+                pass
