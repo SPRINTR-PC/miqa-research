@@ -3,6 +3,8 @@ from django.db.models import Count, Q
 
 from contract.constants.etl import ETL_SCRIPT_ORIGIN_CUSTOM, ETL_SCRIPT_ORIGIN_NATIVE
 from MiqaResearch.data.models import (
+    EtlJob,
+    EtlJobInput,
     EtlLocationGrant,
     EtlProjectSettings,
     EtlScript,
@@ -34,6 +36,42 @@ async def get_project_bindings(project: ResearchProject) -> list[PipelineBinding
         binding async for binding in
         PipelineBinding.objects.filter(project=project).select_related("script_version", "script_version__script")
     ]
+
+
+async def get_project_jobs(project: ResearchProject) -> list[EtlJob]:
+    """The project's Jobs, newest first, with their Binding and pinned Script Version preloaded
+    for the Jobs panel. Each Job gets an `is_stuck` attribute: a "running" Job past its timeout
+    plus grace (the orchestrator's stuck rule) displays as stuck before recovery sweeps it."""
+    from django.utils import timezone
+
+    from MiqaResearch.tasks.etl_orchestrator.stuck import is_stuck
+
+    now = timezone.now()
+    jobs = [
+        job async for job in
+        EtlJob.objects.filter(binding__project=project)
+        .select_related("binding", "script_version", "script_version__script")
+    ]
+    for job in jobs:
+        job.is_stuck = is_stuck(job, now)
+    return jobs
+
+
+async def get_project_job(project: ResearchProject, job_id) -> EtlJob | None:
+    """One of the project's Jobs for its detail view, or None if `job_id` isn't this project's.
+    Carries `is_stuck` like `get_project_jobs`, plus its inputs as `input_list` -- an async view
+    can't lazily evaluate `.inputs.all()` while rendering."""
+    from django.utils import timezone
+
+    from MiqaResearch.tasks.etl_orchestrator.stuck import is_stuck
+
+    job = await EtlJob.objects.filter(binding__project=project, id=job_id) \
+        .select_related("binding", "script_version", "script_version__script").afirst()
+    if job is None:
+        return None
+    job.is_stuck = is_stuck(job, timezone.now())
+    job.input_list = [job_input async for job_input in EtlJobInput.objects.filter(job=job)]
+    return job
 
 
 async def get_project_location_grants(project: ResearchProject) -> list[EtlLocationGrant]:

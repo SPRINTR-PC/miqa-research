@@ -1,14 +1,16 @@
-"""POST endpoints for the ETL Pipelines tab's manage actions (#158): create/edit/archive a custom
-Script, add a Version, create a Binding, edit the project's ETL settings overrides. Every view
+"""Endpoints for the ETL Pipelines tab beyond its section listings: the manage actions (#158) --
+create/edit/archive a custom Script, add a Version, create a Binding, edit the project's ETL
+settings overrides -- and a Job's detail view (#164). Every view
 resolves the project through `get_user_etl_project_or_404` first, which 404s a user who can't even
 view the tab; a view whose action needs more than that (manage, or admin-only manage) then checks
 `etl_permissions` itself and responds 403 -- the page exists for them, the action doesn't.
 """
-from django.http import HttpResponseForbidden
+from django.http import Http404, HttpResponseForbidden
 from django.shortcuts import aget_object_or_404
 
 from MiqaResearch.actions.etl.bindings import create_pipeline_binding
 from MiqaResearch.actions.etl.exceptions import EtlActionError
+from MiqaResearch.actions.etl.jobs import retry_failed_job
 from MiqaResearch.actions.etl.scripts import (
     archive_custom_script,
     create_custom_script,
@@ -26,6 +28,7 @@ from MiqaResearch.interfaces.http.forms.etl import (
 )
 from MiqaResearch.readers.etl_reader import (
     get_bindable_script_version_choices,
+    get_project_job,
     get_project_location_grants,
     get_project_max_script_source_bytes,
 )
@@ -36,6 +39,7 @@ from .tabs import (
     _ETL_SECTION_PANELS,
     ETL_SECTION_BINDINGS,
     ETL_SECTION_DEFAULTS,
+    ETL_SECTION_JOBS,
     ETL_SECTION_SCRIPTS,
     _htmx_tab_response,
     etl_section_context,
@@ -197,4 +201,41 @@ async def etl_defaults_update(request, project_id):
     return _htmx_tab_response(
         request, _ETL_SECTION_PANELS[ETL_SECTION_DEFAULTS], research_project, 'etl-pipelines',
         extra_context={'etl_section': ETL_SECTION_DEFAULTS} | section_context, with_sidebar=True,
+    )
+
+
+@htmx_login_required
+async def etl_job_detail(request, project_id, job_id):
+    research_project, permissions = await get_user_etl_project_or_404(request, project_id)
+    return await _render_job_detail(request, research_project, permissions, job_id)
+
+
+@htmx_login_required
+async def etl_job_retry(request, project_id, job_id):
+    research_project, permissions = await get_user_etl_project_or_404(request, project_id)
+    if not permissions.can_manage:
+        return HttpResponseForbidden()
+
+    job = await get_project_job(research_project, job_id)
+    if job is None:
+        raise Http404
+    user = await request.auser()
+    try:
+        retry_job = await retry_failed_job(project=research_project, user=user, request=request, job=job)
+    except EtlActionError as error:
+        return await _render_job_detail(request, research_project, permissions, job.id, manage_error=str(error))
+
+    return await _render_job_detail(request, research_project, permissions, retry_job.id)
+
+
+async def _render_job_detail(request, project, permissions, job_id, *, manage_error=None):
+    job = await get_project_job(project, job_id)
+    if job is None:
+        raise Http404
+    return _htmx_tab_response(
+        request, '01_dashboard/_panel_etl_job_detail.html', project, 'etl-pipelines',
+        extra_context={
+            'etl_section': ETL_SECTION_JOBS, 'etl_permissions': permissions, 'job': job, 'manage_error': manage_error,
+        },
+        with_sidebar=True,
     )

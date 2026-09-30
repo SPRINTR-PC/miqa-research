@@ -14,6 +14,7 @@ from MiqaResearch.readers.etl_reader import (
     get_native_scripts,
     get_project_bindings,
     get_project_custom_scripts,
+    get_project_jobs,
     get_project_location_grants,
     get_project_max_script_source_bytes,
     get_project_settings,
@@ -206,6 +207,9 @@ async def etl_section_context(project, permissions, section) -> dict:
                 location_grants=location_grants,
                 script_version_choices=await get_bindable_script_version_choices(project),
             )
+
+    elif section == ETL_SECTION_JOBS:
+        context['jobs'] = await get_project_jobs(project)
 
     elif section == ETL_SECTION_DEFAULTS:
         context['native_scripts'] = await get_native_scripts()

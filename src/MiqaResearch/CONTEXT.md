@@ -553,6 +553,16 @@ One run of one Script Version over one group of input files. Records script
 version, input object keys and checksums, runtime image digest, status, and log.
 Loading is all-or-nothing per job.
 
+A "running" Job past its Binding's sandbox timeout plus grace period is shown as
+**stuck** until the orchestrator's stuck-job sweep fails it (and auto-retries it
+if infra-class). "Stuck" is a displayed state, not a stored status.
+
+### Manual Retry
+A fresh ETL Job an Admin or Data Manager starts from a failed Job: same
+Binding, same inputs, and the failed Job's own Script Version (not the
+Binding's current one). It starts at attempt 1 and isn't linked as an
+auto-retry. Refused while the Binding already has an active Job. Audited.
+
 ### Sandbox Runner
 The isolated, ephemeral container in which custom ETL Scripts execute: no
 network, read-only staged input, resource-limited, no credentials. Built-in

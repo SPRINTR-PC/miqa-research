@@ -15,3 +15,8 @@ class EtlBindingConflict(EtlActionError):
 class EtlScriptVersionNotUsable(EtlActionError):
     """The chosen EtlScriptVersion isn't usable for this project: neither native nor owned by it,
     or its Script has since been archived."""
+
+
+class EtlJobStateError(EtlActionError):
+    """The target EtlJob can't be manually retried: it didn't fail, or its Binding already has
+    another Job pending or running."""
