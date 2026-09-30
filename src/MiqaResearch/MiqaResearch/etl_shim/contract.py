@@ -1,6 +1,6 @@
 """The ETL sandbox script contract (#160): the fixed file layout and exit codes shared by every
-per-language platform shim. A Python shim implements it here; an eventual R shim (#166) must
-match it exactly, since the orchestrator (#162) and sandbox runners (#161/#165) are written
+per-language platform shim. The Python shim implements it in `shim.py`; the R shim (#166,
+`r_shim.py` + `shim.R`) matches it exactly, since the orchestrator (#162) and sandbox runners (#161/#165) are written
 against this contract, not against either language's shim internals.
 
 Layout, all paths relative to the sandbox root:
@@ -8,8 +8,9 @@ Layout, all paths relative to the sandbox root:
 - `manifest.json` -- run metadata written by the orchestrator before the container starts:
   `{"datatype": "<a name from the ETL Datatype registry, #159>", "config": {<Script config>}}`.
 - `input/`  -- read-only staged source files for this Job.
-- `script.py` (or the language's own equivalent) -- the pinned Script Version's source, baked
-  into the sandbox by the runner.
+- `script.py` / `script.R` -- the pinned Script Version's source, staged into the sandbox by the
+  runner under its language's filename (`script_filename`, below). A sandbox image key's leading
+  segment names that language (`python-etl-v1`, `r-etl-v1`).
 - `output/result.jsonl` -- written only once the whole script run succeeds: a header line
   `{"datatype": "<name>"}` followed by one JSON row per line, each validated against that
   Datatype's schema (participant-referenced, per #159). Never partially written: on any failure
@@ -29,6 +30,7 @@ Exit codes (every non-zero code fails the Job all-or-nothing, matching #159's lo
 MANIFEST_FILENAME = "manifest.json"
 INPUT_DIRNAME = "input"
 SCRIPT_FILENAME = "script.py"
+R_SCRIPT_FILENAME = "script.R"
 OUTPUT_DIRNAME = "output"
 RESULT_FILENAME = "result.jsonl"
 LOG_FILENAME = "log.txt"
@@ -37,3 +39,19 @@ EXIT_SUCCESS = 0
 EXIT_SCRIPT_ERROR = 1
 EXIT_CONTRACT_VIOLATION = 2
 EXIT_TIMEOUT_OR_KILLED = 3
+
+LANGUAGE_PYTHON = "python"
+LANGUAGE_R = "r"
+
+_SCRIPT_FILENAMES = {LANGUAGE_PYTHON: SCRIPT_FILENAME, LANGUAGE_R: R_SCRIPT_FILENAME}
+
+
+def image_key_language(image_key: str) -> str:
+    """The language a sandbox image key's leading segment names, e.g. "r" for `r-etl-v1`."""
+    return image_key.split("-", 1)[0]
+
+
+def script_filename(image_key: str) -> str:
+    """The filename a Script's source is staged under for `image_key`'s image. A key naming no
+    known language gets the original Python layout -- the allowlist, not this, rejects bad keys."""
+    return _SCRIPT_FILENAMES.get(image_key_language(image_key), SCRIPT_FILENAME)

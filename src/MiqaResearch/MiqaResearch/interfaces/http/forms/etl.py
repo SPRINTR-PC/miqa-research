@@ -5,18 +5,26 @@ max script source size, are passed in pre-computed rather than resolved lazily b
 either would run a synchronous DB query inside an async view.
 """
 from django import forms
+from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 
 
 class _ScriptSourceSizeMixin:
-    """Shared `source` size check for the two forms that accept an EtlScriptVersion upload."""
+    """Shared `source` checks for the two forms that accept an EtlScriptVersion upload: its size,
+    and that its file extension names a language a sandbox image runs (#166)."""
 
     def __init__(self, *args, max_source_bytes, **kwargs):
         self.max_source_bytes = max_source_bytes
         super().__init__(*args, **kwargs)
 
     def clean_source(self):
+        from MiqaResearch.etl_sandbox.images import image_key_for_script_filename
+
         source = self.cleaned_data["source"]
+        if image_key_for_script_filename(source.name) is None:
+            supported = " or ".join(sorted(settings.ETL_SCRIPT_IMAGE_KEYS))
+            raise forms.ValidationError(
+                _("Script source must be a %(extensions)s file.") % {"extensions": supported})
         if source.size > self.max_source_bytes:
             raise forms.ValidationError(
                 _("Script source must be at most %(max_bytes)d bytes for this project.")

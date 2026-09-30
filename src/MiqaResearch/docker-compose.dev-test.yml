@@ -312,6 +312,17 @@ services:
     profiles:
       - etl-sandbox-build
 
+  # ETL sandbox R image (#166): FROM the Python sandbox image above, so build that one first --
+  # `docker compose --profile etl-sandbox-build build mires_etl_sandbox_python mires_etl_sandbox_r`
+  # -- then allowlist it as `"r-etl-v1": "mires-etl-sandbox-r:dev"`.
+  mires_etl_sandbox_r:
+    build:
+      context: .
+      dockerfile: etl_sandbox_r.Dockerfile
+    image: mires-etl-sandbox-r:dev
+    profiles:
+      - etl-sandbox-build
+
 
 networks:
   mires:

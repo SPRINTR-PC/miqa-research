@@ -85,6 +85,7 @@ env = environ.Env(
     MIRES_ETL_SCRIPT_STORAGE_BACKEND=(str, "local"),
     MIRES_ETL_SCRIPT_S3_BUCKET=(str, None),
     MIRES_ETL_SCRIPT_MAX_SOURCE_BYTES=(int, 256 * 1024),
+    MIRES_ETL_SCRIPT_IMAGE_KEYS=(str, '{".py": "python-etl-v1", ".r": "r-etl-v1"}'),
     MIRES_SANDBOX_BACKEND=(str, "compose"),
     MIRES_SANDBOX_DOCKER_HOST=(str, "unix:///var/run/docker.sock"),
     MIRES_SANDBOX_IMAGE_ALLOWLIST=(str, "{}"),
@@ -203,6 +204,10 @@ ETL_SCRIPT_S3_SECRET_ACCESS_KEY: str | None = env("MIRES_ETL_SCRIPT_S3_SECRET_AC
 # project (null defers here); a native script (project=None) always uses
 # this default, since there's no project to hold an override.
 ETL_SCRIPT_MAX_SOURCE_BYTES: int = env("MIRES_ETL_SCRIPT_MAX_SOURCE_BYTES")
+# MIRES_ETL_SCRIPT_IMAGE_KEYS maps an uploaded Script source's (lowercased) file extension to the
+# sandbox image key its Version runs on (#166) -- each key must also be in
+# MIRES_SANDBOX_IMAGE_ALLOWLIST, below, for a Job to actually run.
+ETL_SCRIPT_IMAGE_KEYS: dict[str, str] = json.loads(env("MIRES_ETL_SCRIPT_IMAGE_KEYS"))
 
 # ETL sandbox runner (#161, #165): MIRES_SANDBOX_BACKEND selects the SandboxBackend implementation
 # ("compose" or "kubernetes"). MIRES_SANDBOX_DOCKER_HOST is where the Compose backend's

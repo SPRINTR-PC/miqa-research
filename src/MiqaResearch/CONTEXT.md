@@ -527,8 +527,10 @@ to the database themselves.
 _Avoid_: Data type (ambiguous with column/field types)
 
 ### ETL Script
-A user-authored program (Python; R later) that takes staged input files and
-produces rows for one ETL Datatype. Belongs to a Research Project, managed by
+A user-authored program (Python or R, picked by the uploaded file's extension)
+that takes staged input files and produces rows for one ETL Datatype. Both
+languages follow the same contract: `main(ctx)` yields (Python) or `emit()`s
+(R) rows, which are validated against the Datatype's schema in the sandbox. Belongs to a Research Project, managed by
 its Admins and Data Managers. Built-in (default) scripts are global and
 read-only. Every save produces an immutable **Script Version**.
 

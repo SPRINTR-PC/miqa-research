@@ -194,6 +194,24 @@ def test_run_stages_manifest_script_and_input_files_via_put_archive(allowlisted)
         assert tar.extractfile("input/source.csv").read() == b"a,b\n1,2\n"
 
 
+def test_run_stages_an_r_scripts_source_as_script_r(settings):
+    settings.SANDBOX_IMAGE_ALLOWLIST = {"r-etl-v1": "mires-etl-sandbox-r@sha256:deadbeef"}
+    client = MagicMock()
+    container = _fake_container()
+    client.containers.create.return_value = container
+    backend = ComposeSandboxBackend(client=client)
+    spec = SandboxRunSpec(
+        run_id="r1", image_key="r-etl-v1", manifest={"datatype": "measurement"},
+        script_source=b"main <- function(ctx) NULL", limits=_limits())
+
+    backend.run(spec)
+
+    (_, archive_bytes), _ = container.put_archive.call_args
+    with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r") as tar:
+        assert set(tar.getnames()) == {"manifest.json", "script.R"}
+        assert tar.extractfile("script.R").read() == b"main <- function(ctx) NULL"
+
+
 def test_run_returns_the_result_jsonl_and_log_on_success(allowlisted):
     client = MagicMock()
     client.containers.create.return_value = _fake_container(

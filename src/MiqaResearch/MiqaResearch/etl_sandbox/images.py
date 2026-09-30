@@ -6,6 +6,8 @@ from ever selecting an arbitrary or unpinned image. Operator-curated via `MIRES_
 digest-pinned tag (e.g. `registry/mires-etl-sandbox-python@sha256:...`), pinned once CI has built
 and run each image's conformance suite (#147). Local dev/test may point a key at a mutable tag.
 """
+from pathlib import PurePath
+
 from django.conf import settings
 
 from .exceptions import UnknownSandboxImage
@@ -17,3 +19,10 @@ def resolve_sandbox_image(image_key: str) -> str:
         return allowlist[image_key]
     except KeyError:
         raise UnknownSandboxImage(f"Sandbox image key {image_key!r} is not in the allowlist.") from None
+
+
+def image_key_for_script_filename(filename: str) -> str | None:
+    """The sandbox image key a Script source named `filename` runs on (#166), picked by its
+    extension via `MIRES_ETL_SCRIPT_IMAGE_KEYS` -- or None for a language no image supports."""
+    extension = PurePath(filename).suffix.lower()
+    return settings.ETL_SCRIPT_IMAGE_KEYS.get(extension)
