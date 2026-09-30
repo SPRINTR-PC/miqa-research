@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% comment %}
+PROTOTYPE — throwaway (#233 Manual page layout in the MIQA shell). Do not merge.
+Three variants of a manual page inside the MIQA shell, switchable via ?variant=A|B|C
+(floating bar, ← → keys). ?untranslated=1 shows the "not yet translated" notice.
+{% endcomment %}
+{% block main %}
+<style>
+  /* ---------- shared: Sphinx body typography, themed via MIQA tokens ---------- */
+  .mp-prose { color: var(--color-text); line-height: 1.65; font-size: 0.975rem; }
+  .mp-prose h1 { font-size: 1.9rem; font-weight: 700; margin: 0 0 1rem; line-height: 1.2; }
+  .mp-prose h2 { font-size: 1.35rem; font-weight: 650; margin: 2.2rem 0 .6rem; padding-top: .6rem; border-top: 1px solid var(--color-border); scroll-margin-top: 5rem; }
+  .mp-prose h3 { font-size: 1.1rem; font-weight: 600; margin: 1.6rem 0 .4rem; scroll-margin-top: 5rem; }
+  .mp-prose p { margin: .6rem 0; }
+  .mp-prose ul, .mp-prose ol { margin: .6rem 0 .6rem 1.4rem; }
+  .mp-prose ul { list-style: disc; } .mp-prose ol { list-style: decimal; }
+  .mp-prose li { margin: .2rem 0; }
+  .mp-prose a { color: var(--color-primary); text-decoration: underline; text-underline-offset: 2px; }
+  .mp-prose code { font-family: ui-monospace, monospace; font-size: .88em; padding: .1em .35em; border-radius: .3rem; background: var(--color-surface-sunken); }
+  .mp-prose pre { font-family: ui-monospace, monospace; font-size: .85rem; padding: .9rem 1rem; border-radius: .5rem; overflow-x: auto; background: var(--color-surface-sunken); border: 1px solid var(--color-border); margin: .9rem 0; }
+  .mp-prose pre code { background: none; padding: 0; }
+  .mp-prose table { border-collapse: collapse; margin: 1rem 0; width: 100%; font-size: .92rem; }
+  .mp-prose th, .mp-prose td { border: 1px solid var(--color-border); padding: .45rem .7rem; text-align: left; }
+  .mp-prose th { background: var(--color-surface-sunken); font-weight: 600; }
+  .mp-prose .admonition { border-left: 4px solid var(--color-primary); background: var(--color-surface-sunken); padding: .7rem 1rem; border-radius: .4rem; margin: 1rem 0; }
+  .mp-prose .admonition-title { font-weight: 650; margin: 0 0 .2rem; }
+  .mp-prose a.headerlink { opacity: 0; margin-left: .4rem; text-decoration: none; }
+  .mp-prose a.headerlink::after { content: "#"; }
+  .mp-prose :is(h1,h2,h3):hover a.headerlink { opacity: .6; }
+
+  /* toctree / toc lists */
+  .mp-nav ul { list-style: none; margin: 0; padding: 0; }
+  .mp-nav ul ul { padding-left: .8rem; border-left: 1px solid var(--color-border); margin-left: .35rem; }
+  .mp-nav a { display: block; padding: .28rem .55rem; border-radius: .35rem; color: var(--color-text); text-decoration: none; font-size: .9rem; opacity: .85; }
+  .mp-nav a:hover { background: var(--color-surface-sunken); opacity: 1; }
+  .mp-nav a.current, .mp-nav li.current > a { color: var(--color-primary); font-weight: 600; opacity: 1; }
+  .mp-muted { color: var(--color-muted-foreground); opacity: .8; font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+  .mp-crumbs { font-size: .85rem; opacity: .75; display: flex; gap: .4rem; flex-wrap: wrap; }
+  .mp-crumbs a { color: inherit; text-decoration: none; } .mp-crumbs a:hover { text-decoration: underline; }
+  .mp-notice { border: 1px solid var(--color-chart-warning); background: color-mix(in srgb, var(--color-chart-warning) 12%, transparent); padding: .6rem .9rem; border-radius: .5rem; font-size: .9rem; }
+  .mp-pager { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 3rem; }
+  .mp-pager a { display: block; border: 1px solid var(--color-border); border-radius: .6rem; padding: .8rem 1rem; text-decoration: none; color: var(--color-text); }
+  .mp-pager a:hover { border-color: var(--color-primary); }
+  .mp-pager small { display: block; opacity: .65; font-size: .75rem; }
+  .mp-manual-switch { display: inline-flex; border: 1px solid var(--color-border); border-radius: .5rem; overflow: hidden; font-size: .85rem; }
+  .mp-manual-switch a { padding: .3rem .8rem; text-decoration: none; color: var(--color-text); }
+  .mp-manual-switch a.on { background: var(--color-primary); color: var(--color-primary-foreground); }
+
+  /* ---------- A: docs three-column ---------- */
+  .mpA { display: grid; grid-template-columns: 15rem minmax(0, 1fr) 13rem; gap: 2.5rem; align-items: start; }
+  .mpA aside { position: sticky; top: 5rem; max-height: calc(100vh - 6rem); overflow-y: auto; }
+  .mpA .mpA-toc ul ul ul { display: none; }
+  .mpA .mpA-toc > ul > li > a { display: none; } /* drop the page-title entry */
+  .mpA .mpA-toc > ul > li > ul { border-left: 0; padding-left: 0; margin-left: 0; }
+  @media (max-width: 1100px) { .mpA { grid-template-columns: 14rem minmax(0,1fr); } .mpA .mpA-right { display: none; } }
+
+  /* ---------- B: reading column + drawer ---------- */
+  .mpB { max-width: 46rem; margin: 0 auto; }
+  .mpB-bar { position: sticky; top: 4.2rem; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .55rem 0; background: var(--color-background); border-bottom: 1px solid var(--color-border); margin-bottom: 1.5rem; }
+  .mpB-drawer { margin: 0; height: 100vh; max-height: 100vh; width: 22rem; max-width: 90vw; padding: 1.2rem; background: var(--color-card); color: var(--color-text); border-right: 1px solid var(--color-border); }
+  .mpB-drawer::backdrop { background: rgb(0 0 0 / .4); }
+  .mpB details.mpB-onpage { border: 1px solid var(--color-border); border-radius: .6rem; padding: .5rem .8rem; margin: 0 0 1.5rem; }
+  .mpB details.mpB-onpage summary { cursor: pointer; font-weight: 600; font-size: .9rem; }
+  .mpB .mpB-onpage > .mp-nav > ul > li > a { display: none; }
+  .mpB .mpB-onpage > .mp-nav > ul > li > ul { border-left: 0; padding-left: 0; margin-left: 0; }
+
+  /* ---------- C: app-style chapter tabs ---------- */
+  .mpC-tabs { border-bottom: 1px solid var(--color-border); margin-bottom: 1.5rem; }
+  .mpC-tabs ul { display: flex; gap: .25rem; list-style: none; margin: 0; padding: 0; overflow-x: auto; }
+  .mpC-tabs ul ul { display: none; }
+  .mpC-tabs a { display: block; padding: .6rem 1rem; text-decoration: none; color: var(--color-text); opacity: .75; border-bottom: 2px solid transparent; white-space: nowrap; }
+  .mpC-tabs li.current > a, .mpC-tabs a.current { opacity: 1; border-bottom-color: var(--color-primary); font-weight: 600; }
+  .mpC-body { display: grid; grid-template-columns: 12rem minmax(0, 1fr); gap: 1.5rem; align-items: start; }
+  .mpC-card { background: var(--color-card); border: 1px solid var(--color-border); border-radius: .9rem; padding: 2rem 2.4rem; }
+  .mpC-side { position: sticky; top: 5rem; }
+  .mpC-side .mp-nav > ul > li > a { display: none; }
+  .mpC-side .mp-nav > ul > li > ul { border-left: 0; padding-left: 0; margin-left: 0; }
+  .mpC-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1rem; }
+
+  /* ---------- prototype switcher (not part of the design) ---------- */
+  .proto-switcher { position: fixed; bottom: 1.2rem; left: 50%; transform: translateX(-50%); z-index: 9999; display: flex; align-items: center; gap: .6rem; background: #111; color: #fff; padding: .45rem .7rem; border-radius: 999px; box-shadow: 0 6px 24px rgb(0 0 0 / .35); font: 600 13px/1 system-ui, sans-serif; border: 2px dashed #f0f; }
+  .proto-switcher a { color: #fff; text-decoration: none; padding: .25rem .55rem; border-radius: 999px; background: #333; }
+  .proto-switcher a:hover { background: #555; }
+</style>
+
+{% if variant == "A" %}
+{# ===================== A — Docs three-column ===================== #}
+<div class="mpA">
+  <aside class="mp-nav">
+    {% if is_staff_reader %}<div class="mp-manual-switch" style="margin-bottom:1rem"><a class="on" href="{{ root_link }}">User</a><a href="#" title="Technical Manual (stub)">Technical</a></div>{% endif %}
+    <div class="mp-muted" style="margin-bottom:.5rem"><a href="{{ root_link }}" style="padding:0;opacity:1;color:inherit">User Manual</a></div>
+    {{ doc.toctree|safe }}
+  </aside>
+  <article>
+    <nav class="mp-crumbs" style="margin-bottom:1rem"><a href="{{ root_link }}">User Manual</a>{% for p in doc.parents %}<span>›</span><a href="{{ p.link }}">{{ p.title|safe }}</a>{% endfor %}{% if doc.current_page_name != "index" %}<span>›</span><span>{{ doc.title|safe }}</span>{% endif %}</nav>
+    {% if show_untranslated %}<div class="mp-notice" style="margin-bottom:1.2rem">Parts of this page are not yet translated and are shown in English.</div>{% endif %}
+    <div class="mp-prose">{{ doc.body|safe }}</div>
+    <div class="mp-pager">
+      <div>{% if doc.prev %}<a href="{{ doc.prev.link }}"><small>← Previous</small>{{ doc.prev.title|safe }}</a>{% endif %}</div>
+      <div style="text-align:right">{% if doc.next %}<a href="{{ doc.next.link }}"><small>Next →</small>{{ doc.next.title|safe }}</a>{% endif %}</div>
+    </div>
+  </article>
+  <aside class="mpA-right mp-nav">
+    {% if doc.display_toc %}<div class="mp-muted" style="margin-bottom:.5rem">On this page</div><div class="mpA-toc">{{ doc.toc|safe }}</div>{% endif %}
+  </aside>
+</div>
+
+{% elif variant == "B" %}
+{# ===================== B — Reading column + contents drawer ===================== #}
+<div class="mpB">
+  <div class="mpB-bar">
+    <div style="display:flex;align-items:center;gap:.8rem">
+      <button class="btn" type="button" onclick="document.getElementById('mpB-drawer').showModal()" style="border:1px solid var(--color-border);padding:.35rem .8rem;border-radius:.45rem">☰ Contents</button>
+      <nav class="mp-crumbs"><a href="{{ root_link }}">User Manual</a>{% if doc.current_page_name != "index" %}<span>›</span><span>{{ doc.title|safe }}</span>{% endif %}</nav>
+    </div>
+    {% if is_staff_reader %}<div class="mp-manual-switch"><a class="on" href="{{ root_link }}">User</a><a href="#" title="Technical Manual (stub)">Technical</a></div>{% endif %}
+  </div>
+  {% if show_untranslated %}<div class="mp-notice" style="margin-bottom:1.2rem">Parts of this page are not yet translated and are shown in English.</div>{% endif %}
+  {% if doc.display_toc %}<details class="mpB-onpage"><summary>On this page</summary><div class="mp-nav" style="margin-top:.5rem">{{ doc.toc|safe }}</div></details>{% endif %}
+  <div class="mp-prose">{{ doc.body|safe }}</div>
+  <div class="mp-pager">
+    <div>{% if doc.prev %}<a href="{{ doc.prev.link }}"><small>← Previous</small>{{ doc.prev.title|safe }}</a>{% endif %}</div>
+    <div style="text-align:right">{% if doc.next %}<a href="{{ doc.next.link }}"><small>Next →</small>{{ doc.next.title|safe }}</a>{% endif %}</div>
+  </div>
+  <dialog id="mpB-drawer" class="mpB-drawer" onclick="if(event.target===this)this.close()">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem"><span class="mp-muted">User Manual</span><button type="button" onclick="this.closest('dialog').close()" aria-label="Close">✕</button></div>
+    <div class="mp-nav">{{ doc.toctree|safe }}</div>
+  </dialog>
+</div>
+
+{% else %}
+{# ===================== C — App-style chapter tabs ===================== #}
+<div>
+  <div class="mpC-head">
+    <div>
+      <div class="mp-muted">User Manual</div>
+      <h1 style="font-size:1.6rem;font-weight:700;margin:.2rem 0 0">{{ doc.title|safe }}</h1>
+    </div>
+    {% if is_staff_reader %}<div class="mp-manual-switch"><a class="on" href="{{ root_link }}">User</a><a href="#" title="Technical Manual (stub)">Technical</a></div>{% endif %}
+  </div>
+  <nav class="mpC-tabs"><ul><li class="{% if doc.current_page_name == 'index' %}current{% endif %}"><a href="{{ root_link }}">Overview</a></li></ul>{{ doc.toctree|safe }}</nav>
+  <div class="mpC-body">
+    <aside class="mpC-side">
+      {% if doc.display_toc %}<div class="mp-muted" style="margin-bottom:.5rem">Sections</div><div class="mp-nav">{{ doc.toc|safe }}</div>{% endif %}
+    </aside>
+    <div>
+      {% if show_untranslated %}<div class="mp-notice" style="margin-bottom:1rem">Parts of this page are not yet translated and are shown in English.</div>{% endif %}
+      <div class="mpC-card mp-prose mpC-prose">{{ doc.body|safe }}</div>
+      <div class="mp-pager" style="margin-top:1.2rem">
+        <div>{% if doc.prev %}<a href="{{ doc.prev.link }}"><small>← Previous</small>{{ doc.prev.title|safe }}</a>{% endif %}</div>
+        <div style="text-align:right">{% if doc.next %}<a href="{{ doc.next.link }}"><small>Next →</small>{{ doc.next.title|safe }}</a>{% endif %}</div>
+      </div>
+    </div>
+  </div>
+</div>
+<style>
+  /* C: tabs share one row — the "Overview" li and the toctree's ul */
+  .mpC-tabs { display: flex; }
+  .mpC-tabs > ul { display: flex; }
+  /* page H1 already shown in the header */
+  .mpC-prose > section > h1:first-child { display: none; }
+</style>
+{% endif %}
+
+{% if proto_debug %}
+<div class="proto-switcher" role="toolbar" aria-label="Prototype variant switcher">
+  <a href="#" data-step="-1" aria-label="Previous variant">←</a>
+  <span>PROTOTYPE · {{ variant }} — {{ variant_name }}</span>
+  <a href="#" data-step="1" aria-label="Next variant">→</a>
+  <a href="?variant={{ variant }}{% if not show_untranslated %}&untranslated=1{% endif %}" title="Toggle untranslated notice">{% if show_untranslated %}hide{% else %}show{% endif %} i18n notice</a>
+</div>
+<script>
+  (function () {
+    const keys = [{% for k in variants %}"{{ k }}"{% if not forloop.last %},{% endif %}{% endfor %}];
+    const cur = "{{ variant }}";
+    function go(step) {
+      const next = keys[(keys.indexOf(cur) + step + keys.length) % keys.length];
+      const url = new URL(location.href);
+      url.searchParams.set("variant", next);
+      location.replace(url);
+    }
+    document.querySelectorAll(".proto-switcher [data-step]").forEach(a =>
+      a.addEventListener("click", e => { e.preventDefault(); go(+a.dataset.step); }));
+    document.addEventListener("keydown", e => {
+      if (e.target.closest("input, textarea, [contenteditable]")) return;
+      if (e.key === "ArrowLeft") go(-1);
+      if (e.key === "ArrowRight") go(1);
+    });
+  })();
+</script>
+{% endif %}
+{% endblock %}

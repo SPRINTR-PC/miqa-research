@@ -3,6 +3,7 @@ from django.contrib import admin
 from django.urls import include, path
 
 from MiqaResearch.interfaces.http.api.urls import api
+from MiqaResearch.interfaces.http.views.prototype_manual_layout import manual_layout  # PROTOTYPE #233
 from MiqaResearch.interfaces.http.views import (
     UploadDataView,
     administration_index,
@@ -34,6 +35,9 @@ from MiqaResearch.interfaces.http.views.accounts.logout import LogoutView
 
 urlpatterns = [
     path('', landing_page_index, name='home'),
+    # PROTOTYPE #233 — throwaway manual layout variants
+    path('prototype/manual-layout/', manual_layout, name='prototype_manual_layout'),
+    path('prototype/manual-layout/<path:page>', manual_layout, name='prototype_manual_layout_page'),
     path('administration/', administration_index, name='administration'),
     path('upload/', UploadDataView.as_view(), name="upload_data"),
     path('dashboard/', include([
