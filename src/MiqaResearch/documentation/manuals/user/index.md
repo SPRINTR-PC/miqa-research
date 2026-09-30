@@ -9,6 +9,15 @@ src/*
 
 # Table of Contents
 
+* [ETL Pipelines](#heading-etl-pipelines)
+  * [Who can do what](#heading-etl-pipelines-access)
+  * [Creating a custom script](#heading-etl-pipelines-scripts)
+  * [Creating a Pipeline Binding](#heading-etl-pipelines-bindings)
+  * [What happens when a file arrives](#heading-etl-pipelines-lifecycle)
+  * [Following jobs and reading logs](#heading-etl-pipelines-jobs)
+  * [Retrying a failed job](#heading-etl-pipelines-retry)
+  * [Defaults (Admins)](#heading-etl-pipelines-defaults)
+
 # Indices and tables
 
 * :ref:`genindex`
