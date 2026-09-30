@@ -111,6 +111,17 @@ def test_a_read_only_role_cannot_post_a_create_action(project):
     assert not EtlScript.objects.exists()
 
 
+@pytest.mark.django_db
+def test_the_scripts_section_shows_each_scripts_datatype(project):
+    EtlScript.objects.create(
+        name="Visit import", origin=ETL_SCRIPT_ORIGIN_CUSTOM, project=project, datatype_name="visit_occurrence")
+    client = _client_as(_user_with_role(project, "Investigator"))  # read-only: no create form listing choices
+
+    body = client.get(_scripts_url(project)).content.decode()
+
+    assert "visit_occurrence" in body
+
+
 # --- Create custom script ---------------------------------------------------------------------------------------
 
 
@@ -120,7 +131,10 @@ def test_a_data_manager_can_create_a_custom_script(project):
 
     response = client.post(
         _create_url(project),
-        {"name": "REDCap import", "description": "Imports REDCap exports", "source": _upload()},
+        {
+            "name": "REDCap import", "description": "Imports REDCap exports", "datatype": "measurement",
+            "source": _upload(),
+        },
         **HTMX,
     )
 
@@ -132,17 +146,48 @@ def test_a_data_manager_can_create_a_custom_script(project):
 
 
 @pytest.mark.django_db
+def test_a_new_script_produces_the_datatype_chosen_at_creation(project):
+    client = _client_as(_user_with_role(project, "Data Manager"))
+
+    client.post(
+        _create_url(project),
+        {"name": "Visit import", "description": "", "datatype": "visit_occurrence", "source": _upload()},
+        **HTMX,
+    )
+
+    assert EtlScript.objects.get(project=project).datatype_name == "visit_occurrence"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("datatype", ["not_a_registered_datatype", ""])
+def test_a_script_cannot_be_created_without_a_registered_datatype(project, datatype):
+    client = _client_as(_user_with_role(project, "Data Manager"))
+
+    response = client.post(
+        _create_url(project), {"name": "Lab import", "description": "", "datatype": datatype, "source": _upload()},
+        **HTMX)
+
+    assert not EtlScript.objects.exists()
+    assert "etl-form-error" in response.content.decode()
+
+
+@pytest.mark.django_db
 def test_creating_a_script_records_an_audit_event_scoped_to_the_project_with_no_data_values(project):
     user = _user_with_role(project, "Admin")
     client = _client_as(user)
 
-    client.post(_create_url(project), {"name": "REDCap import", "description": "", "source": _upload()}, **HTMX)
+    client.post(
+        _create_url(project),
+        {"name": "REDCap import", "description": "", "datatype": "measurement", "source": _upload()},
+        **HTMX,
+    )
 
     entry = AuditLog.objects.get(event_type=EVENT_TYPE_ETL_SCRIPT_CREATED)
     assert entry.user_id == user.id
     assert entry.project_id == project.id
     assert "REDCap" not in str(entry.metadata)
-    assert set(entry.metadata.keys()) == {"etl_script_id"}
+    assert set(entry.metadata.keys()) == {"etl_script_id", "datatype"}
+    assert entry.metadata["datatype"] == "measurement"  # a code-registered identifier, not a data value
 
 
 @pytest.mark.django_db
@@ -151,7 +196,9 @@ def test_an_oversized_source_file_is_rejected_with_a_form_error(project, setting
     client = _client_as(_user_with_role(project, "Admin"))
 
     response = client.post(
-        _create_url(project), {"name": "Too big", "description": "", "source": _upload(b"way too many bytes")}, **HTMX)
+        _create_url(project),
+        {"name": "Too big", "description": "", "datatype": "measurement", "source": _upload(b"way too many bytes")},
+        **HTMX)
 
     assert response.status_code == 200
     assert not EtlScript.objects.filter(name="Too big").exists()
@@ -173,6 +220,45 @@ def test_a_data_manager_can_edit_a_custom_scripts_name_and_description(project):
     assert script.name == "New name"
     assert script.description == "Updated"
     assert AuditLog.objects.filter(event_type=EVENT_TYPE_ETL_SCRIPT_UPDATED, project=project).exists()
+
+
+@pytest.mark.django_db
+def test_a_script_created_without_a_datatype_can_have_one_set_by_editing_it(project):
+    script = EtlScript.objects.create(name="Legacy import", origin=ETL_SCRIPT_ORIGIN_CUSTOM, project=project)
+    client = _client_as(_user_with_role(project, "Data Manager"))
+
+    client.post(
+        _edit_url(project, script), {"name": "Legacy import", "description": "", "datatype": "measurement"}, **HTMX)
+
+    script.refresh_from_db()
+    assert script.datatype_name == "measurement"
+
+
+@pytest.mark.django_db
+def test_a_scripts_datatype_cannot_be_changed_once_set(project):
+    script = EtlScript.objects.create(
+        name="Visit import", origin=ETL_SCRIPT_ORIGIN_CUSTOM, project=project, datatype_name="visit_occurrence")
+    client = _client_as(_user_with_role(project, "Data Manager"))
+
+    client.post(
+        _edit_url(project, script), {"name": "Visit import", "description": "", "datatype": "measurement"}, **HTMX)
+
+    script.refresh_from_db()
+    assert script.datatype_name == "visit_occurrence"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(("datatype_name", "offers_picker"), [("", True), ("measurement", False)])
+def test_the_edit_form_offers_a_datatype_picker_only_while_none_is_set(project, datatype_name, offers_picker):
+    script = EtlScript.objects.create(
+        name="Import", origin=ETL_SCRIPT_ORIGIN_CUSTOM, project=project, datatype_name=datatype_name)
+    client = _client_as(_user_with_role(project, "Data Manager"))
+
+    body = client.get(_scripts_url(project)).content.decode()
+
+    edit_form = re.search(rf'<form[^>]*{re.escape(_edit_url(project, script))}.*?</form>', body, re.DOTALL)
+    assert edit_form is not None
+    assert ('name="datatype"' in edit_form.group(0)) is offers_picker
 
 
 @pytest.mark.django_db
@@ -267,7 +353,9 @@ def test_a_new_scripts_version_runs_on_the_image_for_its_source_files_language(p
     client = _client_as(_user_with_role(project, "Data Manager"))
 
     client.post(
-        _create_url(project), {"name": "Lab import", "description": "", "source": _upload(filename=filename)}, **HTMX)
+        _create_url(project),
+        {"name": "Lab import", "description": "", "datatype": "measurement", "source": _upload(filename=filename)},
+        **HTMX)
 
     assert EtlScriptVersion.objects.get().image_key == image_key
 
@@ -289,7 +377,8 @@ def test_a_source_file_in_an_unsupported_language_is_rejected_with_a_form_error(
     client = _client_as(_user_with_role(project, "Data Manager"))
 
     response = client.post(
-        _create_url(project), {"name": "Lab import", "description": "", "source": _upload(filename="import.sh")},
+        _create_url(project),
+        {"name": "Lab import", "description": "", "datatype": "measurement", "source": _upload(filename="import.sh")},
         **HTMX)
 
     assert not EtlScript.objects.exists()

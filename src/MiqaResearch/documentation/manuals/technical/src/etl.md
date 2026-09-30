@@ -106,7 +106,9 @@ erDiagram
 : A named program with an `origin` of `native` or `custom`.
   - **Native** scripts are global (`project` is null) and read-only.
   - **Custom** scripts belong to one Research Project.
-  - `datatype_name` names the ETL Datatype that the Script's rows conform to.
+  - `datatype_name` names the ETL Datatype that the Script's rows conform to. It is chosen,
+    from the registry, when the Script is created, and it can't be changed afterwards. A Script
+    left without one (created before #223) can have it set once through **Edit**.
   - Scripts are archive-only: `archived_at` is set instead of deleting the row. Both
     `delete()` and a bulk queryset delete raise `ValidationError`.
 
@@ -562,10 +564,6 @@ they are loaded.
 
 The following reflects the code as shipped. Each gap has a follow-up issue:
 
-- **The Script Datatype can't be set in the UI**
-  ([#223](https://github.com/SPRINTR-PC/miqa-research/issues/223)). The ETL Pipelines tab never
-  sets `EtlScript.datatype_name`. A Script created there fails every Job with exit code 2 until
-  an administrator sets the field in the Django admin.
 - **Grouping, config and Binding edits are missing from the UI**
   ([#224](https://github.com/SPRINTR-PC/miqa-research/issues/224)). The wizard doesn't set
   `grouping_mode`, `quiescence_seconds` or `config`, so a new Binding is per-file with an empty

@@ -14,6 +14,7 @@
           <div>
             <p class="font-medium">{{ binding.source_bucket }}/{{ binding.source_prefix }}</p>
             <p class="text-sm text-muted-foreground">{% translate "Script" %}: {{ binding.script_version.script.name }} v{{ binding.script_version.version }}</p>
+            <p class="text-sm text-muted-foreground">{% translate "Datatype" %}: {% if binding.script_version.script.datatype_name %}{{ binding.script_version.script.datatype_name }}{% else %}{% translate "not set" %}{% endif %}</p>
             <p class="text-sm text-muted-foreground">{% translate "Raw destination" %}: {{ binding.raw_bucket }}/{{ binding.raw_prefix }}</p>
           </div>
         </li>

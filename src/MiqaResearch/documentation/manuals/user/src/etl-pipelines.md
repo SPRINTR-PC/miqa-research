@@ -45,8 +45,10 @@ The tab has four sections, listed in the sidebar on its left: **Bindings**, **Sc
 ## Creating a custom script
 
 1. Open the **ETL Pipelines** tab and select **Scripts** in the sidebar.
-2. Under **New script**, enter a **Name**, an optional **Description**, and choose the script's
-   **Source** file.
+2. Under **New script**, enter a **Name** and an optional **Description**, choose the
+   **Datatype** the script produces, and choose the script's **Source** file.
+   - The Datatype can't be changed after the script is created, because bindings and past jobs
+     depend on it.
    - The file must end in `.py` (Python) or `.R` (R). The ending decides which language
      environment the script runs in.
    - The file must not be larger than the project's size limit, 256 KB unless an Admin has
@@ -62,10 +64,13 @@ An Admin can **Archive** a script that is no longer needed. An archived script c
 edited or chosen for a new binding. Scripts are never deleted, so every past job can still be
 traced to the exact code that ran.
 
+The Scripts and Bindings lists show each script's Datatype.
+
 :::{note}
-A new script must be linked to a Datatype before it can load any data. The tab does not yet
-provide a way to choose it, so ask your platform administrator to set the Datatype for a new
-script. Until then, its jobs fail with a "contract violation" error.
+A script created before the Datatype became part of the form may show **Datatype: not set**.
+Its jobs fail with a "contract violation" error until a Datatype is chosen. Open **Edit** on the
+script, pick the Datatype and click **Save**. This picker is offered only while the Datatype is
+still unset.
 :::
 
 ### What a script has to do

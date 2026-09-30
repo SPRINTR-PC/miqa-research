@@ -4,6 +4,7 @@ from django.http import HttpResponse
 from django.shortcuts import render
 from django.template.loader import render_to_string
 
+from MiqaResearch.etl_datatypes import registered_datatype_names
 from MiqaResearch.interfaces.http.forms.etl import (
     EtlBindingCreateForm,
     EtlProjectSettingsForm,
@@ -197,6 +198,7 @@ async def etl_section_context(project, permissions, section) -> dict:
         if permissions.can_manage:
             max_source_bytes = await get_project_max_script_source_bytes(project)
             context['script_create_form'] = EtlScriptCreateForm(max_source_bytes=max_source_bytes)
+            context['datatype_names'] = registered_datatype_names()
 
     elif section == ETL_SECTION_BINDINGS:
         context['bindings'] = await get_project_bindings(project)
