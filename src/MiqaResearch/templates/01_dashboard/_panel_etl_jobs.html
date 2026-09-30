@@ -1,9 +1,25 @@
 {% get_current_language as LANGUAGE_CODE %}
 <p class="text-sm text-muted-foreground">{% translate "One row per run attempt. All-or-nothing: a job either loads every row or none." %}</p>
 <div class="rounded-lg border bg-card text-card-foreground shadow-sm">
-  <div class="p-6 py-16 text-center text-muted-foreground space-y-2">
-    {% include "components/icon.html" with icon_name="scroll-text" %}
-    <p class="font-medium">{% translate "No jobs yet" %}</p>
-    <p class="text-sm">{% translate "Runs will appear here once a binding exists and the orchestrator picks up a file." %}</p>
-  </div>
+  {% if jobs %}
+    <ul class="etl-list">
+      {% for job in jobs %}
+        <li>
+          <div>
+            <a class="font-medium" href="{% url 'dashboard_tab_etl_job_detail' project.id job.id %}"
+              hx-get="{% url 'dashboard_tab_etl_job_detail' project.id job.id %}" hx-target="#etl-section-panel" hx-swap="innerHTML"
+              hx-indicator="#dashboard-tab-loading, #etl-section-panel">{{ job.binding.source_bucket }}/{{ job.binding.source_prefix }}</a>
+            <p class="text-sm text-muted-foreground">{% translate "Script" %}: {{ job.script_version.script.name }} v{{ job.script_version.version }} · {% translate "Attempt" %} {{ job.attempt }} · {{ job.created_at|date:"Y-m-d H:i" }}</p>
+          </div>
+          {% include '01_dashboard/_etl_job_status.html' %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="p-6 py-16 text-center text-muted-foreground space-y-2">
+      {% include "components/icon.html" with icon_name="scroll-text" %}
+      <p class="font-medium">{% translate "No jobs yet" %}</p>
+      <p class="text-sm">{% translate "Runs will appear here once a binding exists and the orchestrator picks up a file." %}</p>
+    </div>
+  {% endif %}
 </div>

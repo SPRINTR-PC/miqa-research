@@ -1,0 +1,47 @@
+{% get_current_language as LANGUAGE_CODE %}
+<a class="text-sm" href="{% url 'dashboard_tab_etl_pipelines_content' project.id %}?section=jobs"
+  hx-get="{% url 'dashboard_tab_etl_pipelines_content' project.id %}?section=jobs" hx-target="#etl-section-panel" hx-swap="innerHTML" hx-push-url="true"
+  hx-indicator="#dashboard-tab-loading, #etl-section-panel">{% include 'components/icon.html' with icon_name='arrow-left' icon_classes='h-4 w-4' %}{% translate "All jobs" %}</a>
+{% if manage_error %}<p class="etl-form-error">{{ manage_error }}</p>{% endif %}
+<div class="rounded-lg border bg-card text-card-foreground shadow-sm p-6 space-y-4">
+  <div class="etl-job-header">
+    <div>
+      <p class="font-medium">{{ job.binding.source_bucket }}/{{ job.binding.source_prefix }}</p>
+      <p class="text-sm text-muted-foreground">{% translate "Script" %}: {{ job.script_version.script.name }} v{{ job.script_version.version }} · {% translate "Attempt" %} {{ job.attempt }}</p>
+      <p class="text-sm text-muted-foreground">{% translate "Started" %}: {{ job.started_at|date:"Y-m-d H:i:s"|default:"—" }} · {% translate "Finished" %}: {{ job.finished_at|date:"Y-m-d H:i:s"|default:"—" }}</p>
+    </div>
+    <div class="etl-job-actions">
+      {% include '01_dashboard/_etl_job_status.html' %}
+      {% if etl_permissions.can_manage and job.status == 'failed' %}
+        <button type="button" class="btn"
+          hx-post="{% url 'dashboard_tab_etl_job_retry' project.id job.id %}" hx-target="#etl-section-panel" hx-swap="innerHTML"
+          hx-indicator="#dashboard-tab-loading, #etl-section-panel">{% include 'components/icon.html' with icon_name='rotate-ccw' icon_classes='h-4 w-4' %}{% translate "Retry" %}</button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div>
+    <p class="font-medium">{% translate "Inputs" %}</p>
+    {% if job.input_list %}
+      <table class="etl-job-inputs text-sm">
+        <thead><tr><th>{% translate "Key" %}</th><th>{% translate "Size (bytes)" %}</th><th>SHA-256</th></tr></thead>
+        <tbody>
+          {% for job_input in job.input_list %}
+            <tr><td>{{ job_input.bucket }}/{{ job_input.key }}</td><td>{{ job_input.size_bytes }}</td><td><code>{{ job_input.sha256|default:"—" }}</code></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="text-sm text-muted-foreground">{% translate "No inputs recorded." %}</p>
+    {% endif %}
+  </div>
+
+  <div>
+    <p class="font-medium">{% translate "Log" %}</p>
+    {% if job.log %}
+      <pre class="etl-job-log">{{ job.log }}</pre>
+    {% else %}
+      <p class="text-sm text-muted-foreground">{% translate "No log captured (or it has been pruned past the retention window)." %}</p>
+    {% endif %}
+  </div>
+</div>

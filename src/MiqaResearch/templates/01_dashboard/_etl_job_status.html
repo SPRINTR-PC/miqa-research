@@ -1,0 +1,5 @@
+{% if job.is_stuck %}
+  <span class="etl-job-status etl-job-status-stuck">{% translate "Stuck" %}</span>
+{% else %}
+  <span class="etl-job-status etl-job-status-{{ job.status }}">{{ job.get_status_display }}</span>
+{% endif %}

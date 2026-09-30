@@ -5,7 +5,7 @@ the same infra-class retry path a SandboxBackend.run() connectivity failure take
 """
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from django.utils import timezone
 
@@ -16,20 +16,24 @@ from MiqaResearch.etl_sandbox import resolve_limits
 from . import retry
 
 
-def find_stuck_jobs() -> list[EtlJob]:
+def is_stuck(job: EtlJob, now: datetime) -> bool:
+    """Whether `job` is "running" past its own resolved sandbox timeout plus the grace period.
+    Needs `job.binding` loaded; runs no query itself, so the Jobs panel (#164) can call it too."""
     from django.conf import settings
 
-    now = timezone.now()
+    if job.status != ETL_JOB_STATUS_RUNNING or job.started_at is None:
+        return False
     grace = timedelta(seconds=settings.ETL_JOB_STUCK_GRACE_SECONDS)
-    stuck_jobs = []
-    for job in EtlJob.objects.filter(status=ETL_JOB_STATUS_RUNNING).select_related("binding"):
-        if job.started_at is None:
-            continue
-        limits = resolve_limits(job.binding)
-        deadline = job.started_at + timedelta(seconds=limits.timeout_seconds) + grace
-        if now >= deadline:
-            stuck_jobs.append(job)
-    return stuck_jobs
+    deadline = job.started_at + timedelta(seconds=resolve_limits(job.binding).timeout_seconds) + grace
+    return now >= deadline
+
+
+def find_stuck_jobs() -> list[EtlJob]:
+    now = timezone.now()
+    return [
+        job for job in EtlJob.objects.filter(status=ETL_JOB_STATUS_RUNNING).select_related("binding")
+        if is_stuck(job, now)
+    ]
 
 
 def recover_stuck_jobs() -> list[EtlJob]:

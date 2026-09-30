@@ -2,6 +2,8 @@ from .administration.index import index as administration_index
 from .dashboard.etl import (
     etl_bindings_create as dashboard_tab_etl_bindings_create,
     etl_defaults_update as dashboard_tab_etl_defaults_update,
+    etl_job_detail as dashboard_tab_etl_job_detail,
+    etl_job_retry as dashboard_tab_etl_job_retry,
     etl_script_archive as dashboard_tab_etl_script_archive,
     etl_script_edit as dashboard_tab_etl_script_edit,
     etl_script_version_create as dashboard_tab_etl_script_version_create,
