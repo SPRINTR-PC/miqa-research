@@ -560,18 +560,24 @@ they are loaded.
 (heading-etl-limitations)=
 ## Current limitations
 
-The following reflects the code as shipped:
+The following reflects the code as shipped. Each gap has a follow-up issue:
 
-- **No UI for Datatype, grouping or config.** The ETL Pipelines tab does not set a Script's
-  `datatype_name`, or a Binding's `grouping_mode`, `quiescence_seconds` or `config`. A new
-  Binding is per-file with an empty config. Until the UI covers these fields, an administrator
-  sets them in the Django admin, and a Script cannot run successfully before its
-  `datatype_name` is set (the shim exits 2).
-- **No native Scripts shipped.** None are registered yet, and every Script, native or custom,
-  runs through the Sandbox Runner.
-- **`SandboxBackend.sweep()` is never scheduled.** It is implemented but not scheduled by the
-  orchestrator. Orphaned sandbox containers or Kubernetes Jobs must be cleaned up by operators.
-- **Bindings cannot be edited or removed in the UI.** Pointing an existing Binding at a newer
-  Script Version is done in the Django admin.
-- **Location grants are admin-only.** `EtlLocationGrant` rows are managed only in the Django
-  admin.
+- **The Script Datatype can't be set in the UI**
+  ([#223](https://github.com/SPRINTR-PC/miqa-research/issues/223)). The ETL Pipelines tab never
+  sets `EtlScript.datatype_name`. A Script created there fails every Job with exit code 2 until
+  an administrator sets the field in the Django admin.
+- **Grouping, config and Binding edits are missing from the UI**
+  ([#224](https://github.com/SPRINTR-PC/miqa-research/issues/224)). The wizard doesn't set
+  `grouping_mode`, `quiescence_seconds` or `config`, so a new Binding is per-file with an empty
+  config. An existing Binding can't be edited or re-pinned to a newer Script Version. Until then,
+  make these changes in the Django admin.
+- **`SandboxBackend.sweep()` is never scheduled**
+  ([#225](https://github.com/SPRINTR-PC/miqa-research/issues/225)). Orphaned sandbox containers
+  or Kubernetes Jobs have to be cleaned up by operators.
+- **No native Scripts are shipped**
+  ([#226](https://github.com/SPRINTR-PC/miqa-research/issues/226)). None are seeded, and
+  per-project enable or override of native Scripts isn't built. When native Scripts exist, they
+  will run through the Sandbox Runner like custom ones.
+
+`EtlLocationGrant` rows are managed only in the Django admin. This is intended: grants are
+operator-managed per #156.
