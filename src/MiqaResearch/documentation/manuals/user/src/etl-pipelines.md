@@ -11,7 +11,7 @@ A few terms appear throughout this page:
 ETL Script
 : A small program, written in Python or R, that reads the incoming files and returns rows of
   data. Your project can have its own **custom** scripts. Scripts provided by the platform are
-  called **native** scripts and are read-only.
+  called **native** scripts. They are read-only and available to every project.
 
 Script Version
 : A saved, unchangeable copy of a script. Uploading a changed script always creates a new
@@ -66,6 +66,25 @@ edited or chosen for a new binding. Scripts are never deleted, so every past job
 traced to the exact code that ran.
 
 The Scripts and Bindings lists show each script's Datatype.
+
+(heading-etl-pipelines-native)=
+### Native scripts
+
+The **Scripts** section also lists the native scripts. You can choose them directly when
+creating a binding. The platform currently provides one:
+
+- **CSV → participant consent** reads consent form exports (by default the SamtyckenUmu format)
+  and records one consent for each consent marked "Ja".
+  - People who aren't yet participants in your project are **added** automatically, with a
+    generated pseudonym.
+  - A consent that is exported again is updated, so a later revocation is recorded.
+  - If your export uses different column names, a different delimiter, or a word other than
+    "Ja", describe it in the binding's **Script config**. The technical manual lists the keys.
+
+To change how a native script works for your project, click **Customize** next to it. This
+creates a custom copy in your project, which you can then edit and version like any other
+custom script. The native script itself, and other projects, are not affected. Your copy
+does not receive later updates to the native script.
 
 :::{note}
 A script created before the Datatype became part of the form may show **Datatype: not set**.

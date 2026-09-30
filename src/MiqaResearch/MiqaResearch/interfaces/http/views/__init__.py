@@ -6,6 +6,7 @@ from .dashboard.etl import (
     etl_job_detail as dashboard_tab_etl_job_detail,
     etl_job_retry as dashboard_tab_etl_job_retry,
     etl_script_archive as dashboard_tab_etl_script_archive,
+    etl_script_customize as dashboard_tab_etl_script_customize,
     etl_script_edit as dashboard_tab_etl_script_edit,
     etl_script_version_create as dashboard_tab_etl_script_version_create,
     etl_scripts_create as dashboard_tab_etl_scripts_create,

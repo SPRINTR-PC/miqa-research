@@ -4,6 +4,10 @@ assume `name`/`description`/`source` are already well-formed (including `source`
 naming a supported language, which picks the Version's sandbox `image_key`, #166) and only enforce the business rules
 that need a DB round trip: the Script's project/origin/archived state.
 """
+from pathlib import PurePath
+
+from asgiref.sync import sync_to_async
+from django.core.files.base import ContentFile
 from django.db.models import Max
 from django.utils import timezone
 
@@ -13,7 +17,7 @@ from contract.constants.audit_log import (
     EVENT_TYPE_ETL_SCRIPT_UPDATED,
     EVENT_TYPE_ETL_SCRIPT_VERSION_CREATED,
 )
-from contract.constants.etl import ETL_SCRIPT_ORIGIN_CUSTOM
+from contract.constants.etl import ETL_SCRIPT_ORIGIN_CUSTOM, ETL_SCRIPT_ORIGIN_NATIVE
 from MiqaResearch.data.models import EtlScript, EtlScriptVersion, ResearchProject
 from MiqaResearch.etl_sandbox.images import image_key_for_script_filename
 
@@ -40,6 +44,37 @@ async def create_custom_script(*, project, user, request, name, description, dat
         EVENT_TYPE_ETL_SCRIPT_CREATED, user=user, request=request, project=project,
         metadata={"etl_script_id": str(script.id), "datatype": datatype_name})
     return script
+
+
+async def customize_native_script(*, project, user, request, native_script) -> EtlScript:
+    """#226: a project's "override" of a native Script -- a new project-owned custom Script whose
+    version 1 is a copy of the native Script's latest Version. The native Script itself is never
+    changed; the copy is then edited like any other custom Script."""
+    if native_script.origin != ETL_SCRIPT_ORIGIN_NATIVE or native_script.archived_at is not None:
+        raise EtlScriptStateError("Only an active native Script can be customized.")
+    latest = await native_script.versions.order_by("-version").afirst()
+    if latest is None:
+        raise EtlScriptStateError("This native Script has no published version to copy.")
+    source_bytes = await sync_to_async(_read_source)(latest)
+
+    script = await EtlScript.objects.acreate(
+        name=native_script.name, description=native_script.description, origin=ETL_SCRIPT_ORIGIN_CUSTOM,
+        project=project, datatype_name=native_script.datatype_name)
+    await EtlScriptVersion.objects.acreate(
+        script=script, version=1, source=ContentFile(source_bytes, name=PurePath(latest.source.name).name),
+        sha256=latest.sha256, image_key=latest.image_key)
+    await record_etl_event(
+        EVENT_TYPE_ETL_SCRIPT_CREATED, user=user, request=request, project=project,
+        metadata={
+            "etl_script_id": str(script.id), "datatype": script.datatype_name,
+            "customized_from": str(native_script.id),
+        })
+    return script
+
+
+def _read_source(version: EtlScriptVersion) -> bytes:
+    with version.source.open("rb") as source:
+        return source.read()
 
 
 async def update_custom_script(*, project, user, request, script, name, description, datatype_name="") -> EtlScript:

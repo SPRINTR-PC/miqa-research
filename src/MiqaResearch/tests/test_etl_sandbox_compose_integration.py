@@ -179,3 +179,39 @@ def test_sweep_removes_an_orphaned_sandbox_container_and_keeps_a_live_one(docker
                 container.remove(force=True)
             except docker.errors.NotFound:
                 pass
+
+
+@pytest.mark.long_running
+@pytest.mark.django_db
+def test_the_native_consent_script_runs_in_the_real_image_and_its_consents_load(docker_client, settings):
+    from django.core.management import call_command
+
+    from MiqaResearch.data.models import ParticipantConsent
+
+    settings.SANDBOX_IMAGE_ALLOWLIST = {"python-etl-v1": IMAGE_REF}
+    research_project = ResearchProject.objects.create(name="Native consent integration project", description="")
+    call_command("sync_native_etl_scripts")
+    native_version = EtlScriptVersion.objects.get(script__origin="native", script__datatype_name="participant_consent")
+    binding = PipelineBinding.objects.create(
+        project=research_project, source_bucket="incoming", source_prefix="consent/",
+        script_version=native_version, raw_bucket="raw", raw_prefix="consent/")
+    etl_job = EtlJob.objects.create(binding=binding, script_version=native_version)
+    export = (
+        "Namn,Personnummer,Status,Signerat,Senast Uppdaterad,Återtaget,klinik,Kommentar,Blodprov,Bilder\n"
+        "Tolvan Tolvansson,19121212-1212,Signerad,2026-03-01 10:00:00,2026-03-02 10:00,,K-01,,Ja,Ja\n"
+    ).encode()
+
+    spec = SandboxRunSpec(
+        run_id="integration-test-native-consent", image_key=native_version.image_key,
+        manifest={"datatype": "participant_consent", "config": {}}, script_source=native_version.source.read(),
+        limits=resolve_limits(), input_files={"export.csv": export})
+    result = ComposeSandboxBackend(client=docker_client).run(spec)
+
+    assert result.exit_code == contract.EXIT_SUCCESS, result.log.decode(errors="replace")
+    rows_jsonl = b"\n".join(result.result_jsonl.splitlines()[1:]).decode() + "\n"
+    load_result = load_jsonl(
+        datatype_name="participant_consent", project=research_project, etl_job=etl_job, jsonl_text=rows_jsonl)
+
+    assert load_result.created == 2
+    assert sorted(ParticipantConsent.objects.values_list("consent_type__label", flat=True)) == ["Bilder", "Blodprov"]
+    assert StudyParticipant.objects.get().research_project_id == research_project.id

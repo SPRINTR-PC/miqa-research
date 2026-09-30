@@ -8,6 +8,16 @@ def _seed_oidc_role_mappings(sender, **kwargs):
     OIDCRoleMapping.objects.seed_from_env(only_if_empty=True)
 
 
+def _sync_native_etl_scripts(sender, **kwargs):
+    from django.conf import settings
+
+    if not settings.ETL_SYNC_NATIVE_SCRIPTS_ON_MIGRATE:
+        return
+    from MiqaResearch.actions.etl.native_scripts import sync_native_etl_scripts
+
+    sync_native_etl_scripts()
+
+
 class DataConfig(AppConfig):
     name = "MiqaResearch.data"
 
@@ -16,4 +26,7 @@ class DataConfig(AppConfig):
 
         post_migrate.connect(
             _seed_oidc_role_mappings, sender=self, dispatch_uid="data.seed_oidc_role_mappings"
+        )
+        post_migrate.connect(
+            _sync_native_etl_scripts, sender=self, dispatch_uid="data.sync_native_etl_scripts"
         )

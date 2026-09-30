@@ -8,7 +8,7 @@ from .clinic import Clinic
 class ParticipantConsentType(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     label = models.CharField(
-        max_length=255, unique=True, help_text="Short label for the consent type to display in the UI")
+        max_length=255, help_text="Short label for the consent type to display in the UI; unique per project")
     short_label = models.CharField(  # noqa: DJ001
         max_length=40, blank=True, null=True, help_text="Short label for the consent type to display in the UI")
     description = models.TextField(blank=True, null=False, default="", help_text="Description of the consent type")
@@ -20,6 +20,12 @@ class ParticipantConsentType(models.Model):
         verbose_name = "Participant Consent Type"
         verbose_name_plural = "Participant Consent Types"
         ordering = ["label"]
+        # Per project, not global (#226): each project owns its own consent types, so two projects
+        # may both have e.g. "Blood samples".
+        constraints = [
+            models.UniqueConstraint(
+                fields=["research_project", "label"], name="mires_participant_consent_type_project_label"),
+        ]
 
     def __str__(self):
         return f"{self.label} ({self.research_project})"
