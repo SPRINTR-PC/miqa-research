@@ -9,6 +9,7 @@ src/*
 
 # Table of Contents
 
+* [The Dashboard](#app-dashboard-overview)
 * [ETL Pipelines](#heading-etl-pipelines)
   * [Who can do what](#heading-etl-pipelines-access)
   * [Creating a custom script](#heading-etl-pipelines-scripts)
@@ -19,3 +20,8 @@ src/*
   * [Following jobs and reading logs](#heading-etl-pipelines-jobs)
   * [Retrying a failed job](#heading-etl-pipelines-retry)
   * [Defaults (Admins)](#heading-etl-pipelines-defaults)
+
+(app-dashboard-overview)=
+# The Dashboard
+
+The **Dashboard** lists the research projects you are part of. Select a project to open it.

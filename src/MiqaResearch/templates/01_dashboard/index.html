@@ -1,10 +1,13 @@
 {% extends "base.html" %}
-{% load static %}
+{% load manuals static %}
 {% get_current_language as LANGUAGE_CODE %}
 {% block main %}
 <div class="container space-y-4">
   <div>
-    <h1 class="font-bold text-3xl tracking-tight">{% translate "Dashboard" %}</h1>
+    <div class="flex items-center gap-2">
+      <h1 class="font-bold text-3xl tracking-tight">{% translate "Dashboard" %}</h1>
+      {% manual_link "user" "app-dashboard-overview" %}
+    </div>
     <p class="text-muted-foreground mt-1">{% translate "Research projects you are part of." %}</p>
   </div>
   {% if projects %}

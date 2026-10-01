@@ -1,0 +1,17 @@
+{
+ "app-dashboard-overview": {
+  "page": "index",
+  "anchor": "app-dashboard-overview",
+  "title": "The Dashboard"
+ },
+ "app-fixture-getting-started": {
+  "page": "guide/getting-started",
+  "anchor": "app-fixture-getting-started",
+  "title": "Getting started"
+ },
+ "app-fixture-welcome": {
+  "page": "index",
+  "anchor": "app-fixture-welcome",
+  "title": "Fixture User Manual"
+ }
+}
