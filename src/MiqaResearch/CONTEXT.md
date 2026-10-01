@@ -592,6 +592,12 @@ Staff Users; to everyone else it does not exist. May exist in several
 languages.
 _Avoid_: developer docs, admin guide
 
+### Help Link
+A link from an app page to a specific section of the User Manual or Technical
+Manual. Shown only to users who may read that manual; to everyone else it is
+absent.
+_Avoid_: context help, docs link
+
 ### Superuser
 A system-wide administrator of the MIQA Research installation, independent of
 any Research Project role. May be granted through Role Mapping.
