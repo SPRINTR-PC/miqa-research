@@ -14,7 +14,6 @@ dependencies = [
     "django-rosetta>=0.10.3",
     "psycopg[binary]>=3.3.3",
     "django-ninja",
-    "django-sphinx-view==26.*",
     "hvac",
     "httpx",
     "pydicom",
@@ -42,6 +41,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    {include-group = "docs"},
     "ruff>=0.15.11",
     "pytest>=9.0.3",
     "pytest-asyncio>=1.4.0",
@@ -50,13 +50,15 @@ dev = [
     "pytest-benchmark",
     "hypothesis",
     "moto[s3]>=5.0.0",
+    "markdown>=3.10.2",
+]
+docs = [
     "sphinx",
     "myst-parser",
-    "sphinx-autobuild>=2025.8.25",
-    "recommonmark>=0.7.1",
-    "markdown>=3.10.2",
     "sphinxcontrib-mermaid>=2.0.3",
-    "sphinx-rtd-theme>=3.1.0",
+    "sphinx-intl",
+    "django-sphinx-view==26.*",
+    "watchfiles",
 ]
 
 [tool.ruff]
@@ -81,12 +83,13 @@ known-first-party = ["MiqaResearch", "data", "documentation"]
 DJANGO_SETTINGS_MODULE = "MiqaResearch.settings"
 python_files = ["tests.py", "test_*.py", "*_tests.py"]
 testpaths = ["tests"]
-addopts = "--reuse-db -m 'not vlm and not long_running and not ocr'"
+addopts = "--reuse-db -m 'not vlm and not long_running and not ocr and not manuals'"
 asyncio_mode = "auto"
 markers = [
     "slow: mark a test as slow",
     "vlm: mark a test that calls a real VLM (e.g. Ollama) over the network",
     "ocr: mark a test that runs OCR service as they are slow and should not be run every time",
+    "manuals: mark a test that runs a real Sphinx build of the manuals; excluded from the default test run",
     "long_running: mark a long-running (performance/load/extended security) test; excluded from the default test run",
 ]
 

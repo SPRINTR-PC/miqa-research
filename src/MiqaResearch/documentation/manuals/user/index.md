@@ -19,9 +19,3 @@ src/*
   * [Following jobs and reading logs](#heading-etl-pipelines-jobs)
   * [Retrying a failed job](#heading-etl-pipelines-retry)
   * [Defaults (Admins)](#heading-etl-pipelines-defaults)
-
-# Indices and tables
-
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
