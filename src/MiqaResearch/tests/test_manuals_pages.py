@@ -91,9 +91,12 @@ def test_anonymous_visitor_is_redirected_to_login(client, url):
     assert response["Location"].startswith("/accounts/login/?next=")
 
 
-@pytest.mark.parametrize("url", ["/manuals/user/search/", "/manuals/user/genindex/"])
-def test_sphinx_search_and_genindex_pages_are_not_served(member_client, url):
-    assert member_client.get(url).status_code == 404
+def test_sphinx_genindex_page_is_not_served(member_client):
+    assert member_client.get("/manuals/user/genindex/").status_code == 404
+
+
+def test_search_url_is_the_app_search_not_the_sphinx_search_page(member_client):
+    assert "Sphinx search page." not in member_client.get("/manuals/user/search/").content.decode()
 
 
 @pytest.mark.parametrize(

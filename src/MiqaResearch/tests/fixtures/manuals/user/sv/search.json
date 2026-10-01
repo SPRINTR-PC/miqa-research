@@ -1,0 +1,16 @@
+[
+ {
+  "page": "index",
+  "anchor": "fixture-user-manual",
+  "title": "Fixture-användarmanual",
+  "breadcrumb": [],
+  "text": "Välkommen till fixture-användarmanualen. Untranslated fixture paragraph."
+ },
+ {
+  "page": "guide/getting-started",
+  "anchor": "getting-started",
+  "title": "Kom igång",
+  "breadcrumb": [],
+  "text": "Logga in för att börja arbeta."
+ }
+]

@@ -1,0 +1,5 @@
+<a class="manual-search-result" href="{{ result.url }}">
+  <span class="manual-search-title">{{ result.title }}</span>
+  {% if result.breadcrumb %}<span class="manual-search-breadcrumb">{{ result.breadcrumb|join:" › " }}</span>{% endif %}
+  <span class="manual-search-snippet">{{ result.snippet }}</span>
+</a>

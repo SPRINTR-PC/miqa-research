@@ -1,10 +1,22 @@
-// In-app manuals: Contents drawer and mermaid diagrams (loaded on manual pages only).
+// In-app manuals: Contents drawer, live search panel and mermaid diagrams (loaded on manual pages only).
 (function () {
   if (window.miresManuals) return;
   window.miresManuals = true;
 
+  // ---- Live search panel: Esc or a click outside the search form closes it.
+  function closeSearchPanels(keep) {
+    for (const panel of document.querySelectorAll(".manual-search-panel")) {
+      if (!keep?.contains(panel)) panel.replaceChildren();
+    }
+  }
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeSearchPanels();
+  });
+
   // ---- Contents drawer: opens from the "Contents" button; ✕, backdrop click and Esc close it.
   document.addEventListener("click", (event) => {
+    closeSearchPanels(event.target.closest?.(".manual-search"));
     const opener = event.target.closest("[data-manual-drawer-open]");
     if (opener) {
       document.getElementById(opener.getAttribute("aria-controls"))?.showModal();

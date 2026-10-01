@@ -1,0 +1,28 @@
+{% load i18n manuals %}
+<div class="manual-bar">
+  <div class="manual-bar-start">
+    {% if page %}<button class="btn manual-contents-btn" type="button" aria-controls="manual-contents" aria-haspopup="dialog" data-manual-drawer-open>☰ {% translate "Contents" %}</button>{% endif %}
+    <nav class="manual-breadcrumb" aria-label="{% translate 'Breadcrumb' %}">
+      <a href="{% url 'manuals:page' manual=manual.slug %}">{% translate manual.title %}</a>
+      {% if page %}
+      {% for parent in page.data.parents %}<span aria-hidden="true">›</span><a href="{{ parent.link }}">{{ parent.title|safe }}</a>{% endfor %}
+      {% if page.data.current_page_name != "index" %}<span aria-hidden="true">›</span><span aria-current="page">{{ page.data.title|safe }}</span>{% endif %}
+      {% else %}
+      <span aria-hidden="true">›</span><span aria-current="page">{% translate "Search" %}</span>
+      {% endif %}
+    </nav>
+  </div>
+  <div class="manual-bar-end">
+    <form class="manual-search" role="search" action="{% url 'manuals:search' manual=manual.slug %}" method="get">
+      <input type="search" name="q" value="{{ query }}" placeholder="{% translate 'Search' %}…" aria-label="{% blocktranslate with title=manual.title %}Search the {{ title }}{% endblocktranslate %}" autocomplete="off"
+             hx-get="{% url 'manuals:search-live' manual=manual.slug %}" hx-trigger="input changed delay:300ms, search" hx-target="#manual-search-panel" hx-swap="innerHTML">
+      <div id="manual-search-panel" class="manual-search-panel" aria-live="polite"></div>
+    </form>
+    {% readable_manuals user as manuals %}
+    {% if manuals|length > 1 %}
+    <nav class="manual-switch" aria-label="{% translate 'Manuals' %}">
+      {% for readable in manuals %}<a href="{% url 'manuals:page' manual=readable.slug %}"{% if readable == manual %} aria-current="true"{% endif %}>{% translate readable.short_title %}</a>{% endfor %}
+    </nav>
+    {% endif %}
+  </div>
+</div>
