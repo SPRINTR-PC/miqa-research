@@ -1,5 +1,6 @@
 """Real Sphinx builds of the manuals via documentation/build_manuals.py (marker: manuals)."""
 
+import json
 import shutil
 import subprocess
 import sys
@@ -54,3 +55,21 @@ def test_locale_directory_adds_a_language_build_for_that_manual_only(tmp_path, m
     assert (tmp_path / "builds" / "user" / "sv" / "index.fjson").is_file()
     assert (tmp_path / "builds" / "user" / "en" / "index.fjson").is_file()
     assert sorted(p.name for p in (tmp_path / "builds" / "technical").iterdir()) == ["en"]
+
+
+def test_writes_a_search_index_with_one_entry_per_section(tmp_path):
+    result = run_build("--build-dir", tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    for manual in ("user", "technical"):
+        entries = json.loads((tmp_path / manual / "en" / "search.json").read_text(encoding="utf-8"))
+        assert entries
+        assert all(set(entry) == {"page", "anchor", "title", "breadcrumb", "text"} for entry in entries)
+        assert not any(entry["page"] in {"search", "genindex"} for entry in entries)
+
+    user = json.loads((tmp_path / "user" / "en" / "search.json").read_text(encoding="utf-8"))
+    native = next(entry for entry in user if entry["title"] == "Native scripts")
+    assert native["page"] == "src/etl-pipelines"
+    assert native["anchor"] == "native-scripts"
+    assert native["breadcrumb"] == ["ETL Pipelines", "Creating a custom script"]
+    assert "¶" not in native["text"] and "<" not in native["text"]

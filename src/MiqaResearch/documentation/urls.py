@@ -15,6 +15,9 @@ urlpatterns = [
     # Assets sit exactly where Sphinx's relative links point; registered before the page route.
     path("<slug:manual>/_images/<manualfile:filename>", views.image, name="image"),
     path("<slug:manual>/_downloads/<downloadhash:digest>/<manualfile:filename>", views.download, name="download"),
+    # Registered before the page route, which denies "search" anyway.
+    path("<slug:manual>/search/", views.search, name="search"),
+    path("<slug:manual>/search/live/", views.search_live, name="search-live"),
     path("<slug:manual>/", views.page, name="page"),
     path("<slug:manual>/<manualpage:page>/", views.page, name="page"),
 ]

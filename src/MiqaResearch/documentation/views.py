@@ -1,14 +1,16 @@
 import mimetypes
 
 from django.contrib.auth.decorators import login_required
-from django.http import FileResponse, Http404
+from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import redirect, render
 from django.utils.translation import get_language
 
+from documentation import search as manual_search
 from documentation.manuals import MANUALS, build_languages, canonical_url_path, docnames_for, find_asset, load_page
 
 # Sphinx's own search and index pages; the app has its own search.
 SPHINX_ONLY_PAGES = {"search", "genindex"}
+LIVE_SEARCH_RESULTS = 8
 
 
 def _page_url(manual, url_path):
@@ -38,6 +40,26 @@ def page(request, manual, page=""):
             if found is not None:
                 return render(request, "documentation/page.html", {"page": found})
     raise Http404
+
+
+@login_required
+def search(request, manual):
+    entry = _readable_manual(request, manual)
+    query = request.GET.get("q", "")
+    results = manual_search.search(entry, query, get_language())
+    return render(request, "documentation/search.html", {"manual": entry, "query": query, "results": results})
+
+
+@login_required
+def search_live(request, manual):
+    """The top bar's live results panel (an HTMX fragment); empty until the query is long enough."""
+    entry = _readable_manual(request, manual)
+    query = request.GET.get("q", "")
+    if len(query.strip()) < manual_search.MIN_QUERY_LENGTH:
+        return HttpResponse("")
+    results = manual_search.search(entry, query, get_language())
+    context = {"manual": entry, "query": query, "results": results[:LIVE_SEARCH_RESULTS]}
+    return render(request, "documentation/search_panel.html", context)
 
 
 def _asset_response(request, manual, relative_path, *, as_attachment):

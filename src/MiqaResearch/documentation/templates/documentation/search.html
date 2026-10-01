@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% load i18n static %}
+{% block main %}
+<div class="manual-layout">
+  {% include "documentation/_bar.html" %}
+  <article class="manual-page">
+    <h1>{% translate "Search" %}</h1>
+    {% if query %}
+    <p class="manual-search-summary">{% blocktranslate count counter=results|length with query=query %}{{ counter }} result for “{{ query }}”{% plural %}{{ counter }} results for “{{ query }}”{% endblocktranslate %}</p>
+    {% endif %}
+    <ol class="manual-search-results">
+      {% for result in results %}<li>{% include "documentation/_search_result.html" %}</li>{% endfor %}
+    </ol>
+  </article>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{% static 'js/manuals.js' %}" type="application/javascript"></script>
+{% endblock %}

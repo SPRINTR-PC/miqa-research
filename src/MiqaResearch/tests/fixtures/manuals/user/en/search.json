@@ -1,0 +1,43 @@
+[
+ {
+  "page": "index",
+  "anchor": "fixture-user-manual",
+  "title": "Fixture User Manual",
+  "breadcrumb": [],
+  "text": "Welcome to the fixture user manual."
+ },
+ {
+  "page": "guide/getting-started",
+  "anchor": "getting-started",
+  "title": "Getting started",
+  "breadcrumb": [],
+  "text": "Sign in to start working."
+ },
+ {
+  "page": "guide/getting-started",
+  "anchor": "next-steps",
+  "title": "Next steps",
+  "breadcrumb": [
+   "Getting started"
+  ],
+  "text": "Open a project. Sample data"
+ },
+ {
+  "page": "guide/getting-started",
+  "anchor": "project-settings",
+  "title": "Project settings",
+  "breadcrumb": [
+   "Getting started"
+  ],
+  "text": "Rename or archive a project."
+ },
+ {
+  "page": "guide/getting-started",
+  "anchor": "exporting-results",
+  "title": "Exporting results",
+  "breadcrumb": [
+   "Getting started"
+  ],
+  "text": "Export a résumé of the study. Press the <Export> button & wait."
+ }
+]

@@ -2,25 +2,7 @@
 {% load i18n manuals static %}
 {% block main %}
 <div class="manual-layout">
-  <div class="manual-bar">
-    <div class="manual-bar-start">
-      <button class="btn manual-contents-btn" type="button" aria-controls="manual-contents" aria-haspopup="dialog" data-manual-drawer-open>☰ {% translate "Contents" %}</button>
-      <nav class="manual-breadcrumb" aria-label="{% translate 'Breadcrumb' %}">
-        <a href="{% url 'manuals:page' manual=page.manual.slug %}">{% translate page.manual.title %}</a>
-        {% for parent in page.data.parents %}<span aria-hidden="true">›</span><a href="{{ parent.link }}">{{ parent.title|safe }}</a>{% endfor %}
-        {% if page.data.current_page_name != "index" %}<span aria-hidden="true">›</span><span aria-current="page">{{ page.data.title|safe }}</span>{% endif %}
-      </nav>
-    </div>
-    <div class="manual-bar-end">
-      <div class="manual-search-slot"></div>
-      {% readable_manuals user as manuals %}
-      {% if manuals|length > 1 %}
-      <nav class="manual-switch" aria-label="{% translate 'Manuals' %}">
-        {% for manual in manuals %}<a href="{% url 'manuals:page' manual=manual.slug %}"{% if manual == page.manual %} aria-current="true"{% endif %}>{% translate manual.short_title %}</a>{% endfor %}
-      </nav>
-      {% endif %}
-    </div>
-  </div>
+  {% include "documentation/_bar.html" with manual=page.manual %}
 
   <article class="manual-page" lang="{{ page.language }}">
     {% if page.has_untranslated_parts %}

@@ -1,0 +1,2 @@
+{% load i18n %}{% for result in results %}{% include "documentation/_search_result.html" %}{% empty %}<p class="manual-search-empty">{% translate "No results" %}</p>{% endfor %}
+<a class="manual-search-all" href="{% url 'manuals:search' manual=manual.slug %}?q={{ query|urlencode }}">{% translate "All results" %} →</a>
