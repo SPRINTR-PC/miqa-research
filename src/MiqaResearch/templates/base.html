@@ -25,6 +25,7 @@
 <script src="{% static 'js/mires.js' %}" type="application/javascript"></script>
 <script src="{% static 'js/webcomponents/mireswc.js' %}" type="module"></script>
 <script src="{% static 'js/webcomponents/mireswc-charts.js' %}" type="module"></script>
+{% block scripts %}{% endblock %}
 <script>
   {% if debug %}
     if (typeof window.htmx !== "undefined") {

@@ -1,10 +1,56 @@
 {% extends "base.html" %}
-{% load i18n %}
+{% load i18n manuals static %}
 {% block main %}
-<article class="manual-page" lang="{{ page.language }}">
-  {% if page.has_untranslated_parts %}
-  <p class="manual-untranslated-notice" role="note">{% translate "Parts of this page are not yet translated" %}</p>
-  {% endif %}
-  {{ page.data.body|safe }}
-</article>
+<div class="manual-layout">
+  <div class="manual-bar">
+    <div class="manual-bar-start">
+      <button class="btn manual-contents-btn" type="button" aria-controls="manual-contents" aria-haspopup="dialog" data-manual-drawer-open>☰ {% translate "Contents" %}</button>
+      <nav class="manual-breadcrumb" aria-label="{% translate 'Breadcrumb' %}">
+        <a href="{% url 'manuals:page' manual=page.manual.slug %}">{% translate page.manual.title %}</a>
+        {% for parent in page.data.parents %}<span aria-hidden="true">›</span><a href="{{ parent.link }}">{{ parent.title|safe }}</a>{% endfor %}
+        {% if page.data.current_page_name != "index" %}<span aria-hidden="true">›</span><span aria-current="page">{{ page.data.title|safe }}</span>{% endif %}
+      </nav>
+    </div>
+    <div class="manual-bar-end">
+      <div class="manual-search-slot"></div>
+      {% readable_manuals user as manuals %}
+      {% if manuals|length > 1 %}
+      <nav class="manual-switch" aria-label="{% translate 'Manuals' %}">
+        {% for manual in manuals %}<a href="{% url 'manuals:page' manual=manual.slug %}"{% if manual == page.manual %} aria-current="true"{% endif %}>{% translate manual.short_title %}</a>{% endfor %}
+      </nav>
+      {% endif %}
+    </div>
+  </div>
+
+  <article class="manual-page" lang="{{ page.language }}">
+    {% if page.has_untranslated_parts %}
+    <p class="manual-untranslated-notice" role="note">{% translate "Parts of this page are not yet translated" %}</p>
+    {% endif %}
+    {% if page.data.display_toc %}
+    <details class="manual-on-this-page">
+      <summary>{% translate "On this page" %}</summary>
+      <nav class="manual-nav">{{ page.data.toc|safe }}</nav>
+    </details>
+    {% endif %}
+    <div class="manual-prose">{{ page.data.body|safe }}</div>
+    {% if page.data.prev or page.data.next %}
+    <nav class="manual-pager" aria-label="{% translate 'Previous and next page' %}">
+      {% if page.data.prev %}<a class="manual-pager-prev" href="{{ page.data.prev.link }}"><small>← {% translate "Previous" %}</small>{{ page.data.prev.title|safe }}</a>{% endif %}
+      {% if page.data.next %}<a class="manual-pager-next" href="{{ page.data.next.link }}"><small>{% translate "Next" %} →</small>{{ page.data.next.title|safe }}</a>{% endif %}
+    </nav>
+    {% endif %}
+  </article>
+
+  <dialog id="manual-contents" class="manual-drawer" aria-label="{% translate 'Contents' %}">
+    <div class="manual-drawer-head">
+      <span class="manual-drawer-title">{% translate page.manual.title %}</span>
+      <button class="btn icon-btn" type="button" aria-label="{% translate 'Close' %}" data-manual-drawer-close>✕</button>
+    </div>
+    <nav class="manual-nav">{{ page.data.toctree|safe }}</nav>
+  </dialog>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{% static 'js/mermaid.min.js' %}" type="application/javascript"></script>
+<script src="{% static 'js/manuals.js' %}" type="application/javascript"></script>
 {% endblock %}

@@ -1,4 +1,4 @@
-// In-app manuals (documentation app). The full variant-B layout is #249.
+// In-app manuals (documentation app): navbar entry and the variant-B page layout.
 
 .nav-dropdown {
   position: relative;
@@ -71,15 +71,442 @@
   }
 }
 
-.manual-page {
+// ---- Variant-B layout: one centred reading column under a sticky top bar.
+#mires-main > .manual-layout {
+  margin-top: 0;
+}
+
+.manual-layout {
   max-width: 46rem;
   margin: 0 auto;
 }
 
-.manual-untranslated-notice {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--color-border);
-  border-radius: 0.375rem;
-  background-color: var(--color-muted);
-  font-size: 0.875rem;
+.manual-bar {
+  position: sticky;
+  top: 4rem; // below the 4rem navbar
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.55rem 0;
+  margin-bottom: 1.5rem;
+  background-color: var(--color-background);
+  border-bottom: 1px solid var(--color-border);
 }
+
+.manual-bar-start,
+.manual-bar-end {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  min-width: 0;
+}
+
+.manual-contents-btn {
+  border: 1px solid var(--color-border);
+  border-radius: 0.45rem;
+  padding: 0.35rem 0.8rem;
+  white-space: nowrap;
+
+  &:hover {
+    background-color: var(--color-accent);
+    color: var(--color-accent-foreground);
+  }
+}
+
+.manual-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--color-muted-foreground);
+
+  a {
+    color: inherit;
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+}
+
+.manual-switch {
+  display: inline-flex;
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  font-size: 0.85rem;
+
+  a {
+    padding: 0.3rem 0.8rem;
+    color: var(--color-text);
+    text-decoration: none;
+
+    &[aria-current="true"] {
+      background-color: var(--color-primary);
+      color: var(--color-primary-foreground);
+    }
+  }
+}
+
+.manual-untranslated-notice {
+  margin: 0 0 1.2rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--color-chart-warning);
+  border-radius: 0.5rem;
+  background-color: color-mix(in srgb, var(--color-chart-warning) 12%, transparent);
+  font-size: 0.9rem;
+}
+
+.manual-on-this-page {
+  margin: 0 0 1.5rem;
+  padding: 0.5rem 0.8rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.6rem;
+
+  summary {
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.9rem;
+  }
+
+  > .manual-nav {
+    margin-top: 0.5rem;
+
+    // Drop the page-title entry; its sections are the useful part.
+    > ul > li > a {
+      display: none;
+    }
+
+    > ul > li > ul {
+      border-left: 0;
+      padding-left: 0;
+      margin-left: 0;
+    }
+  }
+}
+
+// ---- Toctree / toc lists (drawer and On this page).
+.manual-nav {
+  ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  ul ul {
+    padding-left: 0.8rem;
+    margin-left: 0.35rem;
+    border-left: 1px solid var(--color-border);
+  }
+
+  a {
+    display: block;
+    padding: 0.28rem 0.55rem;
+    border-radius: 0.35rem;
+    color: var(--color-text);
+    text-decoration: none;
+    font-size: 0.9rem;
+    opacity: 0.85;
+
+    &:hover {
+      background-color: var(--color-surface-sunken);
+      opacity: 1;
+    }
+
+    &.current {
+      color: var(--color-primary);
+      font-weight: 600;
+      opacity: 1;
+    }
+  }
+}
+
+// ---- Contents drawer: a modal <dialog> sliding in from the left.
+.manual-drawer {
+  position: fixed;
+  inset: 0 auto 0 0;
+  margin: 0;
+  width: 22rem;
+  max-width: 90vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  padding: 1.2rem;
+  overflow-y: auto;
+  background-color: var(--color-card);
+  color: var(--color-text);
+  border: 0;
+  border-right: 1px solid var(--color-border);
+  box-shadow: 8px 0 32px rgb(0 0 0 / 0.25);
+  transform: translateX(-100%);
+  transition:
+    transform 0.22s ease,
+    overlay 0.22s allow-discrete,
+    display 0.22s allow-discrete;
+
+  &[open] {
+    transform: translateX(0);
+  }
+
+  &::backdrop {
+    background-color: rgb(0 0 0 / 0);
+    transition:
+      background-color 0.22s ease,
+      overlay 0.22s allow-discrete,
+      display 0.22s allow-discrete;
+  }
+
+  &[open]::backdrop {
+    background-color: rgb(0 0 0 / 0.4);
+  }
+}
+
+@starting-style {
+  .manual-drawer[open] {
+    transform: translateX(-100%);
+  }
+
+  .manual-drawer[open]::backdrop {
+    background-color: rgb(0 0 0 / 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .manual-drawer,
+  .manual-drawer::backdrop {
+    transition: none;
+  }
+}
+
+.manual-drawer-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.manual-drawer-title {
+  color: var(--color-muted-foreground);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+// ---- Previous / next cards.
+.manual-pager {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-top: 3rem;
+
+  a {
+    display: block;
+    padding: 0.8rem 1rem;
+    border: 1px solid var(--color-border);
+    border-radius: 0.6rem;
+    color: var(--color-text);
+    text-decoration: none;
+
+    &:hover {
+      border-color: var(--color-primary);
+    }
+  }
+
+  small {
+    display: block;
+    font-size: 0.75rem;
+    opacity: 0.65;
+  }
+
+  .manual-pager-next {
+    grid-column: 2;
+    text-align: right;
+  }
+}
+
+// ---- Sphinx body typography, themed through MIQA tokens only.
+.manual-prose {
+  color: var(--color-text);
+  font-size: 0.975rem;
+  line-height: 1.65;
+
+  h1 {
+    margin: 0 0 1rem;
+    font-size: 1.9rem;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
+  h2 {
+    margin: 2.2rem 0 0.6rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--color-border);
+    font-size: 1.35rem;
+    font-weight: 650;
+  }
+
+  h3 {
+    margin: 1.6rem 0 0.4rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+  }
+
+  h4 {
+    margin: 1.2rem 0 0.3rem;
+    font-weight: 600;
+  }
+
+  h1, h2, h3, h4, section, span[id] {
+    scroll-margin-top: 8rem; // navbar + manual bar
+  }
+
+  p {
+    margin: 0.6rem 0;
+  }
+
+  ul, ol {
+    margin: 0.6rem 0 0.6rem 1.4rem;
+  }
+
+  ul {
+    list-style: disc;
+  }
+
+  ol {
+    list-style: decimal;
+  }
+
+  li {
+    margin: 0.2rem 0;
+
+    > p {
+      margin: 0;
+    }
+  }
+
+  dl {
+    margin: 0.8rem 0;
+  }
+
+  dt {
+    font-weight: 600;
+  }
+
+  dd {
+    margin: 0 0 0.6rem 1.4rem;
+  }
+
+  a {
+    color: var(--color-primary);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  a.headerlink {
+    margin-left: 0.4rem;
+    color: var(--color-muted-foreground);
+    text-decoration: none;
+    font-size: 0;
+    opacity: 0;
+
+    &::after {
+      content: "#";
+      font-size: 1rem;
+    }
+
+    &:focus {
+      opacity: 0.6;
+    }
+  }
+
+  :is(h1, h2, h3, h4):hover a.headerlink {
+    opacity: 0.6;
+  }
+
+  code {
+    padding: 0.1em 0.35em;
+    border-radius: 0.3rem;
+    background-color: var(--color-surface-sunken);
+    font-family: ui-monospace, monospace;
+    font-size: 0.88em;
+  }
+
+  pre {
+    margin: 0.9rem 0;
+    padding: 0.9rem 1rem;
+    overflow-x: auto;
+    border: 1px solid var(--color-border);
+    border-radius: 0.5rem;
+    background-color: var(--color-surface-sunken);
+    font-family: ui-monospace, monospace;
+    font-size: 0.85rem;
+    line-height: 1.5;
+
+    code {
+      padding: 0;
+      background: none;
+    }
+  }
+
+  pre.mermaid {
+    display: flex;
+    justify-content: center;
+    background-color: transparent;
+    font-family: inherit;
+  }
+
+  table {
+    width: 100%;
+    margin: 1rem 0;
+    border-collapse: collapse;
+    font-size: 0.92rem;
+  }
+
+  th, td {
+    padding: 0.45rem 0.7rem;
+    border: 1px solid var(--color-border);
+    text-align: left;
+    vertical-align: top;
+  }
+
+  th {
+    background-color: var(--color-surface-sunken);
+    font-weight: 600;
+  }
+
+  .admonition {
+    margin: 1rem 0;
+    padding: 0.7rem 1rem;
+    border-left: 4px solid var(--color-primary);
+    border-radius: 0.4rem;
+    background-color: var(--color-surface-sunken);
+
+    &.warning, &.caution, &.attention {
+      border-left-color: var(--color-chart-warning);
+    }
+
+    &.danger, &.error {
+      border-left-color: var(--color-destructive);
+    }
+
+    > :last-child {
+      margin-bottom: 0;
+    }
+  }
+
+  .admonition-title {
+    margin: 0 0 0.2rem;
+    font-weight: 650;
+  }
+
+  img {
+    max-width: 100%;
+    height: auto;
+  }
+}
+
+@import "manuals-pygments";
