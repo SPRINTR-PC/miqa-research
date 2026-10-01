@@ -23,6 +23,7 @@ def _superuser_or_staff(user) -> bool:
 class Manual:
     slug: str
     title: str
+    short_title: str
     source_dir: Path
     can_read: Callable[[object], bool]
 
@@ -33,8 +34,8 @@ class Manual:
 MANUALS = {
     manual.slug: manual
     for manual in (
-        Manual("user", "User Manual", MANUALS_DIR / "user", _signed_in),
-        Manual("technical", "Technical Manual", MANUALS_DIR / "technical", _superuser_or_staff),
+        Manual("user", "User Manual", "User", MANUALS_DIR / "user", _signed_in),
+        Manual("technical", "Technical Manual", "Technical", MANUALS_DIR / "technical", _superuser_or_staff),
     )
 }
 
