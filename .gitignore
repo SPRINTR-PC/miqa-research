@@ -52,6 +52,10 @@ __pycache__/
 *$py.class
 *.so
 
+# Manuals: build output and compiled translations
+src/MiqaResearch/documentation/builds/*/
+src/MiqaResearch/documentation/manuals/**/*.mo
+
 # Distribution / packaging
 build/
 develop-eggs/

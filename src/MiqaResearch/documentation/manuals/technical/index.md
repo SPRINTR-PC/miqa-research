@@ -22,9 +22,3 @@ src/*
   * [Native Scripts](#heading-etl-native-scripts)
   * [Configuration reference](#heading-etl-configuration)
   * [Current limitations](#heading-etl-limitations)
-
-# Indices and tables
-
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
