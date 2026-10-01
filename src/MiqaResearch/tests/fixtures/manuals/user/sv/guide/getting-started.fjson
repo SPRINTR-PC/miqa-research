@@ -1,0 +1,19 @@
+{
+ "parents": [],
+ "prev": {
+  "link": "../../",
+  "title": "Fixture-användarmanual"
+ },
+ "next": null,
+ "title": "Kom igång",
+ "meta": {},
+ "body": "<section id=\"getting-started\">\n<h1 class=\"translated\">Kom igång<a class=\"headerlink\" href=\"#getting-started\" title=\"Link to this heading\">¶</a></h1>\n<p class=\"translated\">Logga in för att börja arbeta.</p>\n</section>\n",
+ "metatags": "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n",
+ "rellinks": [],
+ "sourcename": "guide/getting-started.md.txt",
+ "toc": "<ul>\n<li><a class=\"reference internal\" href=\"#\">Kom igång</a></li>\n</ul>\n",
+ "display_toc": false,
+ "page_source_suffix": ".md",
+ "toctree": "<ul>\n<li class=\"toctree-l1\"><a class=\"reference internal\" href=\"guide/getting-started/\">Getting started</a></li>\n</ul>\n",
+ "current_page_name": "guide/getting-started"
+}

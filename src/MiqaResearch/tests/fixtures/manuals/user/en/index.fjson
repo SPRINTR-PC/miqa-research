@@ -1,0 +1,19 @@
+{
+ "parents": [],
+ "prev": null,
+ "next": {
+  "link": "guide/getting-started/",
+  "title": "Getting started"
+ },
+ "title": "Fixture User Manual",
+ "meta": {},
+ "body": "<section id=\"fixture-user-manual\">\n<h1>Fixture User Manual<a class=\"headerlink\" href=\"#fixture-user-manual\" title=\"Link to this heading\">¶</a></h1>\n<p>Welcome to the fixture user manual.</p>\n</section>\n",
+ "metatags": "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n",
+ "rellinks": [],
+ "sourcename": "index.md.txt",
+ "toc": "<ul>\n<li><a class=\"reference internal\" href=\"#\">Fixture User Manual</a></li>\n</ul>\n",
+ "display_toc": false,
+ "page_source_suffix": ".md",
+ "toctree": "<ul>\n<li class=\"toctree-l1\"><a class=\"reference internal\" href=\"guide/getting-started/\">Getting started</a></li>\n</ul>\n",
+ "current_page_name": "index"
+}

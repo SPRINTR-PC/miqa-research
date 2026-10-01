@@ -1,0 +1,16 @@
+{
+ "parents": [],
+ "prev": null,
+ "next": null,
+ "title": "Fixture Technical Manual",
+ "meta": {},
+ "body": "<section id=\"fixture-technical-manual\">\n<h1>Fixture Technical Manual<a class=\"headerlink\" href=\"#fixture-technical-manual\" title=\"Link to this heading\">¶</a></h1>\n<p>Deployment and operations.</p>\n</section>\n",
+ "metatags": "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n",
+ "rellinks": [],
+ "sourcename": "index.md.txt",
+ "toc": "<ul>\n<li><a class=\"reference internal\" href=\"#\">Fixture Technical Manual</a></li>\n</ul>\n",
+ "display_toc": false,
+ "page_source_suffix": ".md",
+ "toctree": "<ul>\n<li class=\"toctree-l1\"><a class=\"reference internal\" href=\"guide/getting-started/\">Getting started</a></li>\n</ul>\n",
+ "current_page_name": "index"
+}

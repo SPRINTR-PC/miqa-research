@@ -1,0 +1,19 @@
+{
+ "parents": [],
+ "prev": {
+  "link": "../../",
+  "title": "Fixture User Manual"
+ },
+ "next": null,
+ "title": "Getting started",
+ "meta": {},
+ "body": "<section id=\"getting-started\">\n<h1>Getting started<a class=\"headerlink\" href=\"#getting-started\" title=\"Link to this heading\">¶</a></h1>\n<p>Sign in to start working.</p>\n</section>\n<section id=\"next-steps\">\n<h2>Next steps<a class=\"headerlink\" href=\"#next-steps\" title=\"Link to this heading\">¶</a></h2>\n<p>Open a project.</p>\n</section>\n",
+ "metatags": "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n",
+ "rellinks": [],
+ "sourcename": "guide/getting-started.md.txt",
+ "toc": "<ul>\n<li><a class=\"reference internal\" href=\"#\">Getting started</a><ul>\n<li><a class=\"reference internal\" href=\"#next-steps\">Next steps</a></li>\n</ul>\n</li>\n</ul>\n",
+ "display_toc": true,
+ "page_source_suffix": ".md",
+ "toctree": "<ul>\n<li class=\"toctree-l1\"><a class=\"reference internal\" href=\"guide/getting-started/\">Getting started</a></li>\n</ul>\n",
+ "current_page_name": "guide/getting-started"
+}
