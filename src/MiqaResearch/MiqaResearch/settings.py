@@ -323,7 +323,7 @@ INSTALLED_APPS = [
     'ninja',
     'django_htmx',
     'django.contrib.sites',
-    #'documentation',
+    'documentation',
     # Unfold admin interface
     'unfold',
     'unfold.contrib.filters',
@@ -343,6 +343,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.locale.LocaleMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -577,6 +578,8 @@ TIME_ZONE = 'UTC'
 
 USE_I18N = True
 
+LANGUAGES = [("en", "English")]
+
 USE_TZ = True
 
 # Email
@@ -601,6 +604,9 @@ STATICFILES_FINDERS = [
 ]
 
 MEDIA_ROOT = env("MIRES_MEDIA_ROOT")
+
+# In-app manuals: JSON builds from documentation/build_manuals.py, laid out as <manual>/<locale>/.
+MANUALS_BUILD_DIR = BASE_DIR / "documentation" / "builds"
 
 # ==============================
 # SENSITIVE DATA ENCRYPTION

@@ -59,6 +59,7 @@ urlpatterns = [
         ])),
     ])),
     path(settings.ADMIN_URL, admin.site.urls),
+    path('manuals/', include('documentation.urls')),
     path('monitor/', monitor_index, name='monitor'),
     path('accounts/bankid/login/', bankid_login_redirect, name='bankid_login'),
     path('accounts/eid/callback/', eid_callback, name='eid_callback'),

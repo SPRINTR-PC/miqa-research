@@ -1,3 +1,4 @@
+{% load manuals %}
 <header class="sticky top-0 z-50 w-full border-b">
   <div class="container top-bar flex items-center justify-between">
     <a class="flex items-center logo-container gap-2 text-lg" href="/">
@@ -14,7 +15,19 @@
     <div class="flex items-center gap-1">
       <button class="btn icon-btn" aria-label="{% translate 'Notifications' %}" type="button" aria-haspopup="dialog">{% include 'components/icon.html' with icon_name='notification' %}</button>
       <button class="btn icon-btn" aria-label="{% translate 'Select language' %}" type="button" aria-haspopup="dialog">{% include 'components/icon.html' with icon_name='language' %}</button>
-      <button class="btn icon-btn" aria-label="{% translate 'User manual' %}" type="button" aria-haspopup="dialog">{% include 'components/icon.html' with icon_name='user-manual' %}</button>
+      {% readable_manuals user as manuals %}
+      {% if manuals|length > 1 %}
+      <details id="nav-manual" class="nav-dropdown">
+        <summary class="btn icon-btn" aria-label="{% translate 'Manuals' %}">{% include 'components/icon.html' with icon_name='user-manual' %}</summary>
+        <ul class="nav-dropdown-menu">
+          {% for manual in manuals %}
+          <li><a href="{% url 'manuals:page' manual=manual.slug %}">{% translate manual.title %}</a></li>
+          {% endfor %}
+        </ul>
+      </details>
+      {% elif manuals %}
+      <a id="nav-manual" class="btn icon-btn" href="{% url 'manuals:page' manual=manuals.0.slug %}" aria-label="{% translate manuals.0.title %}">{% include 'components/icon.html' with icon_name='user-manual' %}</a>
+      {% endif %}
       <button id="theme-toggle-btn" onclick="toggleTheme()" class="btn icon-btn" aria-label="{% translate 'Toggle theme' %}" type="button" aria-haspopup="dialog" data-icon-dark="dark-mode" data-icon-light="light-mode">
         {% include 'components/icon.html' with icon_name='dark-mode' %}
       </button>

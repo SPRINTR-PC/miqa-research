@@ -1,0 +1,19 @@
+{
+ "parents": [],
+ "prev": null,
+ "next": {
+  "link": "guide/getting-started/",
+  "title": "Kom igång"
+ },
+ "title": "Fixture-användarmanual",
+ "meta": {},
+ "body": "<section id=\"fixture-user-manual\">\n<h1 class=\"translated\">Fixture-användarmanual<a class=\"headerlink\" href=\"#fixture-user-manual\" title=\"Link to this heading\">¶</a></h1>\n<p class=\"translated\">Välkommen till fixture-användarmanualen.</p>\n<p class=\"untranslated\">Untranslated fixture paragraph.</p>\n</section>\n",
+ "metatags": "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n",
+ "rellinks": [],
+ "sourcename": "index.md.txt",
+ "toc": "<ul>\n<li><a class=\"reference internal\" href=\"#\">Fixture-användarmanual</a></li>\n</ul>\n",
+ "display_toc": false,
+ "page_source_suffix": ".md",
+ "toctree": "<ul>\n<li class=\"toctree-l1\"><a class=\"reference internal\" href=\"guide/getting-started/\">Getting started</a></li>\n</ul>\n",
+ "current_page_name": "index"
+}

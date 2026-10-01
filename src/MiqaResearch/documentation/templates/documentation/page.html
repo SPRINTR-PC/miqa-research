@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block main %}
+<article class="manual-page" lang="{{ page.language }}">
+  {% if page.has_untranslated_parts %}
+  <p class="manual-untranslated-notice" role="note">{% translate "Parts of this page are not yet translated" %}</p>
+  {% endif %}
+  {{ page.data.body|safe }}
+</article>
+{% endblock %}

@@ -1,0 +1,16 @@
+{
+ "parents": [],
+ "prev": null,
+ "next": null,
+ "title": "Search",
+ "meta": {},
+ "body": "<p>Sphinx search page.</p>\n",
+ "metatags": "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n",
+ "rellinks": [],
+ "sourcename": "search.md.txt",
+ "toc": "<ul>\n<li><a class=\"reference internal\" href=\"#\">Search</a></li>\n</ul>\n",
+ "display_toc": false,
+ "page_source_suffix": ".md",
+ "toctree": "<ul>\n<li class=\"toctree-l1\"><a class=\"reference internal\" href=\"guide/getting-started/\">Getting started</a></li>\n</ul>\n",
+ "current_page_name": "search"
+}
