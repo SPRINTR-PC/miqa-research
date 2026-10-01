@@ -66,6 +66,16 @@ def build_languages(language: str) -> list[str]:
     return list(dict.fromkeys(candidates))
 
 
+def find_asset(manual: Manual, relative_path: str, language: str) -> Path | None:
+    """A file under the manual's build for ``language`` (first) or English, kept inside that build."""
+    for candidate in build_languages(language):
+        build_dir = manual.build_dir(candidate).resolve()
+        path = (build_dir / relative_path).resolve()
+        if path.is_relative_to(build_dir) and path.is_file():
+            return path
+    return None
+
+
 def docnames_for(url_path: str) -> list[str]:
     """Sphinx docnames a dirhtml-style URL path may name: ``""`` is ``index``, ``a/`` may be ``a/index``."""
     return [f"{url_path}/index", url_path] if url_path else ["index"]

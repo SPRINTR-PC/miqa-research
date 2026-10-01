@@ -7,7 +7,7 @@
  },
  "title": "Fixture User Manual",
  "meta": {},
- "body": "<section id=\"fixture-user-manual\">\n<h1>Fixture User Manual<a class=\"headerlink\" href=\"#fixture-user-manual\" title=\"Link to this heading\">¶</a></h1>\n<p>Welcome to the fixture user manual.</p>\n</section>\n",
+ "body": "<section id=\"fixture-user-manual\">\n<h1>Fixture User Manual<a class=\"headerlink\" href=\"#fixture-user-manual\" title=\"Link to this heading\">¶</a></h1>\n<p>Welcome to the fixture user manual.</p>\n<img alt=\"Diagram\" src=\"_images/diagram.png\" />\n</section>\n",
  "metatags": "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n",
  "rellinks": [],
  "sourcename": "index.md.txt",
