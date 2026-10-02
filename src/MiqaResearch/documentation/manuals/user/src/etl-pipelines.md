@@ -243,5 +243,3 @@ override two settings for this project:
 
 Leave a field empty to use the platform default. PIs, Investigators and Data Managers can see
 this section but cannot change it.
-
-This sentence makes the sv catalogue stale.
