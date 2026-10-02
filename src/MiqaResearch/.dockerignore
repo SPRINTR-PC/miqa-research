@@ -76,10 +76,13 @@ docker-compose*.yml
 # Tests
 tests/
 
-# Documentation
-documentation/
+# Documentation: the documentation app and manual sources (*.md included) go into the build
+# context for the docs stage; local manual builds and diagrams don't.
 README.md
 *.md
+!documentation/manuals/**
+documentation/builds/*/
+documentation/flowcharts/
 
 # Environment and secrets
 .env

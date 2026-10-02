@@ -1538,6 +1538,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "django" },
     { name = "django-sphinx-view" },
     { name = "hypothesis" },
     { name = "markdown" },
@@ -1555,6 +1556,7 @@ dev = [
     { name = "watchfiles" },
 ]
 docs = [
+    { name = "django" },
     { name = "django-sphinx-view" },
     { name = "myst-parser" },
     { name = "sphinx" },
@@ -1602,6 +1604,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "django", specifier = "==6.0.*" },
     { name = "django-sphinx-view", specifier = "==26.*" },
     { name = "hypothesis" },
     { name = "markdown", specifier = ">=3.10.2" },
@@ -1619,6 +1622,7 @@ dev = [
     { name = "watchfiles" },
 ]
 docs = [
+    { name = "django", specifier = "==6.0.*" },
     { name = "django-sphinx-view", specifier = "==26.*" },
     { name = "myst-parser" },
     { name = "sphinx" },

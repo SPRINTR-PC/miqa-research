@@ -12,6 +12,7 @@ src/*
 * [Architecture](#heading-architecture)
 * [Configuration](#heading-configuration)
 * [Help Links](#heading-help-links)
+* [The manuals](#heading-manuals)
 * [ETL Pipelines](#heading-etl)
   * [ETL Datatype registry](#heading-etl-datatypes)
   * [Data model](#heading-etl-data-model)

@@ -58,6 +58,8 @@ docs = [
     "sphinxcontrib-mermaid>=2.0.3",
     "sphinx-intl",
     "django-sphinx-view==26.*",
+    # sphinx_view imports Django but doesn't declare it; the docs image stage has only this group.
+    "django==6.0.*",
     "watchfiles",
 ]
 
