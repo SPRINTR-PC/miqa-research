@@ -1,4 +1,4 @@
-// In-app manuals (documentation app): navbar entry and the variant-B page layout.
+// In-app manuals (documentation app): navbar entry, Help Links and the variant-B page layout.
 
 .nav-dropdown {
   position: relative;
@@ -69,6 +69,34 @@
     height: 1rem;
     width: 1rem;
   }
+}
+
+// ---- Help Links: a "?" button (or inline link) from an app page to a manual section.
+.help-link {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border: 1px solid var(--color-border);
+  border-radius: 9999px;
+  color: var(--color-muted-foreground);
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+
+  &:hover,
+  &:focus-visible {
+    background-color: var(--color-accent);
+    color: var(--color-accent-foreground);
+  }
+}
+
+.help-link-text {
+  color: var(--color-primary);
+  text-decoration: underline;
 }
 
 // ---- Variant-B layout: one centred reading column under a sticky top bar.

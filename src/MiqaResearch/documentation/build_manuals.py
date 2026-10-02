@@ -2,7 +2,8 @@
 
 Plain script, no Django: finds each ``manuals/<manual>/conf.py`` and builds English
 plus every ``locale/<lang>/`` into ``<build-dir>/<manual>/<lang>/``, then writes that
-build's section index for in-app search (``search.json``).
+build's section index for in-app search (``search.json``) and its Help Link targets
+(``labels.json``).
 
     uv run --group docs python documentation/build_manuals.py [--build-dir DIR] [--no-strict] [--watch]
 """
@@ -12,6 +13,7 @@ import json
 import os
 import subprocess
 import sys
+import zlib
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -45,6 +47,7 @@ def build_manual(manual_dir: Path, build_dir: Path, strict: bool) -> bool:
         ok &= subprocess.run([*cmd, str(manual_dir), str(out_dir)]).returncode == 0
         if out_dir.is_dir():
             write_search_index(out_dir)
+            write_labels(out_dir)
     return ok
 
 
@@ -137,6 +140,33 @@ def write_search_index(out_dir: Path) -> None:
         if page.get("current_page_name") not in UNSEARCHED_PAGES:
             entries += page_sections(page)
     (out_dir / "search.json").write_text(json.dumps(entries, ensure_ascii=False), encoding="utf-8")
+
+
+def read_inventory(out_dir: Path) -> list[tuple[str, str, str, str]]:
+    """``(name, domain:role, uri, title)`` rows of the build's Sphinx inventory (``objects.inv``, v2)."""
+    path = out_dir / "objects.inv"
+    if not path.is_file():
+        return []
+    *_header, compressed = path.read_bytes().split(b"\n", 4)
+    rows = []
+    for line in zlib.decompress(compressed).decode("utf-8").splitlines():
+        name, role, _priority, uri, title = line.split(" ", 4)
+        if uri.endswith("$"):
+            uri = uri[:-1] + name
+        rows.append((name, role, uri, name if title == "-" else title))
+    return rows
+
+
+def write_labels(out_dir: Path) -> None:
+    """``labels.json``: every std-domain label that targets a section, as label → page, anchor, title."""
+    inventory = read_inventory(out_dir)
+    docnames = {uri: name for name, role, uri, _ in inventory if role == "std:doc"}
+    labels = {}
+    for name, role, uri, title in inventory:
+        page_uri, _, anchor = uri.partition("#")
+        if role == "std:label" and anchor and page_uri in docnames:
+            labels[name] = {"page": docnames[page_uri], "anchor": anchor, "title": title}
+    (out_dir / "labels.json").write_text(json.dumps(labels, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
 def build_all(manuals_dir: Path, build_dir: Path, strict: bool) -> bool:

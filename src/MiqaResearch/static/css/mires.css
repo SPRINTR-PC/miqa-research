@@ -305,6 +305,30 @@
   height: 1rem;
   width: 1rem;
 }
+.help-link {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border: 1px solid var(--color-border);
+  border-radius: 9999px;
+  color: var(--color-muted-foreground);
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+}
+.help-link:hover,
+.help-link:focus-visible {
+  background-color: var(--color-accent);
+  color: var(--color-accent-foreground);
+}
+.help-link-text {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
 #mires-main > .manual-layout {
   margin-top: 0;
 }

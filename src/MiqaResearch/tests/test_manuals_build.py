@@ -1,6 +1,8 @@
 """Real Sphinx builds of the manuals via documentation/build_manuals.py (marker: manuals)."""
 
 import json
+import os
+import re
 import shutil
 import subprocess
 import sys
@@ -73,3 +75,51 @@ def test_writes_a_search_index_with_one_entry_per_section(tmp_path):
     assert native["anchor"] == "native-scripts"
     assert native["breadcrumb"] == ["ETL Pipelines", "Creating a custom script"]
     assert "¶" not in native["text"] and "<" not in native["text"]
+
+
+def test_writes_labels_json_from_sphinx_labels(tmp_path):
+    result = run_build("--build-dir", tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    labels = json.loads((tmp_path / "user" / "en" / "labels.json").read_text(encoding="utf-8"))
+    assert labels["heading-etl-pipelines-native"] == {
+        "page": "src/etl-pipelines",
+        "anchor": "heading-etl-pipelines-native",
+        "title": "Native scripts",
+    }
+    assert all(set(target) == {"page", "anchor", "title"} for target in labels.values())
+    assert (tmp_path / "technical" / "en" / "labels.json").is_file()
+
+
+# {% manual_link "user" "app-…" %} in templates; manual_url(request, "user", "app-…") in code.
+HELP_LINK_PATTERNS = [
+    re.compile(r"""\{%\s*manual_link\s+["'](?P<manual>[\w-]+)["']\s+["'](?P<label>[\w-]+)["']"""),
+    re.compile(r"""manual_url\(\s*\w+\s*,\s*["'](?P<manual>[\w-]+)["']\s*,\s*["'](?P<label>[\w-]+)["']"""),
+]
+SKIPPED_DIRS = {"tests", "node_modules", "LocalOnly", "documentation", "static"}
+
+
+def help_links_in_app():
+    """Every (manual, label) a template or Python module links to."""
+    found = set()
+    for root, dirs, files in os.walk(PROJECT_DIR):
+        dirs[:] = [d for d in dirs if d not in SKIPPED_DIRS and not d.startswith(".")]
+        for name in files:
+            if name.endswith((".html", ".py")):
+                text = (Path(root) / name).read_text(encoding="utf-8", errors="ignore")
+                found |= {(m["manual"], m["label"]) for regex in HELP_LINK_PATTERNS for m in regex.finditer(text)}
+    return found
+
+
+def test_every_help_link_label_exists_in_the_english_build(tmp_path):
+    result = run_build("--build-dir", tmp_path)
+    assert result.returncode == 0, result.stderr
+
+    links = help_links_in_app()
+    assert ("user", "app-dashboard-overview") in links
+    missing = [
+        (manual, label)
+        for manual, label in sorted(links)
+        if label not in json.loads((tmp_path / manual / "en" / "labels.json").read_text(encoding="utf-8"))
+    ]
+    assert missing == []
