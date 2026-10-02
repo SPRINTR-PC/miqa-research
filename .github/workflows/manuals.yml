@@ -1,0 +1,66 @@
+name: Manuals
+
+# Advisory: builds the in-app manuals strictly and runs their tests. Not a required check;
+# if it becomes one, move the path filter into the job so the check always reports.
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - "src/MiqaResearch/documentation/**"
+      - "src/MiqaResearch/templates/**"
+      - "src/MiqaResearch/**/*.py"
+      - "src/MiqaResearch/pyproject.toml"
+      - "src/MiqaResearch/uv.lock"
+      - ".github/workflows/manuals.yml"
+
+jobs:
+  manuals:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/MiqaResearch
+    env:
+      MIRES_SECRET_KEY: manuals-ci
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        enable-cache: true
+        cache-dependency-glob: src/MiqaResearch/uv.lock
+
+    - name: Install dependencies
+      run: uv sync --locked --group dev --group docs
+
+    - name: Build the manuals (strict)
+      run: uv run python documentation/build_manuals.py
+
+    - name: Real-build tests
+      run: uv run pytest -m manuals
+
+    - name: Fixture-based manuals tests
+      run: uv run pytest tests/test_manuals_*.py
+
+    - name: Check .po catalogues are up to date
+      run: |
+        gettext_dir="$RUNNER_TEMP/gettext"
+        checked=0
+        for conf in documentation/manuals/*/conf.py; do
+          manual_dir="$(dirname "$conf")"
+          [ -d "$manual_dir/locale" ] || continue
+          manual="$(basename "$manual_dir")"
+          uv run python -m sphinx -q -b gettext "$manual_dir" "$gettext_dir/$manual"
+          uv run sphinx-intl update -p "$gettext_dir/$manual" -d "$manual_dir/locale"
+          checked=1
+        done
+        if [ "$checked" = 0 ]; then
+          echo "No manual has a locale/ directory; skipping."
+          exit 0
+        fi
+        stale="$(git status --porcelain -- '*.po')"
+        if [ -n "$stale" ]; then
+          files="$(echo "$stale" | awk '{print $2}' | paste -sd ' ' -)"
+          echo "::warning title=Stale manual translations::Run gettext + sphinx-intl update and commit: $files"
+        fi
