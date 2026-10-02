@@ -25,5 +25,3 @@ src/*
 # The Dashboard
 
 The **Dashboard** lists the research projects you are part of. Select a project to open it.
-
-See {ref}`no-such-label`.
