@@ -30,9 +30,9 @@ def test_builds_english_json_for_every_manual(tmp_path):
 
 @pytest.fixture
 def manuals_dir(tmp_path):
-    """A writable copy of the real manual sources."""
+    """A writable copy of the real manual sources, without their translations (locale/)."""
     copy = tmp_path / "manuals"
-    shutil.copytree(PROJECT_DIR / "documentation" / "manuals", copy)
+    shutil.copytree(PROJECT_DIR / "documentation" / "manuals", copy, ignore=shutil.ignore_patterns("locale"))
     return copy
 
 
