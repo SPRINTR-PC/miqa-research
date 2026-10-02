@@ -30,9 +30,9 @@ def test_builds_english_json_for_every_manual(tmp_path):
 
 @pytest.fixture
 def manuals_dir(tmp_path):
-    """A writable copy of the real manual sources."""
+    """A writable copy of the real manual sources, without their translations (locale/)."""
     copy = tmp_path / "manuals"
-    shutil.copytree(PROJECT_DIR / "documentation" / "manuals", copy)
+    shutil.copytree(PROJECT_DIR / "documentation" / "manuals", copy, ignore=shutil.ignore_patterns("locale"))
     return copy
 
 
@@ -123,3 +123,38 @@ def test_every_help_link_label_exists_in_the_english_build(tmp_path):
         if label not in json.loads((tmp_path / manual / "en" / "labels.json").read_text(encoding="utf-8"))
     ]
     assert missing == []
+
+
+FIXTURE_BUILD_DIR = PROJECT_DIR / "tests" / "fixtures" / "manuals"
+# Sphinx's own pages, never served by the app (search.fjson is not search.json).
+SPHINX_ONLY_PAGES = {"search.fjson", "genindex.fjson"}
+
+
+def _served(paths):
+    return [path for path in paths if path.name not in SPHINX_ONLY_PAGES and ".doctrees" not in path.parts]
+
+
+def _keys(paths, entries_of):
+    return {
+        key for path in paths for entry in entries_of(json.loads(path.read_text(encoding="utf-8"))) for key in entry
+    }
+
+
+def test_real_output_has_every_key_the_fixtures_rely_on(tmp_path):
+    """Drift guard: the hand-written fixture build must not use keys a real build lacks."""
+    result = run_build("--build-dir", tmp_path)
+    assert result.returncode == 0, result.stderr
+
+    kinds = {
+        "*.fjson": lambda page: [page],
+        "search.json": lambda entries: entries,
+        "labels.json": lambda labels: labels.values(),
+    }
+    for pattern, entries_of in kinds.items():
+        fixture_keys = _keys(_served(FIXTURE_BUILD_DIR.rglob(pattern)), entries_of)
+        assert fixture_keys, pattern
+        real_files = _served(tmp_path.glob(f"*/*/**/{pattern}"))
+        assert real_files, pattern
+        for real in real_files:
+            missing = fixture_keys - _keys([real], entries_of)
+            assert not missing, f"{real.relative_to(tmp_path)} lacks {sorted(missing)}"
