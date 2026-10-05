@@ -90,13 +90,16 @@ def _finalize(job: EtlJob, result) -> EtlJob:
             job.log = (job.log + f"\n[orchestrator] loader rejected the result: {exc}").strip()
         else:
             job.status = ETL_JOB_STATUS_SUCCEEDED
-            _enqueue_raw_bucket_move(job)
     else:
         # Exit 1 (script error), 2 (contract violation), 3 (timeout/killed): all script-class,
         # none auto-retry (#156's spec text groups them explicitly under "manual retry").
         job.status = ETL_JOB_STATUS_FAILED
 
     job.save(update_fields=["status", "finished_at", "log"])
+    if job.status == ETL_JOB_STATUS_SUCCEEDED:
+        # Only once "succeeded" is saved: the mover skips any other status, and under "delete"
+        # Raw Retention a move for an unrecorded success would lose the source (#246).
+        _enqueue_raw_bucket_move(job)
     return job
 
 

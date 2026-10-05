@@ -511,7 +511,8 @@ R rows are therefore validated against the same Datatype schemas, with the same 
 (heading-etl-raw-bucket)=
 ## Raw bucket move
 
-When a Job succeeds, `move_etl_job_inputs_to_raw_bucket` moves each input to the Binding's
+When a Job succeeds, `move_etl_job_inputs_to_raw_bucket` is queued only after the Job's
+`succeeded` status is saved, and the mover leaves alone any Job that isn't `succeeded`. It moves each input to the Binding's
 **Raw Bucket** at `<raw_prefix><job id>/<path relative to source_prefix>`. Keys include the Job
 id, so re-runs never overwrite earlier copies. Each input is moved independently, so one failing
 file does not block the others in a folder Job.

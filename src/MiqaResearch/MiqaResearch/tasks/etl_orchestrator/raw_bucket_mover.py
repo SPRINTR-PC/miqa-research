@@ -27,6 +27,7 @@ from contract.constants.etl import (
     ETL_JOB_INPUT_MOVE_STATUS_MOVED,
     ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_PENDING,
     ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_STUCK,
+    ETL_JOB_STATUS_SUCCEEDED,
     PIPELINE_BINDING_RAW_RETENTION_DELETE,
 )
 from contract.constants.research_project_role import PROJECT_ROLE_ADMIN, PROJECT_ROLE_DATA_MANAGER
@@ -49,7 +50,10 @@ class _GrantDeniedError(RawBucketMoveError):
 
 def move_job_inputs(job: EtlJob) -> None:
     """Attempts to move every not-yet-moved input of `job` to its Binding's raw bucket. Each
-    input's move is independent: one raising doesn't stop the others."""
+    input's move is independent: one raising doesn't stop the others. A Job not recorded as
+    succeeded is left alone -- under "delete" Raw Retention its source would otherwise be lost."""
+    if job.status != ETL_JOB_STATUS_SUCCEEDED:
+        return
     binding = job.binding
     grants = list(EtlLocationGrant.objects.filter(project_id=binding.project_id))
     client = _build_etl_s3_client()
@@ -81,17 +85,16 @@ def sweep_due_cleanups() -> list[EtlJob]:
 
 
 def _move_one(client, grants, binding, job: EtlJob, job_input: EtlJobInput) -> None:
+    if not location_grant_allows(grants, job_input.bucket, job_input.key):
+        raise _GrantDeniedError(
+            f"source {job_input.bucket}/{job_input.key} falls outside this project's EtlLocationGrants")
+
     if job.raw_retention == PIPELINE_BINDING_RAW_RETENTION_DELETE:
-        if not location_grant_allows(grants, job_input.bucket, job_input.key):
-            raise _GrantDeniedError(
-                f"delete of {job_input.bucket}/{job_input.key} falls outside this project's EtlLocationGrants")
         _delete_source(client, job_input, done_status=ETL_JOB_INPUT_MOVE_STATUS_DELETED)
         return
 
     raw_key = f"{binding.raw_prefix}{job.id}/{_relative_key(binding, job_input.key)}"
-
-    if not location_grant_allows(grants, job_input.bucket, job_input.key) \
-            or not location_grant_allows(grants, binding.raw_bucket, raw_key):
+    if not location_grant_allows(grants, binding.raw_bucket, raw_key):
         raise _GrantDeniedError(
             f"move of {job_input.bucket}/{job_input.key} -> {binding.raw_bucket}/{raw_key} "
             f"falls outside this project's EtlLocationGrants")

@@ -188,7 +188,7 @@ def test_move_etl_job_inputs_to_raw_bucket_delegates_to_the_mover(binding, scrip
     client.put_object(Bucket="incoming", Key="redcap/a.csv", Body=b"data")
     EtlLocationGrant.objects.create(project=binding.project, bucket="incoming", prefix="")
     EtlLocationGrant.objects.create(project=binding.project, bucket="raw", prefix="")
-    job = EtlJob.objects.create(binding=binding, script_version=script_version)
+    job = EtlJob.objects.create(binding=binding, script_version=script_version, status=ETL_JOB_STATUS_SUCCEEDED)
     job_input = EtlJobInput.objects.create(
         job=job, bucket="incoming", key="redcap/a.csv",
         sha256=hashlib.sha256(b"data").hexdigest(), size_bytes=4)

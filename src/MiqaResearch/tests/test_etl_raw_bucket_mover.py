@@ -25,6 +25,8 @@ from contract.constants.etl import (
     ETL_JOB_INPUT_MOVE_STATUS_PENDING,
     ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_PENDING,
     ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_STUCK,
+    ETL_JOB_STATUS_RUNNING,
+    ETL_JOB_STATUS_SUCCEEDED,
     ETL_SCRIPT_ORIGIN_CUSTOM,
     PIPELINE_BINDING_RAW_RETENTION_DELETE,
 )
@@ -89,7 +91,7 @@ def location_grants(research_project):
 
 @pytest.fixture
 def job(binding, script_version):
-    return EtlJob.objects.create(binding=binding, script_version=script_version)
+    return EtlJob.objects.create(binding=binding, script_version=script_version, status=ETL_JOB_STATUS_SUCCEEDED)
 
 
 def _job_input(job, *, bucket="incoming", key="redcap/a.csv", data=b"data"):
@@ -140,7 +142,8 @@ def test_the_source_is_absent_after_a_successful_move(location_grants, job, s3_c
 def delete_job(research_project, binding, script_version):
     EtlLocationGrant.objects.create(project=research_project, bucket="incoming", prefix="")
     return EtlJob.objects.create(
-        binding=binding, script_version=script_version, raw_retention=PIPELINE_BINDING_RAW_RETENTION_DELETE)
+        binding=binding, script_version=script_version, status=ETL_JOB_STATUS_SUCCEEDED,
+        raw_retention=PIPELINE_BINDING_RAW_RETENTION_DELETE)
 
 
 def _all_keys(s3_client, bucket):
@@ -331,3 +334,19 @@ def test_a_delete_retention_jobs_failing_source_delete_escalates_with_its_retent
     assert "raw-bucket" not in mail.outbox[0].body.lower()
     event = AuditLog.objects.get(event_type=EVENT_TYPE_ETL_SOURCE_CLEANUP_STUCK, project=research_project)
     assert event.metadata["raw_retention"] == PIPELINE_BINDING_RAW_RETENTION_DELETE
+
+
+@pytest.mark.parametrize("raw_retention", ["move", PIPELINE_BINDING_RAW_RETENTION_DELETE])
+def test_a_job_not_recorded_as_succeeded_never_has_its_source_touched(
+        research_project, binding, script_version, location_grants, s3_client, raw_retention):
+    job = EtlJob.objects.create(
+        binding=binding, script_version=script_version, status=ETL_JOB_STATUS_RUNNING, raw_retention=raw_retention)
+    s3_client.put_object(Bucket="incoming", Key="redcap/a.csv", Body=b"data")
+    job_input = _job_input(job, data=b"data")
+
+    raw_bucket_mover.move_job_inputs(job)
+
+    job_input.refresh_from_db()
+    assert job_input.move_status == ETL_JOB_INPUT_MOVE_STATUS_PENDING
+    assert _all_keys(s3_client, "incoming") == ["redcap/a.csv"]
+    assert _all_keys(s3_client, "raw") == []

@@ -1,12 +1,14 @@
 """Writes for the ETL Bindings section (#158, #224): create a PipelineBinding through the wizard,
 or edit one. Callers must pre-validate input (see `MiqaResearch.interfaces.http.forms.etl`),
-including that the source and raw bucket/prefix fall within the project's `EtlLocationGrant`s --
+including that the source and (under "move" Raw Retention) raw bucket/prefix fall within the
+project's `EtlLocationGrant`s, and that only an Admin switches a Binding into "delete" --
 this module only re-checks the parts that need a DB round trip: that the chosen Script Version is
 still usable for this project, and that no other Binding already claims the same source
 bucket/prefix.
 
 An edit never touches the source bucket/prefix: it is the Binding's identity (the processed-file
-ledger is keyed on it). A Job already queued keeps its own Script Version and config snapshot.
+ledger is keyed on it). A Job already queued keeps its own Script Version, config and Raw
+Retention snapshot. Under "delete" Raw Retention the raw bucket/prefix are blank (#246).
 """
 from asgiref.sync import sync_to_async
 
