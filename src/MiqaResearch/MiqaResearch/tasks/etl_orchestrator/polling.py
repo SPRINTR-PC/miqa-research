@@ -134,7 +134,7 @@ def _create_job(binding, processed_files: list[EtlProcessedFile]) -> EtlJob | No
     try:
         with transaction.atomic():
             job = EtlJob.objects.create(
-                binding=binding, script_version=binding.script_version, config_snapshot=binding.config)
+                binding=binding, script_version=binding.script_version, **binding.job_snapshot())
             EtlJobInput.objects.bulk_create([
                 EtlJobInput(job=job, bucket=pf.bucket, key=pf.key, sha256="", size_bytes=0)
                 for pf in processed_files

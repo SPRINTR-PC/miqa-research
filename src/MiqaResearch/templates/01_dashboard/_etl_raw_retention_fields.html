@@ -1,0 +1,31 @@
+{% load i18n %}
+{# Raw Retention (#246) for the Binding wizard and Edit form. `form` is an EtlBindingEditForm/CreateForm. #}
+{% with delete_locked=form.delete_locked %}
+<fieldset class="etl-raw-retention">
+  <legend class="etl-field"><span>{{ form.raw_retention.label }}</span></legend>
+  {% for choice in form.raw_retention %}
+    <label class="etl-radio">
+      <input type="radio" name="{{ form.raw_retention.html_name }}" value="{{ choice.data.value }}"
+             {% if choice.data.selected %}checked{% endif %}
+             {% if choice.data.value == 'delete' and delete_locked %}disabled{% endif %}>
+      {{ choice.choice_label }}{% if choice.data.value == 'delete' and delete_locked %} <span class="text-sm text-muted-foreground">({% translate "Admin only" %})</span>{% endif %}
+    </label>
+  {% endfor %}
+  {% for error in form.raw_retention.errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
+  <div class="etl-raw-retention-delete">
+    <p class="etl-form-warning">{% translate "Inputs are permanently deleted after a successful load; only checksums are kept." %}</p>
+    {% if form.confirm_delete_required %}
+      <label class="etl-radio">{{ form.confirm_delete }} {{ form.confirm_delete.label }}</label>
+      {% for error in form.confirm_delete.errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
+    {% endif %}
+  </div>
+  <div class="etl-raw-destination">
+    <label class="etl-field"><span>{% translate "Raw bucket" %}</span>{{ form.raw_bucket }}
+      {% for error in form.raw_bucket.errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
+    </label>
+    <label class="etl-field"><span>{% translate "Raw prefix" %}</span>{{ form.raw_prefix }}
+      {% for error in form.raw_prefix.errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
+    </label>
+  </div>
+</fieldset>
+{% endwith %}

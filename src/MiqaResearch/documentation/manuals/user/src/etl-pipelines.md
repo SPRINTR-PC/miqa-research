@@ -23,7 +23,8 @@ ETL Datatype
 
 Pipeline Binding
 : A connection between a **source bucket** (where files arrive) and one Script Version. It
-  also names the **raw bucket** that processed files are moved to afterwards.
+  also says what happens to processed files afterwards: they are moved to a **raw bucket**
+  (the default), or deleted.
 
 ETL Job
 : One run of a script over one file, or one folder of files.
@@ -119,8 +120,14 @@ A binding tells the platform to watch a location and process what arrives there.
    - **Source bucket** and **Source prefix**: the bucket, and optionally the folder inside it,
      where new files arrive.
    - **Script & version**: the script to run and the exact version to use.
-   - **Raw bucket** and **Raw prefix**: where processed files are moved after a successful
-     job.
+   - **After a successful load**: what happens to the input files once a job succeeds.
+     - **Move to Raw Bucket** (the default) keeps a copy. Fill in **Raw bucket** and
+       **Raw prefix** to say where the files go.
+     - **Delete after load** deletes the files from the source bucket and keeps no copy. Only
+       their names, sizes and checksums stay on the job. Use this for exports that contain
+       identifiable data, such as personal identity numbers, that must not be kept. Only a
+       project Admin can choose it, and you must tick the confirmation box. Data Managers see
+       the option marked *Admin only*.
    - **Grouping**: **Per file** runs one job for each new file. **Folder, with quiescence wait**
      waits until a folder has stopped receiving files, then processes the whole folder as one
      job.
@@ -142,13 +149,18 @@ location can belong to only one binding.
 ### Editing a binding
 
 Admins and Data Managers can click **Edit** next to a binding to change its script version,
-raw destination, grouping, quiescence, script config or sandbox overrides. Click **Save** to
+what happens after a successful load, raw destination, grouping, quiescence, script config or sandbox overrides. Click **Save** to
 apply. Every edit is recorded in the project's audit log.
 
 - The **source bucket and prefix can't be changed**. To watch a different location, create a
   new binding.
-- Jobs that are already queued or running keep the script version and config they started with.
+- Jobs that are already queued or running keep the script version, config and
+  after-load setting they started with.
   The edit applies to jobs created afterwards.
+- Only an Admin can switch a binding to **Delete after load**, and it asks for confirmation.
+  Files that earlier jobs already moved to the raw bucket stay there. Delete them by hand if
+  they must go. Either an Admin or a Data Manager can switch a binding back to
+  **Move to Raw Bucket**.
 - Changing the grouping also applies to files that have arrived but haven't been processed yet.
   After a switch to folder grouping, their folders start a fresh quiescence wait.
 
@@ -171,9 +183,13 @@ apply. Every edit is recorded in the project's audit log.
    bucket to the raw bucket, into a folder named after the job. They are copied first, the
    copy is checked, and only then is the original deleted. If the original repeatedly cannot be
    deleted, Admins and Data Managers receive an email and the file is left where it is for
-   manual handling.
+   manual handling. For a binding set to **Delete after load**, the files are deleted without
+   being copied anywhere. A failed delete is retried and reported the same way.
 
-Files belonging to a failed job are **not** moved. They stay in the source bucket.
+Files belonging to a failed job are **not** moved or deleted. They stay in the source bucket.
+
+Delete after load only covers the input files. Anything a script writes to its log is kept with
+the job, so scripts must not log identifiable values.
 
 (heading-etl-pipelines-jobs)=
 ## Following jobs and reading logs
@@ -185,7 +201,7 @@ script and version that ran, the attempt number and the status:
 |---|---|
 | Pending | Queued, waiting to start. |
 | Running | The script is running now. |
-| Succeeded | All rows were saved and the input files are being moved to the raw bucket. |
+| Succeeded | All rows were saved, and the input files are being moved to the raw bucket, or deleted under **Delete after load**. |
 | Failed | Nothing was saved. Open the job to see why. |
 | Stuck | The job has been running well past its time limit. The platform fails it automatically and, if the cause was a platform problem, starts it again. |
 

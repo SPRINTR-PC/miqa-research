@@ -36,8 +36,8 @@ class EtlScriptVersionAdmin(ModelAdmin):
 
 @admin.register(PipelineBinding)
 class PipelineBindingAdmin(ModelAdmin):
-    list_display = ("project", "source_bucket", "source_prefix", "raw_bucket", "raw_prefix")
-    list_filter = ("project",)
+    list_display = ("project", "source_bucket", "source_prefix", "raw_retention", "raw_bucket", "raw_prefix")
+    list_filter = ("project", "raw_retention")
     search_fields = ("source_bucket", "source_prefix")
 
     class Meta:
@@ -46,8 +46,8 @@ class PipelineBindingAdmin(ModelAdmin):
 
 @admin.register(EtlJob)
 class EtlJobAdmin(ModelAdmin):
-    list_display = ("binding", "status", "started_at", "finished_at", "created_at")
-    list_filter = ("status", "binding")
+    list_display = ("binding", "status", "raw_retention", "started_at", "finished_at", "created_at")
+    list_filter = ("status", "raw_retention", "binding")
 
     class Meta:
         model = EtlJob
@@ -55,8 +55,8 @@ class EtlJobAdmin(ModelAdmin):
 
 @admin.register(EtlJobInput)
 class EtlJobInputAdmin(ModelAdmin):
-    list_display = ("job", "bucket", "key", "move_status", "cleanup_attempts", "moved_at")
-    list_filter = ("job", "move_status")
+    list_display = ("job", "bucket", "key", "source_status", "cleanup_attempts", "source_handled_at")
+    list_filter = ("job", "source_status")
     search_fields = ("bucket", "key")
 
     class Meta:

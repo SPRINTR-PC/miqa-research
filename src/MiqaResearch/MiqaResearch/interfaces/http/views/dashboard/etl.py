@@ -29,9 +29,7 @@ from MiqaResearch.interfaces.http.forms.etl import (
     EtlScriptVersionCreateForm,
 )
 from MiqaResearch.readers.etl_reader import (
-    get_bindable_script_version_choices,
     get_project_job,
-    get_project_location_grants,
     get_project_max_script_source_bytes,
 )
 
@@ -44,6 +42,7 @@ from .tabs import (
     ETL_SECTION_JOBS,
     ETL_SECTION_SCRIPTS,
     _htmx_tab_response,
+    binding_form_kwargs,
     etl_section_context,
 )
 
@@ -168,10 +167,9 @@ async def etl_bindings_create(request, project_id):
         return HttpResponseForbidden()
 
     user = await request.auser()
-    location_grants = await get_project_location_grants(research_project)
-    choices = await get_bindable_script_version_choices(research_project)
+    form_kwargs = await binding_form_kwargs(research_project, permissions)
 
-    form = EtlBindingCreateForm(request.POST, location_grants=location_grants, script_version_choices=choices)
+    form = EtlBindingCreateForm(request.POST, **form_kwargs)
     if form.is_valid():
         try:
             await create_pipeline_binding(
@@ -179,6 +177,7 @@ async def etl_bindings_create(request, project_id):
                 source_bucket=form.cleaned_data['source_bucket'],
                 source_prefix=form.cleaned_data['source_prefix'],
                 script_version_id=form.cleaned_data['script_version'],
+                raw_retention=form.cleaned_data['raw_retention'],
                 raw_bucket=form.cleaned_data['raw_bucket'],
                 raw_prefix=form.cleaned_data['raw_prefix'],
                 grouping_mode=form.cleaned_data['grouping_mode'],
@@ -188,7 +187,7 @@ async def etl_bindings_create(request, project_id):
                 memory_mb_override=form.cleaned_data['memory_mb_override'],
                 cpu_millicores_override=form.cleaned_data['cpu_millicores_override'],
             )
-            form = EtlBindingCreateForm(location_grants=location_grants, script_version_choices=choices)
+            form = EtlBindingCreateForm(**form_kwargs)
         except EtlActionError as error:
             form.add_error(None, str(error))
 
@@ -209,14 +208,13 @@ async def etl_binding_edit(request, project_id, binding_id):
     binding = await aget_object_or_404(PipelineBinding, id=binding_id, project=research_project)
     user = await request.auser()
     form = EtlBindingEditForm(
-        request.POST,
-        location_grants=await get_project_location_grants(research_project),
-        script_version_choices=await get_bindable_script_version_choices(research_project),
-    )
+        request.POST, **await binding_form_kwargs(research_project, permissions),
+        current_raw_retention=binding.raw_retention)
     if form.is_valid():
         error = await _attempt(update_pipeline_binding(
             project=research_project, user=user, request=request, binding=binding,
             script_version_id=form.cleaned_data['script_version'],
+            raw_retention=form.cleaned_data['raw_retention'],
             raw_bucket=form.cleaned_data['raw_bucket'],
             raw_prefix=form.cleaned_data['raw_prefix'],
             grouping_mode=form.cleaned_data['grouping_mode'],

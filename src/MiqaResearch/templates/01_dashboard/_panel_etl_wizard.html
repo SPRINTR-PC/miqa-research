@@ -15,12 +15,7 @@
       {% for error in binding_create_form.script_version.errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
     </label>
     <p class="text-sm text-muted-foreground mb-2">{% translate "Bindings pin one immutable version. Publishing a script edit creates a new version -- it never changes an existing one in place." %}</p>
-    <label class="etl-field"><span>{% translate "Raw bucket" %}</span>{{ binding_create_form.raw_bucket }}
-      {% for error in binding_create_form.raw_bucket.errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
-    </label>
-    <label class="etl-field"><span>{% translate "Raw prefix" %}</span>{{ binding_create_form.raw_prefix }}
-      {% for error in binding_create_form.raw_prefix.errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
-    </label>
+    {% include '01_dashboard/_etl_raw_retention_fields.html' with form=binding_create_form %}
     <label class="etl-field"><span>{% translate "Grouping" %}</span>{{ binding_create_form.grouping_mode }}
       {% for error in binding_create_form.grouping_mode.errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
     </label>

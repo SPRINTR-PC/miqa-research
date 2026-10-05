@@ -1,17 +1,23 @@
 """Writes for the ETL Bindings section (#158, #224): create a PipelineBinding through the wizard,
 or edit one. Callers must pre-validate input (see `MiqaResearch.interfaces.http.forms.etl`),
-including that the source and raw bucket/prefix fall within the project's `EtlLocationGrant`s --
+including that the source and (under "move" Raw Retention) raw bucket/prefix fall within the
+project's `EtlLocationGrant`s, and that only an Admin switches a Binding into "delete" --
 this module only re-checks the parts that need a DB round trip: that the chosen Script Version is
 still usable for this project, and that no other Binding already claims the same source
 bucket/prefix.
 
 An edit never touches the source bucket/prefix: it is the Binding's identity (the processed-file
-ledger is keyed on it). A Job already queued keeps its own Script Version and config snapshot.
+ledger is keyed on it). A Job already queued keeps its own Script Version, config and Raw
+Retention snapshot. Under "delete" Raw Retention the raw bucket/prefix are blank (#246).
 """
 from asgiref.sync import sync_to_async
 
 from contract.constants.audit_log import EVENT_TYPE_ETL_BINDING_CREATED, EVENT_TYPE_ETL_BINDING_UPDATED
-from contract.constants.etl import ETL_SCRIPT_ORIGIN_NATIVE, PIPELINE_BINDING_GROUPING_FILE
+from contract.constants.etl import (
+    ETL_SCRIPT_ORIGIN_NATIVE,
+    PIPELINE_BINDING_GROUPING_FILE,
+    PIPELINE_BINDING_RAW_RETENTION_MOVE,
+)
 from MiqaResearch.data.models import EtlScriptVersion, PipelineBinding
 
 from .audit import record_etl_event
@@ -20,7 +26,8 @@ from .exceptions import EtlBindingConflict, EtlScriptVersionNotUsable
 
 async def create_pipeline_binding(
         *, project, user, request, source_bucket, source_prefix, script_version_id, raw_bucket, raw_prefix,
-        grouping_mode=PIPELINE_BINDING_GROUPING_FILE, quiescence_seconds=None, config=None,
+        raw_retention=PIPELINE_BINDING_RAW_RETENTION_MOVE, grouping_mode=PIPELINE_BINDING_GROUPING_FILE,
+        quiescence_seconds=None, config=None,
         timeout_seconds_override=None, memory_mb_override=None, cpu_millicores_override=None) -> PipelineBinding:
     script_version = await _usable_script_version(project, script_version_id)
 
@@ -31,7 +38,7 @@ async def create_pipeline_binding(
 
     binding = await PipelineBinding.objects.acreate(
         project=project, source_bucket=source_bucket, source_prefix=source_prefix,
-        script_version=script_version, raw_bucket=raw_bucket, raw_prefix=raw_prefix,
+        script_version=script_version, raw_retention=raw_retention, raw_bucket=raw_bucket, raw_prefix=raw_prefix,
         grouping_mode=grouping_mode, **_quiescence_kwargs(quiescence_seconds), config=config or {},
         timeout_seconds_override=timeout_seconds_override, memory_mb_override=memory_mb_override,
         cpu_millicores_override=cpu_millicores_override,
@@ -39,15 +46,17 @@ async def create_pipeline_binding(
 
     await record_etl_event(
         EVENT_TYPE_ETL_BINDING_CREATED, user=user, request=request, project=project,
-        metadata={"etl_pipeline_binding_id": str(binding.id)})
+        metadata={"etl_pipeline_binding_id": str(binding.id), "raw_retention": binding.raw_retention})
     return binding
 
 
 async def update_pipeline_binding(
         *, project, user, request, binding, script_version_id, raw_bucket, raw_prefix,
-        grouping_mode, quiescence_seconds=None, config=None,
+        grouping_mode, raw_retention, quiescence_seconds=None, config=None,
         timeout_seconds_override=None, memory_mb_override=None, cpu_millicores_override=None) -> PipelineBinding:
     grouping_changed = grouping_mode != binding.grouping_mode
+    raw_retention_previous = binding.raw_retention
+    binding.raw_retention = raw_retention
     binding.script_version = await _usable_script_version(project, script_version_id)
     binding.raw_bucket = raw_bucket
     binding.raw_prefix = raw_prefix
@@ -65,7 +74,10 @@ async def update_pipeline_binding(
 
     await record_etl_event(
         EVENT_TYPE_ETL_BINDING_UPDATED, user=user, request=request, project=project,
-        metadata={"etl_pipeline_binding_id": str(binding.id)})
+        metadata={
+            "etl_pipeline_binding_id": str(binding.id),
+            "raw_retention": binding.raw_retention, "raw_retention_previous": raw_retention_previous,
+        })
     return binding
 
 

@@ -21,6 +21,8 @@ from contract.constants.etl import (
     ETL_SCRIPT_ORIGIN_CUSTOM,
     PIPELINE_BINDING_GROUPING_FILE,
     PIPELINE_BINDING_GROUPING_FOLDER,
+    PIPELINE_BINDING_RAW_RETENTION_DELETE,
+    PIPELINE_BINDING_RAW_RETENTION_MOVE,
 )
 from MiqaResearch.data.models import (
     EtlJob,
@@ -102,6 +104,25 @@ def test_file_mode_a_new_file_queues_a_job_immediately(research_project, etl_scr
     assert list(EtlJobInput.objects.filter(job=job).values_list("bucket", "key")) == [
         ("bucket", "incoming-prefix/a.csv")]
     assert EtlProcessedFile.objects.filter(binding=binding, key="incoming-prefix/a.csv").exists()
+
+
+@mock_aws
+def test_a_queued_job_keeps_its_bindings_raw_retention_even_after_the_binding_changes(
+        research_project, etl_script_version):
+    client = _s3_client()
+    client.put_object(Bucket="bucket", Key="incoming-prefix/a.csv", Body=b"a")
+    binding = _binding(research_project, etl_script_version)
+    binding.raw_retention = PIPELINE_BINDING_RAW_RETENTION_DELETE
+    binding.raw_bucket = binding.raw_prefix = ""
+    binding.save()
+
+    job = poll_binding(binding)
+    binding.raw_retention = PIPELINE_BINDING_RAW_RETENTION_MOVE
+    binding.raw_bucket = "raw"
+    binding.save()
+
+    job.refresh_from_db()
+    assert job.raw_retention == PIPELINE_BINDING_RAW_RETENTION_DELETE
 
 
 @mock_aws

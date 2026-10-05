@@ -4,11 +4,13 @@ from django.db import models
 from django.db.models import Q
 
 from contract.constants.etl import (
-    ETL_JOB_INPUT_MOVE_STATUS_CHOICES,
-    ETL_JOB_INPUT_MOVE_STATUS_PENDING,
+    ETL_JOB_INPUT_SOURCE_STATUS_CHOICES,
+    ETL_JOB_INPUT_SOURCE_STATUS_PENDING,
     ETL_JOB_STATUS_CHOICES,
     ETL_JOB_STATUS_PENDING,
     ETL_JOB_STATUS_RUNNING,
+    PIPELINE_BINDING_RAW_RETENTION_CHOICES,
+    PIPELINE_BINDING_RAW_RETENTION_MOVE,
 )
 
 from .etl_pipeline_binding import PipelineBinding
@@ -33,6 +35,11 @@ class EtlJob(models.Model):
                    "or a manual retry.")
     config_snapshot = models.JSONField(
         default=dict, blank=True, help_text="Snapshot of the Binding's config at the time this Job was queued.")
+    raw_retention = models.CharField(
+        max_length=10, choices=PIPELINE_BINDING_RAW_RETENTION_CHOICES, default=PIPELINE_BINDING_RAW_RETENTION_MOVE,
+        blank=False, null=False,
+        help_text="Snapshot of the Binding's Raw Retention at the time this Job was queued; a later Binding "
+                   "change never affects this Job's inputs.")
     sandbox_image_digest = models.CharField(max_length=200, blank=True, default="")
     log = models.TextField(
         blank=True, default="", help_text="Sandbox execution log, capped at 64 KB by the orchestrator.")
@@ -54,6 +61,11 @@ class EtlJob(models.Model):
     def __str__(self):
         return f"EtlJob {self.id} ({self.status})"
 
+    def snapshot(self) -> dict:
+        """This Job's frozen Binding settings (see `PipelineBinding.job_snapshot`), carried
+        unchanged onto any retry of it."""
+        return {"config_snapshot": self.config_snapshot, "raw_retention": self.raw_retention}
+
 
 class EtlJobInput(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid7, editable=False)
@@ -67,9 +79,11 @@ class EtlJobInput(models.Model):
         max_length=1000, blank=True, default="",
         help_text="Populated once this input's copy to the raw bucket has been verified (size+hash), "
                    "even if the source delete is still pending.")
-    moved_at = models.DateTimeField(blank=True, null=True)
-    move_status = models.CharField(
-        max_length=25, choices=ETL_JOB_INPUT_MOVE_STATUS_CHOICES, default=ETL_JOB_INPUT_MOVE_STATUS_PENDING,
+    source_handled_at = models.DateTimeField(
+        blank=True, null=True,
+        help_text="When the source was moved to the raw bucket, or deleted under \"delete\" Raw Retention.")
+    source_status = models.CharField(
+        max_length=25, choices=ETL_JOB_INPUT_SOURCE_STATUS_CHOICES, default=ETL_JOB_INPUT_SOURCE_STATUS_PENDING,
         blank=False, null=False, db_index=True)
     cleanup_attempts = models.PositiveIntegerField(
         default=0, help_text="Number of source-delete attempts made so far (capped backoff).")

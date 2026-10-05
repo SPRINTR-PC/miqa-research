@@ -554,10 +554,19 @@ per folder), and a Raw Bucket destination.
 
 ### Raw Bucket
 The bucket where source files are moved (copy, verify, then delete source) after
-a successful ETL Job, nested under the Job's id. No opt-out: every successful
-Job's inputs are moved. A source delete that keeps failing retries with capped
-backoff, then escalates (staff/Admin/Data-Manager email + audit event) and
-leaves the source in place for manual handling.
+a successful ETL Job, nested under the Job's id, when the Job's Raw Retention is
+"move". A source delete that keeps failing retries with capped backoff, then
+escalates (staff/Admin/Data-Manager email + audit event) and leaves the source
+in place for manual handling.
+
+### Raw Retention
+What a Pipeline Binding does with a successful Job's inputs: "move" them to its
+Raw Bucket (the default), or "delete" them from the source after the load, with
+no copy kept anywhere. Only checksums, sizes and keys remain on the Job as
+provenance. Only a project Admin may choose "delete". Each Job keeps the Raw
+Retention its Binding had when the Job was queued. A failed Job always leaves
+its source in place, whatever the Raw Retention. See ADR 0032.
+_Avoid_: keep raw, purge
 
 ### ETL Job
 One run of one Script Version over one group of input files. Records script
@@ -643,6 +652,34 @@ _Avoid_: admin, operator
 | 0029 | Manuals translated via gettext `.po` from one English source; language follows the app, not the URL | Accepted |
 | 0030 | Native ETL Scripts shipped as code and synced on migrate; per-project override is a Customize copy | Accepted |
 | 0031 | Participant-consent ETL loads create unknown participants; consent types are per project | Accepted |
+| 0032 | ETL Raw Retention: per-Binding "delete after load" opt-out, Admin-only | Accepted |
+
+### ADR 0032 — ETL Raw Retention: per-Binding "delete after load" opt-out, Admin-only
+
+**Context**: #156 decided that every successful ETL Job's inputs are moved to a
+Raw Bucket and kept, with no opt-out, so any loaded row can be traced back to
+the exact bytes it came from. Routing SamtyckenUmu consent exports through ETL
+(#241) breaks that: the exports carry personnummer and names, which the legacy
+consent task never stored. A permanent copy of every export was judged
+unacceptable.
+
+**Decision**: Each Pipeline Binding has a Raw Retention, either "move" (the
+default and the only behaviour before this ADR) or "delete". Under "delete", a
+successful Job's inputs are deleted from the source after the load commits and
+are never copied. Provenance is reduced to the key, SHA-256 and size that every
+Job input already records. Only a project Admin may switch a Binding to
+"delete", and doing so needs an explicit confirmation. Either manager role may
+switch it back to "move". The mode is snapshotted on each Job when it is
+queued. Failed source deletes reuse the move path's capped backoff and
+escalation.
+
+**Consequences**:
+- A Job's rows under "delete" can no longer be re-derived from stored input.
+  Only the checksums can prove which bytes were loaded.
+- Switching a Binding to "delete" doesn't purge raw copies that earlier Jobs
+  already stored.
+- Job logs are unaffected. A script must not log the identifiable values it
+  reads.
 
 ### ADR 0031 — Participant-consent ETL loads create unknown participants; consent types are per project
 

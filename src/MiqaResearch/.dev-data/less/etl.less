@@ -102,6 +102,31 @@
   font-size: 0.8rem;
   margin: 0.1rem 0 0;
 }
+.etl-form-warning {
+  color: var(--color-destructive);
+  font-size: 0.85rem;
+  margin: 0.25rem 0;
+}
+.etl-raw-retention {
+  border: none;
+  margin: 0 0 0.75rem;
+  padding: 0;
+}
+.etl-radio {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  font-size: 0.9rem;
+}
+.etl-raw-retention-delete {
+  display: none;
+}
+.etl-raw-retention:has(input[value="delete"]:checked) .etl-raw-retention-delete {
+  display: block;
+}
+.etl-raw-retention:has(input[value="delete"]:checked) .etl-raw-destination {
+  display: none;
+}
 
 .etl-manage-actions {
   display: flex;
