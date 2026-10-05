@@ -26,7 +26,8 @@ from .exceptions import EtlBindingConflict, EtlScriptVersionNotUsable
 
 async def create_pipeline_binding(
         *, project, user, request, source_bucket, source_prefix, script_version_id, raw_bucket, raw_prefix,
-        raw_retention=PIPELINE_BINDING_RAW_RETENTION_MOVE, grouping_mode=PIPELINE_BINDING_GROUPING_FILE, quiescence_seconds=None, config=None,
+        raw_retention=PIPELINE_BINDING_RAW_RETENTION_MOVE, grouping_mode=PIPELINE_BINDING_GROUPING_FILE,
+        quiescence_seconds=None, config=None,
         timeout_seconds_override=None, memory_mb_override=None, cpu_millicores_override=None) -> PipelineBinding:
     script_version = await _usable_script_version(project, script_version_id)
 
@@ -51,12 +52,11 @@ async def create_pipeline_binding(
 
 async def update_pipeline_binding(
         *, project, user, request, binding, script_version_id, raw_bucket, raw_prefix,
-        grouping_mode, raw_retention=None, quiescence_seconds=None, config=None,
+        grouping_mode, raw_retention, quiescence_seconds=None, config=None,
         timeout_seconds_override=None, memory_mb_override=None, cpu_millicores_override=None) -> PipelineBinding:
     grouping_changed = grouping_mode != binding.grouping_mode
     raw_retention_previous = binding.raw_retention
-    if raw_retention is not None:
-        binding.raw_retention = raw_retention
+    binding.raw_retention = raw_retention
     binding.script_version = await _usable_script_version(project, script_version_id)
     binding.raw_bucket = raw_bucket
     binding.raw_prefix = raw_prefix

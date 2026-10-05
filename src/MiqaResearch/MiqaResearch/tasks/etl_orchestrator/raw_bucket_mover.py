@@ -1,7 +1,8 @@
 """ETL raw bucket move & source retention (#163): on a successful `EtlJob`, moves each handled
 input from its source bucket to the Binding's raw bucket -- or, for a Job whose Raw Retention
-snapshot is "delete" (#246, ADR 0032), only deletes the source, with no copy anywhere. Move = copy with a SHA-256 checksum,
-then verify size and hash against the copy (never trusting ETag alone), then delete the source.
+snapshot is "delete" (#246, ADR 0032), only deletes the source, with no copy anywhere.
+Move = copy with a SHA-256 checksum, then verify size and hash against the copy (never trusting
+ETag alone), then delete the source.
 Raw-bucket keys nest by Job id, so re-runs never overwrite prior history.
 
 Plain boto3 against the one platform-wide `MIRES_ETL_S3_*` service credential (own client,
@@ -23,10 +24,10 @@ from django.utils import timezone
 
 from contract.constants.audit_log import EVENT_TYPE_ETL_SOURCE_CLEANUP_STUCK
 from contract.constants.etl import (
-    ETL_JOB_INPUT_MOVE_STATUS_DELETED,
-    ETL_JOB_INPUT_MOVE_STATUS_MOVED,
-    ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_PENDING,
-    ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_STUCK,
+    ETL_JOB_INPUT_SOURCE_STATUS_DELETED,
+    ETL_JOB_INPUT_SOURCE_STATUS_MOVED,
+    ETL_JOB_INPUT_SOURCE_STATUS_SOURCE_CLEANUP_PENDING,
+    ETL_JOB_INPUT_SOURCE_STATUS_SOURCE_CLEANUP_STUCK,
     ETL_JOB_STATUS_SUCCEEDED,
     PIPELINE_BINDING_RAW_RETENTION_DELETE,
 )
@@ -59,9 +60,9 @@ def move_job_inputs(job: EtlJob) -> None:
     client = _build_etl_s3_client()
 
     terminal_statuses = (
-        ETL_JOB_INPUT_MOVE_STATUS_MOVED, ETL_JOB_INPUT_MOVE_STATUS_DELETED,
-        ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_STUCK)
-    for job_input in job.inputs.exclude(move_status__in=terminal_statuses):
+        ETL_JOB_INPUT_SOURCE_STATUS_MOVED, ETL_JOB_INPUT_SOURCE_STATUS_DELETED,
+        ETL_JOB_INPUT_SOURCE_STATUS_SOURCE_CLEANUP_STUCK)
+    for job_input in job.inputs.exclude(source_status__in=terminal_statuses):
         try:
             _move_one(client, grants, binding, job, job_input)
         except _GrantDeniedError:
@@ -75,7 +76,7 @@ def sweep_due_cleanups() -> list[EtlJob]:
     """Retries every EtlJobInput whose capped-backoff source-cleanup retry is due, one
     `move_job_inputs` pass per distinct Job. Returns the Jobs swept."""
     due_job_ids = EtlJobInput.objects.filter(
-        move_status=ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_PENDING,
+        source_status=ETL_JOB_INPUT_SOURCE_STATUS_SOURCE_CLEANUP_PENDING,
         cleanup_next_attempt_at__lte=timezone.now(),
     ).values_list("job_id", flat=True).distinct()
     jobs = list(EtlJob.objects.filter(pk__in=due_job_ids).select_related("binding__project"))
@@ -90,7 +91,7 @@ def _move_one(client, grants, binding, job: EtlJob, job_input: EtlJobInput) -> N
             f"source {job_input.bucket}/{job_input.key} falls outside this project's EtlLocationGrants")
 
     if job.raw_retention == PIPELINE_BINDING_RAW_RETENTION_DELETE:
-        _delete_source(client, job_input, done_status=ETL_JOB_INPUT_MOVE_STATUS_DELETED)
+        _delete_source(client, job_input, done_status=ETL_JOB_INPUT_SOURCE_STATUS_DELETED)
         return
 
     raw_key = f"{binding.raw_prefix}{job.id}/{_relative_key(binding, job_input.key)}"
@@ -102,7 +103,7 @@ def _move_one(client, grants, binding, job: EtlJob, job_input: EtlJobInput) -> N
     if not job_input.raw_bucket_key:
         _copy_and_verify(client, binding, job_input, raw_key)
 
-    _delete_source(client, job_input, done_status=ETL_JOB_INPUT_MOVE_STATUS_MOVED)
+    _delete_source(client, job_input, done_status=ETL_JOB_INPUT_SOURCE_STATUS_MOVED)
 
 
 def _copy_and_verify(client, binding, job_input: EtlJobInput, raw_key: str) -> None:
@@ -132,9 +133,9 @@ def _delete_source(client, job_input: EtlJobInput, *, done_status: str) -> None:
     except ClientError as exc:
         raise RawBucketMoveError(f"source delete failed for {job_input.bucket}/{job_input.key}") from exc
 
-    job_input.move_status = done_status
-    job_input.moved_at = timezone.now()
-    job_input.save(update_fields=["move_status", "moved_at"])
+    job_input.source_status = done_status
+    job_input.source_handled_at = timezone.now()
+    job_input.save(update_fields=["source_status", "source_handled_at"])
 
 
 def _record_cleanup_failure(job_input: EtlJobInput) -> None:
@@ -144,9 +145,9 @@ def _record_cleanup_failure(job_input: EtlJobInput) -> None:
 
     job_input.cleanup_attempts += 1
     if job_input.cleanup_attempts >= settings.ETL_SOURCE_CLEANUP_MAX_ATTEMPTS:
-        job_input.move_status = ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_STUCK
+        job_input.source_status = ETL_JOB_INPUT_SOURCE_STATUS_SOURCE_CLEANUP_STUCK
         job_input.cleanup_next_attempt_at = None
-        job_input.save(update_fields=["move_status", "cleanup_attempts", "cleanup_next_attempt_at"])
+        job_input.save(update_fields=["source_status", "cleanup_attempts", "cleanup_next_attempt_at"])
         _escalate_stuck_cleanup(job_input)
         return
 
@@ -154,9 +155,9 @@ def _record_cleanup_failure(job_input: EtlJobInput) -> None:
         settings.ETL_SOURCE_CLEANUP_BACKOFF_BASE_SECONDS * (2 ** (job_input.cleanup_attempts - 1)),
         settings.ETL_SOURCE_CLEANUP_BACKOFF_MAX_SECONDS,
     )
-    job_input.move_status = ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_PENDING
+    job_input.source_status = ETL_JOB_INPUT_SOURCE_STATUS_SOURCE_CLEANUP_PENDING
     job_input.cleanup_next_attempt_at = timezone.now() + timedelta(seconds=delay_seconds)
-    job_input.save(update_fields=["move_status", "cleanup_attempts", "cleanup_next_attempt_at"])
+    job_input.save(update_fields=["source_status", "cleanup_attempts", "cleanup_next_attempt_at"])
 
 
 def _escalate_stuck_cleanup(job_input: EtlJobInput) -> None:

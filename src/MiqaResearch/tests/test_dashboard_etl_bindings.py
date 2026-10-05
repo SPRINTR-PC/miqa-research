@@ -100,9 +100,10 @@ def _new_version(script, version):
 
 
 def _existing_binding(project, script_version, **fields):
+    raw_bucket = "" if fields.get("raw_retention") == "delete" else "raw"
     return PipelineBinding.objects.create(
         project=project, source_bucket="incoming", source_prefix="redcap/", script_version=script_version,
-        raw_bucket="raw", raw_prefix="", **fields)
+        **{"raw_bucket": raw_bucket, "raw_prefix": "", **fields})
 
 
 def _edit_payload(binding, **overrides):
@@ -523,8 +524,6 @@ def test_an_admins_switch_to_delete_after_load_clears_the_raw_destination_and_au
 def test_a_data_manager_can_re_save_a_delete_after_load_binding_without_re_confirming(project, native_version):
     _grant_incoming_only(project)
     binding = _existing_binding(project, native_version, raw_retention="delete")
-    PipelineBinding.objects.filter(pk=binding.pk).update(raw_bucket="")
-    binding.refresh_from_db()
     client = _client_as(_user_with_role(project, "Data Manager"))
 
     client.post(_edit_url(project, binding), _edit_payload(binding, grouping_mode="folder"), **HTMX)

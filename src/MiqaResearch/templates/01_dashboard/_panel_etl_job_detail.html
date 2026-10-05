@@ -27,7 +27,7 @@
         <thead><tr><th>{% translate "Key" %}</th><th>{% translate "Size (bytes)" %}</th><th>SHA-256</th><th>{% translate "After load" %}</th></tr></thead>
         <tbody>
           {% for job_input in job.input_list %}
-            <tr><td>{{ job_input.bucket }}/{{ job_input.key }}</td><td>{{ job_input.size_bytes }}</td><td><code>{{ job_input.sha256|default:"—" }}</code></td><td>{{ job_input.get_move_status_display }}</td></tr>
+            <tr><td>{{ job_input.bucket }}/{{ job_input.key }}</td><td>{{ job_input.size_bytes }}</td><td><code>{{ job_input.sha256|default:"—" }}</code></td><td>{{ job_input.get_source_status_display }}</td></tr>
           {% endfor %}
         </tbody>
       </table>

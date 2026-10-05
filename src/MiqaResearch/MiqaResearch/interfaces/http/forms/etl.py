@@ -100,6 +100,12 @@ class EtlBindingEditForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.fields["script_version"].choices = script_version_choices
 
+    # Rendered together by `_etl_raw_retention_fields.html`, not in the generic field loop.
+    RAW_RETENTION_FIELD_NAMES = ("raw_retention", "confirm_delete", "raw_bucket", "raw_prefix")
+
+    def fields_outside_raw_retention(self):
+        return [field for field in self if field.name not in self.RAW_RETENTION_FIELD_NAMES]
+
     @property
     def confirm_delete_required(self) -> bool:
         """Choosing "delete" asks for confirmation only when entering it, not when re-saving a

@@ -277,7 +277,7 @@ def test_etl_job_input_records_a_jobs_input_file(etl_job):
     )
 
     assert job_input.job_id == etl_job.id
-    assert job_input.moved_at is None
+    assert job_input.source_handled_at is None
 
 
 @pytest.mark.django_db
@@ -450,3 +450,21 @@ def test_all_etl_models_are_registered_in_django_admin():
         EtlPendingGroup,
     ):
         assert admin.site.is_registered(model), f"{model.__name__} is not registered in Django admin"
+
+
+# --- PipelineBinding: raw destination matches Raw Retention (#246) ------
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(("raw_retention", "raw_bucket", "raw_prefix"), [
+    ("move", "", ""),
+    ("delete", "raw", ""),
+    ("delete", "", "kept/"),
+])
+def test_pipeline_binding_raw_destination_must_match_its_raw_retention(
+        research_project, etl_script_version, raw_retention, raw_bucket, raw_prefix):
+    with pytest.raises(IntegrityError):
+        with transaction.atomic():
+            PipelineBinding.objects.create(
+                project=research_project, source_bucket="incoming", source_prefix="x/",
+                script_version=etl_script_version, raw_retention=raw_retention,
+                raw_bucket=raw_bucket, raw_prefix=raw_prefix)

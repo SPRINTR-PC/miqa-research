@@ -15,8 +15,8 @@ from django.utils import timezone
 from moto import mock_aws
 
 from contract.constants.etl import (
-    ETL_JOB_INPUT_MOVE_STATUS_MOVED,
-    ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_PENDING,
+    ETL_JOB_INPUT_SOURCE_STATUS_MOVED,
+    ETL_JOB_INPUT_SOURCE_STATUS_SOURCE_CLEANUP_PENDING,
     ETL_JOB_STATUS_FAILED,
     ETL_JOB_STATUS_RUNNING,
     ETL_JOB_STATUS_SUCCEEDED,
@@ -197,7 +197,7 @@ def test_move_etl_job_inputs_to_raw_bucket_delegates_to_the_mover(binding, scrip
 
     assert result == {"job_id": str(job.id)}
     job_input.refresh_from_db()
-    assert job_input.move_status == ETL_JOB_INPUT_MOVE_STATUS_MOVED
+    assert job_input.source_status == ETL_JOB_INPUT_SOURCE_STATUS_MOVED
 
 
 def test_retry_etl_source_cleanup_reports_the_swept_job_count(binding, script_version, settings):
@@ -206,7 +206,7 @@ def test_retry_etl_source_cleanup_reports_the_swept_job_count(binding, script_ve
     job = EtlJob.objects.create(binding=binding, script_version=script_version)
     EtlJobInput.objects.create(
         job=job, bucket="incoming", key="redcap/a.csv", sha256="0" * 64, size_bytes=4,
-        move_status=ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_PENDING, cleanup_attempts=1,
+        source_status=ETL_JOB_INPUT_SOURCE_STATUS_SOURCE_CLEANUP_PENDING, cleanup_attempts=1,
         cleanup_next_attempt_at=timezone.now() - timedelta(seconds=1))
     EtlLocationGrant.objects.create(project=binding.project, bucket="incoming", prefix="")
     EtlLocationGrant.objects.create(project=binding.project, bucket="raw", prefix="")

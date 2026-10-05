@@ -1,11 +1,13 @@
 from uuid import uuid7
 
 from django.db import models
+from django.db.models import Q
 
 from contract.constants.etl import (
     PIPELINE_BINDING_GROUPING_CHOICES,
     PIPELINE_BINDING_GROUPING_FILE,
     PIPELINE_BINDING_RAW_RETENTION_CHOICES,
+    PIPELINE_BINDING_RAW_RETENTION_DELETE,
     PIPELINE_BINDING_RAW_RETENTION_MOVE,
 )
 
@@ -64,6 +66,19 @@ class PipelineBinding(models.Model):
         db_table = "mires_etl_pipeline_binding"
         ordering = ["project", "source_bucket", "source_prefix"]
         unique_together = [("source_bucket", "source_prefix")]
+        constraints = [
+            # "move" needs somewhere to move to; "delete" keeps no raw destination at all (#246).
+            models.CheckConstraint(
+                condition=(Q(raw_retention=PIPELINE_BINDING_RAW_RETENTION_MOVE) & ~Q(raw_bucket=""))
+                | (Q(raw_retention=PIPELINE_BINDING_RAW_RETENTION_DELETE) & Q(raw_bucket="") & Q(raw_prefix="")),
+                name="mires_etl_binding_raw_destination_matches_retention",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.source_bucket}/{self.source_prefix}"
+
+    def job_snapshot(self) -> dict:
+        """The Binding settings every EtlJob queued from it freezes, so a later edit never
+        changes a queued Job (#224, #246)."""
+        return {"config_snapshot": self.config, "raw_retention": self.raw_retention}

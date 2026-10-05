@@ -113,7 +113,7 @@ def test_a_queued_job_keeps_its_bindings_raw_retention_even_after_the_binding_ch
     client.put_object(Bucket="bucket", Key="incoming-prefix/a.csv", Body=b"a")
     binding = _binding(research_project, etl_script_version)
     binding.raw_retention = PIPELINE_BINDING_RAW_RETENTION_DELETE
-    binding.raw_bucket = ""
+    binding.raw_bucket = binding.raw_prefix = ""
     binding.save()
 
     job = poll_binding(binding)

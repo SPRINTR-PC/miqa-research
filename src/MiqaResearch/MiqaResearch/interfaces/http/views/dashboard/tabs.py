@@ -198,6 +198,17 @@ def _binding_edit_initial(binding) -> dict:
     }
 
 
+async def binding_form_kwargs(project, permissions) -> dict:
+    """What every Binding wizard/Edit form is built with: the project's location grants and bindable
+    Script Versions (pre-fetched -- a form can't query the DB inside an async view), and whether
+    this user may choose "delete" Raw Retention (Admin only, #246)."""
+    return {
+        'location_grants': await get_project_location_grants(project),
+        'script_version_choices': await get_bindable_script_version_choices(project),
+        'can_choose_delete': permissions.can_manage_admin_only,
+    }
+
+
 async def etl_section_context(project, permissions, section) -> dict:
     """Section-specific read data and unbound manage forms for the ETL Pipelines tab. Forms are
     only built for a section's manage-capable viewers -- a read-only viewer gets the listings but
@@ -216,18 +227,12 @@ async def etl_section_context(project, permissions, section) -> dict:
     elif section == ETL_SECTION_BINDINGS:
         context['bindings'] = await get_project_bindings(project)
         if permissions.can_manage:
-            location_grants = await get_project_location_grants(project)
-            script_version_choices = await get_bindable_script_version_choices(project)
-            context['location_grants'] = location_grants
-            context['binding_create_form'] = EtlBindingCreateForm(
-                location_grants=location_grants, script_version_choices=script_version_choices,
-                can_choose_delete=permissions.can_manage_admin_only,
-            )
+            form_kwargs = await binding_form_kwargs(project, permissions)
+            context['location_grants'] = form_kwargs['location_grants']
+            context['binding_create_form'] = EtlBindingCreateForm(**form_kwargs)
             for binding in context['bindings']:
                 binding.edit_form = EtlBindingEditForm(
-                    location_grants=location_grants, script_version_choices=script_version_choices,
-                    can_choose_delete=permissions.can_manage_admin_only,
-                    current_raw_retention=binding.raw_retention,
+                    **form_kwargs, current_raw_retention=binding.raw_retention,
                     initial=_binding_edit_initial(binding), auto_id=f"id_binding_{binding.id}_%s",
                 )
 

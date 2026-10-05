@@ -27,10 +27,8 @@
                 {% csrf_token %}
                 <p class="text-sm text-muted-foreground">{% translate "The source location can't be changed -- create a new binding instead. Jobs already queued keep the version and config they were queued with." %}</p>
                 {% include '01_dashboard/_etl_raw_retention_fields.html' with form=binding.edit_form %}
-                {% for field in binding.edit_form %}
-                  {% if field.name != 'raw_retention' and field.name != 'confirm_delete' and field.name != 'raw_bucket' and field.name != 'raw_prefix' %}
+                {% for field in binding.edit_form.fields_outside_raw_retention %}
                   <label class="etl-field"><span>{{ field.label }}</span>{{ field }}</label>
-                  {% endif %}
                 {% endfor %}
                 <button class="btn" type="submit">{% translate "Save" %}</button>
               </form>

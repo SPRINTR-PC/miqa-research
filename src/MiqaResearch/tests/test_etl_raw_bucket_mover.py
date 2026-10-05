@@ -20,11 +20,11 @@ from moto import mock_aws
 
 from contract.constants.audit_log import EVENT_TYPE_ETL_SOURCE_CLEANUP_STUCK
 from contract.constants.etl import (
-    ETL_JOB_INPUT_MOVE_STATUS_DELETED,
-    ETL_JOB_INPUT_MOVE_STATUS_MOVED,
-    ETL_JOB_INPUT_MOVE_STATUS_PENDING,
-    ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_PENDING,
-    ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_STUCK,
+    ETL_JOB_INPUT_SOURCE_STATUS_DELETED,
+    ETL_JOB_INPUT_SOURCE_STATUS_MOVED,
+    ETL_JOB_INPUT_SOURCE_STATUS_PENDING,
+    ETL_JOB_INPUT_SOURCE_STATUS_SOURCE_CLEANUP_PENDING,
+    ETL_JOB_INPUT_SOURCE_STATUS_SOURCE_CLEANUP_STUCK,
     ETL_JOB_STATUS_RUNNING,
     ETL_JOB_STATUS_SUCCEEDED,
     ETL_SCRIPT_ORIGIN_CUSTOM,
@@ -119,9 +119,9 @@ def test_a_successful_input_is_verified_and_present_in_the_raw_bucket_nested_by_
     raw_bucket_mover.move_job_inputs(job)
 
     job_input.refresh_from_db()
-    assert job_input.move_status == ETL_JOB_INPUT_MOVE_STATUS_MOVED
+    assert job_input.source_status == ETL_JOB_INPUT_SOURCE_STATUS_MOVED
     assert job_input.raw_bucket_key == f"redcap/{job.id}/a.csv"
-    assert job_input.moved_at is not None
+    assert job_input.source_handled_at is not None
     stored = s3_client.get_object(Bucket="raw", Key=job_input.raw_bucket_key)
     assert stored["Body"].read() == data
 
@@ -157,9 +157,9 @@ def test_a_delete_retention_jobs_input_is_deleted_from_the_source_without_any_ra
     raw_bucket_mover.move_job_inputs(delete_job)
 
     job_input.refresh_from_db()
-    assert job_input.move_status == ETL_JOB_INPUT_MOVE_STATUS_DELETED
+    assert job_input.source_status == ETL_JOB_INPUT_SOURCE_STATUS_DELETED
     assert job_input.raw_bucket_key == ""
-    assert job_input.moved_at is not None
+    assert job_input.source_handled_at is not None
     assert _all_keys(s3_client, "incoming") == []
     assert _all_keys(s3_client, "raw") == []
 
@@ -178,8 +178,8 @@ def test_a_folder_grouped_jobs_other_inputs_still_move_when_one_input_has_no_gra
 
     input_a.refresh_from_db()
     input_b.refresh_from_db()
-    assert input_a.move_status == ETL_JOB_INPUT_MOVE_STATUS_PENDING
-    assert input_b.move_status == ETL_JOB_INPUT_MOVE_STATUS_PENDING
+    assert input_a.source_status == ETL_JOB_INPUT_SOURCE_STATUS_PENDING
+    assert input_b.source_status == ETL_JOB_INPUT_SOURCE_STATUS_PENDING
     # Neither source was touched -- the ungranted raw bucket must never receive a copy either.
     assert s3_client.get_object(Bucket="incoming", Key="redcap/a.csv")["Body"].read() == b"aaa"
     assert s3_client.get_object(Bucket="incoming", Key="redcap/b.csv")["Body"].read() == b"bbb"
@@ -196,8 +196,8 @@ def test_a_folder_grouped_jobs_other_inputs_still_move_when_one_inputs_copy_is_c
 
     input_a.refresh_from_db()
     input_b.refresh_from_db()
-    assert input_a.move_status == ETL_JOB_INPUT_MOVE_STATUS_MOVED
-    assert input_b.move_status == ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_PENDING
+    assert input_a.source_status == ETL_JOB_INPUT_SOURCE_STATUS_MOVED
+    assert input_b.source_status == ETL_JOB_INPUT_SOURCE_STATUS_SOURCE_CLEANUP_PENDING
     # b's source is untouched -- corrupted-copy detection blocks the delete, not a silent success.
     assert s3_client.get_object(Bucket="incoming", Key="redcap/b.csv")["Body"].read() == b"bbb"
 
@@ -237,7 +237,7 @@ def test_cleanup_retry_exhaustion_escalates_exactly_once_and_leaves_the_source_u
     raw_bucket_mover.move_job_inputs(job)
 
     job_input.refresh_from_db()
-    assert job_input.move_status == ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_STUCK
+    assert job_input.source_status == ETL_JOB_INPUT_SOURCE_STATUS_SOURCE_CLEANUP_STUCK
     assert s3_client.get_object(Bucket="incoming", Key="redcap/a.csv")["Body"].read() == b"data"
     assert len(mail.outbox) == 1
     assert admin_user.email in mail.outbox[0].to
@@ -265,7 +265,7 @@ def test_a_first_cleanup_failure_under_the_cap_schedules_a_backoff_retry_without
     raw_bucket_mover.move_job_inputs(job)
 
     job_input.refresh_from_db()
-    assert job_input.move_status == ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_PENDING
+    assert job_input.source_status == ETL_JOB_INPUT_SOURCE_STATUS_SOURCE_CLEANUP_PENDING
     assert job_input.cleanup_attempts == 1
     assert job_input.cleanup_next_attempt_at is not None
     assert len(mail.outbox) == 0
@@ -281,7 +281,7 @@ def test_sweep_retries_a_due_cleanup_and_completes_the_move(location_grants, job
     s3_client.put_object(Bucket="raw", Key=raw_key, Body=b"data")
     job_input = _job_input(job, data=b"data")
     job_input.raw_bucket_key = raw_key
-    job_input.move_status = ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_PENDING
+    job_input.source_status = ETL_JOB_INPUT_SOURCE_STATUS_SOURCE_CLEANUP_PENDING
     job_input.cleanup_attempts = 1
     job_input.cleanup_next_attempt_at = timezone.now() - timezone.timedelta(seconds=1)
     job_input.save()
@@ -290,7 +290,7 @@ def test_sweep_retries_a_due_cleanup_and_completes_the_move(location_grants, job
 
     assert [j.id for j in swept] == [job.id]
     job_input.refresh_from_db()
-    assert job_input.move_status == ETL_JOB_INPUT_MOVE_STATUS_MOVED
+    assert job_input.source_status == ETL_JOB_INPUT_SOURCE_STATUS_MOVED
     with pytest.raises(ClientError):
         s3_client.get_object(Bucket="incoming", Key="redcap/a.csv")
 
@@ -303,7 +303,7 @@ def test_sweep_ignores_a_cleanup_not_yet_due(location_grants, job, s3_client):
     s3_client.put_object(Bucket="raw", Key=raw_key, Body=b"data")
     job_input = _job_input(job, data=b"data")
     job_input.raw_bucket_key = raw_key
-    job_input.move_status = ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_PENDING
+    job_input.source_status = ETL_JOB_INPUT_SOURCE_STATUS_SOURCE_CLEANUP_PENDING
     job_input.cleanup_attempts = 1
     job_input.cleanup_next_attempt_at = timezone.now() + timezone.timedelta(hours=1)
     job_input.save()
@@ -312,7 +312,7 @@ def test_sweep_ignores_a_cleanup_not_yet_due(location_grants, job, s3_client):
 
     assert swept == []
     job_input.refresh_from_db()
-    assert job_input.move_status == ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_PENDING
+    assert job_input.source_status == ETL_JOB_INPUT_SOURCE_STATUS_SOURCE_CLEANUP_PENDING
 
 
 def test_a_delete_retention_jobs_failing_source_delete_escalates_with_its_retention_mode(
@@ -329,7 +329,7 @@ def test_a_delete_retention_jobs_failing_source_delete_escalates_with_its_retent
     raw_bucket_mover.move_job_inputs(delete_job)
 
     job_input.refresh_from_db()
-    assert job_input.move_status == ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_STUCK
+    assert job_input.source_status == ETL_JOB_INPUT_SOURCE_STATUS_SOURCE_CLEANUP_STUCK
     assert _all_keys(s3_client, "raw") == []
     assert "raw-bucket" not in mail.outbox[0].body.lower()
     event = AuditLog.objects.get(event_type=EVENT_TYPE_ETL_SOURCE_CLEANUP_STUCK, project=research_project)
@@ -347,6 +347,6 @@ def test_a_job_not_recorded_as_succeeded_never_has_its_source_touched(
     raw_bucket_mover.move_job_inputs(job)
 
     job_input.refresh_from_db()
-    assert job_input.move_status == ETL_JOB_INPUT_MOVE_STATUS_PENDING
+    assert job_input.source_status == ETL_JOB_INPUT_SOURCE_STATUS_PENDING
     assert _all_keys(s3_client, "incoming") == ["redcap/a.csv"]
     assert _all_keys(s3_client, "raw") == []

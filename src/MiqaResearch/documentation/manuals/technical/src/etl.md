@@ -181,7 +181,7 @@ erDiagram
 `EtlJobInput`
 : One input file of a Job. Holds `bucket`, `key`, and the `sha256` and `size_bytes` stamped
   when the runner fetches the file. It also tracks the raw-bucket move: `raw_bucket_key`,
-  `move_status`, `cleanup_attempts` and `cleanup_next_attempt_at`.
+  `source_status`, `cleanup_attempts` and `cleanup_next_attempt_at`.
 
 `EtlProcessedFile`
 : The orchestrator's ledger of every object it has seen under a Binding, unique per
@@ -524,7 +524,7 @@ auto-retries and manual retries copy it onto `EtlJob.raw_retention` when a Job i
 changing a Binding never affects Jobs already queued. Under `delete`:
 
 - only the source key needs grant coverage, and no copy is made;
-- the source is deleted and `move_status` becomes `deleted`. `moved_at` records when, and
+- the source is deleted and `source_status` becomes `deleted`. `source_handled_at` records when, and
   `raw_bucket_key` stays empty. The `EtlJobInput` key, SHA-256 and size are the only
   provenance left;
 - failed deletes go through the same capped backoff and escalation as moves (below). The
@@ -544,7 +544,7 @@ Each input goes through these steps:
    against the values recorded on the `EtlJobInput`. The ETag is never trusted on its own. A
    copy that does not match is deleted, and the attempt counts as a failure. After a verified
    copy, `raw_bucket_key` is recorded, so a retry skips straight to deleting the source.
-3. **Delete the source.** On success, `move_status` becomes `moved`.
+3. **Delete the source.** On success, `source_status` becomes `moved`.
 
 Under `delete` Raw Retention, step 1 checks only the source key, and step 2 is skipped.
 
