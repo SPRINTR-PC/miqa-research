@@ -1,0 +1,5 @@
+{% comment %}A Binding form's config fields (#238), re-fetched whenever another Script Version is chosen: that Version's config schema decides which fields show.{% endcomment %}
+<div hx-get="{% url 'dashboard_tab_etl_binding_config_fields' project.id %}{% if binding %}?binding={{ binding.id }}{% endif %}"
+  hx-trigger="change from:#{{ form.script_version.id_for_label }}" hx-include="#{{ form.script_version.id_for_label }}" hx-target="this" hx-swap="innerHTML">
+  {% include '01_dashboard/_etl_binding_config_fields.html' %}
+</div>

@@ -54,10 +54,15 @@ The tab has four sections, listed in the sidebar on its left: **Bindings**, **Sc
      environment the script runs in.
    - The file must not be larger than the project's size limit, 256 KB unless an Admin has
      changed it.
+   - Optionally, choose a **Config schema**: a JSON Schema file describing the settings the
+     script accepts. Bindings that use this version then get one form field per setting, and
+     settings that don't match the schema are rejected when the binding is saved. Without a
+     schema, the binding's config is free-form JSON. The technical manual describes the format.
 3. Click **Create script**. The script appears in the list as version 1.
 
 To change the name or description, click **Edit** next to the script. To change the code
-itself, use **Add version**, choose the new file and click **Upload version**. Bindings that
+itself, use **Add version**, choose the new file (and, optionally, a new config schema) and click
+**Upload version**. A version keeps only the config schema uploaded with it. Bindings that
 already use an older version continue to use it. A new binding can use the new version right
 away. To switch an existing binding to it, see
 [Editing a binding](#heading-etl-pipelines-binding-edit).
@@ -80,7 +85,9 @@ creating a binding. The platform currently provides one:
     generated pseudonym.
   - A consent that is exported again is updated, so a later revocation is recorded.
   - If your export uses different column names, a different delimiter, or a word other than
-    "Ja", describe it in the binding's **Script config**. The technical manual lists the keys.
+    "Ja", fill in the binding's config fields: **Delimiter**, **Encoding**, **Timezone**,
+    **Consented values**, **Source** and **Columns**. Leave a field empty to keep the
+    default. The technical manual lists the defaults.
 
 To change how a native script works for your project, click **Customize** next to it. This
 creates a custom copy in your project, which you can then edit and version like any other
@@ -133,8 +140,17 @@ A binding tells the platform to watch a location and process what arrives there.
      job.
    - **Quiescence** (folder grouping only): how many seconds a folder must go without a new file
      before it counts as complete. Leave it empty for the default of 300 seconds (5 minutes).
-   - **Script config** (optional): settings passed to the script as a JSON object, for example
-     `{"delimiter": ";"}`. Anything other than a JSON object is rejected.
+   - **Script config** (optional): settings passed to the script. What you see depends on the
+     chosen script version, and changes when you choose another one:
+     - If the version has a config schema, there is one field per setting. Leave a field empty
+       to leave that setting out. A field for a list or a nested setting takes JSON, for
+       example `["Ja", "Yes"]`. If the schema allows other settings too, put them in
+       **Additional config** as a JSON object.
+     - Otherwise there is one box for a JSON object, for example `{"delimiter": ";"}`.
+       Anything other than a JSON object is rejected.
+
+     Settings that don't match the version's config schema are rejected with a message naming
+     the setting, for example *"delimiter: ';;' is too long"*.
    - **Sandbox overrides** (optional): a lower time limit (seconds), memory limit (MB) or CPU
      limit (millicores) for this binding. These can only be lower than the platform limits,
      never higher.
@@ -158,6 +174,10 @@ apply. Every edit is recorded in the project's audit log.
   after-load setting they started with.
   The edit applies to jobs created afterwards.
 - Only an Admin can switch a binding to **Delete after load**, and it asks for confirmation.
+- Choosing another script version swaps in that version's config fields, filled in with the
+  binding's current config. If the current config doesn't match the new version's config
+  schema, **Save** is rejected until you update it. Settings the new schema has no field for
+  are dropped when the schema allows no other settings.
   Files that earlier jobs already moved to the raw bucket stay there. Delete them by hand if
   they must go. Either an Admin or a Data Manager can switch a binding back to
   **Move to Raw Bucket**.

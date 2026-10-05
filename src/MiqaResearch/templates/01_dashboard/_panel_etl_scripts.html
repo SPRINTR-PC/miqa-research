@@ -29,6 +29,7 @@
             <p class="text-sm text-muted-foreground">{{ script.description }}</p>
             <p class="text-sm text-muted-foreground">{% translate "Datatype" %}: {% if script.datatype_name %}{{ script.datatype_name }}{% else %}{% translate "not set" %}{% endif %}</p>
             <p class="text-sm text-muted-foreground">{% blocktranslate count count=script.version_count %}{{ count }} version{% plural %}{{ count }} versions{% endblocktranslate %}</p>
+            {% include '01_dashboard/_etl_script_config_schema_note.html' %}
           </div>
           {% if etl_permissions.can_manage and not script.archived_at %}
           <div class="etl-manage-actions">
@@ -54,6 +55,7 @@
               <form method="post" enctype="multipart/form-data" hx-post="{% url 'dashboard_tab_etl_script_version_create' project.id script.id %}" hx-target="#etl-section-panel" hx-swap="innerHTML" hx-encoding="multipart/form-data">
                 {% csrf_token %}
                 <label class="etl-field"><span>{% translate "Source file" %}</span><input type="file" name="source" required></label>
+                <label class="etl-field"><span>{% translate "Config schema (optional JSON Schema)" %}</span><input type="file" name="config_schema" accept=".json,application/json"></label>
                 <button class="btn" type="submit">{% translate "Upload version" %}</button>
               </form>
             </details>
@@ -87,6 +89,7 @@
             <p class="font-medium">{{ script.name }}</p>
             <p class="text-sm text-muted-foreground">{{ script.description }}</p>
             <p class="text-sm text-muted-foreground">{% translate "Datatype" %}: {{ script.datatype_name }}</p>
+            {% include '01_dashboard/_etl_script_config_schema_note.html' %}
           </div>
           <div class="etl-manage-actions">
             <span class="text-sm text-muted-foreground">{% translate "Native · read-only" %}</span>

@@ -545,7 +545,16 @@ _Avoid_: Built-in script, default script
 
 ### Script Version
 An immutable, content-hashed snapshot of an ETL Script. Pipeline Bindings pin a
-version (or "latest"), so every ETL Job is reproducible.
+version (or "latest"), so every ETL Job is reproducible. A version may carry a
+**Config Schema**.
+
+### Config Schema
+An optional JSON Schema on a Script Version that a Pipeline Binding's config must
+satisfy when the Binding is created, edited or re-pinned to that version. The
+Binding forms offer one field per top-level property. A version without one keeps
+config free-form. A Native Script declares it in a `<stem>.schema.json` sidecar
+file.
+_Avoid_: config template, settings schema
 
 ### Pipeline Binding
 The link, within a Research Project, between an ETL Datatype, a source bucket

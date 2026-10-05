@@ -33,13 +33,14 @@ def _require_manageable_custom_script(script: EtlScript, project: ResearchProjec
         raise EtlScriptStateError("This Script is archived and can no longer be edited.")
 
 
-async def create_custom_script(*, project, user, request, name, description, datatype_name, source) -> EtlScript:
+async def create_custom_script(
+        *, project, user, request, name, description, datatype_name, source, config_schema=None) -> EtlScript:
     script = await EtlScript.objects.acreate(
         name=name, description=description, origin=ETL_SCRIPT_ORIGIN_CUSTOM, project=project,
         datatype_name=datatype_name)
     await EtlScriptVersion.objects.acreate(
         script=script, version=1, source=source, sha256=sha256_of_upload(source),
-        image_key=image_key_for_script_filename(source.name))
+        image_key=image_key_for_script_filename(source.name), config_schema=config_schema)
     await record_etl_event(
         EVENT_TYPE_ETL_SCRIPT_CREATED, user=user, request=request, project=project,
         metadata={"etl_script_id": str(script.id), "datatype": datatype_name})
@@ -62,7 +63,7 @@ async def customize_native_script(*, project, user, request, native_script) -> E
         project=project, datatype_name=native_script.datatype_name)
     await EtlScriptVersion.objects.acreate(
         script=script, version=1, source=ContentFile(source_bytes, name=PurePath(latest.source.name).name),
-        sha256=latest.sha256, image_key=latest.image_key)
+        sha256=latest.sha256, image_key=latest.image_key, config_schema=latest.config_schema)
     await record_etl_event(
         EVENT_TYPE_ETL_SCRIPT_CREATED, user=user, request=request, project=project,
         metadata={
@@ -92,13 +93,13 @@ async def update_custom_script(*, project, user, request, script, name, descript
     return script
 
 
-async def create_script_version(*, project, user, request, script, source) -> EtlScriptVersion:
+async def create_script_version(*, project, user, request, script, source, config_schema=None) -> EtlScriptVersion:
     _require_manageable_custom_script(script, project)
     latest = await script.versions.aaggregate(latest_version=Max("version"))
     next_version = (latest["latest_version"] or 0) + 1
     version = await EtlScriptVersion.objects.acreate(
         script=script, version=next_version, source=source, sha256=sha256_of_upload(source),
-        image_key=image_key_for_script_filename(source.name))
+        image_key=image_key_for_script_filename(source.name), config_schema=config_schema)
     await record_etl_event(
         EVENT_TYPE_ETL_SCRIPT_VERSION_CREATED, user=user, request=request, project=project,
         metadata={"etl_script_id": str(script.id), "etl_script_version_id": str(version.id)})

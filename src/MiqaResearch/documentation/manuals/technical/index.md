@@ -22,5 +22,6 @@ src/*
   * [Raw bucket move](#heading-etl-raw-bucket)
   * [Permissions and audit](#heading-etl-permissions)
   * [Native Scripts](#heading-etl-native-scripts)
+  * [Config schemas](#heading-etl-config-schema)
   * [Configuration reference](#heading-etl-configuration)
   * [Current limitations](#heading-etl-limitations)

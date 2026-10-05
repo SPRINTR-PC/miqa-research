@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CSV → participant consent config",
+  "type": "object",
+  "properties": {
+    "delimiter": {"type": "string", "minLength": 1, "maxLength": 1, "title": "Delimiter", "description": "CSV field delimiter. Default: \",\"."},
+    "encoding": {"type": "string", "minLength": 1, "title": "Encoding", "description": "File encoding. Default: utf-8-sig."},
+    "timezone": {"type": "string", "minLength": 1, "title": "Timezone", "description": "IANA timezone of the dates. Default: Europe/Stockholm."},
+    "consented_values": {
+      "type": "array", "items": {"type": "string"}, "title": "Consented values",
+      "description": "Cell values meaning a consent was given, e.g. [\"Ja\"] (the default)."
+    },
+    "source": {"type": ["string", "null"], "title": "Source", "description": "Recorded as each row's source. Default: none."},
+    "columns": {
+      "type": "object", "title": "Columns",
+      "description": "Header names for the fixed columns, e.g. {\"person_source_value\": \"Personnummer\"}; ignore lists extra non-consent columns.",
+      "properties": {
+        "person_source_value": {"type": "string"},
+        "name": {"type": "string"},
+        "status": {"type": "string"},
+        "signed": {"type": "string"},
+        "revoked": {"type": "string"},
+        "clinic": {"type": "string"},
+        "participant_information_version": {"type": "string"},
+        "ignore": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

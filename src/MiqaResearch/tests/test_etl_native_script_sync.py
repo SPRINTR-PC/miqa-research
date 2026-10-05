@@ -4,6 +4,7 @@ immutable Versions. Idempotent; a changed source publishes a new Version (Bindin
 they pinned); a native Script dropped from the codebase is archived, never deleted.
 """
 import hashlib
+import json
 
 import pytest
 from django.core.management import call_command
@@ -11,6 +12,7 @@ from django.core.management import call_command
 from contract.constants.etl import ETL_SCRIPT_ORIGIN_NATIVE
 from MiqaResearch import etl_native_scripts
 from MiqaResearch.data.models import EtlScript, EtlScriptVersion
+from MiqaResearch.etl_config_schema import ConfigSchemaInvalid, config_errors
 from MiqaResearch.etl_native_scripts import NativeScript
 
 
@@ -82,3 +84,60 @@ def test_a_native_script_dropped_from_the_codebase_is_archived_not_deleted(nativ
     script = EtlScript.objects.get(origin=ETL_SCRIPT_ORIGIN_NATIVE)
     assert script.archived_at is not None
     assert script.versions.count() == 1
+
+
+DELIMITER_SCHEMA = {"type": "object", "properties": {"delimiter": {"type": "string"}}}
+
+
+@pytest.mark.django_db
+def test_a_native_scripts_sidecar_schema_becomes_its_versions_config_schema(native_dir):
+    (native_dir / "consent.schema.json").write_text(json.dumps(DELIMITER_SCHEMA))
+
+    call_command("sync_native_etl_scripts")
+
+    assert EtlScriptVersion.objects.get().config_schema == DELIMITER_SCHEMA
+
+
+@pytest.mark.django_db
+def test_a_native_script_without_a_sidecar_schema_has_no_config_schema(native_dir):
+    call_command("sync_native_etl_scripts")
+
+    assert EtlScriptVersion.objects.get().config_schema is None
+
+
+@pytest.mark.django_db
+def test_a_changed_sidecar_schema_alone_publishes_a_new_version(native_dir):
+    call_command("sync_native_etl_scripts")
+    (native_dir / "consent.schema.json").write_text(json.dumps(DELIMITER_SCHEMA))
+
+    call_command("sync_native_etl_scripts")
+    call_command("sync_native_etl_scripts")
+
+    assert list(EtlScriptVersion.objects.order_by("version").values_list("version", "config_schema")) == [
+        (1, None), (2, DELIMITER_SCHEMA)]
+
+
+@pytest.mark.django_db
+def test_a_malformed_sidecar_schema_fails_the_sync_loudly(native_dir):
+    (native_dir / "consent.schema.json").write_text('{"type": "no-such-type"}')
+
+    with pytest.raises(ConfigSchemaInvalid):
+        call_command("sync_native_etl_scripts")
+
+
+@pytest.mark.django_db
+def test_the_shipped_consent_script_declares_a_config_schema_accepting_its_documented_defaults():
+    call_command("sync_native_etl_scripts")
+
+    version = EtlScriptVersion.objects.get(script__name="CSV → participant consent")
+    documented_defaults = {
+        "delimiter": ",", "encoding": "utf-8-sig", "timezone": "Europe/Stockholm", "consented_values": ["Ja"],
+        "source": None, "columns": {
+            "person_source_value": "Personnummer", "name": "Namn", "status": "Status", "signed": "Signerat",
+            "revoked": "Återtaget", "clinic": "klinik",
+            "participant_information_version": "participant_information_version",
+            "ignore": ["Senast Uppdaterad", "Kommentar"]},
+    }
+    assert config_errors(version.config_schema, documented_defaults) == []
+    assert config_errors(version.config_schema, {}) == []
+    assert config_errors(version.config_schema, {"delimeter": ";"}) != []

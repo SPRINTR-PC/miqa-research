@@ -20,7 +20,7 @@ async def get_project_custom_scripts(project: ResearchProject) -> list[EtlScript
     return [
         script async for script in
         EtlScript.objects.filter(project=project, origin=ETL_SCRIPT_ORIGIN_CUSTOM)
-        .annotate(version_count=Count("versions"))
+        .annotate(version_count=Count("versions"), **_config_schema_version_count())
     ]
 
 
@@ -28,7 +28,13 @@ async def get_native_scripts() -> list[EtlScript]:
     return [
         script async for script in
         EtlScript.objects.filter(origin=ETL_SCRIPT_ORIGIN_NATIVE, archived_at__isnull=True)
+        .annotate(**_config_schema_version_count())
     ]
+
+
+def _config_schema_version_count() -> dict:
+    """How many of a Script's Versions declare a config schema (#238)."""
+    return {"config_schema_version_count": Count("versions", filter=Q(versions__config_schema__isnull=False))}
 
 
 async def get_project_bindings(project: ResearchProject) -> list[PipelineBinding]:
@@ -91,11 +97,15 @@ async def get_bindable_script_versions(project: ResearchProject) -> list[EtlScri
     ]
 
 
-async def get_bindable_script_version_choices(project: ResearchProject) -> list[tuple[str, str]]:
+def script_version_choices(versions: list[EtlScriptVersion]) -> list[tuple[str, str]]:
     """(id, label) pairs for the binding wizard's Script & Version select -- built here rather than
     in a view/template so both the GET-render and the POST-validate side use the exact same list."""
-    versions = await get_bindable_script_versions(project)
     return [(str(version.id), f"{version.script.name} — v{version.version}") for version in versions]
+
+
+def script_version_config_schemas(versions: list[EtlScriptVersion]) -> dict[str, dict | None]:
+    """Each Version's config schema (#238), keyed like `script_version_choices`."""
+    return {str(version.id): version.config_schema for version in versions}
 
 
 async def get_project_settings(project: ResearchProject) -> EtlProjectSettings | None:

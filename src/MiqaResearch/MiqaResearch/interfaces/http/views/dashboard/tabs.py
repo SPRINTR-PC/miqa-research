@@ -12,7 +12,7 @@ from MiqaResearch.interfaces.http.forms.etl import (
     EtlScriptCreateForm,
 )
 from MiqaResearch.readers.etl_reader import (
-    get_bindable_script_version_choices,
+    get_bindable_script_versions,
     get_native_scripts,
     get_project_bindings,
     get_project_custom_scripts,
@@ -20,6 +20,8 @@ from MiqaResearch.readers.etl_reader import (
     get_project_location_grants,
     get_project_max_script_source_bytes,
     get_project_settings,
+    script_version_choices,
+    script_version_config_schemas,
 )
 from MiqaResearch.readers.participant_consent_reader import (
     get_project_consent_count,
@@ -200,11 +202,13 @@ def _binding_edit_initial(binding) -> dict:
 
 async def binding_form_kwargs(project, permissions) -> dict:
     """What every Binding wizard/Edit form is built with: the project's location grants and bindable
-    Script Versions (pre-fetched -- a form can't query the DB inside an async view), and whether
-    this user may choose "delete" Raw Retention (Admin only, #246)."""
+    Script Versions with their config schemas (pre-fetched -- a form can't query the DB inside an
+    async view), and whether this user may choose "delete" Raw Retention (Admin only, #246)."""
+    versions = await get_bindable_script_versions(project)
     return {
         'location_grants': await get_project_location_grants(project),
-        'script_version_choices': await get_bindable_script_version_choices(project),
+        'script_version_choices': script_version_choices(versions),
+        'config_schemas': script_version_config_schemas(versions),
         'can_choose_delete': permissions.can_manage_admin_only,
     }
 

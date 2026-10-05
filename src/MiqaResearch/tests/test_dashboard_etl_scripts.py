@@ -452,3 +452,110 @@ def test_only_managers_are_offered_customize_on_a_native_script(project, role_na
 
     assert "participant_consent" in body
     assert (_customize_url(project, native) in body) is can_customize
+
+
+# --- Config schema (#238) ---------------------------------------------------------------------------------------
+
+DELIMITER_SCHEMA = {"type": "object", "properties": {"delimiter": {"type": "string"}}}
+
+
+def _schema_upload(content):
+    return SimpleUploadedFile("config.schema.json", content, content_type="application/json")
+
+
+@pytest.mark.django_db
+def test_a_new_script_can_declare_a_config_schema(project):
+    client = _client_as(_user_with_role(project, "Data Manager"))
+
+    client.post(
+        _create_url(project),
+        {
+            "name": "REDCap import", "datatype": "measurement", "source": _upload(),
+            "config_schema": _schema_upload(b'{"type": "object", "properties": {"delimiter": {"type": "string"}}}'),
+        },
+        **HTMX,
+    )
+
+    assert EtlScriptVersion.objects.get(script__project=project).config_schema == DELIMITER_SCHEMA
+
+
+@pytest.mark.django_db
+def test_a_script_created_without_a_config_schema_keeps_config_free_form(project):
+    client = _client_as(_user_with_role(project, "Data Manager"))
+
+    client.post(_create_url(project), {"name": "REDCap import", "datatype": "measurement", "source": _upload()}, **HTMX)
+
+    assert EtlScriptVersion.objects.get(script__project=project).config_schema is None
+
+
+@pytest.mark.django_db
+def test_a_new_version_can_declare_its_own_config_schema(project):
+    script = EtlScript.objects.create(name="Script", origin=ETL_SCRIPT_ORIGIN_CUSTOM, project=project)
+    script.versions.create(version=1, source=_upload(), sha256="0" * 64)
+    client = _client_as(_user_with_role(project, "Data Manager"))
+
+    client.post(
+        _version_url(project, script),
+        {"source": _upload(b"v2"), "config_schema": _schema_upload(
+            b'{"type": "object", "properties": {"delimiter": {"type": "string"}}}')},
+        **HTMX,
+    )
+
+    assert list(script.versions.order_by("version").values_list("config_schema", flat=True)) == [
+        None, DELIMITER_SCHEMA]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("content, message", [
+    (b"{not json", "not valid JSON"),
+    (b'["a list"]', "must be a JSON object"),
+    (b'{"type": "no-such-type"}', "not a valid JSON Schema"),
+])
+def test_a_malformed_config_schema_is_rejected_with_a_form_error(project, content, message):
+    client = _client_as(_user_with_role(project, "Data Manager"))
+
+    response = client.post(
+        _create_url(project),
+        {"name": "REDCap import", "datatype": "measurement", "source": _upload(),
+         "config_schema": _schema_upload(content)},
+        **HTMX,
+    )
+
+    assert not EtlScript.objects.filter(project=project).exists()
+    assert message in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_a_malformed_config_schema_on_a_new_version_is_rejected(project):
+    script = EtlScript.objects.create(name="Script", origin=ETL_SCRIPT_ORIGIN_CUSTOM, project=project)
+    script.versions.create(version=1, source=_upload(), sha256="0" * 64)
+    client = _client_as(_user_with_role(project, "Data Manager"))
+
+    response = client.post(
+        _version_url(project, script), {"source": _upload(b"v2"), "config_schema": _schema_upload(b"{nope")}, **HTMX)
+
+    assert script.versions.count() == 1
+    assert "not valid JSON" in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_customizing_a_native_script_copies_its_config_schema(project):
+    native = _native_script_with_versions(b"# v1")
+    EtlScriptVersion.objects.filter(script=native).delete()
+    EtlScriptVersion.objects.create(
+        script=native, version=1, source=_upload(b"# v1", "csv_participant_consent.py"), sha256="1" * 64,
+        config_schema=DELIMITER_SCHEMA)
+
+    _client_as(_user_with_role(project, "Data Manager")).post(_customize_url(project, native), **HTMX)
+
+    assert EtlScriptVersion.objects.get(script__project=project).config_schema == DELIMITER_SCHEMA
+
+
+@pytest.mark.django_db
+def test_the_scripts_section_shows_which_versions_declare_a_config_schema(project):
+    script = EtlScript.objects.create(name="Script", origin=ETL_SCRIPT_ORIGIN_CUSTOM, project=project)
+    script.versions.create(version=1, source=_upload(), sha256="0" * 64, config_schema=DELIMITER_SCHEMA)
+
+    response = _client_as(_user_with_role(project, "Data Manager")).get(_scripts_url(project), **HTMX)
+
+    assert "Config schema" in response.content.decode()

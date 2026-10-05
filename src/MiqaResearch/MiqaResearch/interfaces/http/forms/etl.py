@@ -4,6 +4,8 @@
 max script source size, are passed in pre-computed rather than resolved lazily by the form, since
 either would run a synchronous DB query inside an async view.
 """
+import json
+
 from django import forms
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
@@ -19,7 +21,8 @@ from contract.constants.etl import (
 
 class _ScriptSourceSizeMixin:
     """Shared `source` checks for the two forms that accept an EtlScriptVersion upload: its size,
-    and that its file extension names a language a sandbox image runs (#166)."""
+    and that its file extension names a language a sandbox image runs (#166). Also the Version's
+    optional config schema (#238), which must be a valid JSON Schema object."""
 
     def __init__(self, *args, max_source_bytes, **kwargs):
         self.max_source_bytes = max_source_bytes
@@ -39,6 +42,23 @@ class _ScriptSourceSizeMixin:
                 % {"max_bytes": self.max_source_bytes})
         return source
 
+    def clean_config_schema(self):
+        from MiqaResearch.etl_config_schema import ConfigSchemaInvalid, parse_config_schema
+
+        upload = self.cleaned_data["config_schema"]
+        if not upload:
+            return None
+        try:
+            return parse_config_schema(upload.read())
+        except ConfigSchemaInvalid as error:
+            raise forms.ValidationError(str(error))
+
+
+def _config_schema_field():
+    return forms.FileField(
+        label=_("Config schema (optional JSON Schema)"), required=False,
+        help_text=_("Bindings' config must satisfy it; leave empty to keep config free-form."))
+
 
 def _datatype_choices() -> list[tuple[str, str]]:
     """The registered ETL Datatypes (#223) -- an in-memory registry, so no DB query in an async view."""
@@ -52,6 +72,7 @@ class EtlScriptCreateForm(_ScriptSourceSizeMixin, forms.Form):
     description = forms.CharField(required=False, widget=forms.Textarea)
     datatype = forms.ChoiceField(label=_("Datatype"))
     source = forms.FileField()
+    config_schema = _config_schema_field()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -70,6 +91,37 @@ class EtlScriptEditForm(forms.Form):
 
 class EtlScriptVersionCreateForm(_ScriptSourceSizeMixin, forms.Form):
     source = forms.FileField()
+    config_schema = _config_schema_field()
+
+
+CONFIG_FIELD_PREFIX = "config__"
+
+
+def _generated_config_field(key, prop, *, required) -> forms.Field:
+    """A form field for one top-level config-schema property (#238). Enums and booleans post
+    their JSON encoding; anything that isn't a scalar is entered as JSON."""
+    kwargs = {"label": prop.get("title") or key, "required": required, "help_text": prop.get("description", "")}
+    if "enum" in prop:
+        choices = [(json.dumps(value), str(value)) for value in prop["enum"]]
+        return forms.TypedChoiceField(choices=[("", "---------"), *choices], coerce=json.loads, empty_value=None,
+                                      **kwargs)
+    match prop.get("type"):
+        case "boolean":
+            return forms.TypedChoiceField(
+                choices=[("", "---------"), ("true", _("Yes")), ("false", _("No"))], coerce=json.loads,
+                empty_value=None, **kwargs)
+        case "string":
+            return forms.CharField(**kwargs)
+        case "integer":
+            return forms.IntegerField(**kwargs)
+        case "number":
+            return forms.FloatField(**kwargs)
+        case _:
+            return forms.JSONField(widget=forms.Textarea(attrs={"rows": 3}), **kwargs)
+
+
+def _generated_config_initial(field, value):
+    return json.dumps(value) if isinstance(field, forms.TypedChoiceField) else value
 
 
 class EtlBindingEditForm(forms.Form):
@@ -87,24 +139,92 @@ class EtlBindingEditForm(forms.Form):
         label=_("Grouping"), choices=PIPELINE_BINDING_GROUPING_CHOICES, initial=PIPELINE_BINDING_GROUPING_FILE)
     quiescence_seconds = forms.IntegerField(
         label=_("Quiescence (seconds, folder grouping only)"), required=False, min_value=1)
-    config = forms.JSONField(label=_("Script config (JSON object)"), required=False, widget=forms.Textarea)
+    config = forms.JSONField(
+        label=_("Script config (JSON object)"), required=False, widget=forms.Textarea,
+        help_text=_("Optional; passed to the script as ctx.config."))
     timeout_seconds_override = forms.IntegerField(label=_("Timeout override (seconds)"), required=False, min_value=1)
     memory_mb_override = forms.IntegerField(label=_("Memory override (MB)"), required=False, min_value=1)
     cpu_millicores_override = forms.IntegerField(label=_("CPU override (millicores)"), required=False, min_value=1)
 
     def __init__(self, *args, location_grants, script_version_choices, can_choose_delete,
-                 current_raw_retention=None, **kwargs):
+                 current_raw_retention=None, config_schemas=None, **kwargs):
         self.location_grants = location_grants
         self.can_choose_delete = can_choose_delete
         self.current_raw_retention = current_raw_retention
         super().__init__(*args, **kwargs)
         self.fields["script_version"].choices = script_version_choices
+        # #238: the selected Version's config schema, if it has one, replaces the free-form JSON box
+        # with one field per top-level property.
+        self.config_schema = (config_schemas or {}).get(self._selected_script_version_id())
+        self._generated_config_keys = {}
+        if self.config_schema is not None:
+            self._add_generated_config_fields()
 
     # Rendered together by `_etl_raw_retention_fields.html`, not in the generic field loop.
     RAW_RETENTION_FIELD_NAMES = ("raw_retention", "confirm_delete", "raw_bucket", "raw_prefix")
 
     def fields_outside_raw_retention(self):
-        return [field for field in self if field.name not in self.RAW_RETENTION_FIELD_NAMES]
+        """The generic field loop: also leaves out the config fields, which `_etl_binding_config_fields.html`
+        renders so they can be swapped when another Script Version is chosen."""
+        return [field for field in self
+                if field.name not in self.RAW_RETENTION_FIELD_NAMES and not self._is_config_field(field.name)]
+
+    def config_fields(self):
+        return [field for field in self if self._is_config_field(field.name)]
+
+    def _is_config_field(self, name) -> bool:
+        return name == "config" or name in self._generated_config_keys
+
+    def _selected_script_version_id(self):
+        if self.is_bound:
+            return self.data.get(self.add_prefix("script_version"))
+        choices = self.fields["script_version"].choices
+        return self.initial.get("script_version") or (choices[0][0] if choices else None)
+
+    def _add_generated_config_fields(self):
+        schema = self.config_schema
+        properties = {key: prop for key, prop in (schema.get("properties") or {}).items() if isinstance(prop, dict)}
+        required = set(schema.get("required") or [])
+        initial_config = self.initial.get("config") or {}
+        generated = {}
+        for key, prop in properties.items():
+            name = f"{CONFIG_FIELD_PREFIX}{key}"
+            generated[name] = _generated_config_field(key, prop, required=key in required)
+            self._generated_config_keys[name] = key
+            if key in initial_config:
+                self.initial[name] = _generated_config_initial(generated[name], initial_config[key])
+
+        names = list(self.fields)
+        config_index = names.index("config")
+        self.fields = {
+            name: generated.get(name) or self.fields[name]
+            for name in names[:config_index] + list(generated) + names[config_index:]
+        }
+        if schema.get("additionalProperties") is False:
+            del self.fields["config"]
+        elif properties:
+            self.fields["config"].label = _("Additional config (JSON object)")
+            self.fields["config"].help_text = _("Keys the schema doesn't list as fields above.")
+            self.initial["config"] = {key: value for key, value in initial_config.items() if key not in properties}
+
+    def _clean_config_against_schema(self, cleaned):
+        """Assembles the generated fields (and any additional keys) into one config, then checks it
+        against the selected Version's schema -- so a re-pin is rejected until the config fits."""
+        from MiqaResearch.etl_config_schema import config_errors
+
+        if self.config_schema is None or "config" in self.errors:
+            return
+        config = dict(cleaned.get("config") or {})
+        for name, key in self._generated_config_keys.items():
+            value = cleaned.get(name)
+            if value is not None and value != "":
+                config[key] = value
+        cleaned["config"] = config
+        for key, message in config_errors(self.config_schema, config):
+            field = f"{CONFIG_FIELD_PREFIX}{key}" if key is not None else None
+            if field not in self.fields:
+                field = "config" if "config" in self.fields else None
+            self.add_error(field, message)
 
     @property
     def confirm_delete_required(self) -> bool:
@@ -128,6 +248,7 @@ class EtlBindingEditForm(forms.Form):
         from MiqaResearch.readers.etl_reader import location_grant_allows
 
         cleaned = super().clean()
+        self._clean_config_against_schema(cleaned)
         if cleaned.get("raw_retention") == PIPELINE_BINDING_RAW_RETENTION_DELETE:
             if self.delete_locked:
                 self.add_error("raw_retention", _("Only a project Admin can choose Delete after load."))
