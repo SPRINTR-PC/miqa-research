@@ -9,6 +9,8 @@ from contract.constants.etl import (
     ETL_JOB_STATUS_CHOICES,
     ETL_JOB_STATUS_PENDING,
     ETL_JOB_STATUS_RUNNING,
+    PIPELINE_BINDING_RAW_RETENTION_CHOICES,
+    PIPELINE_BINDING_RAW_RETENTION_MOVE,
 )
 
 from .etl_pipeline_binding import PipelineBinding
@@ -33,6 +35,11 @@ class EtlJob(models.Model):
                    "or a manual retry.")
     config_snapshot = models.JSONField(
         default=dict, blank=True, help_text="Snapshot of the Binding's config at the time this Job was queued.")
+    raw_retention = models.CharField(
+        max_length=10, choices=PIPELINE_BINDING_RAW_RETENTION_CHOICES, default=PIPELINE_BINDING_RAW_RETENTION_MOVE,
+        blank=False, null=False,
+        help_text="Snapshot of the Binding's Raw Retention at the time this Job was queued; a later Binding "
+                   "change never affects this Job's inputs.")
     sandbox_image_digest = models.CharField(max_length=200, blank=True, default="")
     log = models.TextField(
         blank=True, default="", help_text="Sandbox execution log, capped at 64 KB by the orchestrator.")

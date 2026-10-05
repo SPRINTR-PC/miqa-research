@@ -6,7 +6,8 @@ into rows in the research database. For each project, a Data Manager or Admin co
 bucket to an **ETL Script** through a **Pipeline Binding**. From then on the platform polls the
 bucket, runs the Script over each new file (or folder) in an isolated **Sandbox Runner**, checks
 the rows the Script returns against the chosen **ETL Datatype**, loads them in a single
-all-or-nothing transaction, and moves the source files to a **Raw Bucket**.
+all-or-nothing transaction, and moves the source files to a **Raw Bucket**, or deletes them
+under the Binding's "delete" **Raw Retention**.
 
 The end-to-end flow:
 
@@ -512,9 +513,27 @@ R rows are therefore validated against the same Datatype schemas, with the same 
 
 When a Job succeeds, `move_etl_job_inputs_to_raw_bucket` moves each input to the Binding's
 **Raw Bucket** at `<raw_prefix><job id>/<path relative to source_prefix>`. Keys include the Job
-id, so re-runs never overwrite earlier copies. The move cannot be turned off: every successful
-Job's inputs are moved. Each input is moved independently, so one failing file does not block
-the others in a folder Job.
+id, so re-runs never overwrite earlier copies. Each input is moved independently, so one failing
+file does not block the others in a folder Job.
+
+### Raw Retention
+
+`PipelineBinding.raw_retention` is `move` (the default) or `delete` (ADR 0032, #246). Polling,
+auto-retries and manual retries copy it onto `EtlJob.raw_retention` when a Job is queued, so
+changing a Binding never affects Jobs already queued. Under `delete`:
+
+- only the source key needs grant coverage, and no copy is made;
+- the source is deleted and `move_status` becomes `deleted`. `moved_at` records when, and
+  `raw_bucket_key` stays empty. The `EtlJobInput` key, SHA-256 and size are the only
+  provenance left;
+- failed deletes go through the same capped backoff and escalation as moves (below). The
+  `etl_source_cleanup_stuck` event records the `raw_retention`.
+
+The Binding's `raw_bucket` and `raw_prefix` are blank under `delete`. Only an Admin may switch a
+Binding to `delete`, and doing so requires a confirmation checkbox. Either manager role may switch
+it back to `move`. Both `etl_binding_created` and `etl_binding_updated` record
+`raw_retention`, and an update also records `raw_retention_previous`. Switching to `delete`
+doesn't purge raw copies that earlier Jobs already stored.
 
 Each input goes through these steps:
 
@@ -525,6 +544,8 @@ Each input goes through these steps:
    copy that does not match is deleted, and the attempt counts as a failure. After a verified
    copy, `raw_bucket_key` is recorded, so a retry skips straight to deleting the source.
 3. **Delete the source.** On success, `move_status` becomes `moved`.
+
+Under `delete` Raw Retention, step 1 checks only the source key, and step 2 is skipped.
 
 If the copy, verification or delete fails, the input becomes `source_cleanup_pending`, with
 capped exponential backoff: `BASE × 2^(attempt−1)`, capped at `MAX`.
@@ -542,8 +563,8 @@ source file is then left in place for manual handling, and the platform, once on
 
 | Role | Access |
 |---|---|
-| Superuser, Admin | Everything, including admin-only actions: archiving a Script and editing the project's ETL overrides under Defaults. |
-| Data Manager | Create and edit custom Scripts, upload Versions, create and edit Bindings, retry failed Jobs. |
+| Superuser, Admin | Everything, including admin-only actions: archiving a Script, editing the project's ETL overrides under Defaults, and switching a Binding to `delete` Raw Retention. |
+| Data Manager | Create and edit custom Scripts, upload Versions, create and edit Bindings (not into `delete` Raw Retention), retry failed Jobs. |
 | PI, Investigator | Read-only: every section is listed, but no manage controls are rendered or accepted. |
 | Any other role | No access. The tab returns 404. |
 

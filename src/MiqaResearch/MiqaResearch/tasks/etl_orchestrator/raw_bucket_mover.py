@@ -1,5 +1,6 @@
 """ETL raw bucket move & source retention (#163): on a successful `EtlJob`, moves each handled
-input from its source bucket to the Binding's raw bucket. Move = copy with a SHA-256 checksum,
+input from its source bucket to the Binding's raw bucket -- or, for a Job whose Raw Retention
+snapshot is "delete" (#246, ADR 0032), only deletes the source, with no copy anywhere. Move = copy with a SHA-256 checksum,
 then verify size and hash against the copy (never trusting ETag alone), then delete the source.
 Raw-bucket keys nest by Job id, so re-runs never overwrite prior history.
 
@@ -22,9 +23,11 @@ from django.utils import timezone
 
 from contract.constants.audit_log import EVENT_TYPE_ETL_SOURCE_CLEANUP_STUCK
 from contract.constants.etl import (
+    ETL_JOB_INPUT_MOVE_STATUS_DELETED,
     ETL_JOB_INPUT_MOVE_STATUS_MOVED,
     ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_PENDING,
     ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_STUCK,
+    PIPELINE_BINDING_RAW_RETENTION_DELETE,
 )
 from contract.constants.research_project_role import PROJECT_ROLE_ADMIN, PROJECT_ROLE_DATA_MANAGER
 from MiqaResearch.data.models import AuditLog, EtlJob, EtlJobInput, EtlLocationGrant
@@ -51,7 +54,9 @@ def move_job_inputs(job: EtlJob) -> None:
     grants = list(EtlLocationGrant.objects.filter(project_id=binding.project_id))
     client = _build_etl_s3_client()
 
-    terminal_statuses = (ETL_JOB_INPUT_MOVE_STATUS_MOVED, ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_STUCK)
+    terminal_statuses = (
+        ETL_JOB_INPUT_MOVE_STATUS_MOVED, ETL_JOB_INPUT_MOVE_STATUS_DELETED,
+        ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_STUCK)
     for job_input in job.inputs.exclude(move_status__in=terminal_statuses):
         try:
             _move_one(client, grants, binding, job, job_input)
@@ -76,6 +81,13 @@ def sweep_due_cleanups() -> list[EtlJob]:
 
 
 def _move_one(client, grants, binding, job: EtlJob, job_input: EtlJobInput) -> None:
+    if job.raw_retention == PIPELINE_BINDING_RAW_RETENTION_DELETE:
+        if not location_grant_allows(grants, job_input.bucket, job_input.key):
+            raise _GrantDeniedError(
+                f"delete of {job_input.bucket}/{job_input.key} falls outside this project's EtlLocationGrants")
+        _delete_source(client, job_input, done_status=ETL_JOB_INPUT_MOVE_STATUS_DELETED)
+        return
+
     raw_key = f"{binding.raw_prefix}{job.id}/{_relative_key(binding, job_input.key)}"
 
     if not location_grant_allows(grants, job_input.bucket, job_input.key) \
@@ -87,7 +99,7 @@ def _move_one(client, grants, binding, job: EtlJob, job_input: EtlJobInput) -> N
     if not job_input.raw_bucket_key:
         _copy_and_verify(client, binding, job_input, raw_key)
 
-    _delete_source(client, job_input)
+    _delete_source(client, job_input, done_status=ETL_JOB_INPUT_MOVE_STATUS_MOVED)
 
 
 def _copy_and_verify(client, binding, job_input: EtlJobInput, raw_key: str) -> None:
@@ -111,13 +123,13 @@ def _copy_and_verify(client, binding, job_input: EtlJobInput, raw_key: str) -> N
     job_input.save(update_fields=["raw_bucket_key"])
 
 
-def _delete_source(client, job_input: EtlJobInput) -> None:
+def _delete_source(client, job_input: EtlJobInput, *, done_status: str) -> None:
     try:
         client.delete_object(Bucket=job_input.bucket, Key=job_input.key)
     except ClientError as exc:
         raise RawBucketMoveError(f"source delete failed for {job_input.bucket}/{job_input.key}") from exc
 
-    job_input.move_status = ETL_JOB_INPUT_MOVE_STATUS_MOVED
+    job_input.move_status = done_status
     job_input.moved_at = timezone.now()
     job_input.save(update_fields=["move_status", "moved_at"])
 
@@ -162,8 +174,8 @@ def _escalate_stuck_cleanup(job_input: EtlJobInput) -> None:
         send_mail(
             subject="MiqaResearch: ETL source cleanup stuck",
             message=(
-                f"An ETL raw-bucket source file for project {project.name!r} could not be deleted "
-                f"after {job_input.cleanup_attempts} attempts and needs manual handling. "
+                f"An ETL source file for project {project.name!r} could not be deleted after a "
+                f"successful load ({job_input.cleanup_attempts} attempts) and needs manual handling. "
                 f"Job {job_input.job_id}, input {job_input.id}."
             ),
             from_email=settings.NO_REPLY_EMAIL_ADDRESS,
@@ -172,7 +184,10 @@ def _escalate_stuck_cleanup(job_input: EtlJobInput) -> None:
 
     AuditLog.objects.record(
         EVENT_TYPE_ETL_SOURCE_CLEANUP_STUCK, project=project,
-        metadata={"job_id": str(job_input.job_id), "job_input_id": str(job_input.id)})
+        metadata={
+            "job_id": str(job_input.job_id), "job_input_id": str(job_input.id),
+            "raw_retention": job_input.job.raw_retention,
+        })
 
 
 def _relative_key(binding, key: str) -> str:

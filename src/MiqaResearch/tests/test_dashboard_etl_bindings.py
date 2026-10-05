@@ -75,7 +75,7 @@ def _payload(native_version, **overrides):
     payload = {
         "source_bucket": "incoming", "source_prefix": "redcap/",
         "script_version": str(native_version.id),
-        "raw_bucket": "raw", "raw_prefix": "",
+        "raw_retention": "move", "raw_bucket": "raw", "raw_prefix": "",
         "grouping_mode": "file", "quiescence_seconds": "", "config": "",
         "timeout_seconds_override": "", "memory_mb_override": "", "cpu_millicores_override": "",
     }
@@ -108,7 +108,7 @@ def _existing_binding(project, script_version, **fields):
 def _edit_payload(binding, **overrides):
     payload = {
         "script_version": str(binding.script_version_id),
-        "raw_bucket": binding.raw_bucket, "raw_prefix": binding.raw_prefix,
+        "raw_retention": binding.raw_retention, "raw_bucket": binding.raw_bucket, "raw_prefix": binding.raw_prefix,
         "grouping_mode": binding.grouping_mode, "quiescence_seconds": str(binding.quiescence_seconds),
         "config": json.dumps(binding.config),
         "timeout_seconds_override": "", "memory_mb_override": "", "cpu_millicores_override": "",
@@ -267,7 +267,7 @@ def test_creating_a_binding_records_an_audit_event_with_no_data_values(project, 
     assert entry.user_id == user.id
     assert entry.project_id == project.id
     assert "incoming" not in str(entry.metadata)
-    assert set(entry.metadata.keys()) == {"etl_pipeline_binding_id"}
+    assert set(entry.metadata.keys()) == {"etl_pipeline_binding_id", "raw_retention"}
 
 
 @pytest.mark.django_db
@@ -326,7 +326,8 @@ def test_a_data_manager_can_re_pin_a_binding_to_a_newer_script_version(project, 
     entry = AuditLog.objects.get(event_type=EVENT_TYPE_ETL_BINDING_UPDATED)
     assert entry.user_id == user.id
     assert entry.project_id == project.id
-    assert entry.metadata == {"etl_pipeline_binding_id": str(binding.id)}
+    assert entry.metadata == {
+        "etl_pipeline_binding_id": str(binding.id), "raw_retention": "move", "raw_retention_previous": "move"}
 
 
 @pytest.mark.django_db
@@ -456,3 +457,115 @@ def test_each_binding_shows_how_it_groups_files(project, native_version):
     body = client.get(_bindings_url(project)).content.decode()
 
     assert "Folder, with quiescence wait (600 s)" in body
+
+
+# --- Raw Retention (#246) -------------------------------------------------------------------------------------------
+
+
+def _grant_incoming_only(project):
+    EtlLocationGrant.objects.create(project=project, bucket="incoming", prefix="")
+
+
+@pytest.mark.django_db
+def test_an_admin_can_create_a_delete_after_load_binding_with_no_raw_destination(project, native_version):
+    _grant_incoming_only(project)
+    client = _client_as(_user_with_role(project, "Admin"))
+
+    client.post(_create_url(project), _payload(
+        native_version, raw_retention="delete", confirm_delete="on", raw_bucket="raw", raw_prefix="x/"), **HTMX)
+
+    binding = PipelineBinding.objects.get(project=project)
+    assert binding.raw_retention == "delete"
+    assert (binding.raw_bucket, binding.raw_prefix) == ("", "")
+
+
+@pytest.mark.django_db
+def test_a_data_manager_cannot_create_a_delete_after_load_binding(project, native_version):
+    _grant_incoming_only(project)
+    client = _client_as(_user_with_role(project, "Data Manager"))
+
+    response = client.post(
+        _create_url(project), _payload(native_version, raw_retention="delete", confirm_delete="on"), **HTMX)
+
+    assert not PipelineBinding.objects.exists()
+    assert "Only a project Admin" in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_choosing_delete_after_load_without_confirming_is_rejected(project, native_version):
+    _grant_incoming_only(project)
+    client = _client_as(_user_with_role(project, "Admin"))
+
+    response = client.post(_create_url(project), _payload(native_version, raw_retention="delete"), **HTMX)
+
+    assert not PipelineBinding.objects.exists()
+    assert "Confirm that inputs will be deleted" in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_an_admins_switch_to_delete_after_load_clears_the_raw_destination_and_audits_both_modes(
+        project, native_version):
+    _grant_incoming_and_raw(project)
+    binding = _existing_binding(project, native_version)
+    client = _client_as(_user_with_role(project, "Admin"))
+
+    client.post(_edit_url(project, binding), _edit_payload(
+        binding, raw_retention="delete", confirm_delete="on"), **HTMX)
+
+    binding.refresh_from_db()
+    assert (binding.raw_retention, binding.raw_bucket, binding.raw_prefix) == ("delete", "", "")
+    entry = AuditLog.objects.get(event_type=EVENT_TYPE_ETL_BINDING_UPDATED)
+    assert entry.metadata["raw_retention"] == "delete"
+    assert entry.metadata["raw_retention_previous"] == "move"
+
+
+@pytest.mark.django_db
+def test_a_data_manager_can_re_save_a_delete_after_load_binding_without_re_confirming(project, native_version):
+    _grant_incoming_only(project)
+    binding = _existing_binding(project, native_version, raw_retention="delete")
+    PipelineBinding.objects.filter(pk=binding.pk).update(raw_bucket="")
+    binding.refresh_from_db()
+    client = _client_as(_user_with_role(project, "Data Manager"))
+
+    client.post(_edit_url(project, binding), _edit_payload(binding, grouping_mode="folder"), **HTMX)
+
+    binding.refresh_from_db()
+    assert (binding.raw_retention, binding.grouping_mode) == ("delete", "folder")
+
+
+@pytest.mark.django_db
+def test_a_data_manager_can_switch_a_delete_after_load_binding_back_to_move(project, native_version):
+    _grant_incoming_and_raw(project)
+    binding = _existing_binding(project, native_version, raw_retention="delete")
+    client = _client_as(_user_with_role(project, "Data Manager"))
+
+    client.post(_edit_url(project, binding), _edit_payload(
+        binding, raw_retention="move", raw_bucket="raw", raw_prefix="kept/"), **HTMX)
+
+    binding.refresh_from_db()
+    assert (binding.raw_retention, binding.raw_bucket, binding.raw_prefix) == ("move", "raw", "kept/")
+
+
+@pytest.mark.django_db
+def test_switching_to_move_without_a_raw_bucket_is_rejected(project, native_version):
+    _grant_incoming_and_raw(project)
+    binding = _existing_binding(project, native_version, raw_retention="delete")
+    client = _client_as(_user_with_role(project, "Admin"))
+
+    response = client.post(_edit_url(project, binding), _edit_payload(
+        binding, raw_retention="move", raw_bucket=""), **HTMX)
+
+    binding.refresh_from_db()
+    assert binding.raw_retention == "delete"
+    assert "A raw bucket is required" in response.content.decode()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(("role_name", "locked"), [("Admin", False), ("Data Manager", True)])
+def test_only_an_admins_wizard_offers_delete_after_load(project, native_version, role_name, locked):
+    client = _client_as(_user_with_role(project, role_name))
+
+    body = client.get(_bindings_url(project)).content.decode()
+
+    assert "Delete after load" in body
+    assert ("Admin only" in body) == locked

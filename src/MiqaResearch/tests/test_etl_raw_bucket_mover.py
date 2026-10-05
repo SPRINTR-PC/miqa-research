@@ -20,11 +20,13 @@ from moto import mock_aws
 
 from contract.constants.audit_log import EVENT_TYPE_ETL_SOURCE_CLEANUP_STUCK
 from contract.constants.etl import (
+    ETL_JOB_INPUT_MOVE_STATUS_DELETED,
     ETL_JOB_INPUT_MOVE_STATUS_MOVED,
     ETL_JOB_INPUT_MOVE_STATUS_PENDING,
     ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_PENDING,
     ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_STUCK,
     ETL_SCRIPT_ORIGIN_CUSTOM,
+    PIPELINE_BINDING_RAW_RETENTION_DELETE,
 )
 from MiqaResearch.data.models import (
     AuditLog,
@@ -130,6 +132,33 @@ def test_the_source_is_absent_after_a_successful_move(location_grants, job, s3_c
 
     with pytest.raises(ClientError):
         s3_client.get_object(Bucket="incoming", Key="redcap/a.csv")
+
+
+# --- Raw Retention "delete" (#246) ----------------------------------------
+
+@pytest.fixture
+def delete_job(research_project, binding, script_version):
+    EtlLocationGrant.objects.create(project=research_project, bucket="incoming", prefix="")
+    return EtlJob.objects.create(
+        binding=binding, script_version=script_version, raw_retention=PIPELINE_BINDING_RAW_RETENTION_DELETE)
+
+
+def _all_keys(s3_client, bucket):
+    return [obj["Key"] for obj in s3_client.list_objects_v2(Bucket=bucket).get("Contents", [])]
+
+
+def test_a_delete_retention_jobs_input_is_deleted_from_the_source_without_any_raw_copy(delete_job, s3_client):
+    s3_client.put_object(Bucket="incoming", Key="redcap/a.csv", Body=b"personnummer")
+    job_input = _job_input(delete_job, data=b"personnummer")
+
+    raw_bucket_mover.move_job_inputs(delete_job)
+
+    job_input.refresh_from_db()
+    assert job_input.move_status == ETL_JOB_INPUT_MOVE_STATUS_DELETED
+    assert job_input.raw_bucket_key == ""
+    assert job_input.moved_at is not None
+    assert _all_keys(s3_client, "incoming") == []
+    assert _all_keys(s3_client, "raw") == []
 
 
 def test_a_folder_grouped_jobs_other_inputs_still_move_when_one_input_has_no_grant_coverage(
@@ -281,3 +310,24 @@ def test_sweep_ignores_a_cleanup_not_yet_due(location_grants, job, s3_client):
     assert swept == []
     job_input.refresh_from_db()
     assert job_input.move_status == ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_PENDING
+
+
+def test_a_delete_retention_jobs_failing_source_delete_escalates_with_its_retention_mode(
+        monkeypatch, settings, research_project, delete_job, s3_client):
+    settings.ETL_SOURCE_CLEANUP_MAX_ATTEMPTS = 1
+    settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+    _admin_user(research_project)
+    s3_client.put_object(Bucket="incoming", Key="redcap/a.csv", Body=b"data")
+    job_input = _job_input(delete_job, data=b"data")
+    monkeypatch.setattr(
+        raw_bucket_mover, "_build_etl_s3_client",
+        lambda: _DeleteFailingClient(boto3.client("s3", region_name="us-east-1")))
+
+    raw_bucket_mover.move_job_inputs(delete_job)
+
+    job_input.refresh_from_db()
+    assert job_input.move_status == ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_STUCK
+    assert _all_keys(s3_client, "raw") == []
+    assert "raw-bucket" not in mail.outbox[0].body.lower()
+    event = AuditLog.objects.get(event_type=EVENT_TYPE_ETL_SOURCE_CLEANUP_STUCK, project=research_project)
+    assert event.metadata["raw_retention"] == PIPELINE_BINDING_RAW_RETENTION_DELETE

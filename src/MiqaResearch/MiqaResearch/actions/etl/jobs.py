@@ -40,6 +40,7 @@ def _create_manual_retry(job: EtlJob) -> EtlJob:
         with transaction.atomic():
             retry_job = EtlJob.objects.create(
                 binding_id=job.binding_id, script_version_id=job.script_version_id, config_snapshot=job.config_snapshot,
+                raw_retention=job.raw_retention,
             )
             EtlJobInput.objects.bulk_create([
                 EtlJobInput(job=retry_job, bucket=job_input.bucket, key=job_input.key, sha256="", size_bytes=0)

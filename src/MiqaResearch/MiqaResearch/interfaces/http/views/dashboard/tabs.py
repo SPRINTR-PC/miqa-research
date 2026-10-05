@@ -188,7 +188,7 @@ async def goals(request, project_id):
 
 def _binding_edit_initial(binding) -> dict:
     return {
-        'script_version': str(binding.script_version_id),
+        'script_version': str(binding.script_version_id), 'raw_retention': binding.raw_retention,
         'raw_bucket': binding.raw_bucket, 'raw_prefix': binding.raw_prefix,
         'grouping_mode': binding.grouping_mode, 'quiescence_seconds': binding.quiescence_seconds,
         'config': binding.config,
@@ -221,10 +221,13 @@ async def etl_section_context(project, permissions, section) -> dict:
             context['location_grants'] = location_grants
             context['binding_create_form'] = EtlBindingCreateForm(
                 location_grants=location_grants, script_version_choices=script_version_choices,
+                can_choose_delete=permissions.can_manage_admin_only,
             )
             for binding in context['bindings']:
                 binding.edit_form = EtlBindingEditForm(
                     location_grants=location_grants, script_version_choices=script_version_choices,
+                    can_choose_delete=permissions.can_manage_admin_only,
+                    current_raw_retention=binding.raw_retention,
                     initial=_binding_edit_initial(binding), auto_id=f"id_binding_{binding.id}_%s",
                 )
 

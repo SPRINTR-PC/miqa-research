@@ -28,14 +28,24 @@ PIPELINE_BINDING_GROUPING_CHOICES = [
     (PIPELINE_BINDING_GROUPING_FOLDER, gettext_lazy("Folder, with quiescence wait")),
 ]
 
+PIPELINE_BINDING_RAW_RETENTION_MOVE = "move"
+PIPELINE_BINDING_RAW_RETENTION_DELETE = "delete"
+
+PIPELINE_BINDING_RAW_RETENTION_CHOICES = [
+    (PIPELINE_BINDING_RAW_RETENTION_MOVE, gettext_lazy("Move to Raw Bucket")),
+    (PIPELINE_BINDING_RAW_RETENTION_DELETE, gettext_lazy("Delete after load")),
+]
+
 ETL_JOB_INPUT_MOVE_STATUS_PENDING = "pending"
 ETL_JOB_INPUT_MOVE_STATUS_MOVED = "moved"
+ETL_JOB_INPUT_MOVE_STATUS_DELETED = "deleted"
 ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_PENDING = "source_cleanup_pending"
 ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_STUCK = "source_cleanup_stuck"
 
 ETL_JOB_INPUT_MOVE_STATUS_CHOICES = [
     (ETL_JOB_INPUT_MOVE_STATUS_PENDING, gettext_lazy("Not yet moved")),
     (ETL_JOB_INPUT_MOVE_STATUS_MOVED, gettext_lazy("Moved")),
+    (ETL_JOB_INPUT_MOVE_STATUS_DELETED, gettext_lazy("Deleted after load")),
     (ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_PENDING, gettext_lazy("Source cleanup pending (retrying)")),
     (ETL_JOB_INPUT_MOVE_STATUS_SOURCE_CLEANUP_STUCK, gettext_lazy("Source cleanup stuck (needs manual handling)")),
 ]

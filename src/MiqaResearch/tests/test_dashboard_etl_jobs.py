@@ -289,3 +289,17 @@ def test_a_retry_is_refused_while_the_binding_already_has_an_active_job(
     assert EtlJob.objects.count() == 2
     assert fake_run_etl_job_task.enqueued_job_ids == []
     assert "already has a job pending or running" in body
+
+
+@pytest.mark.django_db
+def test_a_delete_after_load_jobs_detail_shows_its_inputs_were_deleted(project, binding, script_version):
+    job = EtlJob.objects.create(
+        binding=binding, script_version=script_version, status=ETL_JOB_STATUS_SUCCEEDED, raw_retention="delete")
+    EtlJobInput.objects.create(
+        job=job, bucket="incoming", key="consent/export.csv", sha256="cd" * 32, size_bytes=64,
+        move_status="deleted")
+    client = _client_as(_user_with_role(project, "Investigator"))
+
+    body = client.get(_detail_url(project, job), **HTMX).content.decode()
+
+    assert "Deleted after load" in body
