@@ -200,19 +200,27 @@ class EtlBindingEditForm(forms.Form):
             name: generated.get(name) or self.fields[name]
             for name in names[:config_index] + list(generated) + names[config_index:]
         }
-        if schema.get("additionalProperties") is False:
+        unlisted_config = {key: value for key, value in initial_config.items() if key not in properties}
+        # A schema that allows no other keys drops the box -- unless the Binding's config (or the
+        # posted form) still has some: they then show up there and fail validation, rather than
+        # silently vanishing on a re-pin.
+        if schema.get("additionalProperties") is False and not unlisted_config and not self._posted_config():
             del self.fields["config"]
         elif properties:
             self.fields["config"].label = _("Additional config (JSON object)")
             self.fields["config"].help_text = _("Keys the schema doesn't list as fields above.")
-            self.initial["config"] = {key: value for key, value in initial_config.items() if key not in properties}
+            self.initial["config"] = unlisted_config
+
+    def _posted_config(self) -> str:
+        return (self.data.get(self.add_prefix("config")) or "").strip() if self.is_bound else ""
 
     def _clean_config_against_schema(self, cleaned):
         """Assembles the generated fields (and any additional keys) into one config, then checks it
         against the selected Version's schema -- so a re-pin is rejected until the config fits."""
         from MiqaResearch.etl_config_schema import config_errors
 
-        if self.config_schema is None or "config" in self.errors:
+        # A field that already failed would only be reported again, as a missing key.
+        if self.config_schema is None or any(name in self.errors for name in ("config", *self._generated_config_keys)):
             return
         config = dict(cleaned.get("config") or {})
         for name, key in self._generated_config_keys.items():

@@ -176,8 +176,9 @@ apply. Every edit is recorded in the project's audit log.
 - Only an Admin can switch a binding to **Delete after load**, and it asks for confirmation.
 - Choosing another script version swaps in that version's config fields, filled in with the
   binding's current config. If the current config doesn't match the new version's config
-  schema, **Save** is rejected until you update it. Settings the new schema has no field for
-  are dropped when the schema allows no other settings.
+  schema, **Save** is rejected until you update it. Settings the new schema doesn't know
+  appear in **Additional config**. If the schema allows no other settings, remove them there
+  before saving.
   Files that earlier jobs already moved to the raw bucket stay there. Delete them by hand if
   they must go. Either an Admin or a Data Manager can switch a binding back to
   **Move to Raw Bucket**.

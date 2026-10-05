@@ -742,3 +742,32 @@ def test_a_read_only_role_cannot_fetch_config_fields(project, native_version):
         _config_fields_url(project, native_version), **HTMX)
 
     assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_re_pinning_never_silently_drops_config_keys_the_new_schema_does_not_allow(project, native_version):
+    _grant_incoming_and_raw(project)
+    binding = _existing_binding(project, native_version, config={"delimiter": ";", "typo_key": 1})
+    version = _schema_version(native_version.script, 2)
+
+    fields = _client_as(_user_with_role(project, "Data Manager")).get(
+        _config_fields_url(project, version, binding), **HTMX).content.decode()
+    assert "typo_key" in fields
+
+    client = _client_as(User.objects.get(username="user-data-manager"))
+    client.post(_edit_url(project, binding), _edit_payload(
+        binding, script_version=str(version.id), config__delimiter=";", config='{"typo_key": 1}'), **HTMX)
+
+    binding.refresh_from_db()
+    assert binding.script_version_id == native_version.id
+
+
+@pytest.mark.django_db
+def test_a_generated_field_error_is_not_reported_twice_by_the_schema_check(project, native_version):
+    _grant_incoming_and_raw(project)
+    version = _schema_version(native_version.script, 2, schema={**CSV_SCHEMA, "required": ["delimiter"]})
+    client = _client_as(_user_with_role(project, "Data Manager"))
+
+    response = client.post(_create_url(project), _payload(version), **HTMX)
+
+    assert "is a required property" not in response.content.decode()
