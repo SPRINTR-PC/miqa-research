@@ -12,6 +12,7 @@ from ninja import Schema
 from pydantic import model_validator
 
 from helpers.db_fields import get_deterministic_hash
+from helpers.person_source_value import format_person_source_value
 from MiqaResearch.data.models import ResearchProject, StudyParticipant
 
 from .exceptions import AmbiguousParticipantReference, UnresolvableParticipantReference
@@ -32,7 +33,7 @@ def resolve_participant(project: ResearchProject, reference: ParticipantReferenc
     if reference.alias1:
         queryset = StudyParticipant.objects.filter(research_project=project, alias1=reference.alias1)
     else:
-        hashed = get_deterministic_hash(reference.person_source_value)
+        hashed = get_deterministic_hash(format_person_source_value(reference.person_source_value))
         queryset = StudyParticipant.objects.filter(research_project=project, person_source_value_hash=hashed)
 
     matches = list(queryset[:2])

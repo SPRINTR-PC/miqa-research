@@ -19,6 +19,7 @@ from MiqaResearch.data.models import (
     StudyParticipant,
 )
 from MiqaResearch.etl_datatypes import load_jsonl
+from MiqaResearch.etl_datatypes.participant_reference import ParticipantReferenceFields, resolve_participant
 from MiqaResearch.tasks.dicom_handling.participant import match_or_create_participant
 
 SPELLINGS = ["19121212-1212", "191212121212", " 19121212-1212 "]
@@ -82,6 +83,19 @@ def test_a_consent_load_matches_the_participant_dicom_ingestion_created(project,
     [participant] = StudyParticipant.objects.filter(research_project=project)
     assert participant.person_source_value == "191212121212"
     assert participant.participantconsent_set.count() == 1
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("consent_spelling", SPELLINGS)
+@pytest.mark.parametrize("reference_spelling", SPELLINGS)
+def test_other_etl_datatypes_resolve_the_participant_a_consent_load_created(
+        project, consent_spelling, reference_spelling):
+    _load_consent(project, consent_spelling)
+    [created] = StudyParticipant.objects.filter(research_project=project)
+
+    resolved = resolve_participant(project, ParticipantReferenceFields(person_source_value=reference_spelling))
+
+    assert resolved.id == created.id
 
 
 # Existing rows: migration 0026 (format_person_source_values) reformats identifiers stored

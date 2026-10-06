@@ -5,8 +5,9 @@ from helpers.db_fields import get_deterministic_hash
 
 def format_person_source_value(raw: str) -> str:
     """The one stored/hashed form of a person identifier (personnummer): trimmed, dashes removed.
-    Consent loads and DICOM ingestion both use it, so either path matches a participant the other
-    created (#241). The native consent script applies the same rule itself (it is stdlib-only)."""
+    Every ETL Datatype (participant_consent, Participant Reference resolution) and DICOM ingestion
+    use it, so any path matches a participant another created (#241). The native consent script
+    applies the same rule itself (it is stdlib-only)."""
     return raw.strip().replace("-", "")
 
 

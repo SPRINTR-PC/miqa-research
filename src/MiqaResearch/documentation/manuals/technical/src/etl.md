@@ -94,7 +94,9 @@ SamtyckenUmu task have no project and are not matched until
 ### Participant references and concepts
 
 Every row carries exactly one Participant Reference, either `person_source_value` or `alias1`.
-It is resolved only against **this project's** Study Participants.
+It is resolved only against **this project's** Study Participants. A `person_source_value` is
+matched in the shared format (trimmed, dashes removed), so `19121212-1212` and `191212121212`
+are the same person, as in consent loads and DICOM ingestion.
 
 - A reference that matches no participant raises `UnresolvableParticipantReference`.
 - A reference that matches more than one raises `AmbiguousParticipantReference`. The loader
@@ -645,9 +647,9 @@ default it reads the SamtyckenUmu consent export:
 - **Consent columns:** every other column is a consent type, and a cell of `Ja` means the
   consent was given.
 - **Dates** are local times in `Europe/Stockholm`, as `YYYY-MM-DD HH:MM[:SS]`.
-- **Personnummer** has its dashes removed. The `participant_consent` Datatype applies the same
-  format (trimmed, dashes removed) to every row, and so does DICOM ingestion to PatientID, so
-  both match the same Study Participant. Migration 0026 reformatted identifiers stored earlier.
+- **Personnummer** has its dashes removed. Every ETL Datatype applies the same format (trimmed,
+  dashes removed) to `person_source_value`, and so does DICOM ingestion to PatientID, so all
+  match the same Study Participant. Migration 0026 reformatted identifiers stored earlier.
   It aborts without changes, naming the alias1s, if two participants of one project would
   collide.
 

@@ -358,7 +358,7 @@ separate "Patient" concept. Personally identifying fields (`person_source_value`
 `name`) are encrypted at rest and looked up via a deterministic hash sidecar
 rather than plaintext query. `person_source_value` is always stored trimmed with
 dashes removed (`helpers.person_source_value.format_person_source_value`), so
-consent loads and DICOM ingestion match the same person however it was written
+ETL loads and DICOM ingestion match the same person however it was written
 (migration 0026 reformatted older rows). Identified pseudonymously per Research
 Project via `alias1`.
 _Avoid_: Patient, Subject
@@ -712,7 +712,7 @@ them.
   (for example created by a Binding that ran before adoption) is skipped and
   listed by alias1. Adopting it would give the Datatype two matches and fail
   every later consent Job.
-- Consent loads and DICOM ingestion share one identifier format (trimmed,
+- ETL loads (every Datatype) and DICOM ingestion share one identifier format (trimmed,
   dashes removed). Migration 0026 reformats stored identifiers and aborts,
   changing nothing, if that would merge two participants of one project.
 - Project-less participants without such a consent are left as they are.
