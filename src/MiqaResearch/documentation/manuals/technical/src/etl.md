@@ -645,7 +645,11 @@ default it reads the SamtyckenUmu consent export:
 - **Consent columns:** every other column is a consent type, and a cell of `Ja` means the
   consent was given.
 - **Dates** are local times in `Europe/Stockholm`, as `YYYY-MM-DD HH:MM[:SS]`.
-- **Personnummer** has its dashes removed.
+- **Personnummer** has its dashes removed. The `participant_consent` Datatype applies the same
+  format (trimmed, dashes removed) to every row, and so does DICOM ingestion to PatientID, so
+  both match the same Study Participant. Migration 0026 reformatted identifiers stored earlier.
+  It aborts without changes, naming the alias1s, if two participants of one project would
+  collide.
 
 A Binding's config can override any of these:
 
@@ -683,7 +687,10 @@ loading once:
    It adopts each **Legacy Consent Participant** into the Consent Project: a participant the
    legacy task created without a project, that has a consent of a Consent Project consent
    type. Other participants are left alone. It is idempotent. Skipping it makes the first ETL
-   import duplicate those participants.
+   import duplicate those participants. A Legacy Consent Participant whose person is already in
+   the Consent Project (for example because a Binding ran first) is skipped and printed with
+   both alias1s, `--dry-run` included. Merge those by hand: adopting them would make every later
+   consent Job fail with an ambiguous participant reference.
 2. Grant the bucket and prefix to the Consent Project (`EtlLocationGrant`).
 3. In the Consent Project, create a per-file Binding on that location running the native
    **CSV → participant consent** Script. Set its Raw Retention to **delete**: the exports

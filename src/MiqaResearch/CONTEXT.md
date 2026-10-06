@@ -356,8 +356,11 @@ model. It is the only person/subject identity in this codebase — imaging data
 and consent records both hang off the same Study Participant; there is no
 separate "Patient" concept. Personally identifying fields (`person_source_value`,
 `name`) are encrypted at rest and looked up via a deterministic hash sidecar
-rather than plaintext query. Identified pseudonymously per Research Project via
-`alias1`.
+rather than plaintext query. `person_source_value` is always stored trimmed with
+dashes removed (`helpers.person_source_value.format_person_source_value`), so
+consent loads and DICOM ingestion match the same person however it was written
+(migration 0026 reformatted older rows). Identified pseudonymously per Research
+Project via `alias1`.
 _Avoid_: Patient, Subject
 
 ### Consent Project
@@ -370,7 +373,8 @@ A Study Participant with no Research Project that has a consent of a Consent
 Project consent type, left by the SamtyckenUmu task's former load path.
 **Adopting** one sets its Research Project to the Consent Project
 (`adopt_legacy_consent_participants`), so ETL consent loads match it instead of
-creating a duplicate. See ADR 0033.
+creating a duplicate. One whose person is already in the Consent Project is not
+adopted but listed by alias1 for manual merging. See ADR 0033.
 _Avoid_: orphan participant
 
 ### Dicom Study
@@ -704,6 +708,13 @@ them.
   lost, but nothing is loaded either.
 - Skipping the adoption command duplicates every Legacy Consent Participant in
   the Consent Project. The command is idempotent, so running it again is safe.
+- A Legacy Consent Participant whose person is already in the Consent Project
+  (for example created by a Binding that ran before adoption) is skipped and
+  listed by alias1. Adopting it would give the Datatype two matches and fail
+  every later consent Job.
+- Consent loads and DICOM ingestion share one identifier format (trimmed,
+  dashes removed). Migration 0026 reformats stored identifiers and aborts,
+  changing nothing, if that would merge two participants of one project.
 - Project-less participants without such a consent are left as they are.
 - Legacy consent types already belong to the Consent Project (the legacy task
   filed them there), so the Datatype matches them by label as they are.

@@ -15,6 +15,7 @@ from datetime import datetime
 from ninja import Schema
 
 from helpers.db_fields import get_deterministic_hash
+from helpers.person_source_value import format_person_source_value
 from helpers.study_participant_alias import generate_study_participant_alias1
 from MiqaResearch.data.models import (
     Clinic,
@@ -68,7 +69,8 @@ def load_participant_consent_rows(
 
 
 def _get_or_create_participant(project: ResearchProject, row: ParticipantConsentRowSchema) -> StudyParticipant:
-    hashed = get_deterministic_hash(row.person_source_value)
+    person_source_value = format_person_source_value(row.person_source_value)
+    hashed = get_deterministic_hash(person_source_value)
     matches = list(StudyParticipant.objects.filter(research_project=project, person_source_value_hash=hashed)[:2])
     if len(matches) > 1:
         raise AmbiguousParticipantReference(
@@ -76,5 +78,5 @@ def _get_or_create_participant(project: ResearchProject, row: ParticipantConsent
     if matches:
         return matches[0]
     return StudyParticipant.objects.create(
-        research_project=project, person_source_value=row.person_source_value, name=row.name,
+        research_project=project, person_source_value=person_source_value, name=row.name,
         alias1=generate_study_participant_alias1())

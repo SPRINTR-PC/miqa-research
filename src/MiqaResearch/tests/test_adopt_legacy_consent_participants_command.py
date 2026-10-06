@@ -128,3 +128,36 @@ def test_fails_when_the_consent_project_setting_is_unset(settings):
 def test_fails_when_the_consent_project_does_not_exist():
     with pytest.raises(CommandError, match=CONSENT_PROJECT):
         _run()
+
+
+@pytest.mark.django_db
+def test_skips_and_reports_a_legacy_participant_whose_person_is_already_in_the_consent_project(consent_project):
+    legacy = StudyParticipant.objects.create(alias1="LEGACY", person_source_value="191212121212")
+    _consent(legacy, consent_project)
+    StudyParticipant.objects.create(
+        alias1="ETL-CREATED", person_source_value="191212121212", research_project=consent_project)
+    clean = _participant("CLEAN")
+    _consent(clean, consent_project)
+
+    output = _run()
+
+    legacy.refresh_from_db()
+    clean.refresh_from_db()
+    assert legacy.research_project is None
+    assert clean.research_project == consent_project
+    assert "Adopted 1 " in output
+    assert "LEGACY" in output and "ETL-CREATED" in output
+    assert "191212121212" not in output  # never print the personnummer
+
+
+@pytest.mark.django_db
+def test_dry_run_also_reports_collisions(consent_project):
+    legacy = StudyParticipant.objects.create(alias1="LEGACY", person_source_value="191212121212")
+    _consent(legacy, consent_project)
+    StudyParticipant.objects.create(
+        alias1="ETL-CREATED", person_source_value="191212121212", research_project=consent_project)
+
+    output = _run("--dry-run")
+
+    assert "Would adopt 0 " in output
+    assert "LEGACY" in output and "ETL-CREATED" in output

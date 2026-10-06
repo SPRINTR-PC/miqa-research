@@ -9,7 +9,7 @@ import pytest
 
 from MiqaResearch.data.models import DicomFile, DicomSeries, DicomStudy, ResearchProject, StudyParticipant
 from MiqaResearch.tasks.dicom_handling.pipeline import run_ingestion
-from tests.dicom_fixtures import DEFAULT_PATIENT_ID, build_ct_image, build_generic_dataset, write_dicom
+from tests.dicom_fixtures import build_ct_image, build_generic_dataset, write_dicom
 
 
 @pytest.fixture(autouse=True)
@@ -43,7 +43,7 @@ def test_ingestion_creates_linked_record_hierarchy_for_new_participant(research_
     assert StudyParticipant.objects.count() == 1
     participant = StudyParticipant.objects.get()
     assert participant.research_project == research_project
-    assert participant.person_source_value == DEFAULT_PATIENT_ID
+    assert participant.person_source_value == "P1001"  # DEFAULT_PATIENT_ID in the shared format
 
     # Study/Series/File hierarchy, all linked to that participant
     assert DicomStudy.objects.count() == 1
@@ -261,7 +261,7 @@ def test_reingest_for_existing_participant_never_overwrites_demographics(researc
     settings.MEDIA_ROOT = tmp_path / "media"
     existing = StudyParticipant.objects.create(
         alias1="Pre Existing Cat",
-        person_source_value=DEFAULT_PATIENT_ID,
+        person_source_value="P1001",  # stored in the shared format, as after migration 0026
         name="Different^Name",
         year_of_birth=1980,
         month_of_birth= 5,
