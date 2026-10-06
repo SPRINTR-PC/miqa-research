@@ -3,8 +3,8 @@ or edit one. Callers must pre-validate input (see `MiqaResearch.interfaces.http.
 including that the source and (under "move" Raw Retention) raw bucket/prefix fall within the
 project's `EtlLocationGrant`s, and that only an Admin switches a Binding into "delete" --
 this module only re-checks the parts that need a DB round trip: that the chosen Script Version is
-still usable for this project, and that no other Binding already claims the same source
-bucket/prefix.
+still usable for this project, that the config satisfies its config schema (#238), and that no
+other Binding already claims the same source bucket/prefix.
 
 An edit never touches the source bucket/prefix: it is the Binding's identity (the processed-file
 ledger is keyed on it). A Job already queued keeps its own Script Version, config and Raw
@@ -19,9 +19,10 @@ from contract.constants.etl import (
     PIPELINE_BINDING_RAW_RETENTION_MOVE,
 )
 from MiqaResearch.data.models import EtlScriptVersion, PipelineBinding
+from MiqaResearch.etl_config_schema import ConfigSchema
 
 from .audit import record_etl_event
-from .exceptions import EtlBindingConflict, EtlScriptVersionNotUsable
+from .exceptions import EtlBindingConfigInvalid, EtlBindingConflict, EtlScriptVersionNotUsable
 
 
 async def create_pipeline_binding(
@@ -30,6 +31,7 @@ async def create_pipeline_binding(
         quiescence_seconds=None, config=None,
         timeout_seconds_override=None, memory_mb_override=None, cpu_millicores_override=None) -> PipelineBinding:
     script_version = await _usable_script_version(project, script_version_id)
+    _require_config_fits(script_version, config or {})
 
     already_bound = await PipelineBinding.objects.filter(
         source_bucket=source_bucket, source_prefix=source_prefix).aexists()
@@ -54,10 +56,13 @@ async def update_pipeline_binding(
         *, project, user, request, binding, script_version_id, raw_bucket, raw_prefix,
         grouping_mode, raw_retention, quiescence_seconds=None, config=None,
         timeout_seconds_override=None, memory_mb_override=None, cpu_millicores_override=None) -> PipelineBinding:
+    script_version = await _usable_script_version(project, script_version_id)
+    _require_config_fits(script_version, config or {})
+
     grouping_changed = grouping_mode != binding.grouping_mode
     raw_retention_previous = binding.raw_retention
     binding.raw_retention = raw_retention
-    binding.script_version = await _usable_script_version(project, script_version_id)
+    binding.script_version = script_version
     binding.raw_bucket = raw_bucket
     binding.raw_prefix = raw_prefix
     binding.grouping_mode = grouping_mode
@@ -92,6 +97,14 @@ async def _usable_script_version(project, script_version_id) -> EtlScriptVersion
     if script.archived_at is not None or not is_own_or_native:
         raise EtlScriptVersionNotUsable("The chosen Script Version is no longer usable for this project.")
     return script_version
+
+
+def _require_config_fits(script_version: EtlScriptVersion, config: dict) -> None:
+    if script_version.config_schema is None:
+        return
+    errors = ConfigSchema(script_version.config_schema).errors(config)
+    if errors:
+        raise EtlBindingConfigInvalid(" ".join(error.message for error in errors))
 
 
 def _quiescence_kwargs(quiescence_seconds) -> dict:

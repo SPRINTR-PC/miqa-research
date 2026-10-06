@@ -10,9 +10,10 @@ from MiqaResearch.interfaces.http.forms.etl import (
     EtlBindingEditForm,
     EtlProjectSettingsForm,
     EtlScriptCreateForm,
+    EtlScriptVersionCreateForm,
 )
 from MiqaResearch.readers.etl_reader import (
-    get_bindable_script_version_choices,
+    get_bindable_script_versions,
     get_native_scripts,
     get_project_bindings,
     get_project_custom_scripts,
@@ -20,6 +21,8 @@ from MiqaResearch.readers.etl_reader import (
     get_project_location_grants,
     get_project_max_script_source_bytes,
     get_project_settings,
+    script_version_choices,
+    script_version_config_schemas,
 )
 from MiqaResearch.readers.participant_consent_reader import (
     get_project_consent_count,
@@ -198,13 +201,21 @@ def _binding_edit_initial(binding) -> dict:
     }
 
 
+def binding_edit_auto_id(binding) -> str:
+    """Field ids for one Binding's Edit form -- unique per Binding, since every Edit form shares the
+    page. The config-fields swap (#238) must render with the same ids its form already uses."""
+    return f"id_binding_{binding.id}_%s"
+
+
 async def binding_form_kwargs(project, permissions) -> dict:
     """What every Binding wizard/Edit form is built with: the project's location grants and bindable
-    Script Versions (pre-fetched -- a form can't query the DB inside an async view), and whether
-    this user may choose "delete" Raw Retention (Admin only, #246)."""
+    Script Versions with their config schemas (pre-fetched -- a form can't query the DB inside an
+    async view), and whether this user may choose "delete" Raw Retention (Admin only, #246)."""
+    versions = await get_bindable_script_versions(project)
     return {
         'location_grants': await get_project_location_grants(project),
-        'script_version_choices': await get_bindable_script_version_choices(project),
+        'script_version_choices': script_version_choices(versions),
+        'config_schemas': script_version_config_schemas(versions),
         'can_choose_delete': permissions.can_manage_admin_only,
     }
 
@@ -222,6 +233,9 @@ async def etl_section_context(project, permissions, section) -> dict:
         if permissions.can_manage:
             max_source_bytes = await get_project_max_script_source_bytes(project)
             context['script_create_form'] = EtlScriptCreateForm(max_source_bytes=max_source_bytes)
+            # One unbound form rendered into every custom Script's "Add version" (no ids: many per page).
+            context['script_version_form'] = EtlScriptVersionCreateForm(
+                max_source_bytes=max_source_bytes, auto_id=False)
             context['datatype_names'] = registered_datatype_names()
 
     elif section == ETL_SECTION_BINDINGS:
@@ -233,7 +247,7 @@ async def etl_section_context(project, permissions, section) -> dict:
             for binding in context['bindings']:
                 binding.edit_form = EtlBindingEditForm(
                     **form_kwargs, current_raw_retention=binding.raw_retention,
-                    initial=_binding_edit_initial(binding), auto_id=f"id_binding_{binding.id}_%s",
+                    initial=_binding_edit_initial(binding), auto_id=binding_edit_auto_id(binding),
                 )
 
     elif section == ETL_SECTION_JOBS:

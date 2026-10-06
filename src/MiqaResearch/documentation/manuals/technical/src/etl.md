@@ -145,6 +145,8 @@ erDiagram
   - Holds `version` (1, 2, …), `source` (a file), `sha256` of the source bytes, and
     `image_key`, which is the sandbox image the source is written for (see
     [Sandbox images](#heading-etl-sandbox-images)).
+  - `config_schema` is an optional JSON Schema (Draft 2020-12) that a Binding's config must
+    satisfy (see [Config schemas](#heading-etl-config-schema)). Null keeps config free-form.
   - Once created, a version can never be updated. `save()` on an existing row and a bulk
     queryset `update()` both raise.
   - Source files are stored locally, or in S3 when `MIRES_ETL_SCRIPT_STORAGE_BACKEND=s3`.
@@ -165,8 +167,8 @@ erDiagram
     (`polling.rehome_backlog_after_grouping_change`). A switch to folder starts fresh quiescence
     windows for files that were seen but not yet queued. A switch to per-file drops the groups.
   - `grouping_mode` is `file` or `folder`, with a `quiescence_seconds` window for folders.
-  - `config` is a JSON object passed to the Script as `ctx.config`. It is not yet validated
-    against a per-Script-Version schema.
+  - `config` is a JSON object passed to the Script as `ctx.config`. When the pinned Version has
+    a `config_schema`, config is validated against it on create, edit and re-pin.
   - Optional overrides for sandbox timeout, memory and CPU can only **lower** the platform
     defaults.
 
@@ -609,7 +611,11 @@ they run in the sandbox as `script.py` and a Customized copy has to keep working
 also be run on demand with `manage.py sync_native_etl_scripts`. It mirrors the list into
 `EtlScript` rows (origin `native`, no project, keyed by name):
 
-- A new immutable Version is published only when a source's SHA-256 changes. Bindings keep the
+- A new immutable Version is published only when a source's SHA-256 or its config schema
+  changes. The schema is a `<stem>.schema.json` sidecar next to the source
+  (`csv_participant_consent.schema.json`). A malformed sidecar is logged and that Script gets
+  no new Version until it's fixed, so it can't block a `migrate`; a test checks every shipped
+  sidecar so CI catches it first. Bindings keep the
   Version they pinned until a manager re-pins them.
 - A Native Script that is removed from the list is archived, never deleted.
 - `MIRES_ETL_SYNC_NATIVE_SCRIPTS_ON_MIGRATE=False` turns off the automatic sync. Tests do this.
@@ -617,8 +623,8 @@ also be run on demand with `manage.py sync_native_etl_scripts`. It mirrors the l
 **Customize.** Native Scripts are available to every project, with no per-project toggle.
 Admins and Data Managers can **Customize** one (`actions/etl/scripts.customize_native_script`).
 This creates a project-owned custom Script with the same name, description and Datatype, whose
-version 1 is a copy of the Native Script's latest Version. The copy does not follow later
-upgrades of the Native Script.
+version 1 is a copy of the Native Script's latest Version, config schema included. The copy
+does not follow later upgrades of the Native Script.
 
 (heading-etl-adr-0030)=
 :::{note}
@@ -657,7 +663,63 @@ A Binding's config can override any of these:
 ```
 
 A CSV missing a required column (person, signed date or clinic) fails the Job with exit 1 and
-a message naming the missing column. Config isn't validated against a schema yet (#238).
+a message naming the missing column. Its config schema allows only these keys (and only these
+`columns` keys), so a misspelt key is rejected when the Binding is saved.
+
+(heading-etl-config-schema)=
+## Config schemas
+
+A Script Version can carry a config schema (#238): a JSON Schema, Draft 2020-12, stored as
+`EtlScriptVersion.config_schema`. A custom Script's version gets one from the optional
+**Config schema** upload on **New script** and **Add version**. A Native Script gets one from
+its sidecar file. The upload must be a JSON object that passes `check_schema`
+(`MiqaResearch/etl_config_schema.py`); otherwise it is a form error.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "delimiter": {"type": "string", "maxLength": 1, "title": "Delimiter", "description": "Default: \",\""},
+    "skip_rows": {"type": "integer", "minimum": 0},
+    "strict": {"type": "boolean"},
+    "encoding": {"enum": ["utf-8", "latin-1"]},
+    "columns": {"type": "object"}
+  },
+  "required": ["delimiter"],
+  "additionalProperties": false
+}
+```
+
+**Validation.** The Binding wizard and **Edit** form validate the assembled config against the
+selected Version's schema (`EtlBindingEditForm`). Each error names the key path and is shown
+beside its field, so a create, edit or re-pin with config that doesn't fit is rejected; a
+rejected Edit re-opens with the input kept. `create_pipeline_binding` and
+`update_pipeline_binding` re-check it and raise `EtlBindingConfigInvalid`. Config isn't
+re-checked when a Job runs; a Binding saved before its Version had a schema keeps its config
+until it is next edited.
+
+**Generated fields.** With a schema, the form shows one field per top-level `properties`
+entry, named `config__<key>`, labelled by `title` (or the key) with `description` as help text:
+
+| Property | Field |
+|---|---|
+| `enum` | Select of the enum values |
+| `"type": "boolean"` | Select: unset, Yes, No |
+| `"type": "string"` | Text |
+| `"type": "integer"` / `"number"` | Number |
+| anything else (array, object, union) | JSON textarea |
+
+Keys in `required` make their field required. An empty field leaves the key out, so the
+Script's own default applies; in a JSON textarea, `null` sets the key to null. Unless the schema
+sets `"additionalProperties": false`, an **Additional config** JSON box keeps the keys that
+aren't listed as properties. The box also appears, even then, for a value no field can show (an
+empty string, a value outside an enum, a wrong type), so a saved value is never silently lost.
+
+Changing **Script & version** sends the whole form (minus the CSRF token) to
+`dashboard_tab_etl_binding_config_fields` (HTMX). The fragment's hidden `config_fields_for`
+names the Version its fields were rendered for; the endpoint reads the typed config under that
+Version (`EtlBindingEditForm.entered_config`) and renders the new Version's fields filled in
+with it.
 
 (heading-etl-configuration)=
 ## Configuration reference
@@ -698,12 +760,6 @@ they are loaded.
 
 (heading-etl-limitations)=
 ## Current limitations
-
-The following reflects the code as shipped. Each gap has a follow-up issue:
-
-- **Binding config isn't validated against a schema**
-  ([#238](https://github.com/SPRINTR-PC/miqa-research/issues/238)). Config is a free-form JSON
-  object, so a wrong key only shows up as a failed Job.
 
 `EtlLocationGrant` rows are managed only in the Django admin. This is intended: grants are
 operator-managed per #156.

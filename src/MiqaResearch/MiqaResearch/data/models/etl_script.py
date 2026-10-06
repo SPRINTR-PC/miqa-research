@@ -76,6 +76,10 @@ class EtlScriptVersion(models.Model):
         max_length=100, blank=True, default="",
         help_text="Sandbox image key (language + runtime + release) this Version's source is written "
                    "against; resolved through the platform's image allowlist at run time.")
+    config_schema = models.JSONField(
+        blank=True, null=True,
+        help_text="Optional JSON Schema a Binding's config must satisfy to pin this Version (#238); "
+                   "null keeps config free-form.")
     created_at = models.DateTimeField(auto_now_add=True)
 
     objects = EtlScriptVersionQuerySet.as_manager()

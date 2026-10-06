@@ -17,6 +17,10 @@ class EtlScriptVersionNotUsable(EtlActionError):
     or its Script has since been archived."""
 
 
+class EtlBindingConfigInvalid(EtlActionError):
+    """The Binding's config doesn't satisfy its Script Version's config schema (#238)."""
+
+
 class EtlJobStateError(EtlActionError):
     """The target EtlJob can't be manually retried: it didn't fail, or its Binding already has
     another Job pending or running."""

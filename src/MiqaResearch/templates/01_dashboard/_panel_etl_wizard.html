@@ -22,9 +22,7 @@
     <label class="etl-field"><span>{% translate "Quiescence (seconds, folder grouping only; default 300)" %}</span>{{ binding_create_form.quiescence_seconds }}
       {% for error in binding_create_form.quiescence_seconds.errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
     </label>
-    <label class="etl-field"><span>{% translate "Script config (JSON object, optional -- passed to the script as ctx.config)" %}</span>{{ binding_create_form.config }}
-      {% for error in binding_create_form.config.errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
-    </label>
+    {% include '01_dashboard/_etl_binding_config.html' with form=binding_create_form binding=None %}
     <details class="etl-wizard-step">
       <summary>{% translate "Sandbox overrides (optional -- may only lower the platform default, never raise it)" %}</summary>
       <div class="etl-wizard-step-body">

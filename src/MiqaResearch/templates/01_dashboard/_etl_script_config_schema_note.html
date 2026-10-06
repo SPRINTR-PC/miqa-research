@@ -1,0 +1,1 @@
+{% load i18n %}{% if script.config_schema_version_count %}<p class="text-sm text-muted-foreground">{% translate "Config schema" %}: {% blocktranslate count count=script.config_schema_version_count %}declared by {{ count }} version{% plural %}declared by {{ count }} versions{% endblocktranslate %}</p>{% endif %}
