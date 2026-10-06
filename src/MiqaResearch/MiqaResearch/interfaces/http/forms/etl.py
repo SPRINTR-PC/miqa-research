@@ -17,12 +17,13 @@ from contract.constants.etl import (
     PIPELINE_BINDING_RAW_RETENTION_DELETE,
     PIPELINE_BINDING_RAW_RETENTION_MOVE,
 )
+from MiqaResearch.etl_config_schema import ConfigSchema, ConfigSchemaInvalid, parse_config_schema
 
 
-class _ScriptSourceSizeMixin:
-    """Shared `source` checks for the two forms that accept an EtlScriptVersion upload: its size,
-    and that its file extension names a language a sandbox image runs (#166). Also the Version's
-    optional config schema (#238), which must be a valid JSON Schema object."""
+class _ScriptVersionUploadMixin:
+    """Shared checks for the two forms that upload an EtlScriptVersion: the `source` file's size,
+    and that its extension names a language a sandbox image runs (#166); and the optional config
+    schema (#238), which must be a valid JSON Schema object."""
 
     def __init__(self, *args, max_source_bytes, **kwargs):
         self.max_source_bytes = max_source_bytes
@@ -43,8 +44,6 @@ class _ScriptSourceSizeMixin:
         return source
 
     def clean_config_schema(self):
-        from MiqaResearch.etl_config_schema import ConfigSchemaInvalid, parse_config_schema
-
         upload = self.cleaned_data["config_schema"]
         if not upload:
             return None
@@ -57,7 +56,8 @@ class _ScriptSourceSizeMixin:
 def _config_schema_field():
     return forms.FileField(
         label=_("Config schema (optional JSON Schema)"), required=False,
-        help_text=_("Bindings' config must satisfy it; leave empty to keep config free-form."))
+        help_text=_("Bindings' config must satisfy it; leave empty to keep config free-form."),
+        widget=forms.ClearableFileInput(attrs={"accept": ".json,application/json"}))
 
 
 def _datatype_choices() -> list[tuple[str, str]]:
@@ -67,7 +67,7 @@ def _datatype_choices() -> list[tuple[str, str]]:
     return [(name, name) for name in registered_datatype_names()]
 
 
-class EtlScriptCreateForm(_ScriptSourceSizeMixin, forms.Form):
+class EtlScriptCreateForm(_ScriptVersionUploadMixin, forms.Form):
     name = forms.CharField(max_length=100)
     description = forms.CharField(required=False, widget=forms.Textarea)
     datatype = forms.ChoiceField(label=_("Datatype"))
@@ -89,39 +89,45 @@ class EtlScriptEditForm(forms.Form):
         self.fields["datatype"].choices = [("", ""), *_datatype_choices()]
 
 
-class EtlScriptVersionCreateForm(_ScriptSourceSizeMixin, forms.Form):
-    source = forms.FileField()
+class EtlScriptVersionCreateForm(_ScriptVersionUploadMixin, forms.Form):
+    source = forms.FileField(label=_("Source file"))
     config_schema = _config_schema_field()
 
 
 CONFIG_FIELD_PREFIX = "config__"
 
 
-def _generated_config_field(key, prop, *, required) -> forms.Field:
-    """A form field for one top-level config-schema property (#238). Enums and booleans post
-    their JSON encoding; anything that isn't a scalar is entered as JSON."""
+_NO_INITIAL = object()
+
+
+def _generated_config_field(key, prop, *, required, initial=_NO_INITIAL) -> forms.Field:
+    """A form field for one top-level config-schema property (#238), showing `initial` (the
+    Binding's current value) if given. Enums and booleans post their JSON encoding, so that is
+    also how their initial value is shown; anything that isn't a scalar is entered as JSON."""
     kwargs = {"label": prop.get("title") or key, "required": required, "help_text": prop.get("description", "")}
-    if "enum" in prop:
-        choices = [(json.dumps(value), str(value)) for value in prop["enum"]]
-        return forms.TypedChoiceField(choices=[("", "---------"), *choices], coerce=json.loads, empty_value=None,
-                                      **kwargs)
+    if "enum" in prop or prop.get("type") == "boolean":
+        if "enum" in prop:
+            choices = [(json.dumps(value), str(value)) for value in prop["enum"]]
+        else:
+            choices = [("true", _("Yes")), ("false", _("No"))]
+        field = forms.TypedChoiceField(
+            choices=[("", "---------"), *choices], coerce=json.loads, empty_value=None, **kwargs)
+        if initial is not _NO_INITIAL:
+            field.initial = json.dumps(initial)
+        return field
+
     match prop.get("type"):
-        case "boolean":
-            return forms.TypedChoiceField(
-                choices=[("", "---------"), ("true", _("Yes")), ("false", _("No"))], coerce=json.loads,
-                empty_value=None, **kwargs)
         case "string":
-            return forms.CharField(**kwargs)
+            field = forms.CharField(**kwargs)
         case "integer":
-            return forms.IntegerField(**kwargs)
+            field = forms.IntegerField(**kwargs)
         case "number":
-            return forms.FloatField(**kwargs)
+            field = forms.FloatField(**kwargs)
         case _:
-            return forms.JSONField(widget=forms.Textarea(attrs={"rows": 3}), **kwargs)
-
-
-def _generated_config_initial(field, value):
-    return json.dumps(value) if isinstance(field, forms.TypedChoiceField) else value
+            field = forms.JSONField(widget=forms.Textarea(attrs={"rows": 3}), **kwargs)
+    if initial is not _NO_INITIAL:
+        field.initial = initial
+    return field
 
 
 class EtlBindingEditForm(forms.Form):
@@ -155,8 +161,9 @@ class EtlBindingEditForm(forms.Form):
         self.fields["script_version"].choices = script_version_choices
         # #238: the selected Version's config schema, if it has one, replaces the free-form JSON box
         # with one field per top-level property.
-        self.config_schema = (config_schemas or {}).get(self._selected_script_version_id())
-        self._generated_config_keys = {}
+        schema = (config_schemas or {}).get(self._selected_script_version_id())
+        self.config_schema = ConfigSchema(schema) if schema is not None else None
+        self._config_field_names = {}  # config key -> generated field name
         if self.config_schema is not None:
             self._add_generated_config_fields()
 
@@ -173,7 +180,7 @@ class EtlBindingEditForm(forms.Form):
         return [field for field in self if self._is_config_field(field.name)]
 
     def _is_config_field(self, name) -> bool:
-        return name == "config" or name in self._generated_config_keys
+        return name == "config" or name in self._config_field_names.values()
 
     def _selected_script_version_id(self):
         if self.is_bound:
@@ -182,17 +189,14 @@ class EtlBindingEditForm(forms.Form):
         return self.initial.get("script_version") or (choices[0][0] if choices else None)
 
     def _add_generated_config_fields(self):
-        schema = self.config_schema
-        properties = {key: prop for key, prop in (schema.get("properties") or {}).items() if isinstance(prop, dict)}
-        required = set(schema.get("required") or [])
+        properties = self.config_schema.properties
+        required = self.config_schema.required
         initial_config = self.initial.get("config") or {}
         generated = {}
         for key, prop in properties.items():
-            name = f"{CONFIG_FIELD_PREFIX}{key}"
-            generated[name] = _generated_config_field(key, prop, required=key in required)
-            self._generated_config_keys[name] = key
-            if key in initial_config:
-                self.initial[name] = _generated_config_initial(generated[name], initial_config[key])
+            name = self._config_field_names[key] = f"{CONFIG_FIELD_PREFIX}{key}"
+            generated[name] = _generated_config_field(
+                key, prop, required=key in required, initial=initial_config.get(key, _NO_INITIAL))
 
         names = list(self.fields)
         config_index = names.index("config")
@@ -204,7 +208,7 @@ class EtlBindingEditForm(forms.Form):
         # A schema that allows no other keys drops the box -- unless the Binding's config (or the
         # posted form) still has some: they then show up there and fail validation, rather than
         # silently vanishing on a re-pin.
-        if schema.get("additionalProperties") is False and not unlisted_config and not self._posted_config():
+        if not self.config_schema.allows_unlisted_keys and not unlisted_config and not self._posted_config():
             del self.fields["config"]
         elif properties:
             self.fields["config"].label = _("Additional config (JSON object)")
@@ -217,22 +221,21 @@ class EtlBindingEditForm(forms.Form):
     def _clean_config_against_schema(self, cleaned):
         """Assembles the generated fields (and any additional keys) into one config, then checks it
         against the selected Version's schema -- so a re-pin is rejected until the config fits."""
-        from MiqaResearch.etl_config_schema import config_errors
-
         # A field that already failed would only be reported again, as a missing key.
-        if self.config_schema is None or any(name in self.errors for name in ("config", *self._generated_config_keys)):
+        config_field_names = ("config", *self._config_field_names.values())
+        if self.config_schema is None or any(name in self.errors for name in config_field_names):
             return
         config = dict(cleaned.get("config") or {})
-        for name, key in self._generated_config_keys.items():
+        for key, name in self._config_field_names.items():
             value = cleaned.get(name)
             if value is not None and value != "":
                 config[key] = value
         cleaned["config"] = config
-        for key, message in config_errors(self.config_schema, config):
-            field = f"{CONFIG_FIELD_PREFIX}{key}" if key is not None else None
-            if field not in self.fields:
+        for error in self.config_schema.errors(config):
+            field = self._config_field_names.get(error.key)
+            if field is None:
                 field = "config" if "config" in self.fields else None
-            self.add_error(field, message)
+            self.add_error(field, error.message)
 
     @property
     def confirm_delete_required(self) -> bool:

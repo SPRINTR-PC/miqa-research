@@ -44,6 +44,7 @@ from .tabs import (
     ETL_SECTION_JOBS,
     ETL_SECTION_SCRIPTS,
     _htmx_tab_response,
+    binding_edit_auto_id,
     binding_form_kwargs,
     etl_section_context,
 )
@@ -253,7 +254,7 @@ async def etl_binding_config_fields(request, project_id):
     if binding_id := request.GET.get('binding'):
         binding = await aget_object_or_404(PipelineBinding, id=_uuid_or_404(binding_id), project=research_project)
         initial['config'] = binding.config
-        auto_id = f'id_binding_{binding.id}_%s'
+        auto_id = binding_edit_auto_id(binding)
     form = EtlBindingEditForm(
         **await binding_form_kwargs(research_project, permissions), initial=initial, auto_id=auto_id)
     return render(request, '01_dashboard/_etl_binding_config_fields.html', {'form': form})

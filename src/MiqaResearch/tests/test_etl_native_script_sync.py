@@ -12,7 +12,7 @@ from django.core.management import call_command
 from contract.constants.etl import ETL_SCRIPT_ORIGIN_NATIVE
 from MiqaResearch import etl_native_scripts
 from MiqaResearch.data.models import EtlScript, EtlScriptVersion
-from MiqaResearch.etl_config_schema import ConfigSchemaInvalid, config_errors
+from MiqaResearch.etl_config_schema import ConfigSchema, ConfigSchemaInvalid
 from MiqaResearch.etl_native_scripts import NativeScript
 
 
@@ -138,6 +138,7 @@ def test_the_shipped_consent_script_declares_a_config_schema_accepting_its_docum
             "participant_information_version": "participant_information_version",
             "ignore": ["Senast Uppdaterad", "Kommentar"]},
     }
-    assert config_errors(version.config_schema, documented_defaults) == []
-    assert config_errors(version.config_schema, {}) == []
-    assert config_errors(version.config_schema, {"delimeter": ";"}) != []
+    schema = ConfigSchema(version.config_schema)
+    assert schema.errors(documented_defaults) == []
+    assert schema.errors({}) == []
+    assert schema.errors({"delimeter": ";"}) != []

@@ -54,8 +54,9 @@
               <summary class="btn">{% translate "Add version" %}</summary>
               <form method="post" enctype="multipart/form-data" hx-post="{% url 'dashboard_tab_etl_script_version_create' project.id script.id %}" hx-target="#etl-section-panel" hx-swap="innerHTML" hx-encoding="multipart/form-data">
                 {% csrf_token %}
-                <label class="etl-field"><span>{% translate "Source file" %}</span><input type="file" name="source" required></label>
-                <label class="etl-field"><span>{% translate "Config schema (optional JSON Schema)" %}</span><input type="file" name="config_schema" accept=".json,application/json"></label>
+                {% for field in script_version_form %}
+                <label class="etl-field"><span>{{ field.label }}</span>{{ field }}</label>
+                {% endfor %}
                 <button class="btn" type="submit">{% translate "Upload version" %}</button>
               </form>
             </details>

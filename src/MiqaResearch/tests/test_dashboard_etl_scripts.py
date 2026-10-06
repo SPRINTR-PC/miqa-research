@@ -559,3 +559,18 @@ def test_the_scripts_section_shows_which_versions_declare_a_config_schema(projec
     response = _client_as(_user_with_role(project, "Data Manager")).get(_scripts_url(project), **HTMX)
 
     assert "Config schema" in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_add_version_offers_a_required_source_and_an_optional_config_schema_upload(project):
+    script = EtlScript.objects.create(name="Script", origin=ETL_SCRIPT_ORIGIN_CUSTOM, project=project)
+    script.versions.create(version=1, source=_upload(), sha256="0" * 64)
+
+    response = _client_as(_user_with_role(project, "Data Manager")).get(_scripts_url(project), **HTMX)
+
+    version_form = re.search(r'<form[^>]*/versions/"[^>]*>.*?</form>', response.content.decode(), re.S)
+    assert version_form is not None
+    assert re.search(r'<input type="file" name="source"[^>]*required', version_form.group(0))
+    config_schema_input = re.search(r'<input type="file" name="config_schema"[^>]*>', version_form.group(0))
+    assert config_schema_input is not None
+    assert "required" not in config_schema_input.group(0)
