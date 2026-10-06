@@ -206,8 +206,8 @@ loads the export, and the Binding's config sets the column names (see
 | `MIRES_TASK_CONSENT_RESOURCE` | *(none)* | ADFS resource identifier requested for the consent source token. |
 | `MIRES_TASK_CONSENT_BASE_URL` | *(none)* | Base URL of the consent source API. |
 | `MIRES_TASK_CONSENT_UPLOAD_BUCKET` | *(none)* | ETL source bucket the export is written to, with the `MIRES_ETL_S3_*` credential. Required. |
-| `MIRES_TASK_CONSENT_UPLOAD_PREFIX` | `""` | Key prefix; each export is written to `<prefix><form_id>/<UTC timestamp>.csv`. |
-| `MIRES_TASK_CONSENT_RESEARCH_PROJECT_NAME` | *(none)* | The consent project. The consent upload API files new consent types under it, and `adopt_legacy_consent_participants` moves legacy participants into it. |
+| `MIRES_TASK_CONSENT_UPLOAD_PREFIX` | `""` | Key prefix for each export. See [SamtyckenUmu consent task](#heading-etl-samtycken-task) for the key layout. |
+| `MIRES_TASK_CONSENT_RESEARCH_PROJECT_NAME` | *(none)* | The Consent Project. The consent upload API files new consent types under it, and `adopt_legacy_consent_participants` adopts Legacy Consent Participants into it. |
 
 ## Initial data seeding
 

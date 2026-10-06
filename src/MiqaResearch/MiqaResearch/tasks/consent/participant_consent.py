@@ -19,8 +19,8 @@ logger = logging.getLogger("mires")
 async def fetch_participant_consent(form_id: str, separator: str = ",", from_date: str = None, to_date: str = None):
     """
     Fetches a SamtyckenUmu consent export (ADFS M2M authentication) and writes it, unchanged, to
-    <MIRES_TASK_CONSENT_UPLOAD_PREFIX><form_id>/<UTC timestamp>.csv in MIRES_TASK_CONSENT_UPLOAD_BUCKET.
-    The Pipeline Binding on that location (native "CSV -> participant consent" script) loads it (#241).
+    MIRES_TASK_CONSENT_UPLOAD_BUCKET under `_export_key`. The Pipeline Binding on that location
+    (native "CSV -> participant consent" script) loads it (#241).
     """
     if not (bucket := settings.TASK_CONSENT_UPLOAD_BUCKET):
         raise ValueError("MIRES_TASK_CONSENT_UPLOAD_BUCKET is not set; nowhere to write the consent export.")
@@ -34,11 +34,12 @@ async def fetch_participant_consent(form_id: str, separator: str = ",", from_dat
 
     if (status_code := get_csv_data_response.status_code) == 200:
         logger.info("Successfully fetched participant consent CSV data from API")
-        key = f"{settings.TASK_CONSENT_UPLOAD_PREFIX}{form_id}/{timezone.now():%Y%m%dT%H%M%SZ}.csv"
+        key = _export_key(form_id)
         await asyncio.to_thread(
             build_etl_s3_client().put_object, Bucket=bucket, Key=key, Body=get_csv_data_response.content)
-        logger.info(f"Wrote participant consent export to s3://{bucket}/{key}")
-        return f"s3://{bucket}/{key}"
+        uri = f"s3://{bucket}/{key}"
+        logger.info(f"Wrote participant consent export to {uri}")
+        return uri
     elif status_code == 400:
         msg = "Invalid parameters for CSV fetch (HTTP 400)."
         logger.error(msg)
@@ -55,6 +56,11 @@ async def fetch_participant_consent(form_id: str, separator: str = ",", from_dat
         msg = f"Unexpected response from CSV fetch: HTTP {status_code}"
         logger.error(msg)
         raise Exception(msg)
+
+
+def _export_key(form_id: str) -> str:
+    """The one place the upload key layout is defined: <prefix><form_id>/<UTC timestamp>.csv."""
+    return f"{settings.TASK_CONSENT_UPLOAD_PREFIX}{form_id}/{timezone.now():%Y%m%dT%H%M%SZ}.csv"
 
 
 async def _get_access_token(client: AsyncClient):

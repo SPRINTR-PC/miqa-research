@@ -6,16 +6,16 @@ from MiqaResearch.data.models import ParticipantConsent, ResearchProject, StudyP
 
 class Command(BaseCommand):
     help = (
-        "Move Study Participants the legacy SamtyckenUmu consent task created without a project into the "
-        "consent project (MIRES_TASK_CONSENT_RESEARCH_PROJECT_NAME), if they have a consent of that project's "
-        "types. Run once before the first ETL consent import: the participant_consent Datatype matches "
-        "participants per project and would otherwise create duplicates (#241). Idempotent."
+        "Adopt every Legacy Consent Participant (no project, but a consent of a Consent Project type) into "
+        "the Consent Project (MIRES_TASK_CONSENT_RESEARCH_PROJECT_NAME). Run once before the first ETL "
+        "consent import: the participant_consent Datatype matches participants per project and would "
+        "otherwise create duplicates (#241). Idempotent."
     )
 
     def add_arguments(self, parser):
         parser.add_argument("--dry-run", action="store_true", help="Report how many would be adopted; change nothing.")
 
-    def handle(self, *args, dry_run: bool = False, **options):
+    def handle(self, *args, **options):
         if not (project_name := settings.TASK_CONSENT_RESEARCH_PROJECT_NAME):
             raise CommandError("MIRES_TASK_CONSENT_RESEARCH_PROJECT_NAME is not set.")
         try:
@@ -28,7 +28,7 @@ class Command(BaseCommand):
             id__in=ParticipantConsent.objects.filter(
                 consent_type__research_project=project).values("study_participant_id"),
         )
-        if dry_run:
+        if options["dry_run"]:
             self.stdout.write(f"Would adopt {legacy_participants.count()} participant(s) into {project_name!r}.")
             return
         adopted = legacy_participants.update(research_project=project)

@@ -704,7 +704,7 @@ TASK_CONSENT_RESOURCE = env("MIRES_TASK_CONSENT_RESOURCE")
 TASK_CONSENT_CLIENT_ID, TASK_CONSENT_CLIENT_SECRET = _get_consent_client_id_and_secret()
 TASK_CONSENT_BASE_URL = env("MIRES_TASK_CONSENT_BASE_URL")
 TASK_CONSENT_RESEARCH_PROJECT_NAME: str = env("MIRES_TASK_CONSENT_RESEARCH_PROJECT_NAME")
-# Where fetch_participant_consent writes each export (<prefix><form_id>/<UTC timestamp>.csv), via the
+# Where fetch_participant_consent writes each export (key layout: its `_export_key`), via the
 # MIRES_ETL_S3_* credential. A Pipeline Binding on that location loads it (#241).
 TASK_CONSENT_UPLOAD_BUCKET: str | None = env("MIRES_TASK_CONSENT_UPLOAD_BUCKET")
 TASK_CONSENT_UPLOAD_PREFIX: str = env("MIRES_TASK_CONSENT_UPLOAD_PREFIX")

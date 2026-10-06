@@ -360,6 +360,19 @@ rather than plaintext query. Identified pseudonymously per Research Project via
 `alias1`.
 _Avoid_: Patient, Subject
 
+### Consent Project
+The Research Project named by `MIRES_TASK_CONSENT_RESEARCH_PROJECT_NAME`. It owns
+the SamtyckenUmu consent types and the Pipeline Binding that loads the consent
+exports. See ADR 0033.
+
+### Legacy Consent Participant
+A Study Participant with no Research Project that has a consent of a Consent
+Project consent type, left by the SamtyckenUmu task's former load path.
+**Adopting** one sets its Research Project to the Consent Project
+(`adopt_legacy_consent_participants`), so ETL consent loads match it instead of
+creating a duplicate. See ADR 0033.
+_Avoid_: orphan participant
+
 ### Dicom Study
 One DICOM study belonging to a Study Participant, represented by the
 `DicomStudy` model (`study_instance_uid`). Optionally links to a
@@ -674,25 +687,25 @@ Native Script (ADR 0031) do the same load per project, with Job history, and
 record revocations (#241).
 
 **Decision**: `fetch_participant_consent` only fetches the export and writes it
-unchanged to `<MIRES_TASK_CONSENT_UPLOAD_PREFIX><form_id>/<UTC timestamp>.csv`
-in `MIRES_TASK_CONSENT_UPLOAD_BUCKET`, with the platform ETL S3 credential.
-An operator grants that location to the consent project
-(`MIRES_TASK_CONSENT_RESEARCH_PROJECT_NAME`) and creates a per-file Binding on
+unchanged, one object per fetch, under `MIRES_TASK_CONSENT_UPLOAD_PREFIX` in
+`MIRES_TASK_CONSENT_UPLOAD_BUCKET`, with the platform ETL S3 credential (key
+layout: Technical Manual, "SamtyckenUmu consent task"). An operator grants that
+location to the Consent Project and creates a per-file Binding on
 it running the native "CSV → participant consent" Script, with Raw Retention
 "delete" (ADR 0032). The task never creates Bindings. Its own parsing and
 upsert path is removed, with no transition flag. `create_participant_consents`
 stays for the consent upload API. Before the first ETL import,
-`manage.py adopt_legacy_consent_participants` moves project-less participants
-that have a consent of the consent project's types into that project, so the
-Datatype's per-project match finds them.
+`manage.py adopt_legacy_consent_participants` adopts every Legacy Consent
+Participant into the Consent Project, so the Datatype's per-project match finds
+them.
 
 **Consequences**:
 - Consents fetched before the Binding exists wait in the bucket; nothing is
   lost, but nothing is loaded either.
-- Skipping the adoption command duplicates every legacy participant in the
-  consent project. The command is idempotent, so running it again is safe.
+- Skipping the adoption command duplicates every Legacy Consent Participant in
+  the Consent Project. The command is idempotent, so running it again is safe.
 - Project-less participants without such a consent are left as they are.
-- Legacy consent types already belong to the consent project (the legacy task
+- Legacy consent types already belong to the Consent Project (the legacy task
   filed them there), so the Datatype matches them by label as they are.
 - The column-mapping settings (`MIRES_TASK_CONSENT_FORM_COL_*`,
   `_TIMEZONE`, `_SOURCE`) are gone; the Binding's config replaces them.

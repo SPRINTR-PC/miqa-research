@@ -87,7 +87,7 @@ in place, so a revocation in a later export is recorded.
 **ADR 0031.** Consent is how a person enters a study, so for this Datatype an unknown
 personnummer is expected rather than an error. Participants created earlier by the legacy
 SamtyckenUmu task have no project and are not matched until
-`adopt_legacy_consent_participants` moves them (see
+`adopt_legacy_consent_participants` adopts them (see
 [SamtyckenUmu consent task](#heading-etl-samtycken-task)).
 :::
 
@@ -675,21 +675,22 @@ The `fetch_participant_consent` task (#241) only fetches. It writes each Samtyck
 unchanged, to `<MIRES_TASK_CONSENT_UPLOAD_PREFIX><form_id>/<UTC timestamp>.csv` in
 `MIRES_TASK_CONSENT_UPLOAD_BUCKET` (for example `samtycken/1234/20261006T073015Z.csv`), using
 the platform ETL credential (`MIRES_ETL_S3_*`). It fails before fetching if no bucket is set.
-A failed fetch uploads nothing. The task never creates Bindings. An operator sets up loading
-once:
+A failed fetch uploads nothing. The task never creates Bindings. The **Consent Project** is the
+Research Project named by `MIRES_TASK_CONSENT_RESEARCH_PROJECT_NAME`. An operator sets up
+loading once:
 
 1. Run `manage.py adopt_legacy_consent_participants --dry-run`, then without `--dry-run`.
-   It moves participants that the legacy task created without a project, and that have a
-   consent of the consent project's types, into that project
-   (`MIRES_TASK_CONSENT_RESEARCH_PROJECT_NAME`). Other participants are left alone. It is
-   idempotent. Skipping it makes the first ETL import duplicate those participants.
-2. Grant the bucket and prefix to the consent project (`EtlLocationGrant`).
-3. In the consent project, create a per-file Binding on that location running the native
+   It adopts each **Legacy Consent Participant** into the Consent Project: a participant the
+   legacy task created without a project, that has a consent of a Consent Project consent
+   type. Other participants are left alone. It is idempotent. Skipping it makes the first ETL
+   import duplicate those participants.
+2. Grant the bucket and prefix to the Consent Project (`EtlLocationGrant`).
+3. In the Consent Project, create a per-file Binding on that location running the native
    **CSV → participant consent** Script. Set its Raw Retention to **delete**: the exports
    carry personnummer and names (ADR 0032). Put any non-default columns, and the former
    `MIRES_TASK_CONSENT_SOURCE` value as `source`, in the Binding's config.
 
-Legacy consent types already belong to the consent project, so they match as they are.
+Legacy consent types already belong to the Consent Project, so they match as they are.
 
 An export fetched without `from_date`/`to_date` is a full export, so every Job re-upserts all
 consents and records revocations. A non-comma `separator` needs a matching `delimiter` in the
