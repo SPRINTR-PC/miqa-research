@@ -662,6 +662,38 @@ _Avoid_: admin, operator
 | 0030 | Native ETL Scripts shipped as code and synced on migrate; per-project override is a Customize copy | Accepted |
 | 0031 | Participant-consent ETL loads create unknown participants; consent types are per project | Accepted |
 | 0032 | ETL Raw Retention: per-Binding "delete after load" opt-out, Admin-only | Accepted |
+| 0033 | SamtyckenUmu consent task only fetches into an ETL source bucket; legacy participants adopted by command | Accepted |
+
+### ADR 0033 — SamtyckenUmu consent task only fetches into an ETL source bucket; legacy participants adopted by command
+
+**Context**: The SamtyckenUmu consent task fetched each export and loaded it
+itself. It created participants without a project, filed new consent types
+under one configured project and never updated a consent after its first
+import, so revocations were lost. The `participant_consent` Datatype and its
+Native Script (ADR 0031) do the same load per project, with Job history, and
+record revocations (#241).
+
+**Decision**: `fetch_participant_consent` only fetches the export and writes it
+unchanged to `<MIRES_TASK_CONSENT_UPLOAD_PREFIX><form_id>/<UTC timestamp>.csv`
+in `MIRES_TASK_CONSENT_UPLOAD_BUCKET`, with the platform ETL S3 credential.
+An operator grants that location to the consent project
+(`MIRES_TASK_CONSENT_RESEARCH_PROJECT_NAME`) and creates a per-file Binding on
+it running the native "CSV → participant consent" Script, with Raw Retention
+"delete" (ADR 0032). The task never creates Bindings. Its own parsing and
+upsert path is removed, with no transition flag. `create_participant_consents`
+stays for the consent upload API. Before the first ETL import,
+`manage.py adopt_legacy_consent_participants` moves project-less participants
+that have a consent of the consent project's types into that project, so the
+Datatype's per-project match finds them.
+
+**Consequences**:
+- Consents fetched before the Binding exists wait in the bucket; nothing is
+  lost, but nothing is loaded either.
+- Skipping the adoption command duplicates every legacy participant in the
+  consent project. The command is idempotent, so running it again is safe.
+- Project-less participants without such a consent are left as they are.
+- The column-mapping settings (`MIRES_TASK_CONSENT_FORM_COL_*`,
+  `_TIMEZONE`, `_SOURCE`) are gone; the Binding's config replaces them.
 
 ### ADR 0032 — ETL Raw Retention: per-Binding "delete after load" opt-out, Admin-only
 
