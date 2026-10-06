@@ -692,6 +692,8 @@ Datatype's per-project match finds them.
 - Skipping the adoption command duplicates every legacy participant in the
   consent project. The command is idempotent, so running it again is safe.
 - Project-less participants without such a consent are left as they are.
+- Legacy consent types already belong to the consent project (the legacy task
+  filed them there), so the Datatype matches them by label as they are.
 - The column-mapping settings (`MIRES_TASK_CONSENT_FORM_COL_*`,
   `_TIMEZONE`, `_SOURCE`) are gone; the Binding's config replaces them.
 

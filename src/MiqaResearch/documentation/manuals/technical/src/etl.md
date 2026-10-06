@@ -689,7 +689,11 @@ once:
    carry personnummer and names (ADR 0032). Put any non-default columns, and the former
    `MIRES_TASK_CONSENT_SOURCE` value as `source`, in the Binding's config.
 
-Each export is a full export, so every Job re-upserts all consents and records revocations.
+Legacy consent types already belong to the consent project, so they match as they are.
+
+An export fetched without `from_date`/`to_date` is a full export, so every Job re-upserts all
+consents and records revocations. A non-comma `separator` needs a matching `delimiter` in the
+Binding's config.
 
 (heading-etl-adr-0033)=
 :::{note}
