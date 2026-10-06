@@ -5,8 +5,8 @@ Move = copy with a SHA-256 checksum, then verify size and hash against the copy 
 ETag alone), then delete the source.
 Raw-bucket keys nest by Job id, so re-runs never overwrite prior history.
 
-Plain boto3 against the one platform-wide `MIRES_ETL_S3_*` service credential (own client,
-independent of `s3.py`'s poller client and the sandbox runner's/DICOM pipeline's own S3 wrappers),
+Plain boto3 against the one platform-wide `MIRES_ETL_S3_*` service credential (client built by
+`s3.build_etl_s3_client`, independent of the sandbox runner's/DICOM pipeline's own S3 wrappers),
 with per-project bucket isolation enforced in application code via `location_grant_allows`
 (readers/etl_reader.py) -- not per-project RustFS IAM. Within a folder-grouped Job, each input's
 move is independent: one bad file's move failure doesn't block the others.
@@ -16,7 +16,6 @@ from __future__ import annotations
 import hashlib
 from datetime import timedelta
 
-import boto3
 from botocore.exceptions import ClientError
 from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
@@ -34,6 +33,7 @@ from contract.constants.etl import (
 from contract.constants.research_project_role import PROJECT_ROLE_ADMIN, PROJECT_ROLE_DATA_MANAGER
 from MiqaResearch.data.models import AuditLog, EtlJob, EtlJobInput, EtlLocationGrant
 from MiqaResearch.readers.etl_reader import location_grant_allows
+from MiqaResearch.tasks.etl_orchestrator.s3 import build_etl_s3_client
 
 User = get_user_model()
 
@@ -57,7 +57,7 @@ def move_job_inputs(job: EtlJob) -> None:
         return
     binding = job.binding
     grants = list(EtlLocationGrant.objects.filter(project_id=binding.project_id))
-    client = _build_etl_s3_client()
+    client = build_etl_s3_client()
 
     terminal_statuses = (
         ETL_JOB_INPUT_SOURCE_STATUS_MOVED, ETL_JOB_INPUT_SOURCE_STATUS_DELETED,
@@ -198,18 +198,3 @@ def _relative_key(binding, key: str) -> str:
     prefix = binding.source_prefix
     relative = key[len(prefix):] if key.startswith(prefix) else key
     return relative.lstrip("/")
-
-
-def _build_etl_s3_client():
-    from django.conf import settings
-
-    kwargs: dict = {}
-    if settings.ETL_S3_ENDPOINT_URL:
-        kwargs["endpoint_url"] = settings.ETL_S3_ENDPOINT_URL
-    if settings.ETL_S3_REGION_NAME:
-        kwargs["region_name"] = settings.ETL_S3_REGION_NAME
-    if settings.ETL_S3_ACCESS_KEY_ID:
-        kwargs["aws_access_key_id"] = settings.ETL_S3_ACCESS_KEY_ID
-    if settings.ETL_S3_SECRET_ACCESS_KEY:
-        kwargs["aws_secret_access_key"] = settings.ETL_S3_SECRET_ACCESS_KEY
-    return boto3.client("s3", **kwargs)

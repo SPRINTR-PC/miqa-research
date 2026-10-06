@@ -192,7 +192,9 @@ Optical character recognition of uploaded PROM forms is performed by a local
 ## Participant consent
 
 Settings controlling how the participant consent background task authenticates against
-and reads consent records from an external source.
+the consent source and where it writes each export. The task only fetches: an ETL Binding
+loads the export, and the Binding's config sets the column names (see
+[SamtyckenUmu consent task](#heading-etl-samtycken-task)).
 
 | Variable | Default | Description |
 |---|---|---|
@@ -203,28 +205,9 @@ and reads consent records from an external source.
 | `MIRES_TASK_CONSENT_ADFS_TOKEN_URL` | *(none)* | ADFS token endpoint used to obtain an access token for the consent source. |
 | `MIRES_TASK_CONSENT_RESOURCE` | *(none)* | ADFS resource identifier requested for the consent source token. |
 | `MIRES_TASK_CONSENT_BASE_URL` | *(none)* | Base URL of the consent source API. |
-| `MIRES_TASK_CONSENT_SOURCE` | *(none)* | Identifier of the consent data source. |
-| `MIRES_TASK_CONSENT_TIMEZONE` | `Europe/Stockholm` | Timezone consent timestamps are interpreted in. |
-
-The consent source is expected to return tabular data whose column headers are
-configurable, to accommodate different naming conventions in the source system:
-
-| Variable | Default column name |
-|---|---|
-| `MIRES_TASK_CONSENT_FORM_COL_NAME` | `Namn` |
-| `MIRES_TASK_CONSENT_FORM_COL_PID` | `Personnummer` |
-| `MIRES_TASK_CONSENT_FORM_COL_STATUS` | `Status` |
-| `MIRES_TASK_CONSENT_FORM_COL_SIGNED` | `Signerat` |
-| `MIRES_TASK_CONSENT_FORM_COL_LAST_UPDATED` | `Senast Uppdaterad` |
-| `MIRES_TASK_CONSENT_FORM_COL_RETRACTED` | `Återtaget` |
-| `MIRES_TASK_CONSENT_FORM_COL_CLINIC` | `klinik` |
-| `MIRES_TASK_CONSENT_FORM_COL_RESEARCH_PERSON_INFORMATION` | `fpi` |
-| `MIRES_TASK_CONSENT_FORM_COL_READ_INFORMATION` | `Jag har läst och förstått "Information till forskningspersoner"` |
-| `MIRES_TASK_CONSENT_FORM_COL_COMMENT` | `Kommentar` |
-| `MIRES_TASK_CONSENT_FORM_COL_CONSENTED_TRUE_VALUES` | `Ja` |
-
-`MIRES_TASK_CONSENT_FORM_COL_CONSENTED_TRUE_VALUES` accepts a comma-separated list of
-values that should be interpreted as "consent given" when found in the status column.
+| `MIRES_TASK_CONSENT_UPLOAD_BUCKET` | *(none)* | ETL source bucket the export is written to, with the `MIRES_ETL_S3_*` credential. Required. |
+| `MIRES_TASK_CONSENT_UPLOAD_PREFIX` | `""` | Key prefix for each export. See [SamtyckenUmu consent task](#heading-etl-samtycken-task) for the key layout. |
+| `MIRES_TASK_CONSENT_RESEARCH_PROJECT_NAME` | *(none)* | The Consent Project. The consent upload API files new consent types under it, and `adopt_legacy_consent_participants` adopts Legacy Consent Participants into it. |
 
 ## Initial data seeding
 

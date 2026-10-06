@@ -69,7 +69,7 @@ def test_a_sample_script_runs_isolated_in_a_real_container_and_its_rows_load(doc
     settings.SANDBOX_IMAGE_ALLOWLIST = {"python-etl-v1": IMAGE_REF}
     research_project = ResearchProject.objects.create(name="ETL sandbox integration project", description="")
     participant = StudyParticipant.objects.create(
-        alias1="ETL-SANDBOX-P001", person_source_value="SRC-001", research_project=research_project)
+        alias1="ETL-SANDBOX-P001", person_source_value="SRC001", research_project=research_project)
     concept = Concept.objects.create(
         concept_name="Body weight", vocabulary_id="LOINC", concept_class_id="Clinical Observation",
         concept_code="29463-7", valid_start_date=date(2000, 1, 1), valid_end_date=date(2099, 12, 31))

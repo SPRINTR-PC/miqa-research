@@ -61,7 +61,7 @@ def other_research_project(db):
 @pytest.fixture
 def study_participant(research_project):
     return StudyParticipant.objects.create(
-        alias1="ETL-DT-P001", person_source_value="SRC-001", research_project=research_project)
+        alias1="ETL-DT-P001", person_source_value="SRC001", research_project=research_project)
 
 
 def _make_etl_job(project: ResearchProject, prefix: str) -> EtlJob:

@@ -9,6 +9,7 @@ pseudonymous `alias1` via the existing alias generator.
 from pydicom.dataset import Dataset
 
 from helpers.db_fields import get_deterministic_hash
+from helpers.person_source_value import format_person_source_value
 from helpers.study_participant_alias import generate_study_participant_alias1
 from MiqaResearch.data.models import ResearchProject, StudyParticipant
 
@@ -16,9 +17,9 @@ _SEX_TO_GENDER = {"M": "M", "F": "F"}
 
 
 def patient_id_of(ds: Dataset) -> str:
-    """The file's PatientID as a clean string ("" when missing/empty)."""
+    """The file's PatientID in the shared person-identifier format ("" when missing/empty)."""
     raw = ds.get("PatientID")
-    return str(raw).strip() if raw is not None else ""
+    return format_person_source_value(str(raw)) if raw is not None else ""
 
 
 def match_or_create_participant(ds: Dataset, research_project: ResearchProject) -> StudyParticipant:

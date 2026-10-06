@@ -32,7 +32,7 @@ class EtlBucketSource:
     def __init__(self, bucket: str, prefix: str = ""):
         self.bucket = bucket
         self.prefix = prefix
-        self._client = _build_etl_s3_client()
+        self._client = build_etl_s3_client()
 
     def list_objects(self) -> list[EtlObjectRef]:
         """Every object under this source's bucket/prefix, zero-byte directory markers excluded."""
@@ -63,7 +63,7 @@ class EtlBucketSource:
             raise EtlBucketSourceError(f"ETL source object unreadable: {self.bucket}/{key}") from exc
 
 
-def _build_etl_s3_client():
+def build_etl_s3_client():
     from django.conf import settings
 
     kwargs: dict = {}

@@ -266,7 +266,7 @@ def _media_root(tmp_path_factory, settings):
 def test_a_sample_script_run_through_the_shim_then_the_loader_lands_expected_rows(tmp_path):
     research_project = ResearchProject.objects.create(name="ETL shim test project", description="")
     participant = StudyParticipant.objects.create(
-        alias1="ETL-SHIM-P001", person_source_value="SRC-001", research_project=research_project)
+        alias1="ETL-SHIM-P001", person_source_value="SRC001", research_project=research_project)
     concept = Concept.objects.create(
         concept_name="Body weight", vocabulary_id="LOINC", concept_class_id="Clinical Observation",
         concept_code="29463-7", valid_start_date=date(2000, 1, 1), valid_end_date=date(2099, 12, 31))

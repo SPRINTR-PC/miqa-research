@@ -1,30 +1,16 @@
+import asyncio
 import logging
-from io import StringIO
 
 import httpx2
-import polars as pl
 import requests
 from django.conf import settings
 from django.tasks import task
+from django.utils import timezone
 from httpx2 import AsyncClient
 from requests import Response
 
 from contract.constants.celery import QUEUE_GET_CONSENTS
-from helpers.study_participant_alias import generate_study_participant_alias1_list
-from MiqaResearch.actions.consents.participant_consents import create_participant_consents
-from MiqaResearch.data.models import StudyParticipant
-from MiqaResearch.data.serializers.participant_consent import UploadConsentSchema
-from MiqaResearch.settings import (
-    TASK_CONSENT_FORM_COL_CLINIC,
-    TASK_CONSENT_FORM_COL_COMMENT,
-    TASK_CONSENT_FORM_COL_LAST_UPDATED,
-    TASK_CONSENT_FORM_COL_NAME,
-    TASK_CONSENT_FORM_COL_PID,
-    TASK_CONSENT_FORM_COL_RETRACTED,
-    TASK_CONSENT_FORM_COL_SIGNED,
-    TASK_CONSENT_FORM_COL_STATUS,
-    TASK_CONSENT_FORM_CONSENTED_TRUE_VALUES,
-)
+from MiqaResearch.tasks.etl_orchestrator.s3 import build_etl_s3_client
 
 logger = logging.getLogger("mires")
 
@@ -32,18 +18,28 @@ logger = logging.getLogger("mires")
 @task(queue_name=QUEUE_GET_CONSENTS)
 async def fetch_participant_consent(form_id: str, separator: str = ",", from_date: str = None, to_date: str = None):
     """
-    - Fetches participant consent from SamtyckenUmu API using ADFS M2M authentication
-    - Processes the consent data to replace any participant ID with a study ID
-    - Saves the processed consent data to a database or file
+    Fetches a SamtyckenUmu consent export (ADFS M2M authentication) and writes it, unchanged, to
+    MIRES_TASK_CONSENT_UPLOAD_BUCKET under `_export_key`. The Pipeline Binding on that location
+    (native "CSV -> participant consent" script) loads it (#241).
     """
+    if not (bucket := settings.TASK_CONSENT_UPLOAD_BUCKET):
+        raise ValueError("MIRES_TASK_CONSENT_UPLOAD_BUCKET is not set; nowhere to write the consent export.")
+
     async with httpx2.AsyncClient() as client:
         access_token = await _get_access_token(client=client)
 
-        get_csv_data_response = await _get_csv_data(client=client, access_token=access_token, form_id=form_id)
+        get_csv_data_response = await _get_csv_data(
+            client=client, access_token=access_token, form_id=form_id,
+            from_date=from_date, to_date=to_date, separator=separator)
 
     if (status_code := get_csv_data_response.status_code) == 200:
         logger.info("Successfully fetched participant consent CSV data from API")
-        return await _handle_fetched_data(get_csv_data_response.text)
+        key = _export_key(form_id)
+        await asyncio.to_thread(
+            build_etl_s3_client().put_object, Bucket=bucket, Key=key, Body=get_csv_data_response.content)
+        uri = f"s3://{bucket}/{key}"
+        logger.info(f"Wrote participant consent export to {uri}")
+        return uri
     elif status_code == 400:
         msg = "Invalid parameters for CSV fetch (HTTP 400)."
         logger.error(msg)
@@ -60,6 +56,11 @@ async def fetch_participant_consent(form_id: str, separator: str = ",", from_dat
         msg = f"Unexpected response from CSV fetch: HTTP {status_code}"
         logger.error(msg)
         raise Exception(msg)
+
+
+def _export_key(form_id: str) -> str:
+    """The one place the upload key layout is defined: <prefix><form_id>/<UTC timestamp>.csv."""
+    return f"{settings.TASK_CONSENT_UPLOAD_PREFIX}{form_id}/{timezone.now():%Y%m%dT%H%M%SZ}.csv"
 
 
 async def _get_access_token(client: AsyncClient):
@@ -112,124 +113,3 @@ async def _get_csv_data(
     }
 
     return await client.get(export_url, params=params, headers=headers)
-
-
-async def _handle_fetched_data(csv_content: str) -> str:
-    """Handles the fetched consent data by processing and storing it."""
-    try:
-        logger.info("Converting fetched participant consent data to polars DataFrame for processing")
-        consent_data = pl.read_csv(StringIO(csv_content))
-        processed_consent_data: list[UploadConsentSchema] = await _process_consent_data(consent_data)
-
-        logger.info("Storing processed participant consent data to db")
-        created_count, updated_count = await create_participant_consents(new_consents=processed_consent_data)
-        logger.info(f"Successfully stored processed participant consent data to db. Created {created_count} new "
-                    f"consents, updated {updated_count} existing consents.")
-    except Exception:
-        logger.error("Failed to handle fetched participant consent data", exc_info=True)
-        raise
-
-    return f"Created {created_count} new consents, updated {updated_count} existing consents."
-
-async def _process_consent_data(consent_data: pl.DataFrame) -> list[UploadConsentSchema]:
-    """Processes the consent data to replace any participant ID with a study ID."""
-    logger.info("Formatting consent data for API endpoint")
-
-    try:
-        consent_data = consent_data.with_columns(
-            pl.col(TASK_CONSENT_FORM_COL_SIGNED).str.to_datetime(
-                format="%Y-%m-%d %H:%M:%S", time_zone=settings.TASK_CONSENT_TIMEZONE),
-            pl.col(TASK_CONSENT_FORM_COL_LAST_UPDATED).str.to_datetime(
-                format="%Y-%m-%d %H:%M:%S", time_zone=settings.TASK_CONSENT_TIMEZONE),
-            pl.col(TASK_CONSENT_FORM_COL_RETRACTED).str.to_datetime(
-                format="%Y-%m-%d %H:%M:%S", time_zone=settings.TASK_CONSENT_TIMEZONE, strict=False),
-        )
-    except pl.exceptions.InvalidOperationError:
-        # Try the conversion again but assume there are no seconds in the datetime strings
-        consent_data = consent_data.with_columns(
-            pl.col(TASK_CONSENT_FORM_COL_SIGNED).str.to_datetime(
-                format="%Y-%m-%d %H:%M", time_zone=settings.TASK_CONSENT_TIMEZONE
-            ),
-            pl.col(TASK_CONSENT_FORM_COL_LAST_UPDATED).str.to_datetime(
-                format="%Y-%m-%d %H:%M", time_zone=settings.TASK_CONSENT_TIMEZONE
-            ),
-            pl.col(TASK_CONSENT_FORM_COL_RETRACTED).str.to_datetime(
-                format="%Y-%m-%d %H:%M", time_zone=settings.TASK_CONSENT_TIMEZONE, strict=False
-            ),
-        )
-    except Exception:
-        logger.error("Failed to convert date columns in consent data", exc_info=True)
-        raise
-
-    participants = await _get_participant_db_ids(consent_data)
-
-    standard_columns = (
-        TASK_CONSENT_FORM_COL_NAME, # Str
-        TASK_CONSENT_FORM_COL_PID, # Str
-        TASK_CONSENT_FORM_COL_STATUS,  # Str
-        TASK_CONSENT_FORM_COL_SIGNED,  # Date Y-m-d H:M:S or Y-m-d H:M
-        TASK_CONSENT_FORM_COL_LAST_UPDATED,  # Date Y-m-d H:M:S or Y-m-d H:M
-        TASK_CONSENT_FORM_COL_RETRACTED,  # # Date Y-m-d H:M:S | Y-m-d H:M | None
-        TASK_CONSENT_FORM_COL_CLINIC,  # Str (id nummer)
-        TASK_CONSENT_FORM_COL_COMMENT  # Str
-    )
-
-    output = [
-        UploadConsentSchema(
-            **(
-                {
-                    "participant_study_id": str(participants[row[TASK_CONSENT_FORM_COL_PID].replace("-", "")]),
-                    "signed_date": row[TASK_CONSENT_FORM_COL_SIGNED],
-                    "status": row[TASK_CONSENT_FORM_COL_STATUS],
-                    "last_updated": row[TASK_CONSENT_FORM_COL_LAST_UPDATED],
-                    "retracted": row[TASK_CONSENT_FORM_COL_RETRACTED],
-                    "clinic": str(row[TASK_CONSENT_FORM_COL_CLINIC]),
-                    "comment": row[TASK_CONSENT_FORM_COL_COMMENT],
-                    "consent_labels": [
-                        col.replace('""', '"')
-                        for col in consent_data.columns
-                        if col not in standard_columns and row[col] in TASK_CONSENT_FORM_CONSENTED_TRUE_VALUES
-                    ],
-                    "source": settings.TASK_CONSENT_SOURCE,
-                    "participant_information_version": row.get("participant_information_version"),
-                }
-            )
-        )
-        for row in consent_data.iter_rows(named=True)
-    ]
-
-    return output
-
-
-async def _get_participant_db_ids(consent_data: pl.DataFrame) -> dict[str, str]:
-    # Get list of normalised participant IDs
-    pid_list = (
-        consent_data.with_columns(
-            pl.col(TASK_CONSENT_FORM_COL_PID).str.replace_all('-', '')
-        )).select(TASK_CONSENT_FORM_COL_PID).to_series().unique().to_list()
-
-    existing_participants = {
-        entry["person_source_value"]: entry["id"]
-        async for entry in StudyParticipant.objects.filter_by_person_source_value_list(person_source_values=pid_list)
-        .values("id", "person_source_value").aiterator()
-    }
-
-    new_participant_ids = [psv for psv in pid_list if psv not in existing_participants.keys()]
-    new_participant_list = (
-        consent_data.with_columns(pl.col(TASK_CONSENT_FORM_COL_PID).str.replace_all('-', ''))
-        .filter(pl.col(TASK_CONSENT_FORM_COL_PID).is_in(new_participant_ids))
-        .unique(subset=[TASK_CONSENT_FORM_COL_PID])
-        .select([TASK_CONSENT_FORM_COL_PID, TASK_CONSENT_FORM_COL_NAME])
-        .rows()
-    )
-    new_aliases = await generate_study_participant_alias1_list(len(new_participant_ids))
-    new_participant_objects = await StudyParticipant.objects.abulk_create([
-        StudyParticipant(person_source_value=pid, name=participant_name, alias1=alias)
-        for (pid, participant_name), alias in zip(new_participant_list, new_aliases)
-    ])
-
-    participants = existing_participants | {
-        participant.person_source_value: participant.id for participant in new_participant_objects
-    }
-
-    return participants

@@ -82,7 +82,7 @@ def _run(docker_client, script_source: str, *, input_files=None, config=None):
 def test_a_sample_r_script_runs_isolated_in_a_real_container_and_its_rows_load(docker_client):
     research_project = ResearchProject.objects.create(name="ETL R sandbox integration project", description="")
     participant = StudyParticipant.objects.create(
-        alias1="ETL-R-P001", person_source_value="SRC-001", research_project=research_project)
+        alias1="ETL-R-P001", person_source_value="SRC001", research_project=research_project)
     concept = Concept.objects.create(
         concept_name="Body weight", vocabulary_id="LOINC", concept_class_id="Clinical Observation",
         concept_code="29463-7", valid_start_date=date(2000, 1, 1), valid_end_date=date(2099, 12, 31))

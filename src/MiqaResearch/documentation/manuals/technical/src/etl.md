@@ -86,13 +86,17 @@ in place, so a revocation in a later export is recorded.
 :::{note}
 **ADR 0031.** Consent is how a person enters a study, so for this Datatype an unknown
 personnummer is expected rather than an error. Participants created earlier by the legacy
-SamtyckenUmu task have no project and are not matched.
+SamtyckenUmu task have no project and are not matched until
+`adopt_legacy_consent_participants` adopts them (see
+[SamtyckenUmu consent task](#heading-etl-samtycken-task)).
 :::
 
 ### Participant references and concepts
 
 Every row carries exactly one Participant Reference, either `person_source_value` or `alias1`.
-It is resolved only against **this project's** Study Participants.
+It is resolved only against **this project's** Study Participants. A `person_source_value` is
+matched in the shared format (trimmed, dashes removed), so `19121212-1212` and `191212121212`
+are the same person, as in consent loads and DICOM ingestion.
 
 - A reference that matches no participant raises `UnresolvableParticipantReference`.
 - A reference that matches more than one raises `AmbiguousParticipantReference`. The loader
@@ -643,7 +647,11 @@ default it reads the SamtyckenUmu consent export:
 - **Consent columns:** every other column is a consent type, and a cell of `Ja` means the
   consent was given.
 - **Dates** are local times in `Europe/Stockholm`, as `YYYY-MM-DD HH:MM[:SS]`.
-- **Personnummer** has its dashes removed.
+- **Personnummer** has its dashes removed. Every ETL Datatype applies the same format (trimmed,
+  dashes removed) to `person_source_value`, and so does DICOM ingestion to PatientID, so all
+  match the same Study Participant. Migration 0026 reformatted identifiers stored earlier.
+  It aborts without changes, naming the alias1s, if two participants of one project would
+  collide.
 
 A Binding's config can override any of these:
 
@@ -665,6 +673,44 @@ A Binding's config can override any of these:
 A CSV missing a required column (person, signed date or clinic) fails the Job with exit 1 and
 a message naming the missing column. Its config schema allows only these keys (and only these
 `columns` keys), so a misspelt key is rejected when the Binding is saved.
+
+(heading-etl-samtycken-task)=
+### SamtyckenUmu consent task
+
+The `fetch_participant_consent` task (#241) only fetches. It writes each SamtyckenUmu export,
+unchanged, to `<MIRES_TASK_CONSENT_UPLOAD_PREFIX><form_id>/<UTC timestamp>.csv` in
+`MIRES_TASK_CONSENT_UPLOAD_BUCKET` (for example `samtycken/1234/20261006T073015Z.csv`), using
+the platform ETL credential (`MIRES_ETL_S3_*`). It fails before fetching if no bucket is set.
+A failed fetch uploads nothing. The task never creates Bindings. The **Consent Project** is the
+Research Project named by `MIRES_TASK_CONSENT_RESEARCH_PROJECT_NAME`. An operator sets up
+loading once:
+
+1. Run `manage.py adopt_legacy_consent_participants --dry-run`, then without `--dry-run`.
+   It adopts each **Legacy Consent Participant** into the Consent Project: a participant the
+   legacy task created without a project, that has a consent of a Consent Project consent
+   type. Other participants are left alone. It is idempotent. Skipping it makes the first ETL
+   import duplicate those participants. A Legacy Consent Participant whose person is already in
+   the Consent Project (for example because a Binding ran first) is skipped and printed with
+   both alias1s, `--dry-run` included. Merge those by hand: adopting them would make every later
+   consent Job fail with an ambiguous participant reference.
+2. Grant the bucket and prefix to the Consent Project (`EtlLocationGrant`).
+3. In the Consent Project, create a per-file Binding on that location running the native
+   **CSV → participant consent** Script. Set its Raw Retention to **delete**: the exports
+   carry personnummer and names (ADR 0032). Put any non-default columns, and the former
+   `MIRES_TASK_CONSENT_SOURCE` value as `source`, in the Binding's config.
+
+Legacy consent types already belong to the Consent Project, so they match as they are.
+
+An export fetched without `from_date`/`to_date` is a full export, so every Job re-upserts all
+consents and records revocations. A non-comma `separator` needs a matching `delimiter` in the
+Binding's config.
+
+(heading-etl-adr-0033)=
+:::{note}
+**ADR 0033.** Loading through a Binding gives consents per-project matching, Job history and
+recorded revocations, which the legacy task's own load path lacked. That path is removed,
+with no transition flag. The consent upload API keeps `create_participant_consents`.
+:::
 
 (heading-etl-config-schema)=
 ## Config schemas
@@ -743,6 +789,7 @@ they are loaded.
 | `MIRES_ETL_SCRIPT_S3_BUCKET`, `_ENDPOINT_URL`, `_REGION_NAME`, `_ACCESS_KEY_ID`, `_SECRET_ACCESS_KEY` | *(none)*, region `us-east-1` | S3 settings for Script source storage when the backend is `s3`. |
 | `MIRES_ETL_SCRIPT_MAX_SOURCE_BYTES` | `262144` (256 KiB) | Default maximum Script source size (per-project override under Defaults). |
 | `MIRES_ETL_SCRIPT_IMAGE_KEYS` | `{".py": "python-etl-v1", ".r": "r-etl-v1"}` | Maps a file extension to a sandbox image key. |
+| `MIRES_TASK_CONSENT_UPLOAD_BUCKET` / `_PREFIX` | *(none)* / `""` | Where the SamtyckenUmu consent task writes each export. See [SamtyckenUmu consent task](#heading-etl-samtycken-task). |
 | `MIRES_ETL_SYNC_NATIVE_SCRIPTS_ON_MIGRATE` | `True` | Sync Native Scripts from the codebase after every `migrate`. |
 | `MIRES_SANDBOX_BACKEND` | `compose` | `compose` or `kubernetes`. |
 | `MIRES_SANDBOX_IMAGE_ALLOWLIST` | `{}` | JSON object mapping an image key to an image reference. Must list every key in use. |

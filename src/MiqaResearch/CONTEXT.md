@@ -356,9 +356,26 @@ model. It is the only person/subject identity in this codebase — imaging data
 and consent records both hang off the same Study Participant; there is no
 separate "Patient" concept. Personally identifying fields (`person_source_value`,
 `name`) are encrypted at rest and looked up via a deterministic hash sidecar
-rather than plaintext query. Identified pseudonymously per Research Project via
-`alias1`.
+rather than plaintext query. `person_source_value` is always stored trimmed with
+dashes removed (`helpers.person_source_value.format_person_source_value`), so
+ETL loads and DICOM ingestion match the same person however it was written
+(migration 0026 reformatted older rows). Identified pseudonymously per Research
+Project via `alias1`.
 _Avoid_: Patient, Subject
+
+### Consent Project
+The Research Project named by `MIRES_TASK_CONSENT_RESEARCH_PROJECT_NAME`. It owns
+the SamtyckenUmu consent types and the Pipeline Binding that loads the consent
+exports. See ADR 0033.
+
+### Legacy Consent Participant
+A Study Participant with no Research Project that has a consent of a Consent
+Project consent type, left by the SamtyckenUmu task's former load path.
+**Adopting** one sets its Research Project to the Consent Project
+(`adopt_legacy_consent_participants`), so ETL consent loads match it instead of
+creating a duplicate. One whose person is already in the Consent Project is not
+adopted but listed by alias1 for manual merging. See ADR 0033.
+_Avoid_: orphan participant
 
 ### Dicom Study
 One DICOM study belonging to a Study Participant, represented by the
@@ -662,6 +679,47 @@ _Avoid_: admin, operator
 | 0030 | Native ETL Scripts shipped as code and synced on migrate; per-project override is a Customize copy | Accepted |
 | 0031 | Participant-consent ETL loads create unknown participants; consent types are per project | Accepted |
 | 0032 | ETL Raw Retention: per-Binding "delete after load" opt-out, Admin-only | Accepted |
+| 0033 | SamtyckenUmu consent task only fetches into an ETL source bucket; legacy participants adopted by command | Accepted |
+
+### ADR 0033 — SamtyckenUmu consent task only fetches into an ETL source bucket; legacy participants adopted by command
+
+**Context**: The SamtyckenUmu consent task fetched each export and loaded it
+itself. It created participants without a project, filed new consent types
+under one configured project and never updated a consent after its first
+import, so revocations were lost. The `participant_consent` Datatype and its
+Native Script (ADR 0031) do the same load per project, with Job history, and
+record revocations (#241).
+
+**Decision**: `fetch_participant_consent` only fetches the export and writes it
+unchanged, one object per fetch, under `MIRES_TASK_CONSENT_UPLOAD_PREFIX` in
+`MIRES_TASK_CONSENT_UPLOAD_BUCKET`, with the platform ETL S3 credential (key
+layout: Technical Manual, "SamtyckenUmu consent task"). An operator grants that
+location to the Consent Project and creates a per-file Binding on
+it running the native "CSV → participant consent" Script, with Raw Retention
+"delete" (ADR 0032). The task never creates Bindings. Its own parsing and
+upsert path is removed, with no transition flag. `create_participant_consents`
+stays for the consent upload API. Before the first ETL import,
+`manage.py adopt_legacy_consent_participants` adopts every Legacy Consent
+Participant into the Consent Project, so the Datatype's per-project match finds
+them.
+
+**Consequences**:
+- Consents fetched before the Binding exists wait in the bucket; nothing is
+  lost, but nothing is loaded either.
+- Skipping the adoption command duplicates every Legacy Consent Participant in
+  the Consent Project. The command is idempotent, so running it again is safe.
+- A Legacy Consent Participant whose person is already in the Consent Project
+  (for example created by a Binding that ran before adoption) is skipped and
+  listed by alias1. Adopting it would give the Datatype two matches and fail
+  every later consent Job.
+- ETL loads (every Datatype) and DICOM ingestion share one identifier format (trimmed,
+  dashes removed). Migration 0026 reformats stored identifiers and aborts,
+  changing nothing, if that would merge two participants of one project.
+- Project-less participants without such a consent are left as they are.
+- Legacy consent types already belong to the Consent Project (the legacy task
+  filed them there), so the Datatype matches them by label as they are.
+- The column-mapping settings (`MIRES_TASK_CONSENT_FORM_COL_*`,
+  `_TIMEZONE`, `_SOURCE`) are gone; the Binding's config replaces them.
 
 ### ADR 0032 — ETL Raw Retention: per-Binding "delete after load" opt-out, Admin-only
 
