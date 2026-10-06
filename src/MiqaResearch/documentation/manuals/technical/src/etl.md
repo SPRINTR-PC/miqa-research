@@ -613,7 +613,9 @@ also be run on demand with `manage.py sync_native_etl_scripts`. It mirrors the l
 
 - A new immutable Version is published only when a source's SHA-256 or its config schema
   changes. The schema is a `<stem>.schema.json` sidecar next to the source
-  (`csv_participant_consent.schema.json`); a malformed sidecar fails the sync. Bindings keep the
+  (`csv_participant_consent.schema.json`). A malformed sidecar is logged and that Script gets
+  no new Version until it's fixed, so it can't block a `migrate`; a test checks every shipped
+  sidecar so CI catches it first. Bindings keep the
   Version they pinned until a manager re-pins them.
 - A Native Script that is removed from the list is archived, never deleted.
 - `MIRES_ETL_SYNC_NATIVE_SCRIPTS_ON_MIGRATE=False` turns off the automatic sync. Tests do this.
@@ -689,8 +691,10 @@ its sidecar file. The upload must be a JSON object that passes `check_schema`
 ```
 
 **Validation.** The Binding wizard and **Edit** form validate the assembled config against the
-selected Version's schema (`EtlBindingEditForm`). Each error names the key path and becomes a
-form error, so a create, edit or re-pin with config that doesn't fit is rejected. Config isn't
+selected Version's schema (`EtlBindingEditForm`). Each error names the key path and is shown
+beside its field, so a create, edit or re-pin with config that doesn't fit is rejected; a
+rejected Edit re-opens with the input kept. `create_pipeline_binding` and
+`update_pipeline_binding` re-check it and raise `EtlBindingConfigInvalid`. Config isn't
 re-checked when a Job runs; a Binding saved before its Version had a schema keeps its config
 until it is next edited.
 
@@ -706,11 +710,16 @@ entry, named `config__<key>`, labelled by `title` (or the key) with `description
 | anything else (array, object, union) | JSON textarea |
 
 Keys in `required` make their field required. An empty field leaves the key out, so the
-Script's own default applies. Unless the schema sets `"additionalProperties": false`, an
-**Additional config** JSON box keeps the keys that aren't listed as properties. Changing
-**Script & version** fetches the new Version's fields
-(`dashboard_tab_etl_binding_config_fields`, HTMX), pre-filled from the Binding's config on an
-Edit form.
+Script's own default applies; in a JSON textarea, `null` sets the key to null. Unless the schema
+sets `"additionalProperties": false`, an **Additional config** JSON box keeps the keys that
+aren't listed as properties. The box also appears, even then, for a value no field can show (an
+empty string, a value outside an enum, a wrong type), so a saved value is never silently lost.
+
+Changing **Script & version** sends the whole form (minus the CSRF token) to
+`dashboard_tab_etl_binding_config_fields` (HTMX). The fragment's hidden `config_fields_for`
+names the Version its fields were rendered for; the endpoint reads the typed config under that
+Version (`EtlBindingEditForm.entered_config`) and renders the new Version's fields filled in
+with it.
 
 (heading-etl-configuration)=
 ## Configuration reference

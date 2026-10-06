@@ -1,3 +1,4 @@
+<input type="hidden" name="config_fields_for" value="{{ form.config_version_id|default_if_none:'' }}">
 {% for field in form.config_fields %}
 <label class="etl-field"><span>{{ field.label }}</span>{{ field }}
   {% if field.help_text %}<span class="text-sm text-muted-foreground">{{ field.help_text }}</span>{% endif %}

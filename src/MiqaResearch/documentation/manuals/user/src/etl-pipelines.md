@@ -144,13 +144,15 @@ A binding tells the platform to watch a location and process what arrives there.
      chosen script version, and changes when you choose another one:
      - If the version has a config schema, there is one field per setting. Leave a field empty
        to leave that setting out. A field for a list or a nested setting takes JSON, for
-       example `["Ja", "Yes"]`. If the schema allows other settings too, put them in
-       **Additional config** as a JSON object.
+       example `["Ja", "Yes"]`; type `null` there to set the setting to nothing. If the schema
+       allows other settings too, put them in **Additional config** as a JSON object. That box
+       also holds values the fields can't show, such as an empty text: `{"delimiter": ""}`.
      - Otherwise there is one box for a JSON object, for example `{"delimiter": ";"}`.
        Anything other than a JSON object is rejected.
 
-     Settings that don't match the version's config schema are rejected with a message naming
-     the setting, for example *"delimiter: ';;' is too long"*.
+     Settings that don't match the version's config schema are rejected with a message beside
+     the setting, for example *"delimiter: ';;' is too long"*. Choosing another script version
+     keeps what you have typed, moved into the new version's fields.
    - **Sandbox overrides** (optional): a lower time limit (seconds), memory limit (MB) or CPU
      limit (millicores) for this binding. These can only be lower than the platform limits,
      never higher.
@@ -174,11 +176,13 @@ apply. Every edit is recorded in the project's audit log.
   after-load setting they started with.
   The edit applies to jobs created afterwards.
 - Only an Admin can switch a binding to **Delete after load**, and it asks for confirmation.
+- If **Save** is rejected, the Edit form stays open with what you entered and each message
+  beside its field.
 - Choosing another script version swaps in that version's config fields, filled in with the
-  binding's current config. If the current config doesn't match the new version's config
-  schema, **Save** is rejected until you update it. Settings the new schema doesn't know
-  appear in **Additional config**. If the schema allows no other settings, remove them there
-  before saving.
+  config in the form. If that config doesn't match the new version's config schema, **Save**
+  is rejected until you update it. Settings the new version has no field for, and values its
+  fields can't show, appear in **Additional config**. If the schema allows no other settings,
+  remove them there before saving.
   Files that earlier jobs already moved to the raw bucket stay there. Delete them by hand if
   they must go. Either an Admin or a Data Manager can switch a binding back to
   **Move to Raw Bucket**.

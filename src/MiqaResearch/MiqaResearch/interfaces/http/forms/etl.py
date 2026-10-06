@@ -8,6 +8,7 @@ import json
 
 from django import forms
 from django.conf import settings
+from django.forms.fields import InvalidJSONInput
 from django.utils.translation import gettext_lazy as _
 
 from contract.constants.etl import (
@@ -98,36 +99,51 @@ CONFIG_FIELD_PREFIX = "config__"
 
 
 _NO_INITIAL = object()
+_UNPARSED = object()
 
 
-def _generated_config_field(key, prop, *, required, initial=_NO_INITIAL) -> forms.Field:
-    """A form field for one top-level config-schema property (#238), showing `initial` (the
-    Binding's current value) if given. Enums and booleans post their JSON encoding, so that is
-    also how their initial value is shown; anything that isn't a scalar is entered as JSON."""
+class _ConfigJSONField(forms.JSONField):
+    """A JSON box for config: blank (not Django's "null") when there's no value, and what was typed
+    shown back as typed -- since a generated field's "null" is a real value (#238)."""
+
+    def bound_data(self, data, initial):
+        return None if data is None else InvalidJSONInput(data)
+
+    def prepare_value(self, value):
+        return "" if value is None else super().prepare_value(value)
+
+
+def _generated_config_field(key, prop, *, required, initial=_NO_INITIAL) -> tuple[forms.Field, bool]:
+    """A form field for one top-level config-schema property (#238), and whether it shows `initial`
+    (the Binding's current value): a value the field can't show -- an empty string in a text box,
+    a value outside an enum, a wrong type -- is left for the Additional config box instead. Enums
+    and booleans post their JSON encoding; anything that isn't a scalar is entered as JSON."""
     kwargs = {"label": prop.get("title") or key, "required": required, "help_text": prop.get("description", "")}
     if "enum" in prop or prop.get("type") == "boolean":
-        if "enum" in prop:
-            choices = [(json.dumps(value), str(value)) for value in prop["enum"]]
-        else:
-            choices = [("true", _("Yes")), ("false", _("No"))]
+        values = prop["enum"] if "enum" in prop else [True, False]
+        labels = [str(value) for value in values] if "enum" in prop else [_("Yes"), _("No")]
         field = forms.TypedChoiceField(
-            choices=[("", "---------"), *choices], coerce=json.loads, empty_value=None, **kwargs)
-        if initial is not _NO_INITIAL:
+            choices=[("", "---------"), *((json.dumps(value), label) for value, label in zip(values, labels))],
+            coerce=json.loads, empty_value=None, **kwargs)
+        shown = initial is not _NO_INITIAL and any(initial == value and type(initial) is type(value)
+                                                   for value in values)
+        if shown:
             field.initial = json.dumps(initial)
-        return field
+        return field, shown
 
     match prop.get("type"):
         case "string":
-            field = forms.CharField(**kwargs)
+            field, can_show = forms.CharField(**kwargs), lambda value: isinstance(value, str) and value != ""
         case "integer":
-            field = forms.IntegerField(**kwargs)
+            field, can_show = forms.IntegerField(**kwargs), lambda value: type(value) is int
         case "number":
-            field = forms.FloatField(**kwargs)
+            field, can_show = forms.FloatField(**kwargs), lambda value: type(value) in (int, float)
         case _:
-            field = forms.JSONField(widget=forms.Textarea(attrs={"rows": 3}), **kwargs)
-    if initial is not _NO_INITIAL:
-        field.initial = initial
-    return field
+            field, can_show = _ConfigJSONField(widget=forms.Textarea(attrs={"rows": 3}), **kwargs), lambda value: True
+    shown = initial is not _NO_INITIAL and can_show(initial)
+    if shown:
+        field.initial = InvalidJSONInput("null") if initial is None else initial
+    return field, shown
 
 
 class EtlBindingEditForm(forms.Form):
@@ -145,7 +161,7 @@ class EtlBindingEditForm(forms.Form):
         label=_("Grouping"), choices=PIPELINE_BINDING_GROUPING_CHOICES, initial=PIPELINE_BINDING_GROUPING_FILE)
     quiescence_seconds = forms.IntegerField(
         label=_("Quiescence (seconds, folder grouping only)"), required=False, min_value=1)
-    config = forms.JSONField(
+    config = _ConfigJSONField(
         label=_("Script config (JSON object)"), required=False, widget=forms.Textarea,
         help_text=_("Optional; passed to the script as ctx.config."))
     timeout_seconds_override = forms.IntegerField(label=_("Timeout override (seconds)"), required=False, min_value=1)
@@ -153,15 +169,17 @@ class EtlBindingEditForm(forms.Form):
     cpu_millicores_override = forms.IntegerField(label=_("CPU override (millicores)"), required=False, min_value=1)
 
     def __init__(self, *args, location_grants, script_version_choices, can_choose_delete,
-                 current_raw_retention=None, config_schemas=None, **kwargs):
+                 current_raw_retention=None, config_schemas=None, config_version_id=None, **kwargs):
         self.location_grants = location_grants
         self.can_choose_delete = can_choose_delete
         self.current_raw_retention = current_raw_retention
         super().__init__(*args, **kwargs)
         self.fields["script_version"].choices = script_version_choices
         # #238: the selected Version's config schema, if it has one, replaces the free-form JSON box
-        # with one field per top-level property.
-        schema = (config_schemas or {}).get(self._selected_script_version_id())
+        # with one field per top-level property. `config_version_id` overrides the selection: to read
+        # a posted form's config fields as rendered, for a Version since swapped out.
+        self.config_version_id = config_version_id or self._selected_script_version_id()
+        schema = (config_schemas or {}).get(self.config_version_id)
         self.config_schema = ConfigSchema(schema) if schema is not None else None
         self._config_field_names = {}  # config key -> generated field name
         if self.config_schema is not None:
@@ -193,10 +211,13 @@ class EtlBindingEditForm(forms.Form):
         required = self.config_schema.required
         initial_config = self.initial.get("config") or {}
         generated = {}
+        unlisted_config = {key: value for key, value in initial_config.items() if key not in properties}
         for key, prop in properties.items():
             name = self._config_field_names[key] = f"{CONFIG_FIELD_PREFIX}{key}"
-            generated[name] = _generated_config_field(
+            generated[name], shown = _generated_config_field(
                 key, prop, required=key in required, initial=initial_config.get(key, _NO_INITIAL))
+            if key in initial_config and not shown:
+                unlisted_config[key] = initial_config[key]
 
         names = list(self.fields)
         config_index = names.index("config")
@@ -204,16 +225,44 @@ class EtlBindingEditForm(forms.Form):
             name: generated.get(name) or self.fields[name]
             for name in names[:config_index] + list(generated) + names[config_index:]
         }
-        unlisted_config = {key: value for key, value in initial_config.items() if key not in properties}
         # A schema that allows no other keys drops the box -- unless the Binding's config (or the
-        # posted form) still has some: they then show up there and fail validation, rather than
-        # silently vanishing on a re-pin.
+        # posted form) still has values no field shows: they then show up there (and fail
+        # validation, if they don't fit), rather than silently vanishing on a re-pin.
         if not self.config_schema.allows_unlisted_keys and not unlisted_config and not self._posted_config():
             del self.fields["config"]
         elif properties:
             self.fields["config"].label = _("Additional config (JSON object)")
-            self.fields["config"].help_text = _("Keys the schema doesn't list as fields above.")
+            self.fields["config"].help_text = _(
+                "Keys without a field above, and values those fields can't show, e.g. an empty text.")
             self.initial["config"] = unlisted_config
+
+    def entered_config(self) -> dict:
+        """The config typed into a bound form's config fields, as far as it parses -- carried into
+        the fields of the Version chosen next."""
+        def parsed(name):
+            if name not in self.fields:
+                return None
+            try:
+                return self.fields[name].clean(self[name].data)
+            except forms.ValidationError:
+                return _UNPARSED
+
+        return self._assemble_config(parsed)
+
+    def _assemble_config(self, value_of) -> dict:
+        """One config from the Additional config box (or free-form box) plus each generated field
+        not left blank; `value_of(field name)` gives a field's value, or _UNPARSED to skip it."""
+        extra = value_of("config")
+        config = dict(extra) if isinstance(extra, dict) else {}
+        for key, name in self._config_field_names.items():
+            value = value_of(name)
+            if not self._left_blank(name) and value is not _UNPARSED:
+                config[key] = value
+        return config
+
+    def _left_blank(self, name) -> bool:
+        """A blank generated field leaves its key out, so the Script's own default applies."""
+        return not (self.data.get(self.add_prefix(name)) or "").strip()
 
     def _posted_config(self) -> str:
         return (self.data.get(self.add_prefix("config")) or "").strip() if self.is_bound else ""
@@ -225,12 +274,7 @@ class EtlBindingEditForm(forms.Form):
         config_field_names = ("config", *self._config_field_names.values())
         if self.config_schema is None or any(name in self.errors for name in config_field_names):
             return
-        config = dict(cleaned.get("config") or {})
-        for key, name in self._config_field_names.items():
-            value = cleaned.get(name)
-            if value is not None and value != "":
-                config[key] = value
-        cleaned["config"] = config
+        config = cleaned["config"] = self._assemble_config(cleaned.get)
         for error in self.config_schema.errors(config):
             field = self._config_field_names.get(error.key)
             if field is None:

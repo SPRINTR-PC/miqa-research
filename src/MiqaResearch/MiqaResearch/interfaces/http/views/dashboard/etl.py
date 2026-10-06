@@ -219,7 +219,7 @@ async def etl_binding_edit(request, project_id, binding_id):
     user = await request.auser()
     form = EtlBindingEditForm(
         request.POST, **await binding_form_kwargs(research_project, permissions),
-        current_raw_retention=binding.raw_retention)
+        current_raw_retention=binding.raw_retention, auto_id=binding_edit_auto_id(binding))
     if form.is_valid():
         error = await _attempt(update_pipeline_binding(
             project=research_project, user=user, request=request, binding=binding,
@@ -234,29 +234,41 @@ async def etl_binding_edit(request, project_id, binding_id):
             memory_mb_override=form.cleaned_data['memory_mb_override'],
             cpu_millicores_override=form.cleaned_data['cpu_millicores_override'],
         ))
-    else:
-        error = _form_errors(form)
+        if error is None:
+            return await _rerender_section(request, research_project, permissions, ETL_SECTION_BINDINGS)
+        form.add_error(None, error)
 
-    return await _rerender_section(request, research_project, permissions, ETL_SECTION_BINDINGS, manage_error=error)
+    # Rejected: re-open this Binding's Edit form with what was entered and each error beside its field.
+    section_context = await etl_section_context(research_project, permissions, ETL_SECTION_BINDINGS)
+    for listed in section_context['bindings']:
+        if listed.id == binding.id:
+            listed.edit_form, listed.edit_open = form, True
+    return _htmx_tab_response(
+        request, _ETL_SECTION_PANELS[ETL_SECTION_BINDINGS], research_project, 'etl-pipelines',
+        extra_context={'etl_section': ETL_SECTION_BINDINGS} | section_context, with_sidebar=True,
+    )
 
 
 @htmx_login_required
 async def etl_binding_config_fields(request, project_id):
     """#238: the Binding wizard's/Edit form's config fields for the Script Version just chosen --
-    generated from its config schema, or the free-form JSON box. From an Edit form, the Binding's
-    current config fills them in."""
+    generated from its config schema, or the free-form JSON box -- filled in with whatever config
+    the form held: the request carries the whole form, its config fields as rendered for the
+    Version named by `config_fields_for`."""
     research_project, permissions = await get_user_etl_project_or_404(request, project_id)
     if not permissions.can_manage:
         return HttpResponseForbidden()
 
-    initial = {'script_version': request.GET.get('script_version')}
     auto_id = 'id_%s'
     if binding_id := request.GET.get('binding'):
         binding = await aget_object_or_404(PipelineBinding, id=_uuid_or_404(binding_id), project=research_project)
-        initial['config'] = binding.config
         auto_id = binding_edit_auto_id(binding)
+    form_kwargs = await binding_form_kwargs(research_project, permissions)
+    entered = EtlBindingEditForm(
+        request.GET, **form_kwargs, config_version_id=request.GET.get('config_fields_for')).entered_config()
     form = EtlBindingEditForm(
-        **await binding_form_kwargs(research_project, permissions), initial=initial, auto_id=auto_id)
+        **form_kwargs, initial={'script_version': request.GET.get('script_version'), 'config': entered},
+        auto_id=auto_id)
     return render(request, '01_dashboard/_etl_binding_config_fields.html', {'form': form})
 
 

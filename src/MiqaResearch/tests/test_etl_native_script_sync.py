@@ -12,7 +12,7 @@ from django.core.management import call_command
 from contract.constants.etl import ETL_SCRIPT_ORIGIN_NATIVE
 from MiqaResearch import etl_native_scripts
 from MiqaResearch.data.models import EtlScript, EtlScriptVersion
-from MiqaResearch.etl_config_schema import ConfigSchema, ConfigSchemaInvalid
+from MiqaResearch.etl_config_schema import ConfigSchema, parse_config_schema
 from MiqaResearch.etl_native_scripts import NativeScript
 
 
@@ -118,11 +118,27 @@ def test_a_changed_sidecar_schema_alone_publishes_a_new_version(native_dir):
 
 
 @pytest.mark.django_db
-def test_a_malformed_sidecar_schema_fails_the_sync_loudly(native_dir):
+def test_a_malformed_sidecar_schema_is_logged_and_publishes_no_version_without_failing_the_sync(
+        native_dir, monkeypatch, caplog):
     (native_dir / "consent.schema.json").write_text('{"type": "no-such-type"}')
+    (native_dir / "other.py").write_bytes(b"def main(ctx):\n    return iter(())\n")
+    monkeypatch.setattr(etl_native_scripts, "NATIVE_SCRIPTS", (
+        *etl_native_scripts.NATIVE_SCRIPTS,
+        NativeScript(name="Other", datatype_name="measurement", filename="other.py", description=""),
+    ))
 
-    with pytest.raises(ConfigSchemaInvalid):
-        call_command("sync_native_etl_scripts")
+    call_command("sync_native_etl_scripts")
+
+    assert list(EtlScriptVersion.objects.values_list("script__name", flat=True)) == ["Other"]
+    assert "consent.schema.json" in caplog.text
+
+
+def test_every_shipped_sidecar_schema_is_a_valid_config_schema():
+    sidecars = sorted(etl_native_scripts.NATIVE_SCRIPTS_DIR.glob("*.schema.json"))
+
+    assert sidecars
+    for sidecar in sidecars:
+        parse_config_schema(sidecar.read_bytes())
 
 
 @pytest.mark.django_db
