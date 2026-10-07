@@ -51,7 +51,6 @@ class EtlPermissions:
         """May archive a Script, or change platform-wide limit/retention overrides."""
         return self.is_superuser or bool(self.role_names.intersection(ETL_ADMIN_ONLY_ROLES))
 
-
     @property
     def can_view_sources(self) -> bool:
         """May see the Sources section (#268)."""

@@ -54,13 +54,13 @@ def _call(action, **kwargs):
     return async_to_sync(action)(user=None, request=None, **kwargs)
 
 
-def _binding(project, *, source_prefix="redcap/a/", raw_bucket="raw", source_location=None):
+def _binding(project, *, source_prefix="redcap/a/", raw_bucket="raw", raw_retention="move", source_location=None):
     script = EtlScript.objects.create(name="Native", origin=ETL_SCRIPT_ORIGIN_NATIVE, project=None)
     version = EtlScriptVersion.objects.create(
         script=script, version=1, source=SimpleUploadedFile("s.py", b"print()"), sha256="0" * 64)
     return PipelineBinding.objects.create(
         project=project, source_bucket="incoming", source_prefix=source_prefix, script_version=version,
-        raw_bucket=raw_bucket, raw_prefix="", source_location=source_location)
+        raw_bucket=raw_bucket, raw_prefix="", raw_retention=raw_retention, source_location=source_location)
 
 
 def _events(event_type):
@@ -195,3 +195,12 @@ def test_a_grant_still_covered_by_another_grant_can_be_deleted(project, grant):
     _call(delete_location_grant, project=project, grant_id=grant.id)
 
     assert not EtlLocationGrant.objects.filter(id=grant.id).exists()
+
+
+def test_a_delete_retention_binding_with_no_raw_bucket_does_not_block_unrelated_grant_deletes(project, grant):
+    unrelated = EtlLocationGrant.objects.create(project=project, bucket="lab", prefix="")
+    _binding(project, raw_bucket="", raw_retention="delete")
+
+    _call(delete_location_grant, project=project, grant_id=unrelated.id)
+
+    assert not EtlLocationGrant.objects.filter(id=unrelated.id).exists()

@@ -26,6 +26,10 @@ class EtlJobStateError(EtlActionError):
     another Job pending or running."""
 
 
+class EtlSourceLocationNotInProject(EtlActionError):
+    """A Binding was asked to read from another project's Source Location (#268)."""
+
+
 class EtlLocationOutsideGrant(EtlActionError):
     """A Source Location's bucket/prefix isn't inside any of the project's location grants (#268)."""
 

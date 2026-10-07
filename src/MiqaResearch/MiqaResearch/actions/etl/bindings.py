@@ -25,8 +25,8 @@ from .audit import record_etl_event
 from .exceptions import (
     EtlBindingConfigInvalid,
     EtlBindingConflict,
-    EtlLocationOutsideGrant,
     EtlScriptVersionNotUsable,
+    EtlSourceLocationNotInProject,
 )
 
 
@@ -38,7 +38,7 @@ async def create_pipeline_binding(
         timeout_seconds_override=None, memory_mb_override=None, cpu_millicores_override=None) -> PipelineBinding:
     if source_location is not None:  # the wizard's path (#268): the Binding copies the location
         if source_location.project_id != project.id:
-            raise EtlLocationOutsideGrant("That Source Location belongs to another project.")
+            raise EtlSourceLocationNotInProject("That Source Location belongs to another project.")
         source_bucket, source_prefix = source_location.bucket, source_location.prefix
     script_version = await _usable_script_version(project, script_version_id)
     _require_config_fits(script_version, config or {})
