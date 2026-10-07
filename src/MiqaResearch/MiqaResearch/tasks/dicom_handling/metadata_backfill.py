@@ -29,6 +29,8 @@ def resanitize_dicom_metadata() -> dict:
     files = (
         DicomFile.objects.select_related("research_project", "series__study__study_participant__research_project")
         .exclude(file="")
+        # viewer-saved objects (#287) were stored already de-identified with pseudonymized UIDs
+        .exclude(uids_pseudonymized=True)
         .order_by("pk")
     )
     for dcm_file in files.iterator(chunk_size=_CHUNK_SIZE):

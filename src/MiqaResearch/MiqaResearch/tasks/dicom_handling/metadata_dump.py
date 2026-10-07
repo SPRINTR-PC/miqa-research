@@ -22,13 +22,19 @@ _SKIPPED_KEYWORDS = frozenset({"PixelData"})
 _MAX_SEQUENCE_DEPTH = 8
 
 
-def build_metadata_dump(ds: Dataset, research_project, participant_alias: str) -> dict:
+def build_metadata_dump(
+    ds: Dataset, research_project, participant_alias: str, *, uids_already_pseudonymized: bool = False
+) -> dict:
     """Build the JSON-safe dump of `ds`'s header after de-identifying it.
 
     `participant_alias` is the Study Participant pseudonym that replaces
-    PatientName and PatientID.
+    PatientName and PatientID. `uids_already_pseudonymized` is passed to the
+    sanitizer for viewer-saved objects (#287), whose UIDs are already pseudonyms.
     """
-    sanitized = deidentify(ds, research_project=research_project, participant_alias=participant_alias)
+    sanitized = deidentify(
+        ds, research_project=research_project, participant_alias=participant_alias,
+        uids_already_pseudonymized=uids_already_pseudonymized,
+    )
     dump: dict = {}
     for element in _header_elements(sanitized):
         keyword = _element_key(element)

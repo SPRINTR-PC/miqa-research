@@ -16,6 +16,7 @@ from .visit_occurrence import VisitOccurrence
 from .dicom_study import DicomStudy
 from .dicom_series import DicomSeries
 from .dicom_file import DicomFile
+from .derived_object_provenance import DerivedObjectProvenance
 from .measurement import Measurement
 from .prom_data import PromFormTemplate, PromData, ParsedPromForm
 from .auth import BearerToken

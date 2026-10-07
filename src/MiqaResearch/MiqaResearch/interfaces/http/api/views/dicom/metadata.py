@@ -63,7 +63,11 @@ def sanitized_instance_json(dicom_file: DicomFile) -> dict:
     research_project = dicom_file.research_project or participant.research_project
     with dicom_file.file.open("rb") as stored:
         header = pydicom.dcmread(stored, stop_before_pixels=True)
-    sanitized = deidentify(header, research_project=research_project, participant_alias=participant.alias1)
+    sanitized = deidentify(
+        header, research_project=research_project, participant_alias=participant.alias1,
+        # viewer-saved Annotations/Segmentations (#287) are stored with pseudonymized UIDs already
+        uids_already_pseudonymized=dicom_file.uids_pseudonymized,
+    )
     instance = sanitized.to_json_dict()
     transfer_syntax_uid = dicom_file.transfer_syntax_uid or _stored_transfer_syntax(header)
     if transfer_syntax_uid:
