@@ -4,15 +4,12 @@ Seam: the HTTP endpoints (study, series and instance /metadata), fed by
 `run_ingestion`. A client builds frame URLs from the returned UIDs, so the
 round trip metadata -> /frames is the key behaviour.
 """
-from datetime import timedelta
-
 import pytest
-from django.utils import timezone
-from oauth2_provider.models import AccessToken, Application
 from pydicom.dataset import Dataset
 
 from MiqaResearch.data.models import DicomFile, ResearchProject
 from MiqaResearch.tasks.dicom_handling.pipeline import run_ingestion
+from tests.client_binding_helpers import bound_client
 from tests.dicom_fixtures import (
     DEFAULT_BIRTH_DATE,
     DEFAULT_PATIENT_ID,
@@ -46,16 +43,9 @@ def research_project(db):
 
 
 @pytest.fixture
-def bearer(db):
-    application = Application.objects.create(
-        name="metadata-test", user=None, client_type=Application.CLIENT_CONFIDENTIAL,
-        authorization_grant_type=Application.GRANT_CLIENT_CREDENTIALS,
-    )
-    AccessToken.objects.create(
-        token=TOKEN, application=application, user=None, scope="read",
-        expires=timezone.now() + timedelta(hours=1),
-    )
-    return {"HTTP_AUTHORIZATION": f"Bearer {TOKEN}"}
+def bearer(research_project):
+    """A client bound to the project, all Sites (#277)."""
+    return bound_client(research_project, token=TOKEN)
 
 
 def _ingest(research_project, tmp_path, *datasets) -> list[DicomFile]:

@@ -20,6 +20,8 @@
       {% include '01_dashboard/_panel_goals.html' %}
     {% elif active_tab == 'etl-pipelines' %}
       {% include '01_dashboard/_panel_etl_pipelines.html' %}
+    {% elif active_tab == 'api-clients' %}
+      {% include '01_dashboard/_panel_api_clients.html' %}
     {% else %}
       {% include '01_dashboard/_panel_consent_statistics.html' %}
     {% endif %}

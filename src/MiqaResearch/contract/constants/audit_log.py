@@ -23,6 +23,13 @@ EVENT_TYPE_ANNOTATION_RETIRED = "annotation_retired"
 EVENT_TYPE_SEGMENTATION_CREATED = "segmentation_created"
 EVENT_TYPE_SEGMENTATION_SUPERSEDED = "segmentation_superseded"
 EVENT_TYPE_SEGMENTATION_RETIRED = "segmentation_retired"
+EVENT_TYPE_API_CLIENT_ISSUED = "api_client_issued"
+EVENT_TYPE_API_CLIENT_UPDATED = "api_client_updated"
+EVENT_TYPE_API_CLIENT_SECRET_ROTATED = "api_client_secret_rotated"
+EVENT_TYPE_API_CLIENT_REVOKED = "api_client_revoked"
+EVENT_TYPE_DICOM_RAW_GRANTED = "dicom_raw_granted"
+EVENT_TYPE_DICOM_RAW_REVOKED = "dicom_raw_revoked"
+EVENT_TYPE_WADO_CLIENT_ACCESS = "wado_client_access"
 
 EVENT_TYPE_CHOICES = [
     (EVENT_TYPE_LOGIN, "Login"),
@@ -50,7 +57,21 @@ EVENT_TYPE_CHOICES = [
     (EVENT_TYPE_SEGMENTATION_CREATED, "Segmentation created"),
     (EVENT_TYPE_SEGMENTATION_SUPERSEDED, "Segmentation superseded"),
     (EVENT_TYPE_SEGMENTATION_RETIRED, "Segmentation retired"),
+    (EVENT_TYPE_API_CLIENT_ISSUED, "API client issued"),
+    (EVENT_TYPE_API_CLIENT_UPDATED, "API client updated"),
+    (EVENT_TYPE_API_CLIENT_SECRET_ROTATED, "API client secret rotated"),
+    (EVENT_TYPE_API_CLIENT_REVOKED, "API client revoked"),
+    (EVENT_TYPE_DICOM_RAW_GRANTED, "Raw DICOM access granted"),
+    (EVENT_TYPE_DICOM_RAW_REVOKED, "Raw DICOM access revoked"),
+    (EVENT_TYPE_WADO_CLIENT_ACCESS, "Image series fetched by an API client"),
 ]
+
+# Data-access events (ADR 0024): purged on DATA_ACCESS_AUDIT_RETENTION_DAYS, not AUDIT_LOG_RETENTION_DAYS.
+DATA_ACCESS_EVENT_TYPES = frozenset({
+    EVENT_TYPE_DICOM_RAW_GRANTED,
+    EVENT_TYPE_DICOM_RAW_REVOKED,
+    EVENT_TYPE_WADO_CLIENT_ACCESS,
+})
 
 AUTH_METHOD_LOCAL = "local"
 AUTH_METHOD_OIDC = "oidc"

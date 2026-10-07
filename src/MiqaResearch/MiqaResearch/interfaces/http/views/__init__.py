@@ -1,4 +1,11 @@
 from .administration.index import index as administration_index
+from .dashboard.api_clients import (
+    api_client_issue as dashboard_tab_api_client_issue,
+    api_client_revoke as dashboard_tab_api_client_revoke,
+    api_client_rotate as dashboard_tab_api_client_rotate,
+    api_client_update as dashboard_tab_api_client_update,
+    api_clients as dashboard_tab_api_clients,
+)
 from .dashboard.etl import (
     etl_binding_config_fields as dashboard_tab_etl_binding_config_fields,
     etl_binding_edit as dashboard_tab_etl_binding_edit,

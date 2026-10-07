@@ -20,4 +20,5 @@ from .derived_object_provenance import DerivedObjectProvenance
 from .measurement import Measurement
 from .prom_data import PromFormTemplate, PromData, ParsedPromForm
 from .auth import BearerToken
+from .client_binding import ClientBinding
 from .oidc_role_mapping import OIDCRoleMapping

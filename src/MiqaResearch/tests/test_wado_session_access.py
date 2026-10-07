@@ -3,15 +3,13 @@
 Seam: the WADO HTTP endpoints, fed by `run_ingestion`. A session caller is a
 logged-in user (`client.force_login`); a client caller sends a Bearer token.
 """
-from datetime import datetime, timedelta, timezone as dt_timezone
+from datetime import datetime, timezone as dt_timezone
 from uuid import uuid4
 
 import pytest
 from django.contrib.auth import get_user_model
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
-from django.utils import timezone
-from oauth2_provider.models import AccessToken, Application
 
 from MiqaResearch.data.models import (
     Clinic,
@@ -25,6 +23,7 @@ from MiqaResearch.data.models import (
 from MiqaResearch.data.models.dicom_storage import DicomStorage
 from MiqaResearch.tasks.dicom_handling.pipeline import run_ingestion
 from contract.constants.research_project_role import PROJECT_ROLE_ANNOTATOR, PROJECT_ROLE_PI
+from tests.client_binding_helpers import bound_client
 from tests.dicom_fixtures import build_multiframe_ct, write_dicom
 
 User = get_user_model()
@@ -82,16 +81,9 @@ def invisible_client(client, world):
 
 
 @pytest.fixture
-def bearer(db):
-    application = Application.objects.create(
-        name="session-access-test", user=None, client_type=Application.CLIENT_CONFIDENTIAL,
-        authorization_grant_type=Application.GRANT_CLIENT_CREDENTIALS,
-    )
-    AccessToken.objects.create(
-        token=TOKEN, application=application, user=None, scope="read",
-        expires=timezone.now() + timedelta(hours=1),
-    )
-    return {"HTTP_AUTHORIZATION": f"Bearer {TOKEN}"}
+def bearer(world):
+    """A client bound to the project, all Sites, granted raw access (#277)."""
+    return bound_client(world["project"], dicom_raw=True, scope="read dicom:raw", token=TOKEN)
 
 
 def _uids(dicom_file):
@@ -278,7 +270,7 @@ def test_raw_endpoints_still_serve_client_callers(world, client, bearer):
 
 
 def test_client_callers_are_not_subject_to_participant_visibility(world, client, bearer):
-    """Clients are scoped by their Client Binding (#277), not by a user's Participant Visibility."""
+    """Clients are scoped by their Client Binding (#277, tests/test_wado_client_binding.py), not by a user's."""
     assert client.get(_frames_url(world["file"]), **bearer).status_code == 200
     assert client.get(_metadata_urls(world["file"])[2], **bearer).status_code == 200
 

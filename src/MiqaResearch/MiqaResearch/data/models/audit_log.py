@@ -52,6 +52,9 @@ class AuditLog(models.Model):
     project = models.ForeignKey(
         ResearchProject, on_delete=models.SET_NULL, null=True, blank=True, db_index=True,
         help_text="The project an event is scoped to, e.g. an ETL management action; null for account-level events.")
+    dedupe_key = models.CharField(
+        max_length=128, null=True, blank=True, unique=True, editable=False,
+        help_text="Set on events logged at most once per key (e.g. one WADO entry per client, series and token).")
 
     objects = AuditLogManager()
 
