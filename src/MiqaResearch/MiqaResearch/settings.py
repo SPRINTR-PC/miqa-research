@@ -21,6 +21,7 @@ from contract.constants.scopes import (
 )
 from helpers import vault
 from helpers.vault import get_data_encryption_keys
+from MiqaResearch.telemetry import otlp_logging_config
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -133,6 +134,7 @@ env = environ.Env(
     MIRES_OCR_VLM_PAGE_TIMEOUT_SECONDS=(int, 900),
     MIRES_OCR_VLM_FORM_TIMEOUT_SECONDS=(int, 2700),
     MIRES_OCR_VLM_NUM_GPU=(int, 0),
+    MIRES_OTLP_ENABLED=(bool, False),
     MIRES_OTLP_ENDPOINT=(str, "http://localhost:4318/v1/logs"),
     MIRES_OTLP_PROTOCOL=(str, "http"),
     MIRES_OTLP_INSECURE=(bool, False),
@@ -519,6 +521,13 @@ CACHES = {
 if env("MIRES_LOGGING_DIR") is not None and not env("MIRES_LOGGING_DIR").exists():
     env("MIRES_LOGGING_DIR").mkdir(parents=True, exist_ok=True)
 
+# OTLP log export (#293): off unless MIRES_OTLP_ENABLED; OTLP/HTTP only.
+_OTLP_HANDLERS = otlp_logging_config(
+    enabled=env("MIRES_OTLP_ENABLED"),
+    endpoint=env("MIRES_OTLP_ENDPOINT"),
+    service_name=env("MIRES_OTLP_SERVICE_NAME"),
+)
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -541,10 +550,11 @@ LOGGING = {
             "maxBytes": 1024 * 1024 * 5,  # 5 MB
             "backupCount": 5,
             "formatter": "conventional",
-        }
+        },
+        **_OTLP_HANDLERS,
     },
     "root": {
-        "handlers": ["console", "file"],
+        "handlers": ["console", "file", *_OTLP_HANDLERS],
         "level": env("MIRES_LOGGING_LEVEL"),
     },
 }
