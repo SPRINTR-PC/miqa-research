@@ -1,0 +1,67 @@
+<!doctype html>
+<!-- PROTOTYPE — throwaway (#214). /static/js/webcomponents/prototype-wsi-draw.html?variant=cs3d|dmv
+     Same CS3D WHOLE_SLIDE viewport; cs3d = CS3D annotation tools, dmv = dicom-microscopy-viewer Draw.
+     Middle-drag pan, right-drag zoom, left = selected tool. -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>PROTOTYPE WSI drawing</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0d10; color: #dde; font: 12px system-ui, sans-serif; }
+  body { display: grid; grid-template-columns: 110px 1fr 380px; grid-template-rows: auto 1fr; height: 100vh; }
+  #scenario { grid-column: 1 / 4; background: #fffbe6; color: #333; padding: 4px 8px; border-bottom: 2px dashed #c90; }
+  #scenario b { color: #a60; }
+  #rail { padding: 6px; display: flex; flex-direction: column; gap: 4px; background: #14181d; }
+  #rail button { background: #222a33; color: #dde; border: 1px solid #333; border-radius: 4px; padding: 6px; cursor: pointer; text-align: left; }
+  #rail button.on { background: #2d6cdf; }
+  #rail button:disabled { opacity: .35; cursor: default; }
+  #vp { position: relative; min-height: 0; }
+  #state { overflow: auto; padding: 6px 8px; background: #14181d; font: 11px ui-monospace, monospace; white-space: pre-wrap; }
+  #state h4 { margin: 8px 0 2px; font: 600 12px system-ui; color: #ffd54a; }
+  #switcher { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); background: #ffd54a; color: #111; border-radius: 999px;
+    padding: 6px 14px; display: flex; gap: 12px; align-items: center; box-shadow: 0 4px 16px #0008; z-index: 9999; font-weight: 600; }
+  #switcher button { background: none; border: 0; font-size: 18px; cursor: pointer; }
+</style>
+</head>
+<body>
+<div id="scenario"><b>PROTOTYPE #214</b> — drawing on WSI. Middle-drag pan · right-drag zoom · left = tool.
+  dmv: line/polygon = click points, double-click ends; Length = 2 clicks; box/ellipse = click-move-click; freehand = drag.</div>
+<div id="rail"></div>
+<div id="vp"></div>
+<div id="state">loading…</div>
+<div id="switcher"><button id="prev">←</button><span id="label"></span><button id="next">→</button></div>
+<script type="module">
+  const variants = { cs3d: "A — Cornerstone3D tools", dmv: "B — dicom-microscopy-viewer Draw (in CS3D viewport)" };
+  const keys = Object.keys(variants);
+  const params = new URLSearchParams(location.search);
+  const v = keys.includes(params.get("variant")) ? params.get("variant") : "cs3d";
+  document.getElementById("label").textContent = variants[v];
+  const go = (d) => { params.set("variant", keys[(keys.indexOf(v) + d + keys.length) % keys.length]); location.search = params; };
+  document.getElementById("prev").onclick = () => go(-1);
+  document.getElementById("next").onclick = () => go(1);
+  await import("./mireswc-viewer.js");
+  const { startSpike, WSI_DRAW_TOOLS: TOOLS } = window.wsiDrawSpike;
+  const rail = document.getElementById("rail"), state = document.getElementById("state");
+  let s;
+  const render = () => {
+    if (!s) return;
+    for (const b of rail.querySelectorAll("button[data-t]")) b.classList.toggle("on", b.dataset.t === s.tool);
+    const rois = s.rois();
+    state.innerHTML = `<h4>Variant</h4>${variants[v]}\n<h4>Camera</h4>${JSON.stringify(s.camera())}\n<h4>ROIs (${rois.length}) → TID 1500 SCOORD3D</h4>` +
+      rois.map((r, i) => `#${i + 1} ${r.tool} → ${r.graphicType} (${r.points.length} pts)\n  first: ${JSON.stringify(r.points[0])}\n  ${JSON.stringify(r.measurements)}`).join("\n") +
+      `\n<h4>Events</h4>${s.events.slice().reverse().join("\n")}`;
+  };
+  for (const [name, def] of Object.entries(TOOLS)) {
+    const b = document.createElement("button");
+    b.textContent = name; b.dataset.t = name;
+    b.disabled = !(v === "cs3d" ? def.cs3d : def.dmv);
+    b.onclick = () => s?.setTool(name);
+    rail.appendChild(b);
+  }
+  const clr = document.createElement("button"); clr.textContent = "Clear"; clr.onclick = () => s?.clear(); rail.appendChild(clr);
+  s = await startSpike(document.getElementById("vp"), v, () => render());
+  render();
+  document.body.dataset.ready = "1";
+</script>
+</body>
+</html>

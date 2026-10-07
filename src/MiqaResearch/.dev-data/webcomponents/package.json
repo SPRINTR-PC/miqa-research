@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "build:viewer-prototype": "vite build && rm -rf ../../static/js/webcomponents/dmv && mkdir -p ../../static/js/webcomponents/dmv && cp node_modules/dicom-microscopy-viewer/dist/dynamic-import/*.js node_modules/dicom-microscopy-viewer/dist/dynamic-import/*.wasm ../../static/js/webcomponents/dmv/ && cp src/viewer-prototype/prototype-viewer-shadow-dom.html src/viewer-prototype/toolbar/prototype-viewer-toolbar.html ../../static/js/webcomponents/",
+    "build:viewer-prototype": "vite build && rm -rf ../../static/js/webcomponents/dmv && mkdir -p ../../static/js/webcomponents/dmv && cp node_modules/dicom-microscopy-viewer/dist/dynamic-import/*.js node_modules/dicom-microscopy-viewer/dist/dynamic-import/*.wasm ../../static/js/webcomponents/dmv/ && cp src/viewer-prototype/prototype-viewer-shadow-dom.html src/viewer-prototype/toolbar/prototype-viewer-toolbar.html src/viewer-prototype/wsi-draw/prototype-wsi-draw.html ../../static/js/webcomponents/",
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run"
