@@ -54,3 +54,18 @@ def test_seed_is_idempotent(settings):
     first, second = _seed(), _seed()
 
     assert first["ct"] == second["ct"]
+
+
+@pytest.mark.django_db
+def test_seed_gives_an_annotating_and_a_view_only_session(settings, client):
+    """#280 role gating: the PI's dev page enables annotate tools, the view-only user's doesn't."""
+    settings.DEBUG = True
+    seeded = _seed()
+    page = f"/viewer/dev/?study={seeded['ct']['studyUid']}&series={seeded['ct']['seriesUid']}"
+
+    def dev_page_as(cookie):
+        client.cookies[cookie["name"]] = cookie["value"]
+        return client.get(page).content.decode()
+
+    assert "can-annotate" in dev_page_as(seeded["sessionCookie"])
+    assert "can-annotate" not in dev_page_as(seeded["viewOnlySessionCookie"])

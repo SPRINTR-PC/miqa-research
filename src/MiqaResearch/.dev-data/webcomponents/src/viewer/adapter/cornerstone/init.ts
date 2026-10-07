@@ -1,18 +1,12 @@
 // One-time Cornerstone3D initialisation (memoised). Browser only: needs Worker + WebGL.
 // Later tickets register their extras here: volume loaders (#282), peerImport for
-// dicom-microscopy-viewer (#285), segmentation/annotation tools (#280, #286).
+// dicom-microscopy-viewer (#285). Tools are registered in tools.ts (registerCornerstoneTool).
 import { init as csInit, metaData, utilities } from "@cornerstonejs/core";
 import dicomImageLoader from "@cornerstonejs/dicom-image-loader";
 import { registerDefaultProviders } from "@cornerstonejs/metadata";
 import * as csTools from "@cornerstonejs/tools";
 
-/** Tools registered globally; tool groups pick from these. Always reference tools by `.toolName` (minify mangles class names). */
-export const STACK_TOOLS = [
-  csTools.WindowLevelTool,
-  csTools.PanTool,
-  csTools.ZoomTool,
-  csTools.StackScrollTool,
-] as const;
+import { addRegisteredTools } from "./tools.ts";
 
 let initPromise: Promise<void> | undefined;
 
@@ -28,7 +22,7 @@ export function initCornerstone(): Promise<void> {
     dicomImageLoader.init();
     csInit();
     csTools.init();
-    STACK_TOOLS.forEach((tool) => csTools.addTool(tool));
+    addRegisteredTools();
   })();
   return initPromise;
 }

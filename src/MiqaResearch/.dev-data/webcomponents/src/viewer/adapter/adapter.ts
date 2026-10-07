@@ -20,12 +20,36 @@ export interface StackState {
   imageIndex: number;
   imageCount: number;
   voi: VoiRange | undefined;
+  /** Tool on the left button (a ToolDef id). */
+  activeTool: string;
+  invert: boolean;
+  /** Camera zoom factor (1 = fit) and pan in canvas pixels. */
+  zoom: number;
+  pan: [number, number];
+  /** CS3D length unit of the image shown, raw (`mm`, `mm Proj`, `px`, …). */
+  unit: string;
+  /** Annotations (measurements, ROIs, arrows) drawn on this view. */
+  annotationCount: number;
 }
 
-export interface StackView {
+/**
+ * View-independent controls the chrome drives (tool rail, keys, presets, inspector).
+ * Every view kind implements them: stack now, volume (#282) and WSI (#285) later.
+ */
+export interface ViewControls {
+  /** Put a tool (ToolDef id) on the left button; re-applies the workstation mouse bindings. */
+  setTool(toolId: string): void;
+  setVoi(voi: VoiRange): void;
+  /** Back to the image's own window (DICOM default). */
+  resetVoi(): void;
+  toggleInvert(): void;
+  /** Reset camera (zoom/pan) and display properties (window, invert). */
+  resetView(): void;
+}
+
+export interface StackView extends ViewControls {
   state(): StackState;
   scrollTo(imageIndex: number): void;
-  setVoi(voi: VoiRange): void;
 }
 
 export interface ViewerAdapter {
