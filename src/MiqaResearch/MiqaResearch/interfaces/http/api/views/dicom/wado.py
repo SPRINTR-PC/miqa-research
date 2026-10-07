@@ -2,13 +2,14 @@ from django.http import HttpResponse, FileResponse
 from django.shortcuts import get_object_or_404
 from ninja import Router
 from MiqaResearch.data.models.dicom_file import DicomFile
-import pydicom
 
 from .frames import router as frames_router
+from .metadata import router as metadata_router
 
 router = Router()
-# Retrieve Frames lives in its own module (#274); same URL prefix.
+# Retrieve Frames (#274) and Retrieve Metadata (#275) live in their own modules; same URL prefix.
 router.add_router("", frames_router)
+router.add_router("", metadata_router)
 
 # Helper for multipart/related response
 def multipart_related_response(items, boundary="boundary", content_type_item="application/dicom"):
@@ -79,45 +80,3 @@ def retrieve_instance(request, study_instance_uid: str, series_instance_uid: str
     )
     
     return multipart_related_response([dicom_file.file])
-
-# WADO-RS Retrieve Metadata
-@router.get("/studies/{study_instance_uid}/metadata")
-def retrieve_study_metadata(request, study_instance_uid: str):
-    # Returns a JSON array of DICOM tags for all instances in the study using pydicom.
-    dicom_files = DicomFile.objects.filter(series__study__study_instance_uid=study_instance_uid)
-    
-    metadata = []
-    for df in dicom_files:
-        with df.file.open('rb') as f:
-            ds = pydicom.dcmread(f, stop_before_pixels=True)
-            metadata.append(ds.to_json_dict())
-    
-    return metadata
-
-@router.get("/studies/{study_instance_uid}/series/{series_instance_uid}/metadata")
-def retrieve_series_metadata(request, study_instance_uid: str, series_instance_uid: str):
-    dicom_files = DicomFile.objects.filter(
-        series__series_instance_uid=series_instance_uid,
-        series__study__study_instance_uid=study_instance_uid
-    )
-    
-    metadata = []
-    for df in dicom_files:
-        with df.file.open('rb') as f:
-            ds = pydicom.dcmread(f, stop_before_pixels=True)
-            metadata.append(ds.to_json_dict())
-    
-    return metadata
-
-@router.get("/studies/{study_instance_uid}/series/{series_instance_uid}/instances/{sop_instance_uid}/metadata")
-def retrieve_instance_metadata(request, study_instance_uid: str, series_instance_uid: str, sop_instance_uid: str):
-    df = get_object_or_404(
-        DicomFile,
-        sop_instance_uid=sop_instance_uid,
-        series__series_instance_uid=series_instance_uid,
-        series__study__study_instance_uid=study_instance_uid
-    )
-    
-    with df.file.open('rb') as f:
-        ds = pydicom.dcmread(f, stop_before_pixels=True)
-        return [ds.to_json_dict()]
