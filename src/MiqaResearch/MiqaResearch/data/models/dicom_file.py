@@ -39,6 +39,10 @@ class DicomFile(models.Model):
         blank=True, null=True,
         help_text="Frame offset index: [offset, length] per frame in the stored file (tasks/dicom_handling/frame_index.py); "
                   "null = not built yet, [] = no servable frames")
+    uids_pseudonymized = models.BooleanField(
+        default=False,
+        help_text="The stored bytes already carry pseudonymized UIDs (viewer-saved Annotations/Segmentations, #287); "
+                  "serve-time de-identification must not hash them again (uids_already_pseudonymized=True)")
 
     class Meta:
         db_table = "mires_dicom_file"

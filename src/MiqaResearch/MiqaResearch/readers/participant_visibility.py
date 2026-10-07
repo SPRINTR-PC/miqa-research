@@ -22,8 +22,12 @@ from contract.constants.research_project_role import PROJECT_ROLE_ADMIN, PROJECT
 ALL_SITES_ROLES = (PROJECT_ROLE_ADMIN, PROJECT_ROLE_PI)
 
 
-def visible_participants(user, project) -> QuerySet[StudyParticipant]:
-    """Study Participants of `project` (instance or pk) that `user` may see, as a lazy QuerySet."""
+def visible_participants(user, project, roles=None) -> QuerySet[StudyParticipant]:
+    """Study Participants of `project` (instance or pk) that `user` may see, as a lazy QuerySet.
+
+    `roles` (role names) narrows the rule to those role rows only, e.g. "participants this user
+    may author Annotations on" (#287). A superuser is not narrowed.
+    """
     participants = StudyParticipant.objects.filter(research_project=project)
     if not getattr(user, "is_authenticated", False):
         return participants.none()
@@ -31,6 +35,8 @@ def visible_participants(user, project) -> QuerySet[StudyParticipant]:
         return participants
 
     role_rows = ResearchProjectUserRoleMap.objects.filter(user=user, project=project)
+    if roles is not None:
+        role_rows = role_rows.filter(role__name__in=roles)
     all_sites = role_rows.filter(Q(role__name__in=ALL_SITES_ROLES) | Q(clinic__isnull=True))
     consent_at_own_site = ParticipantConsent.objects.filter(
         study_participant=OuterRef("pk"),
@@ -40,7 +46,7 @@ def visible_participants(user, project) -> QuerySet[StudyParticipant]:
     return participants.filter(Exists(all_sites) | Exists(consent_at_own_site))
 
 
-def can_see_participant(user, project, participant) -> bool:
-    """Whether `user` may see `participant` (instance or pk) of `project`."""
+def can_see_participant(user, project, participant, roles=None) -> bool:
+    """Whether `user` may see `participant` (instance or pk) of `project` (through `roles` only, if given)."""
     participant_pk = getattr(participant, "pk", participant)
-    return visible_participants(user, project).filter(pk=participant_pk).exists()
+    return visible_participants(user, project, roles).filter(pk=participant_pk).exists()

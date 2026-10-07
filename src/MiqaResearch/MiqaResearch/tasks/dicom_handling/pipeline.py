@@ -25,7 +25,7 @@ from django.db import transaction
 from helpers.dicom_uid import pseudonymize_uid
 from MiqaResearch.data.models import DicomFile, ResearchProject
 
-from . import discovery, dicom_parsing, extractors, frame_index, pixel_bounds, records
+from . import derived_provenance, discovery, dicom_parsing, extractors, frame_index, pixel_bounds, records
 from . import participant as participant_stage
 from . import storage as storage_stage
 from .dicom_parsing import NotADicomError
@@ -266,6 +266,7 @@ def _ingest_file(
             storage_stage.store_file_bytes(dcm_file, raw_bytes)
             dcm_file.save()
             records.add_file_size_to_series(dcm_file.series, file_size_in_mb)
+            derived_provenance.record_ingested_provenance(dcm_file, dataset, research_project)
             stored_and_verified = _verify_stored(dcm_file, dcm_file.content_sha256, source_path)
     except ValueError:
         # match_or_create_participant: the file has no usable patient identifier
