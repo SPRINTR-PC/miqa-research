@@ -63,6 +63,25 @@ class DicomStorage(Storage):
     def url(self, name):
         return self._backend().url(name)
 
+    def read_range(self, name: str, offset: int, length: int) -> bytes:
+        """Read `length` bytes at `offset` of the stored file without fetching the rest (#274).
+
+        Local disk: seek + read. S3: a ranged GET (django-storages' S3File would
+        download the whole object on first read).
+        """
+        if length <= 0:
+            return b""
+        backend = self._backend()
+        if isinstance(backend, FileSystemStorage):
+            with open(backend.path(name), "rb") as fd:
+                fd.seek(offset)
+                return fd.read(length)
+        from storages.utils import clean_name
+
+        key = backend._normalize_name(clean_name(name))
+        response = backend.bucket.Object(key).get(Range=f"bytes={offset}-{offset + length - 1}")
+        return response["Body"].read()
+
     def path(self, name):
         # Delegates to the local backend's implementation; the S3 backend's
         # base Storage.path() correctly raises NotImplementedError instead.

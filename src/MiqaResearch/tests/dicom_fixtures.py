@@ -505,3 +505,78 @@ def write_dicom(ds: Dataset, path: str | Path, *, with_preamble: bool = True) ->
         # exports that write metadata starting at byte 0.
         path.write_bytes(raw[132:])
     return path
+
+
+def build_multiframe_ct(*, number_of_frames: int = 3, rows: int = 4, columns: int = 5, **kwargs) -> Dataset:
+    """Build a synthetic native (uncompressed) 16-bit multi-frame CT (#274).
+
+    Every frame's bytes differ, so a test can tell frames apart by content.
+    Explicit VR Little Endian, frames stored back to back in PixelData.
+    """
+    ds = build_ct_image(**kwargs)
+    ds.NumberOfFrames = number_of_frames
+    ds.Rows = rows
+    ds.Columns = columns
+    ds.SamplesPerPixel = 1
+    ds.PhotometricInterpretation = "MONOCHROME2"
+    ds.BitsAllocated = 16
+    ds.BitsStored = 12
+    ds.HighBit = 11
+    ds.PixelRepresentation = 0
+    frame_size = rows * columns * 2
+    ds.PixelData = b"".join(
+        bytes((frame * 31 + i) % 256 for i in range(frame_size)) for frame in range(number_of_frames)
+    )
+    return ds
+
+
+def fake_jpeg_tile(index: int, *, size: int = 14) -> bytes:
+    """A small even-length byte string shaped like a JPEG codestream (SOI ... EOI).
+
+    Never decoded by the server, which serves stored frames as-is; only the
+    SOI marker matters, for indexing fragments without an offset table.
+    """
+    return b"\xff\xd8" + bytes([index % 256]) * (size - 4) + b"\xff\xd9"
+
+
+def build_tiled_wsi_jpeg(
+    *,
+    tiles: list[bytes] | None = None,
+    fragments_per_frame: int = 1,
+    has_bot: bool = True,
+    extended_offset_table: bool = False,
+    **kwargs,
+) -> Dataset:
+    """Build a synthetic encapsulated JPEG Baseline TILED_FULL WSI level (#274).
+
+    2×2 tiles of 4×4 pixels by default (one tile per frame), with a Basic
+    Offset Table unless `has_bot=False` (or an Extended Offset Table and an
+    empty BOT with `extended_offset_table=True`). Carries the WSI tags Cornerstone3D's
+    WSIViewport needs (ImageOrientationSlide, ImagedVolumeWidth/Height,
+    TotalPixelMatrixOriginSequence, DimensionOrganizationType).
+    """
+    from pydicom.encaps import encapsulate, encapsulate_extended
+    from pydicom.uid import JPEGBaseline8Bit
+
+    tiles = tiles if tiles is not None else [fake_jpeg_tile(i) for i in range(4)]
+    kwargs.setdefault("number_of_frames", len(tiles))
+    kwargs.setdefault("total_pixel_matrix_rows", 8)
+    kwargs.setdefault("total_pixel_matrix_columns", 8)
+    ds = build_wsi(**kwargs)
+    ds.file_meta.TransferSyntaxUID = JPEGBaseline8Bit
+    ds.PhotometricInterpretation = "YBR_FULL_422"
+    ds.DimensionOrganizationType = "TILED_FULL"
+    ds.ImageOrientationSlide = [0, -1, 0, -1, 0, 0]
+    ds.ImagedVolumeWidth = 0.002
+    ds.ImagedVolumeHeight = 0.002
+    origin = Dataset()
+    origin.XOffsetInSlideCoordinateSystem = 20.0
+    origin.YOffsetInSlideCoordinateSystem = 40.0
+    ds.TotalPixelMatrixOriginSequence = [origin]
+    ds.LossyImageCompression = "01"
+    if extended_offset_table:
+        ds.PixelData, ds.ExtendedOffsetTable, ds.ExtendedOffsetTableLengths = encapsulate_extended(tiles)
+    else:
+        ds.PixelData = encapsulate(tiles, fragments_per_frame=fragments_per_frame, has_bot=has_bot)
+    ds["PixelData"].VR = "OB"
+    return ds
