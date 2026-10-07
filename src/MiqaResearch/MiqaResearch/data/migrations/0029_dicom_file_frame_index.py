@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('data', '0027_etl_source_location'),
+        ('data', '0028_participant_visibility'),
     ]
 
     operations = [
