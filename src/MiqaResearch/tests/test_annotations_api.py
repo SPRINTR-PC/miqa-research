@@ -516,6 +516,37 @@ def test_metadata_backfill_leaves_viewer_saved_objects_alone(client, project, ct
     assert dcm_file.metadata["SeriesInstanceUID"] == saved["series_instance_uid"]
 
 
+@pytest.mark.django_db
+def test_wado_metadata_serves_a_viewer_saved_object_without_hashing_its_uids_again(client, project, ct):
+    from datetime import timedelta
+
+    from django.utils import timezone as django_timezone
+    from oauth2_provider.models import AccessToken, Application
+
+    saved = _save(client, _member(project), _seg_for(ct), [ct.series]).json()
+    application = Application.objects.create(
+        name="wado", client_type=Application.CLIENT_CONFIDENTIAL,
+        authorization_grant_type=Application.GRANT_CLIENT_CREDENTIALS,
+    )
+    AccessToken.objects.create(
+        token="ann-wado", application=application, scope="read",
+        expires=django_timezone.now() + timedelta(hours=1),
+    )
+    client.logout()
+
+    response = client.get(
+        f"/api/v1/dicom/studies/{ct.series.study.study_instance_uid}/series/{saved['series_instance_uid']}/metadata",
+        HTTP_AUTHORIZATION="Bearer ann-wado",
+    )
+
+    assert response.status_code == 200, response.content
+    (instance,) = response.json()
+    assert instance["0020000E"]["Value"] == [saved["series_instance_uid"]]
+    assert instance["0020000D"]["Value"] == [ct.series.study.study_instance_uid]
+    referenced = instance["00081115"]["Value"][0]  # ReferencedSeriesSequence
+    assert referenced["0020000E"]["Value"] == [ct.series.series_instance_uid]
+
+
 # --- Data Kinds ------------------------------------------------------------
 
 
