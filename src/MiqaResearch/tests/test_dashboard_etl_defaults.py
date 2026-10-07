@@ -118,8 +118,8 @@ def test_updating_overrides_records_an_audit_event_with_no_data_values(project):
     entry = AuditLog.objects.get(event_type=EVENT_TYPE_ETL_SETTINGS_UPDATED)
     assert entry.user_id == user.id
     assert entry.project_id == project.id
-    assert "30" not in str(entry.metadata)
-    assert set(entry.metadata.keys()) == {"etl_project_settings_id"}
+    # Only the settings row's id -- never the values saved (an exact match, since a random id can contain "30").
+    assert entry.metadata == {"etl_project_settings_id": str(EtlProjectSettings.objects.get(project=project).id)}
 
 
 @pytest.mark.django_db
