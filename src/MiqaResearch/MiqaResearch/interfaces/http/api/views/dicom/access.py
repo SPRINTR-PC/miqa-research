@@ -12,6 +12,9 @@ The WADO router authenticates two caller types (interfaces/http/api/urls.py):
   404 everywhere. The raw-bytes endpoints also need `dicom:raw` both carried by
   the token and currently granted on the binding (403 otherwise). Each client
   access is audited once per client, series and access token (`audit_client_access`).
+
+Blinded Annotation (#288, `readers/blinding.py`) narrows both in the same query: sessions see only
+their own Annotation/Segmentation series (plus revealed participants), clients none (404 alike).
 """
 from dataclasses import dataclass
 from functools import wraps
@@ -24,6 +27,7 @@ from contract.constants.scopes import SCOPE_DICOM_RAW
 from helpers.http import get_client_ip
 from MiqaResearch.data.models import AuditLog, ClientBinding
 from MiqaResearch.data.models.dicom_file import DicomFile
+from MiqaResearch.readers.blinding import unblinded_files_for_client, unblinded_files_for_user
 from MiqaResearch.readers.participant_visibility import (
     participants_visible_to_client,
     visible_participants_in_any_project,
@@ -52,12 +56,14 @@ def caller_of(request) -> SessionCaller | ClientCaller:
 
 
 def readable_files(request, files: QuerySet[DicomFile]) -> QuerySet[DicomFile]:
-    """`files` narrowed to what the caller may read; adds no query of its own."""
+    """`files` narrowed to what the caller may read (visibility and blinding); adds no query of its own."""
     match caller_of(request):
         case SessionCaller(user):
             visible = visible_participants_in_any_project(user)
+            files = unblinded_files_for_user(user, getattr(request, "session", None), files)
         case ClientCaller(application):
             visible = participants_visible_to_client(application)
+            files = unblinded_files_for_client(files)
     return files.filter(Exists(visible.filter(pk=OuterRef("series__study__study_participant"))))
 
 
