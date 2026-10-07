@@ -12,6 +12,7 @@ from contract.constants.etl import (
 )
 
 from .etl_script import EtlScriptVersion
+from .etl_source_location import EtlSourceLocation
 from .research_project import ResearchProject
 
 
@@ -22,6 +23,9 @@ class PipelineBinding(models.Model):
         blank=False, null=False, db_index=True)
     source_bucket = models.CharField(max_length=200, blank=False, null=False)
     source_prefix = models.CharField(max_length=500, blank=True, default="")
+    source_location = models.ForeignKey(
+        EtlSourceLocation, on_delete=models.PROTECT, related_name="bindings", blank=True, null=True,
+        help_text="The Source Location the source bucket/prefix was copied from (#268); null for older Bindings.")
     grouping_mode = models.CharField(
         max_length=10, choices=PIPELINE_BINDING_GROUPING_CHOICES, default=PIPELINE_BINDING_GROUPING_FILE,
         blank=False, null=False,

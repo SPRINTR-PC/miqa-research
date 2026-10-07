@@ -16,4 +16,10 @@
     href="{% url 'dashboard_tab_etl_pipelines_content' project.id %}?section=defaults"
     hx-get="{% url 'dashboard_tab_etl_pipelines_content' project.id %}?section=defaults" hx-target="#etl-section-panel" hx-swap="innerHTML" hx-push-url="true" hx-sync="#dashboard-tab-panel:replace"
     hx-indicator="#dashboard-tab-loading, #etl-section-panel">{% include 'components/icon.html' with icon_name='shield-check' icon_classes='h-4 w-4' %}{% translate "Defaults" %}</a>
+  {% if etl_permissions.can_manage_source_locations %}
+  <a class="etl-sidebar-link{% if etl_section == 'sources' %} active{% endif %}" aria-current="{% if etl_section == 'sources' %}page{% else %}false{% endif %}"
+    href="{% url 'dashboard_tab_etl_pipelines_content' project.id %}?section=sources"
+    hx-get="{% url 'dashboard_tab_etl_pipelines_content' project.id %}?section=sources" hx-target="#etl-section-panel" hx-swap="innerHTML" hx-push-url="true" hx-sync="#dashboard-tab-panel:replace"
+    hx-indicator="#dashboard-tab-loading, #etl-section-panel">{% include 'components/icon.html' with icon_name='folder-kanban' icon_classes='h-4 w-4' %}{% translate "Sources" %}</a>
+  {% endif %}
 </nav>

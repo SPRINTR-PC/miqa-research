@@ -34,13 +34,14 @@ ETL Job
 
 | Role | What you can do on the ETL Pipelines tab |
 |---|---|
-| Admin | Everything below, plus archiving scripts and changing the project's settings under **Defaults**. |
+| Admin | Everything below, plus archiving scripts, changing the project's settings under **Defaults**, and managing source locations under **Sources**. |
 | Data Manager | Create and edit custom scripts, upload new versions, create bindings, retry failed jobs. |
 | PI, Investigator | See every section (scripts, bindings, jobs, logs) but change nothing. |
+| Platform staff | See every section, and under **Sources** also manage the project's location grants. Staff must be members of the project. |
 | Other roles | The tab is not available. |
 
 The tab has four sections, listed in the sidebar on its left: **Bindings**, **Scripts**,
-**Jobs** and **Defaults**.
+**Jobs** and **Defaults**. Admins and platform staff also see a fifth, **Sources**.
 
 (heading-etl-pipelines-scripts)=
 ## Creating a custom script
@@ -124,8 +125,8 @@ A binding tells the platform to watch a location and process what arrives there.
 
 1. Open **Bindings** and expand **New binding**.
 2. Fill in the form:
-   - **Source bucket** and **Source prefix**: the bucket, and optionally the folder inside it,
-     where new files arrive.
+   - **Source location**: where new files arrive, chosen from the project's source locations
+     (see [Sources](#heading-etl-pipelines-sources)).
    - **Script & version**: the script to run and the exact version to use.
    - **After a successful load**: what happens to the input files once a job succeeds.
      - **Move to Raw Bucket** (the default) keeps a copy. Fill in **Raw bucket** and
@@ -158,10 +159,9 @@ A binding tells the platform to watch a location and process what arrives there.
      never higher.
 3. Click **Create binding**.
 
-Your project can only use buckets it has been granted. If the form says *"This project has not
-been granted access to that source bucket/prefix"*, or if there is a notice that no buckets are
-granted yet, ask your platform administrator to grant the bucket to the project. Each source
-location can belong to only one binding.
+If there are no source locations yet, ask a project Admin to add one under **Sources**. Each
+source location can belong to only one binding. The raw bucket must also be granted to the
+project; if the form says it has not been granted access, ask your platform administrator.
 
 (heading-etl-pipelines-binding-edit)=
 ### Editing a binding
@@ -284,3 +284,20 @@ override two settings for this project:
 
 Leave a field empty to use the platform default. PIs, Investigators and Data Managers can see
 this section but cannot change it.
+
+(heading-etl-pipelines-sources)=
+## Sources (Admins and platform staff)
+
+The **Sources** section holds the places bindings read new files from.
+
+- **Source locations** are named folders, a bucket plus an optional prefix, for example
+  *REDCap exports* at `incoming/redcap/`. The binding form offers them by name. An Admin adds
+  one with **New source location**, and can **Rename** it later. Its bucket and prefix can't be
+  changed afterwards; create a new location instead. A location that a binding uses can't be
+  deleted.
+- **Location grants** are the buckets and prefixes the project may use at all. Every source
+  location, and every raw bucket, must lie inside one. Admins see the grants; only platform
+  staff can add or delete them. A grant can't be deleted while a source location or binding
+  still needs it.
+
+Every change is recorded in the project's audit log.

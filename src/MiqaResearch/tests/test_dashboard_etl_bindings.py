@@ -26,6 +26,7 @@ from MiqaResearch.data.models import (
     EtlProcessedFile,
     EtlScript,
     EtlScriptVersion,
+    EtlSourceLocation,
     PipelineBinding,
     ResearchProject,
     ResearchProjectRole,
@@ -76,9 +77,14 @@ def _create_url(project):
     return reverse("dashboard_tab_etl_bindings_create", args=[project.id])
 
 
-def _payload(native_version, **overrides):
+def _payload(project, native_version, *, source_bucket="incoming", source_prefix="redcap/", **overrides):
+    """A wizard POST; the source is a Source Location (#268) for `source_bucket`/`source_prefix`,
+    created directly -- so a test can still put one outside the project's grants."""
+    location, _ = EtlSourceLocation.objects.get_or_create(
+        project=project, bucket=source_bucket, prefix=source_prefix,
+        defaults={"name": f"{source_bucket}/{source_prefix}"})
     payload = {
-        "source_bucket": "incoming", "source_prefix": "redcap/",
+        "source_location": str(location.id),
         "script_version": str(native_version.id),
         "raw_retention": "move", "raw_bucket": "raw", "raw_prefix": "",
         "grouping_mode": "file", "quiescence_seconds": "", "config": "",
@@ -164,7 +170,7 @@ def test_a_read_only_role_cannot_post_a_create_action(project, native_version):
     client = _client_as(_user_with_role(project, "PI"))
     EtlLocationGrant.objects.create(project=project, bucket="incoming", prefix="")
 
-    response = client.post(_create_url(project), _payload(native_version), **HTMX)
+    response = client.post(_create_url(project), _payload(project, native_version), **HTMX)
 
     assert response.status_code == 403
     assert not PipelineBinding.objects.exists()
@@ -178,7 +184,7 @@ def test_a_binding_outside_every_location_grant_is_rejected(project, native_vers
     client = _client_as(_user_with_role(project, "Data Manager"))
     # no EtlLocationGrant at all for this project
 
-    response = client.post(_create_url(project), _payload(native_version), **HTMX)
+    response = client.post(_create_url(project), _payload(project, native_version), **HTMX)
 
     assert response.status_code == 200
     assert not PipelineBinding.objects.exists()
@@ -191,7 +197,7 @@ def test_a_prefix_outside_a_narrower_grant_is_rejected(project, native_version):
     client = _client_as(_user_with_role(project, "Admin"))
 
     response = client.post(
-        _create_url(project), _payload(native_version, source_prefix="elsewhere/"), **HTMX)
+        _create_url(project), _payload(project, native_version, source_prefix="elsewhere/"), **HTMX)
 
     assert response.status_code == 200
     assert not PipelineBinding.objects.exists()
@@ -203,7 +209,7 @@ def test_a_raw_bucket_outside_every_location_grant_is_rejected(project, native_v
     EtlLocationGrant.objects.create(project=project, bucket="incoming", prefix="")
     client = _client_as(_user_with_role(project, "Admin"))
 
-    response = client.post(_create_url(project), _payload(native_version, raw_bucket="ungranted-raw"), **HTMX)
+    response = client.post(_create_url(project), _payload(project, native_version, raw_bucket="ungranted-raw"), **HTMX)
 
     assert response.status_code == 200
     assert not PipelineBinding.objects.exists()
@@ -216,7 +222,7 @@ def test_a_data_manager_can_create_a_binding_within_a_granted_bucket(project, na
     EtlLocationGrant.objects.create(project=project, bucket="raw", prefix="")
     client = _client_as(_user_with_role(project, "Data Manager"))
 
-    response = client.post(_create_url(project), _payload(native_version), **HTMX)
+    response = client.post(_create_url(project), _payload(project, native_version), **HTMX)
 
     assert response.status_code == 200
     binding = PipelineBinding.objects.get(project=project)
@@ -231,7 +237,8 @@ def test_a_data_manager_can_create_a_folder_grouped_binding_with_its_own_quiesce
     client = _client_as(_user_with_role(project, "Data Manager"))
 
     client.post(
-        _create_url(project), _payload(native_version, grouping_mode="folder", quiescence_seconds="900"), **HTMX)
+        _create_url(project),
+        _payload(project, native_version, grouping_mode="folder", quiescence_seconds="900"), **HTMX)
 
     binding = PipelineBinding.objects.get(project=project)
     assert binding.grouping_mode == "folder"
@@ -243,7 +250,8 @@ def test_a_bindings_config_is_set_in_the_wizard(project, native_version):
     _grant_incoming_and_raw(project)
     client = _client_as(_user_with_role(project, "Data Manager"))
 
-    client.post(_create_url(project), _payload(native_version, config='{"delimiter": ";", "skip_rows": 2}'), **HTMX)
+    client.post(
+        _create_url(project), _payload(project, native_version, config='{"delimiter": ";", "skip_rows": 2}'), **HTMX)
 
     assert PipelineBinding.objects.get(project=project).config == {"delimiter": ";", "skip_rows": 2}
 
@@ -254,7 +262,7 @@ def test_a_config_that_is_not_a_json_object_is_rejected(project, native_version,
     _grant_incoming_and_raw(project)
     client = _client_as(_user_with_role(project, "Data Manager"))
 
-    response = client.post(_create_url(project), _payload(native_version, config=config), **HTMX)
+    response = client.post(_create_url(project), _payload(project, native_version, config=config), **HTMX)
 
     assert not PipelineBinding.objects.exists()
     assert "etl-form-error" in response.content.decode()
@@ -267,7 +275,7 @@ def test_creating_a_binding_records_an_audit_event_with_no_data_values(project, 
     user = _user_with_role(project, "Admin")
     client = _client_as(user)
 
-    client.post(_create_url(project), _payload(native_version), **HTMX)
+    client.post(_create_url(project), _payload(project, native_version), **HTMX)
 
     entry = AuditLog.objects.get(event_type=EVENT_TYPE_ETL_BINDING_CREATED)
     assert entry.user_id == user.id
@@ -285,7 +293,7 @@ def test_a_duplicate_source_bucket_and_prefix_is_rejected(project, native_versio
         raw_bucket="raw", raw_prefix="")
     client = _client_as(_user_with_role(project, "Admin"))
 
-    response = client.post(_create_url(project), _payload(native_version), **HTMX)
+    response = client.post(_create_url(project), _payload(project, native_version), **HTMX)
 
     assert response.status_code == 200
     assert PipelineBinding.objects.filter(project=project).count() == 1
@@ -306,8 +314,8 @@ def test_a_scripts_own_project_custom_version_is_selectable_but_another_projects
     EtlLocationGrant.objects.create(project=project, bucket="raw", prefix="")
     client = _client_as(_user_with_role(project, "Admin"))
 
-    own_response = client.post(_create_url(project), _payload(own_version, source_prefix="own/"), **HTMX)
-    other_response = client.post(_create_url(project), _payload(other_version, source_prefix="other/"), **HTMX)
+    own_response = client.post(_create_url(project), _payload(project, own_version, source_prefix="own/"), **HTMX)
+    other_response = client.post(_create_url(project), _payload(project, other_version, source_prefix="other/"), **HTMX)
 
     assert PipelineBinding.objects.filter(project=project, source_prefix="own/").exists()
     assert not PipelineBinding.objects.filter(project=project, source_prefix="other/").exists()
@@ -478,7 +486,8 @@ def test_an_admin_can_create_a_delete_after_load_binding_with_no_raw_destination
     client = _client_as(_user_with_role(project, "Admin"))
 
     client.post(_create_url(project), _payload(
-        native_version, raw_retention="delete", confirm_delete="on", raw_bucket="raw", raw_prefix="x/"), **HTMX)
+        project, native_version, raw_retention="delete", confirm_delete="on", raw_bucket="raw", raw_prefix="x/"),
+        **HTMX)
 
     binding = PipelineBinding.objects.get(project=project)
     assert binding.raw_retention == "delete"
@@ -491,7 +500,7 @@ def test_a_data_manager_cannot_create_a_delete_after_load_binding(project, nativ
     client = _client_as(_user_with_role(project, "Data Manager"))
 
     response = client.post(
-        _create_url(project), _payload(native_version, raw_retention="delete", confirm_delete="on"), **HTMX)
+        _create_url(project), _payload(project, native_version, raw_retention="delete", confirm_delete="on"), **HTMX)
 
     assert not PipelineBinding.objects.exists()
     assert "Only a project Admin" in response.content.decode()
@@ -502,7 +511,7 @@ def test_choosing_delete_after_load_without_confirming_is_rejected(project, nati
     _grant_incoming_only(project)
     client = _client_as(_user_with_role(project, "Admin"))
 
-    response = client.post(_create_url(project), _payload(native_version, raw_retention="delete"), **HTMX)
+    response = client.post(_create_url(project), _payload(project, native_version, raw_retention="delete"), **HTMX)
 
     assert not PipelineBinding.objects.exists()
     assert "Confirm that inputs will be deleted" in response.content.decode()
@@ -615,7 +624,7 @@ def test_a_schema_versions_config_is_entered_through_fields_generated_from_its_s
     client = _client_as(_user_with_role(project, "Data Manager"))
 
     client.post(_create_url(project), _payload(
-        version, config__delimiter=";", config__skip_rows="2", config__strict="true",
+        project, version, config__delimiter=";", config__skip_rows="2", config__strict="true",
         config__encoding='"latin-1"', config__columns='{"name": "Namn"}'), **HTMX)
 
     assert PipelineBinding.objects.get(project=project).config == {
@@ -628,7 +637,7 @@ def test_generated_config_fields_left_blank_are_left_out_of_the_config(project, 
     version = _schema_version(native_version.script, 2)
     client = _client_as(_user_with_role(project, "Data Manager"))
 
-    client.post(_create_url(project), _payload(version, config__delimiter=";"), **HTMX)
+    client.post(_create_url(project), _payload(project, version, config__delimiter=";"), **HTMX)
 
     assert PipelineBinding.objects.get(project=project).config == {"delimiter": ";"}
 
@@ -639,7 +648,7 @@ def test_creating_a_binding_whose_config_breaks_its_versions_schema_is_a_form_er
     version = _schema_version(native_version.script, 2)
     client = _client_as(_user_with_role(project, "Data Manager"))
 
-    response = client.post(_create_url(project), _payload(version, config__delimiter=";;"), **HTMX)
+    response = client.post(_create_url(project), _payload(project, version, config__delimiter=";;"), **HTMX)
 
     assert not PipelineBinding.objects.exists()
     assert "is too long" in response.content.decode()
@@ -652,7 +661,7 @@ def test_a_schema_that_allows_other_keys_keeps_a_json_box_for_them(project, nati
         "type": "object", "properties": {"delimiter": {"type": "string"}}})
     client = _client_as(_user_with_role(project, "Data Manager"))
 
-    client.post(_create_url(project), _payload(version, config__delimiter=";", config='{"extra": 1}'), **HTMX)
+    client.post(_create_url(project), _payload(project, version, config__delimiter=";", config='{"extra": 1}'), **HTMX)
 
     assert PipelineBinding.objects.get(project=project).config == {"delimiter": ";", "extra": 1}
 
@@ -792,7 +801,7 @@ def test_a_generated_field_error_is_not_reported_twice_by_the_schema_check(proje
     version = _schema_version(native_version.script, 2, schema={**CSV_SCHEMA, "required": ["delimiter"]})
     client = _client_as(_user_with_role(project, "Data Manager"))
 
-    response = client.post(_create_url(project), _payload(version), **HTMX)
+    response = client.post(_create_url(project), _payload(project, version), **HTMX)
 
     assert "is a required property" not in response.content.decode()
 
@@ -802,11 +811,12 @@ def test_a_generated_field_error_is_not_reported_twice_by_the_schema_check(proje
 async def test_the_binding_actions_themselves_reject_config_that_breaks_the_versions_schema(project, native_version):
     version = await sync_to_async(_schema_version)(native_version.script, 2)
     binding = await sync_to_async(_existing_binding)(project, native_version)
+    other = await EtlSourceLocation.objects.acreate(project=project, name="Other", bucket="other", prefix="")
     common = {"project": project, "user": None, "request": None, "script_version_id": version.id,
               "raw_bucket": "raw", "raw_prefix": ""}
 
     with pytest.raises(EtlBindingConfigInvalid, match="is too long"):
-        await create_pipeline_binding(source_bucket="other", source_prefix="", config={"delimiter": ";;"}, **common)
+        await create_pipeline_binding(source_location=other, config={"delimiter": ";;"}, **common)
     with pytest.raises(EtlBindingConfigInvalid, match="is too long"):
         await update_pipeline_binding(
             binding=binding, grouping_mode="file", raw_retention="move", config={"delimiter": ";;"}, **common)
@@ -867,6 +877,6 @@ def test_a_json_config_field_can_set_null_and_left_blank_leaves_the_key_out(proj
         "type": "object", "properties": {"source": {"type": ["string", "null"]}}, "additionalProperties": False})
     client = _client_as(_user_with_role(project, "Data Manager"))
 
-    client.post(_create_url(project), _payload(version, config__source=entered), **HTMX)
+    client.post(_create_url(project), _payload(project, version, config__source=entered), **HTMX)
 
     assert PipelineBinding.objects.get(project=project).config == config

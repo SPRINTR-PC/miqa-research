@@ -11,6 +11,9 @@ Role boundaries:
 - PI, Investigator: read-only visibility, no manage controls rendered or accepted.
 - Any other role (Contributor, Annotator, Participant Recruiter, ...): no visibility at all -- the
   caller should 404 rather than render a read-only or forbidden page.
+- Sources section (#268): Admin, staff or superuser see it and manage Source Locations; only staff
+  or superuser manage `EtlLocationGrant`s (the per-project isolation boundary). Staff count as
+  read-only viewers of the rest of the tab. Staff, like superusers, still need project membership.
 """
 from dataclasses import dataclass
 
@@ -31,11 +34,12 @@ ETL_VISIBLE_ROLES = ETL_MANAGE_ROLES + ETL_READ_ONLY_ROLES
 class EtlPermissions:
     is_superuser: bool
     role_names: frozenset[str]
+    is_staff: bool = False
 
     @property
     def can_view(self) -> bool:
         """May see the ETL Pipelines tab at all (read-only or manage)."""
-        return self.is_superuser or bool(self.role_names.intersection(ETL_VISIBLE_ROLES))
+        return self.is_superuser or self.is_staff or bool(self.role_names.intersection(ETL_VISIBLE_ROLES))
 
     @property
     def can_manage(self) -> bool:
@@ -47,10 +51,20 @@ class EtlPermissions:
         """May archive a Script, or change platform-wide limit/retention overrides."""
         return self.is_superuser or bool(self.role_names.intersection(ETL_ADMIN_ONLY_ROLES))
 
+    @property
+    def can_manage_source_locations(self) -> bool:
+        """May see the Sources section (#268) and create, rename and delete Source Locations in it."""
+        return self.can_manage_location_grants or bool(self.role_names.intersection(ETL_ADMIN_ONLY_ROLES))
 
-def etl_permissions_for_roles(*, is_superuser: bool, role_names) -> EtlPermissions:
+    @property
+    def can_manage_location_grants(self) -> bool:
+        """May create and delete `EtlLocationGrant`s: staff or superuser only."""
+        return self.is_superuser or self.is_staff
+
+
+def etl_permissions_for_roles(*, role_names, is_superuser: bool = False, is_staff: bool = False) -> EtlPermissions:
     """Pure constructor: builds an `EtlPermissions` from an already-known role-name collection."""
-    return EtlPermissions(is_superuser=is_superuser, role_names=frozenset(role_names))
+    return EtlPermissions(is_superuser=is_superuser, role_names=frozenset(role_names), is_staff=is_staff)
 
 
 async def get_etl_permissions(request, project) -> EtlPermissions:
@@ -59,4 +73,4 @@ async def get_etl_permissions(request, project) -> EtlPermissions:
 
     user = await request.auser()
     role_names = {role["name"] for role in await get_user_project_role_list(user, project)}
-    return etl_permissions_for_roles(is_superuser=user.is_superuser, role_names=role_names)
+    return etl_permissions_for_roles(is_superuser=user.is_superuser, is_staff=user.is_staff, role_names=role_names)

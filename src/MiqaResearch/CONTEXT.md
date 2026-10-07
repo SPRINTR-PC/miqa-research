@@ -575,8 +575,20 @@ _Avoid_: config template, settings schema
 
 ### Pipeline Binding
 The link, within a Research Project, between an ETL Datatype, a source bucket
-(with prefix/pattern), an ETL Script (version), a grouping mode (per file or
+and prefix (copied from a Source Location), an ETL Script (version), a grouping mode (per file or
 per folder), and a Raw Bucket destination.
+
+### Source Location
+A named bucket and prefix in a Research Project that Pipeline Bindings read new
+files from, chosen by name in the Binding wizard. It always lies inside one of
+the project's location grants. Its bucket and prefix are fixed once created;
+only its name changes. See ADR 0034.
+
+### Location Grant
+A bucket, with an optional prefix, that a Research Project may read from and
+move raw copies to (`EtlLocationGrant`). It is the per-project isolation
+boundary for the one platform-wide ETL credential, so only staff and
+superusers manage grants. See ADR 0034.
 
 ### Raw Bucket
 The bucket where source files are moved (copy, verify, then delete source) after
@@ -680,6 +692,35 @@ _Avoid_: admin, operator
 | 0031 | Participant-consent ETL loads create unknown participants; consent types are per project | Accepted |
 | 0032 | ETL Raw Retention: per-Binding "delete after load" opt-out, Admin-only | Accepted |
 | 0033 | SamtyckenUmu consent task only fetches into an ETL source bucket; legacy participants adopted by command | Accepted |
+| 0034 | ETL Source Locations named inside staff-managed Location Grants | Accepted |
+
+### ADR 0034 — ETL Source Locations named inside staff-managed Location Grants
+
+**Context**: Bindings took a typed source bucket and prefix, checked against
+Location Grants that only operators could create, in the Django admin (#156).
+Project Admins wanted to set up sources in the app and pick them by name
+(#268). But the platform reads every project's buckets with one credential,
+so grants are the only thing keeping one project out of another's data.
+
+**Decision**: A Sources section in the ETL Pipelines tab, shown to project
+Admins, staff and superusers only (404 for others). Admins manage named
+Source Locations, which must lie inside an existing grant. Only staff and
+superusers create and delete grants there; Admins see them read-only. Staff,
+like superusers, need project membership, and get read-only access to the rest
+of the tab. The Binding wizard picks a Source Location instead of a typed
+bucket; the Binding copies its bucket and prefix and keeps a protected
+reference. A location's bucket and prefix never change; it can't be deleted
+while a Binding uses it, nor a grant while a location or Binding needs it.
+
+**Consequences**:
+- Project Admins still can't widen what their project may read.
+- Renaming a location never retargets a running Binding.
+- Bindings made before this keep their typed source and no location.
+- The Django admin follows the same rules through the same actions: grant adds
+  and deletes are audited, a needed grant isn't deleted, there is no bulk
+  delete, and Source Locations are read-only there.
+- Creating a location and deleting a grant lock the project's grants, so the
+  two can't race into a location outside every grant.
 
 ### ADR 0033 — SamtyckenUmu consent task only fetches into an ETL source bucket; legacy participants adopted by command
 

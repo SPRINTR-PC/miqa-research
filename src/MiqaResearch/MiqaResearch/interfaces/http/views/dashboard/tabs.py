@@ -1,6 +1,6 @@
 from gettext import gettext
 
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import render
 from django.template.loader import render_to_string
 
@@ -8,9 +8,11 @@ from MiqaResearch.etl_datatypes import registered_datatype_names
 from MiqaResearch.interfaces.http.forms.etl import (
     EtlBindingCreateForm,
     EtlBindingEditForm,
+    EtlLocationGrantForm,
     EtlProjectSettingsForm,
     EtlScriptCreateForm,
     EtlScriptVersionCreateForm,
+    EtlSourceLocationForm,
 )
 from MiqaResearch.readers.etl_reader import (
     get_bindable_script_versions,
@@ -21,6 +23,7 @@ from MiqaResearch.readers.etl_reader import (
     get_project_location_grants,
     get_project_max_script_source_bytes,
     get_project_settings,
+    get_project_source_locations,
     script_version_choices,
     script_version_config_schemas,
 )
@@ -45,17 +48,22 @@ ETL_SECTION_BINDINGS = "bindings"
 ETL_SECTION_SCRIPTS = "scripts"
 ETL_SECTION_JOBS = "jobs"
 ETL_SECTION_DEFAULTS = "defaults"
-_ETL_SECTIONS = [ETL_SECTION_BINDINGS, ETL_SECTION_SCRIPTS, ETL_SECTION_JOBS, ETL_SECTION_DEFAULTS]
+ETL_SECTION_SOURCES = "sources"
+_ETL_SECTIONS = [ETL_SECTION_BINDINGS, ETL_SECTION_SCRIPTS, ETL_SECTION_JOBS, ETL_SECTION_DEFAULTS, ETL_SECTION_SOURCES]
 _ETL_SECTION_PANELS = {
     ETL_SECTION_BINDINGS: "01_dashboard/_panel_etl_bindings.html",
     ETL_SECTION_SCRIPTS: "01_dashboard/_panel_etl_scripts.html",
     ETL_SECTION_JOBS: "01_dashboard/_panel_etl_jobs.html",
     ETL_SECTION_DEFAULTS: "01_dashboard/_panel_etl_defaults.html",
+    ETL_SECTION_SOURCES: "01_dashboard/_panel_etl_sources.html",
 }
 
 
-def _etl_section(request) -> str:
+def _etl_section(request, permissions) -> str:
+    """The requested section; the Sources section 404s for a viewer who may not see it (#268)."""
     section = request.GET.get("section", ETL_SECTION_BINDINGS)
+    if section == ETL_SECTION_SOURCES and not permissions.can_manage_source_locations:
+        raise Http404()
     return section if section in _ETL_SECTIONS else ETL_SECTION_BINDINGS
 
 
@@ -242,8 +250,9 @@ async def etl_section_context(project, permissions, section) -> dict:
         context['bindings'] = await get_project_bindings(project)
         if permissions.can_manage:
             form_kwargs = await binding_form_kwargs(project, permissions)
-            context['location_grants'] = form_kwargs['location_grants']
-            context['binding_create_form'] = EtlBindingCreateForm(**form_kwargs)
+            context['source_locations'] = await get_project_source_locations(project)
+            context['binding_create_form'] = EtlBindingCreateForm(
+                **form_kwargs, source_locations=context['source_locations'])
             for binding in context['bindings']:
                 binding.edit_form = EtlBindingEditForm(
                     **form_kwargs, current_raw_retention=binding.raw_retention,
@@ -263,13 +272,21 @@ async def etl_section_context(project, permissions, section) -> dict:
             } if settings_obj else {}
             context['settings_form'] = EtlProjectSettingsForm(initial=initial)
 
+    elif section == ETL_SECTION_SOURCES:
+        context['location_grants'] = await get_project_location_grants(project)
+        context['source_locations'] = await get_project_source_locations(project)
+        if permissions.can_manage_source_locations:
+            context['source_location_form'] = EtlSourceLocationForm()
+        if permissions.can_manage_location_grants:
+            context['location_grant_form'] = EtlLocationGrantForm()
+
     return context
 
 
 @htmx_login_required
 async def etl_pipelines(request, project_id):
     research_project, permissions = await get_user_etl_project_or_404(request, project_id)
-    etl_section = _etl_section(request)
+    etl_section = _etl_section(request, permissions)
     section_context = await etl_section_context(research_project, permissions, etl_section)
 
     if _is_partial_request(request):
@@ -290,7 +307,7 @@ async def etl_pipelines_content(request, project_id):
     research_project, permissions = await get_user_etl_project_or_404(request, project_id)
 
     if _is_partial_request(request):
-        etl_section = _etl_section(request)
+        etl_section = _etl_section(request, permissions)
         section_context = await etl_section_context(research_project, permissions, etl_section)
         return _htmx_tab_response(
             request, _ETL_SECTION_PANELS[etl_section], research_project, 'etl-pipelines',

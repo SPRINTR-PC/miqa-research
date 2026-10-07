@@ -2,14 +2,11 @@
 <div class="rounded-lg border bg-card text-card-foreground etl-wizard">
   <form method="post" hx-post="{% url 'dashboard_tab_etl_bindings_create' project.id %}" hx-target="#etl-section-panel" hx-swap="innerHTML" style="padding:1rem;">
     {% csrf_token %}
-    {% if not location_grants %}
-      <p class="text-sm text-muted-foreground">{% translate "No buckets granted to this project yet -- ask an Admin to add an EtlLocationGrant before creating a binding." %}</p>
+    {% if not source_locations %}
+      <p class="text-sm text-muted-foreground">{% translate "No source locations in this project yet -- ask a project Admin to add one under Sources before creating a binding." %}</p>
     {% endif %}
-    <label class="etl-field"><span>{% translate "Source bucket" %}</span>{{ binding_create_form.source_bucket }}
-      {% for error in binding_create_form.source_bucket.errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
-    </label>
-    <label class="etl-field"><span>{% translate "Source prefix" %}</span>{{ binding_create_form.source_prefix }}
-      {% for error in binding_create_form.source_prefix.errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
+    <label class="etl-field"><span>{% translate "Source location" %}</span>{{ binding_create_form.source_location }}
+      {% for error in binding_create_form.source_location.errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
     </label>
     <label class="etl-field"><span>{% translate "Script & version" %}</span>{{ binding_create_form.script_version }}
       {% for error in binding_create_form.script_version.errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}

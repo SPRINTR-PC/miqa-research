@@ -22,14 +22,23 @@ from MiqaResearch.data.models import EtlScriptVersion, PipelineBinding
 from MiqaResearch.etl_config_schema import ConfigSchema
 
 from .audit import record_etl_event
-from .exceptions import EtlBindingConfigInvalid, EtlBindingConflict, EtlScriptVersionNotUsable
+from .exceptions import (
+    EtlBindingConfigInvalid,
+    EtlBindingConflict,
+    EtlScriptVersionNotUsable,
+    EtlSourceLocationNotInProject,
+)
 
 
 async def create_pipeline_binding(
-        *, project, user, request, source_bucket, source_prefix, script_version_id, raw_bucket, raw_prefix,
+        *, project, user, request, source_location, script_version_id, raw_bucket, raw_prefix,
         raw_retention=PIPELINE_BINDING_RAW_RETENTION_MOVE, grouping_mode=PIPELINE_BINDING_GROUPING_FILE,
         quiescence_seconds=None, config=None,
         timeout_seconds_override=None, memory_mb_override=None, cpu_millicores_override=None) -> PipelineBinding:
+    # The Binding copies its Source Location's bucket/prefix (#268); those never change afterwards.
+    if source_location.project_id != project.id:
+        raise EtlSourceLocationNotInProject("That Source Location belongs to another project.")
+    source_bucket, source_prefix = source_location.bucket, source_location.prefix
     script_version = await _usable_script_version(project, script_version_id)
     _require_config_fits(script_version, config or {})
 
@@ -39,7 +48,7 @@ async def create_pipeline_binding(
         raise EtlBindingConflict("A Binding for that source bucket/prefix already exists.")
 
     binding = await PipelineBinding.objects.acreate(
-        project=project, source_bucket=source_bucket, source_prefix=source_prefix,
+        project=project, source_bucket=source_bucket, source_prefix=source_prefix, source_location=source_location,
         script_version=script_version, raw_retention=raw_retention, raw_bucket=raw_bucket, raw_prefix=raw_prefix,
         grouping_mode=grouping_mode, **_quiescence_kwargs(quiescence_seconds), config=config or {},
         timeout_seconds_override=timeout_seconds_override, memory_mb_override=memory_mb_override,

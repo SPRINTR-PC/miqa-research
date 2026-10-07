@@ -130,6 +130,8 @@ erDiagram
     PipelineBinding ||--o{ EtlProcessedFile : "seen files"
     PipelineBinding ||--o{ EtlPendingGroup : "folders awaiting quiescence"
     ResearchProject ||--o{ EtlLocationGrant : "bucket grants"
+    ResearchProject ||--o{ EtlSourceLocation : "named sources"
+    EtlSourceLocation ||--o{ PipelineBinding : "source of"
     ResearchProject ||--o| EtlProjectSettings : overrides
 ```
 
@@ -202,6 +204,13 @@ erDiagram
 : Grants a project a `bucket` plus optional `prefix`; an empty prefix grants the whole bucket.
   This is how per-project bucket isolation is enforced (see
   [Permissions and audit](#heading-etl-permissions)).
+
+`EtlSourceLocation` (Source Location)
+: A named `bucket` plus `prefix` inside one of the project's grants (#268), unique per project
+  by name and by bucket/prefix. The Binding wizard offers these instead of a typed bucket. A
+  Binding copies the location's bucket/prefix into `source_bucket`/`source_prefix` (what the
+  poller reads) and keeps `source_location` (`PROTECT`, null for older Bindings). Bucket and
+  prefix never change after creation; only `name` does.
 
 `EtlProjectSettings`
 : Per-project overrides for log retention and the maximum Script source size. A null value
@@ -573,7 +582,13 @@ source file is then left in place for manual handling, and the platform, once on
 | Superuser, Admin | Everything, including admin-only actions: archiving a Script, editing the project's ETL overrides under Defaults, and switching a Binding to `delete` Raw Retention. |
 | Data Manager | Create and edit custom Scripts, upload Versions, create and edit Bindings (not into `delete` Raw Retention), retry failed Jobs. |
 | PI, Investigator | Read-only: every section is listed, but no manage controls are rendered or accepted. |
+| Staff (`is_staff`) | Read-only on every section, plus the Sources section: grants and Source Locations. |
 | Any other role | No access. The tab returns 404. |
+
+The **Sources** section (#268) is shown only to Admins, staff and superusers; for anyone else
+the section and its endpoints return 404. Admins create, rename and delete Source Locations
+inside existing grants. Only staff and superusers create or delete `EtlLocationGrant`s (403 for
+an Admin). Staff and superusers still need project membership (any role) to open the tab.
 
 Views first resolve the project with `get_user_etl_project_or_404`. A view that performs a
 manage action then checks the relevant permission itself and responds 403 if it is missing.
@@ -581,9 +596,17 @@ manage action then checks the relevant permission itself and responds 403 if it 
 The platform reads and writes every project's source and raw buckets with one S3 service
 credential (`MIRES_ETL_S3_*`). Per-project isolation is enforced in application code through `EtlLocationGrant`:
 
-- The Binding wizard rejects a source or raw location that is not granted to the project.
+- A Source Location can only be created inside a grant, and the wizard re-checks the chosen
+  one and the raw location against the grants.
 - The raw-bucket mover checks both keys again before copying.
-- Grants are managed in the Django admin (`/<MIRES_ADMIN_URL>/`).
+- Grants are managed by staff and superusers in the Sources section, or in the Django admin
+  (`/<MIRES_ADMIN_URL>/`). Both go through `actions/etl/sources.py`: adds and deletes are
+  audited, and a grant can't be deleted while a Source Location, or a Binding's source or raw
+  location, that it covers would fall outside the remaining grants. In the admin an existing
+  grant's project, bucket and prefix are read-only and there is no bulk delete. Source
+  Locations are read-only in the admin.
+- Creating a Source Location and deleting a grant both lock the project's grant rows
+  (`select_for_update`), so they can't interleave.
 
 A Binding may only pin a Version of a native Script or of one of the project's own
 non-archived custom Scripts. Its source bucket and prefix must not already be bound elsewhere.
@@ -602,6 +625,8 @@ names, descriptions or bucket paths:
 | `etl_settings_updated` | The project's ETL overrides are changed. |
 | `etl_job_manual_retry` | A failed Job is manually retried. |
 | `etl_source_cleanup_stuck` | A raw-bucket source delete gave up (system event, no user). |
+| `etl_source_location_created` / `_renamed` / `_deleted` | A Source Location is created, renamed or deleted. |
+| `etl_location_grant_created` / `_deleted` | A location grant is created or deleted in the Sources section. |
 
 (heading-etl-native-scripts)=
 ## Native Scripts
@@ -693,8 +718,9 @@ loading once:
    the Consent Project (for example because a Binding ran first) is skipped and printed with
    both alias1s, `--dry-run` included. Merge those by hand: adopting them would make every later
    consent Job fail with an ambiguous participant reference.
-2. Grant the bucket and prefix to the Consent Project (`EtlLocationGrant`).
-3. In the Consent Project, create a per-file Binding on that location running the native
+2. Grant the bucket and prefix to the Consent Project, and add a Source Location for it
+   (Sources section).
+3. In the Consent Project, create a per-file Binding on that Source Location running the native
    **CSV → participant consent** Script. Set its Raw Retention to **delete**: the exports
    carry personnummer and names (ADR 0032). Put any non-default columns, and the former
    `MIRES_TASK_CONSENT_SOURCE` value as `source`, in the Binding's config.
@@ -808,5 +834,5 @@ they are loaded.
 (heading-etl-limitations)=
 ## Current limitations
 
-`EtlLocationGrant` rows are managed only in the Django admin. This is intended: grants are
-operator-managed per #156.
+Project Admins can't create grants, only Source Locations inside them. This is intended: grants
+are the isolation boundary for the one platform-wide credential (ADR 0034).

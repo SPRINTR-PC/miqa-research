@@ -7,6 +7,7 @@ from .etl import (
     EtlProjectSettingsAdmin,
     EtlScriptAdmin,
     EtlScriptVersionAdmin,
+    EtlSourceLocationAdmin,
     PipelineBindingAdmin,
 )
 from .research_project import (
