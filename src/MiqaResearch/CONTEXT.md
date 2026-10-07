@@ -716,8 +716,11 @@ while a Binding uses it, nor a grant while a location or Binding needs it.
 - Project Admins still can't widen what their project may read.
 - Renaming a location never retargets a running Binding.
 - Bindings made before this keep their typed source and no location.
-- Grants can still be deleted in the Django admin without those checks; the
-  wizard and the raw-bucket mover re-check grants, so nothing reads outside one.
+- The Django admin follows the same rules through the same actions: grant adds
+  and deletes are audited, a needed grant isn't deleted, there is no bulk
+  delete, and Source Locations are read-only there.
+- Creating a location and deleting a grant lock the project's grants, so the
+  two can't race into a location outside every grant.
 
 ### ADR 0033 — SamtyckenUmu consent task only fetches into an ETL source bucket; legacy participants adopted by command
 

@@ -105,7 +105,7 @@ def test_name_and_bucket_prefix_are_each_unique_per_project(project, grant, name
 def test_rename_changes_only_the_name(project, grant):
     location = EtlSourceLocation.objects.create(project=project, name="Old", bucket="incoming", prefix="redcap/a/")
 
-    _call(rename_source_location, project=project, location_id=location.id, name="New")
+    _call(rename_source_location, project=project, location=location, name="New")
 
     location.refresh_from_db()
     assert (location.name, location.bucket, location.prefix) == ("New", "incoming", "redcap/a/")
@@ -117,13 +117,13 @@ def test_rename_to_a_taken_name_is_a_conflict(project, grant):
     location = EtlSourceLocation.objects.create(project=project, name="Mine", bucket="incoming", prefix="redcap/b/")
 
     with pytest.raises(EtlLocationConflict):
-        _call(rename_source_location, project=project, location_id=location.id, name="Taken")
+        _call(rename_source_location, project=project, location=location, name="Taken")
 
 
 def test_an_unused_location_is_deleted(project, grant):
     location = EtlSourceLocation.objects.create(project=project, name="Unused", bucket="incoming", prefix="redcap/a/")
 
-    _call(delete_source_location, project=project, location_id=location.id)
+    _call(delete_source_location, project=project, location=location)
 
     assert not EtlSourceLocation.objects.exists()
     assert len(_events(EVENT_TYPE_ETL_SOURCE_LOCATION_DELETED)) == 1
@@ -134,17 +134,9 @@ def test_a_location_a_binding_uses_cannot_be_deleted(project, grant):
     _binding(project, source_location=location)
 
     with pytest.raises(EtlLocationInUse):
-        _call(delete_source_location, project=project, location_id=location.id)
+        _call(delete_source_location, project=project, location=location)
 
     assert EtlSourceLocation.objects.filter(id=location.id).exists()
-
-
-def test_another_projects_location_is_not_found(project, grant):
-    other = ResearchProject.objects.create(name="Other", description="")
-    theirs = EtlSourceLocation.objects.create(project=other, name="Theirs", bucket="x", prefix="")
-
-    with pytest.raises(EtlSourceLocation.DoesNotExist):
-        _call(delete_source_location, project=project, location_id=theirs.id)
 
 
 # Location grants
@@ -163,7 +155,7 @@ def test_a_duplicate_grant_is_a_conflict(project, grant):
 
 
 def test_an_unused_grant_is_deleted(project, grant):
-    _call(delete_location_grant, project=project, grant_id=grant.id)
+    _call(delete_location_grant, project=project, grant=grant)
 
     assert not EtlLocationGrant.objects.exists()
     assert len(_events(EVENT_TYPE_ETL_LOCATION_GRANT_DELETED)) == 1
@@ -173,7 +165,7 @@ def test_a_grant_a_source_location_depends_on_cannot_be_deleted(project, grant):
     EtlSourceLocation.objects.create(project=project, name="Inside", bucket="incoming", prefix="redcap/a/")
 
     with pytest.raises(EtlLocationInUse):
-        _call(delete_location_grant, project=project, grant_id=grant.id)
+        _call(delete_location_grant, project=project, grant=grant)
 
 
 @pytest.mark.parametrize("binding_kwargs", [{}, {"source_prefix": "elsewhere/", "raw_bucket": "incoming"}])
@@ -185,14 +177,14 @@ def test_a_grant_a_bindings_source_or_raw_location_depends_on_cannot_be_deleted(
         PipelineBinding.objects.update(raw_prefix="redcap/")
 
     with pytest.raises(EtlLocationInUse):
-        _call(delete_location_grant, project=project, grant_id=grant.id)
+        _call(delete_location_grant, project=project, grant=grant)
 
 
 def test_a_grant_still_covered_by_another_grant_can_be_deleted(project, grant):
     EtlLocationGrant.objects.create(project=project, bucket="incoming", prefix="")
     EtlSourceLocation.objects.create(project=project, name="Inside", bucket="incoming", prefix="redcap/a/")
 
-    _call(delete_location_grant, project=project, grant_id=grant.id)
+    _call(delete_location_grant, project=project, grant=grant)
 
     assert not EtlLocationGrant.objects.filter(id=grant.id).exists()
 
@@ -201,6 +193,6 @@ def test_a_delete_retention_binding_with_no_raw_bucket_does_not_block_unrelated_
     unrelated = EtlLocationGrant.objects.create(project=project, bucket="lab", prefix="")
     _binding(project, raw_bucket="", raw_retention="delete")
 
-    _call(delete_location_grant, project=project, grant_id=unrelated.id)
+    _call(delete_location_grant, project=project, grant=unrelated)
 
     assert not EtlLocationGrant.objects.filter(id=unrelated.id).exists()

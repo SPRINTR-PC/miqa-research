@@ -62,7 +62,7 @@ _ETL_SECTION_PANELS = {
 def _etl_section(request, permissions) -> str:
     """The requested section; the Sources section 404s for a viewer who may not see it (#268)."""
     section = request.GET.get("section", ETL_SECTION_BINDINGS)
-    if section == ETL_SECTION_SOURCES and not permissions.can_view_sources:
+    if section == ETL_SECTION_SOURCES and not permissions.can_manage_source_locations:
         raise Http404()
     return section if section in _ETL_SECTIONS else ETL_SECTION_BINDINGS
 
@@ -228,12 +228,6 @@ async def binding_form_kwargs(project, permissions) -> dict:
     }
 
 
-async def binding_create_form_kwargs(project, permissions) -> dict:
-    """`binding_form_kwargs` plus the Source Locations the wizard picks its source from (#268)."""
-    return await binding_form_kwargs(project, permissions) | {
-        'source_locations': await get_project_source_locations(project)}
-
-
 async def etl_section_context(project, permissions, section) -> dict:
     """Section-specific read data and unbound manage forms for the ETL Pipelines tab. Forms are
     only built for a section's manage-capable viewers -- a read-only viewer gets the listings but
@@ -255,10 +249,10 @@ async def etl_section_context(project, permissions, section) -> dict:
     elif section == ETL_SECTION_BINDINGS:
         context['bindings'] = await get_project_bindings(project)
         if permissions.can_manage:
-            create_kwargs = await binding_create_form_kwargs(project, permissions)
-            form_kwargs = {key: value for key, value in create_kwargs.items() if key != 'source_locations'}
-            context['source_locations'] = create_kwargs['source_locations']
-            context['binding_create_form'] = EtlBindingCreateForm(**create_kwargs)
+            form_kwargs = await binding_form_kwargs(project, permissions)
+            context['source_locations'] = await get_project_source_locations(project)
+            context['binding_create_form'] = EtlBindingCreateForm(
+                **form_kwargs, source_locations=context['source_locations'])
             for binding in context['bindings']:
                 binding.edit_form = EtlBindingEditForm(
                     **form_kwargs, current_raw_retention=binding.raw_retention,

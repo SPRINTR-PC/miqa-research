@@ -13,7 +13,7 @@
       {% for binding in bindings %}
         <li>
           <div>
-            <p class="font-medium">{% if binding.source_location %}{{ binding.source_location.name }} <span class="text-sm text-muted-foreground">({{ binding.source_bucket }}/{{ binding.source_prefix }})</span>{% else %}{{ binding.source_bucket }}/{{ binding.source_prefix }}{% endif %}</p>
+            <p class="font-medium">{% if binding.source_location %}{{ binding.source_location.name }} {% endif %}<span{% if binding.source_location %} class="text-sm text-muted-foreground"{% endif %}>{{ binding.source_bucket }}/{{ binding.source_prefix }}</span></p>
             <p class="text-sm text-muted-foreground">{% translate "Script" %}: {{ binding.script_version.script.name }} v{{ binding.script_version.version }}</p>
             <p class="text-sm text-muted-foreground">{% translate "Datatype" %}: {% if binding.script_version.script.datatype_name %}{{ binding.script_version.script.datatype_name }}{% else %}{% translate "not set" %}{% endif %}</p>
             <p class="text-sm text-muted-foreground">{% translate "After a successful load" %}: {% if binding.raw_retention == 'delete' %}{{ binding.get_raw_retention_display }}{% else %}{% translate "Move to" %} {{ binding.raw_bucket }}/{{ binding.raw_prefix }}{% endif %}</p>

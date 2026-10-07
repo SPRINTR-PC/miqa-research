@@ -31,15 +31,14 @@ from .exceptions import (
 
 
 async def create_pipeline_binding(
-        *, project, user, request, script_version_id, raw_bucket, raw_prefix,
-        source_location=None, source_bucket=None, source_prefix="",
+        *, project, user, request, source_location, script_version_id, raw_bucket, raw_prefix,
         raw_retention=PIPELINE_BINDING_RAW_RETENTION_MOVE, grouping_mode=PIPELINE_BINDING_GROUPING_FILE,
         quiescence_seconds=None, config=None,
         timeout_seconds_override=None, memory_mb_override=None, cpu_millicores_override=None) -> PipelineBinding:
-    if source_location is not None:  # the wizard's path (#268): the Binding copies the location
-        if source_location.project_id != project.id:
-            raise EtlSourceLocationNotInProject("That Source Location belongs to another project.")
-        source_bucket, source_prefix = source_location.bucket, source_location.prefix
+    # The Binding copies its Source Location's bucket/prefix (#268); those never change afterwards.
+    if source_location.project_id != project.id:
+        raise EtlSourceLocationNotInProject("That Source Location belongs to another project.")
+    source_bucket, source_prefix = source_location.bucket, source_location.prefix
     script_version = await _usable_script_version(project, script_version_id)
     _require_config_fits(script_version, config or {})
 

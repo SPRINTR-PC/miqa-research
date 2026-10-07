@@ -1,6 +1,11 @@
-from django.contrib import admin
+from asgiref.sync import async_to_sync
+from django.contrib import admin, messages
+from django.http import HttpResponseRedirect
+from django.urls import reverse
 from unfold.admin import ModelAdmin
 
+from MiqaResearch.actions.etl.exceptions import EtlLocationInUse
+from MiqaResearch.actions.etl.sources import create_location_grant, delete_location_grant
 from MiqaResearch.data.models import (
     EtlJob,
     EtlJobInput,
@@ -85,9 +90,42 @@ class EtlProjectSettingsAdmin(ModelAdmin):
 
 @admin.register(EtlLocationGrant)
 class EtlLocationGrantAdmin(ModelAdmin):
+    """Same rules as the Sources section (#268), through the same actions: adds and deletes are
+    audited, a grant a Source Location or Binding needs isn't deleted, and an existing grant's
+    project/bucket/prefix are fixed (delete and re-add instead). No bulk delete, which would skip
+    the check."""
     list_display = ("project", "bucket", "prefix")
     list_filter = ("project",)
     search_fields = ("bucket", "prefix")
+
+    def get_readonly_fields(self, request, obj=None):
+        return ("project", "bucket", "prefix") if obj else ()
+
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        actions.pop("delete_selected", None)
+        return actions
+
+    def save_model(self, request, obj, form, change):
+        if change:
+            return
+        created = async_to_sync(create_location_grant)(
+            project=obj.project, user=request.user, request=request, bucket=obj.bucket, prefix=obj.prefix)
+        obj.pk = created.pk
+
+    def delete_view(self, request, object_id, extra_context=None):
+        if request.method != "POST":
+            return super().delete_view(request, object_id, extra_context)
+        grant = self.get_object(request, object_id)
+        if grant is None or not self.has_delete_permission(request, grant):
+            return super().delete_view(request, object_id, extra_context)
+        try:
+            async_to_sync(delete_location_grant)(project=grant.project, user=request.user, request=request, grant=grant)
+        except EtlLocationInUse as error:
+            self.message_user(request, str(error), messages.ERROR)
+            return HttpResponseRedirect(reverse("admin:data_etllocationgrant_change", args=[object_id]))
+        self.message_user(request, "The location grant was deleted.", messages.SUCCESS)
+        return HttpResponseRedirect(reverse("admin:data_etllocationgrant_changelist"))
 
     class Meta:
         model = EtlLocationGrant
@@ -95,14 +133,20 @@ class EtlLocationGrantAdmin(ModelAdmin):
 
 @admin.register(EtlSourceLocation)
 class EtlSourceLocationAdmin(ModelAdmin):
+    """Read-only (#268): Source Locations are managed in the ETL tab's Sources section, which keeps
+    each one inside a grant of its own project and audits every change."""
     list_display = ("name", "project", "bucket", "prefix")
     list_filter = ("project",)
     search_fields = ("name", "bucket", "prefix")
-    # Bucket/prefix are fixed once created (#268): Bindings copied them.
-    readonly_fields = ("bucket", "prefix")
 
-    def get_readonly_fields(self, request, obj=None):
-        return self.readonly_fields if obj else ()
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
     class Meta:
         model = EtlSourceLocation

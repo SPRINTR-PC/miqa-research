@@ -811,11 +811,12 @@ def test_a_generated_field_error_is_not_reported_twice_by_the_schema_check(proje
 async def test_the_binding_actions_themselves_reject_config_that_breaks_the_versions_schema(project, native_version):
     version = await sync_to_async(_schema_version)(native_version.script, 2)
     binding = await sync_to_async(_existing_binding)(project, native_version)
+    other = await EtlSourceLocation.objects.acreate(project=project, name="Other", bucket="other", prefix="")
     common = {"project": project, "user": None, "request": None, "script_version_id": version.id,
               "raw_bucket": "raw", "raw_prefix": ""}
 
     with pytest.raises(EtlBindingConfigInvalid, match="is too long"):
-        await create_pipeline_binding(source_bucket="other", source_prefix="", config={"delimiter": ";;"}, **common)
+        await create_pipeline_binding(source_location=other, config={"delimiter": ";;"}, **common)
     with pytest.raises(EtlBindingConfigInvalid, match="is too long"):
         await update_pipeline_binding(
             binding=binding, grouping_mode="file", raw_retention="move", config={"delimiter": ";;"}, **common)

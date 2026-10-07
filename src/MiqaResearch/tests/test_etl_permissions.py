@@ -86,7 +86,6 @@ def test_holding_multiple_roles_takes_the_most_permissive():
 def test_admin_may_see_sources_and_manage_locations_but_not_grants():
     permissions = _permissions(PROJECT_ROLE_ADMIN)
 
-    assert permissions.can_view_sources
     assert permissions.can_manage_source_locations
     assert not permissions.can_manage_location_grants
 
@@ -96,7 +95,6 @@ def test_admin_may_see_sources_and_manage_locations_but_not_grants():
 def test_other_roles_may_not_see_sources(role):
     permissions = _permissions(role)
 
-    assert not permissions.can_view_sources
     assert not permissions.can_manage_source_locations
     assert not permissions.can_manage_location_grants
 
@@ -105,7 +103,6 @@ def test_other_roles_may_not_see_sources(role):
 def test_staff_and_superusers_manage_sources_and_grants_whatever_their_role(flags):
     permissions = etl_permissions_for_roles(role_names=[PROJECT_ROLE_CONTRIBUTOR], **flags)
 
-    assert permissions.can_view_sources
     assert permissions.can_manage_source_locations
     assert permissions.can_manage_location_grants
 

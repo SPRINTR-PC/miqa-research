@@ -600,8 +600,13 @@ credential (`MIRES_ETL_S3_*`). Per-project isolation is enforced in application 
   one and the raw location against the grants.
 - The raw-bucket mover checks both keys again before copying.
 - Grants are managed by staff and superusers in the Sources section, or in the Django admin
-  (`/<MIRES_ADMIN_URL>/`). A grant can't be deleted in the Sources section while a Source
-  Location, or a Binding's source or raw location, would fall outside the remaining grants.
+  (`/<MIRES_ADMIN_URL>/`). Both go through `actions/etl/sources.py`: adds and deletes are
+  audited, and a grant can't be deleted while a Source Location, or a Binding's source or raw
+  location, that it covers would fall outside the remaining grants. In the admin an existing
+  grant's project, bucket and prefix are read-only and there is no bulk delete. Source
+  Locations are read-only in the admin.
+- Creating a Source Location and deleting a grant both lock the project's grant rows
+  (`select_for_update`), so they can't interleave.
 
 A Binding may only pin a Version of a native Script or of one of the project's own
 non-archived custom Scripts. Its source bucket and prefix must not already be bound elsewhere.

@@ -52,13 +52,8 @@ class EtlPermissions:
         return self.is_superuser or bool(self.role_names.intersection(ETL_ADMIN_ONLY_ROLES))
 
     @property
-    def can_view_sources(self) -> bool:
-        """May see the Sources section (#268)."""
-        return self.can_manage_source_locations
-
-    @property
     def can_manage_source_locations(self) -> bool:
-        """May create, rename and delete Source Locations (inside existing grants)."""
+        """May see the Sources section (#268) and create, rename and delete Source Locations in it."""
         return self.can_manage_location_grants or bool(self.role_names.intersection(ETL_ADMIN_ONLY_ROLES))
 
     @property

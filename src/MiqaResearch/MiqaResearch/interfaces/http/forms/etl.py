@@ -335,7 +335,7 @@ class EtlBindingCreateForm(EtlBindingEditForm):
         self.source_locations = {str(location.id): location for location in source_locations}
         super().__init__(*args, **kwargs)
         self.fields["source_location"].choices = [
-            (location_id, f"{location.name} ({location.bucket}/{location.prefix})")
+            (location_id, str(location))
             for location_id, location in self.source_locations.items()
         ]
 

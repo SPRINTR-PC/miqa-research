@@ -44,6 +44,7 @@ from MiqaResearch.interfaces.http.forms.etl import (
 from MiqaResearch.readers.etl_reader import (
     get_project_job,
     get_project_max_script_source_bytes,
+    get_project_source_locations,
 )
 
 from .htmx_auth import htmx_login_required
@@ -56,15 +57,17 @@ from .tabs import (
     ETL_SECTION_SCRIPTS,
     ETL_SECTION_SOURCES,
     _htmx_tab_response,
-    binding_create_form_kwargs,
     binding_edit_auto_id,
     binding_form_kwargs,
     etl_section_context,
 )
 
 
-async def _rerender_section(request, project, permissions, section, *, manage_error=None):
+async def _rerender_section(request, project, permissions, section, *, manage_error=None, **bound_forms):
+    """Re-renders `section` after an action; `bound_forms` replace the section's unbound forms
+    (a form that failed validation keeps what was typed)."""
     section_context = await etl_section_context(project, permissions, section)
+    section_context |= {name: form for name, form in bound_forms.items() if form is not None}
     if manage_error:
         section_context['manage_error'] = manage_error
     return _htmx_tab_response(
@@ -190,7 +193,8 @@ async def etl_bindings_create(request, project_id):
         return HttpResponseForbidden()
 
     user = await request.auser()
-    form_kwargs = await binding_create_form_kwargs(research_project, permissions)
+    form_kwargs = await binding_form_kwargs(research_project, permissions) | {
+        'source_locations': await get_project_source_locations(research_project)}
 
     form = EtlBindingCreateForm(request.POST, **form_kwargs)
     if form.is_valid():
@@ -354,33 +358,24 @@ async def _render_job_detail(request, project, permissions, job_id, *, manage_er
 
 async def _get_sources_project_or_404(request, project_id):
     research_project, permissions = await get_user_etl_project_or_404(request, project_id)
-    if not permissions.can_view_sources:
+    if not permissions.can_manage_source_locations:
         raise Http404()
     return research_project, permissions
-
-
-async def _sources_response(request, project, permissions, *, manage_error=None, **forms):
-    section_context = await etl_section_context(project, permissions, ETL_SECTION_SOURCES)
-    section_context |= {name: form for name, form in forms.items() if form is not None}
-    if manage_error:
-        section_context['manage_error'] = manage_error
-    return _htmx_tab_response(
-        request, _ETL_SECTION_PANELS[ETL_SECTION_SOURCES], project, 'etl-pipelines',
-        extra_context={'etl_section': ETL_SECTION_SOURCES} | section_context, with_sidebar=True,
-    )
 
 
 @htmx_login_required
 async def etl_source_locations_create(request, project_id):
     research_project, permissions = await _get_sources_project_or_404(request, project_id)
     form = EtlSourceLocationForm(request.POST)
-    if not form.is_valid():
-        return await _sources_response(request, research_project, permissions, source_location_form=form)
-    error = await _attempt(create_source_location(
-        project=research_project, user=await request.auser(), request=request, name=form.cleaned_data['name'],
-        bucket=form.cleaned_data['bucket'], prefix=form.cleaned_data['prefix']))
-    return await _sources_response(
-        request, research_project, permissions, manage_error=error, source_location_form=form if error else None)
+    error = None
+    if form.is_valid():
+        error = await _attempt(create_source_location(
+            project=research_project, user=await request.auser(), request=request, name=form.cleaned_data['name'],
+            bucket=form.cleaned_data['bucket'], prefix=form.cleaned_data['prefix']))
+    failed = error or not form.is_valid()
+    return await _rerender_section(
+        request, research_project, permissions, ETL_SECTION_SOURCES,
+        manage_error=error, source_location_form=form if failed else None)
 
 
 @htmx_login_required
@@ -388,10 +383,13 @@ async def etl_source_location_rename(request, project_id, location_id):
     research_project, permissions = await _get_sources_project_or_404(request, project_id)
     location = await aget_object_or_404(EtlSourceLocation, project=research_project, id=location_id)
     form = EtlSourceLocationRenameForm(request.POST)
-    error = _form_errors(form) if not form.is_valid() else await _attempt(rename_source_location(
-        project=research_project, user=await request.auser(), request=request, location_id=location.id,
-        name=form.cleaned_data['name']))
-    return await _sources_response(request, research_project, permissions, manage_error=error)
+    if form.is_valid():
+        error = await _attempt(rename_source_location(
+            project=research_project, user=await request.auser(), request=request, location=location,
+            name=form.cleaned_data['name']))
+    else:
+        error = _form_errors(form)
+    return await _rerender_section(request, research_project, permissions, ETL_SECTION_SOURCES, manage_error=error)
 
 
 @htmx_login_required
@@ -399,8 +397,8 @@ async def etl_source_location_delete(request, project_id, location_id):
     research_project, permissions = await _get_sources_project_or_404(request, project_id)
     location = await aget_object_or_404(EtlSourceLocation, project=research_project, id=location_id)
     error = await _attempt(delete_source_location(
-        project=research_project, user=await request.auser(), request=request, location_id=location.id))
-    return await _sources_response(request, research_project, permissions, manage_error=error)
+        project=research_project, user=await request.auser(), request=request, location=location))
+    return await _rerender_section(request, research_project, permissions, ETL_SECTION_SOURCES, manage_error=error)
 
 
 @htmx_login_required
@@ -409,13 +407,15 @@ async def etl_location_grants_create(request, project_id):
     if not permissions.can_manage_location_grants:
         return HttpResponseForbidden()
     form = EtlLocationGrantForm(request.POST)
-    if not form.is_valid():
-        return await _sources_response(request, research_project, permissions, location_grant_form=form)
-    error = await _attempt(create_location_grant(
-        project=research_project, user=await request.auser(), request=request,
-        bucket=form.cleaned_data['bucket'], prefix=form.cleaned_data['prefix']))
-    return await _sources_response(
-        request, research_project, permissions, manage_error=error, location_grant_form=form if error else None)
+    error = None
+    if form.is_valid():
+        error = await _attempt(create_location_grant(
+            project=research_project, user=await request.auser(), request=request,
+            bucket=form.cleaned_data['bucket'], prefix=form.cleaned_data['prefix']))
+    failed = error or not form.is_valid()
+    return await _rerender_section(
+        request, research_project, permissions, ETL_SECTION_SOURCES,
+        manage_error=error, location_grant_form=form if failed else None)
 
 
 @htmx_login_required
@@ -425,5 +425,5 @@ async def etl_location_grant_delete(request, project_id, grant_id):
         return HttpResponseForbidden()
     grant = await aget_object_or_404(EtlLocationGrant, project=research_project, id=grant_id)
     error = await _attempt(delete_location_grant(
-        project=research_project, user=await request.auser(), request=request, grant_id=grant.id))
-    return await _sources_response(request, research_project, permissions, manage_error=error)
+        project=research_project, user=await request.auser(), request=request, grant=grant))
+    return await _rerender_section(request, research_project, permissions, ETL_SECTION_SOURCES, manage_error=error)
