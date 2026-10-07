@@ -1,7 +1,7 @@
 """Seed data for the local Playwright viewer harness (#278). DEBUG only.
 
-Creates (once) a "Viewer harness" Research Project with a PI user and an ingested synthetic CT
-stack, then prints JSON for the harness: a fresh session cookie for that user and the
+Creates (once) a "Viewer harness" Research Project with a PI user, a view-only (Investigator) user
+and an ingested synthetic CT stack, then prints JSON for the harness: fresh session cookies for both and the
 pseudonymized study/series UIDs to open. Idempotent: re-runs reuse the project and its series.
 Fully synthetic pixel data and demo identifiers only.
 """
@@ -26,10 +26,11 @@ from MiqaResearch.data.models import (
     ResearchProjectUserRoleMap,
 )
 from MiqaResearch.tasks.dicom_handling.pipeline import run_ingestion
-from contract.constants.research_project_role import PROJECT_ROLE_PI
+from contract.constants.research_project_role import PROJECT_ROLE_INVESTIGATOR, PROJECT_ROLE_PI
 
 PROJECT_NAME = "Viewer harness"
 USERNAME = "viewer-harness"
+VIEW_ONLY_USERNAME = "viewer-harness-view-only"
 CT_SLICES = 16
 CT_SIZE = 64
 SLICE_SPACING = 2.5
@@ -79,6 +80,20 @@ def _create_database_if_missing() -> None:
             cursor.execute(f'CREATE DATABASE "{name}"')
 
 
+def _member(project, username: str, role_name: str):
+    user, _ = get_user_model().objects.get_or_create(username=username)
+    role, _ = ResearchProjectRole.objects.get_or_create(name=role_name, defaults={"description": role_name})
+    ResearchProjectUserRoleMap.objects.get_or_create(user=user, project=project, role=role)
+    return user
+
+
+def _session_cookie(user) -> dict:
+    client = Client()
+    client.force_login(user)
+    name = settings.SESSION_COOKIE_NAME
+    return {"name": name, "value": client.cookies[name].value}
+
+
 class Command(BaseCommand):
     help = "DEBUG only: seed the viewer harness project/user/CT and print a session cookie + UIDs as JSON."
 
@@ -98,16 +113,13 @@ class Command(BaseCommand):
         project, _ = ResearchProject.objects.get_or_create(
             name=PROJECT_NAME, defaults={"description": "Synthetic data for the local viewer browser tests (#278)"},
         )
-        user, _ = get_user_model().objects.get_or_create(username=USERNAME)
-        role, _ = ResearchProjectRole.objects.get_or_create(name=PROJECT_ROLE_PI, defaults={"description": "PI"})
-        ResearchProjectUserRoleMap.objects.get_or_create(user=user, project=project, role=role)
+        user = _member(project, USERNAME, PROJECT_ROLE_PI)
+        view_only = _member(project, VIEW_ONLY_USERNAME, PROJECT_ROLE_INVESTIGATOR)
 
         series = self._ct_series(project)
-        client = Client()
-        client.force_login(user)
-        cookie_name = settings.SESSION_COOKIE_NAME
         self.stdout.write(json.dumps({
-            "sessionCookie": {"name": cookie_name, "value": client.cookies[cookie_name].value},
+            "sessionCookie": _session_cookie(user),
+            "viewOnlySessionCookie": _session_cookie(view_only),
             "ct": {
                 "studyUid": series.study.study_instance_uid,
                 "seriesUid": series.series_instance_uid,

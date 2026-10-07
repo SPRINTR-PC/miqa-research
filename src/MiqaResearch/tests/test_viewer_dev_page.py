@@ -5,6 +5,10 @@ Seam: the HTTP response of `/viewer/dev/`, plus the shared `base.html` layout.
 import pytest
 from django.contrib.auth import get_user_model
 
+from MiqaResearch.data.models import DicomSeries, ResearchProject, ResearchProjectRole, ResearchProjectUserRoleMap
+from MiqaResearch.tasks.dicom_handling.pipeline import run_ingestion
+from tests.dicom_fixtures import build_ct_image, write_dicom
+
 DEV_PAGE = "/viewer/dev/"
 VIEWER_BUNDLE = "js/viewer/mireswc-viewer.js"
 
@@ -62,3 +66,52 @@ def test_base_layout_never_loads_the_viewer_bundle(settings, no_toolbar, logged_
 
     assert "mireswc.js" in body  # sanity: this page renders base.html
     assert "mireswc-viewer" not in body
+
+
+# --- #280 role gating: the page tells the element whether the user may annotate the series. ---
+
+@pytest.fixture
+def ct_series(db, settings, tmp_path):
+    settings.FERNET_KEY = b"EiGdHopiKZdBZwVCP4dVJitPrrDnOuGAd94W4EZpwQc="
+    settings.SENSITIVE_DATA_HASH_KEY = "H2QCB14temR-C2JnLORSE5TxPwLd8iy3YygNPQ-corA="
+    settings.DICOM_ALLOWED_SOURCE_ROOTS = [tmp_path]
+    settings.MEDIA_ROOT = tmp_path / "media"
+    project = ResearchProject.objects.create(name="Viewer roles", description="#280")
+    report = run_ingestion(project, write_dicom(build_ct_image(), tmp_path / "ct.dcm"))
+    assert report.counts["ingested"] == 1, report.results
+    return DicomSeries.objects.select_related("study__study_participant").get(
+        study__study_participant__research_project=project
+    )
+
+
+def _open_as(client, series, role_name) -> str:
+    user = get_user_model().objects.create_user(username=f"viewer-{role_name}", password="pw")
+    role, _ = ResearchProjectRole.objects.get_or_create(name=role_name, defaults={"description": role_name})
+    ResearchProjectUserRoleMap.objects.create(
+        user=user, project=series.study.study_participant.research_project, role=role
+    )
+    client.force_login(user)
+    response = client.get(DEV_PAGE, {"study": series.study.study_instance_uid, "series": series.series_instance_uid})
+    return response.content.decode()
+
+
+@pytest.mark.parametrize("role_name", ["Annotator", "PI", "Admin"])
+def test_authoring_roles_get_annotate_tools(settings, no_toolbar, client, ct_series, role_name):
+    settings.DEBUG = True
+
+    assert "can-annotate" in _open_as(client, ct_series, role_name)
+
+
+@pytest.mark.parametrize("role_name", ["Investigator", "Contributor"])
+def test_view_only_roles_get_no_annotate_tools(settings, no_toolbar, client, ct_series, role_name):
+    settings.DEBUG = True
+
+    assert "can-annotate" not in _open_as(client, ct_series, role_name)
+
+
+def test_unknown_series_gets_no_annotate_tools(settings, no_toolbar, logged_in_client):
+    settings.DEBUG = True
+
+    body = logged_in_client.get(DEV_PAGE, {"study": "2.25.1", "series": "2.25.2"}).content.decode()
+
+    assert "can-annotate" not in body

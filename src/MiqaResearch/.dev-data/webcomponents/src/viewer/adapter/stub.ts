@@ -4,10 +4,23 @@ import type { StackState, StackView, ViewerAdapter, VoiRange } from "./adapter.t
 
 export class StubStackView implements StackView {
   current: StackState;
+  /** Window the image came with; resetVoi/resetView go back to it. */
+  defaultVoi: VoiRange | undefined;
+  resets = 0;
   private readonly onChange: () => void;
 
   constructor(series: LoadedSeries, onChange: () => void) {
-    this.current = { imageIndex: 0, imageCount: series.images.length, voi: undefined };
+    this.current = {
+      imageIndex: 0,
+      imageCount: series.images.length,
+      voi: undefined,
+      activeTool: "",
+      invert: false,
+      zoom: 1,
+      pan: [0, 0],
+      unit: "mm",
+      annotationCount: 0,
+    };
     this.onChange = onChange;
   }
 
@@ -15,14 +28,35 @@ export class StubStackView implements StackView {
     return { ...this.current };
   }
 
-  scrollTo(imageIndex: number): void {
-    this.current.imageIndex = Math.max(0, Math.min(imageIndex, this.current.imageCount - 1));
+  /** Test helper: apply a partial state change as the engine would, and notify. */
+  emit(change: Partial<StackState>): void {
+    Object.assign(this.current, change);
     this.onChange();
   }
 
+  scrollTo(imageIndex: number): void {
+    this.emit({ imageIndex: Math.max(0, Math.min(imageIndex, this.current.imageCount - 1)) });
+  }
+
   setVoi(voi: VoiRange): void {
-    this.current.voi = voi;
-    this.onChange();
+    this.emit({ voi });
+  }
+
+  resetVoi(): void {
+    this.emit({ voi: this.defaultVoi });
+  }
+
+  setTool(toolId: string): void {
+    this.emit({ activeTool: toolId });
+  }
+
+  toggleInvert(): void {
+    this.emit({ invert: !this.current.invert });
+  }
+
+  resetView(): void {
+    this.resets += 1;
+    this.emit({ voi: this.defaultVoi, invert: false, zoom: 1, pan: [0, 0] });
   }
 }
 

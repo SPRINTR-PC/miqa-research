@@ -10,19 +10,63 @@ One file per concern, so parallel tickets touch different files.
 | Path | What | Owner tickets |
 |---|---|---|
 | `../mireswc-viewer.ts` | Bundle entry. Re-exports the element only. | — |
-| `mires-viewer.ts` | The element: attributes, state (`loading`/`ready`/`error`), layout. Talks to the adapter interface only. | #278, chrome #280 |
+| `mires-viewer.ts` | The element: attributes (`can-annotate`), state (`loading`/`ready`/`error`), chrome B layout, keyboard dispatch. Talks to the adapter interface only. | #278, chrome #280 |
+| `context.ts` | `ViewerContext`: what inspector panels and commands see (state + actions). | #280, additive |
+| `commands.ts` | Keyboard commands registry (I invert, Esc reset built in). | #280, +#282 V, #289 Ctrl/⌘+S |
+| `tools/registry.ts` | Tool registry (rail + shortcut keys + role gating). Pure. | #280 |
+| `tools/<capability>.ts` | Tool definitions, one module per capability; `tools/stack.ts` = #280's. | #280, #281, #282, #285, #286 |
+| `tools/presets.ts` | Window presets (0–8) per modality. Pure. | #280, #284 |
+| `tools/bindings.ts` | Workstation mouse as a binding plan of abstract buttons. Pure. | #280, #285 (WSI), #286 (erase) |
+| `chrome/*.ts` | Series list, tool rail templates. | #280, #279/#284/#290 (series list) |
+| `units.ts` | Tooltip text for CS3D's raw unit suffixes. | #280, #281 |
 | `series.ts` | `/metadata` fetch → ordered `wadors:` frame imageIds. Pure, no CS3D. | #278 |
 | `adapter/adapter.ts` | **The seam**: `ViewerAdapter` and its view types. Add one member per capability. | all |
 | `adapter/stub.ts` | Test double for the seam. Extend it with each new member. | all |
 | `adapter/cornerstone/index.ts` | Real adapter: composes the capability modules below. | all (small edits) |
-| `adapter/cornerstone/init.ts` | One-time CS3D init, providers, global tool registration. | #278, #282, #285, #286 |
+| `adapter/cornerstone/init.ts` | One-time CS3D init, providers. | #278, #282, #285 |
+| `adapter/cornerstone/tools.ts` | CS3D tool registry (id → tool class/instance), applies binding plans. | #280; others call `registerCornerstoneTool` from their module |
 | `adapter/cornerstone/metadata.ts` | Typed metadata path (`addDicomWebInstance`), never `wadors.metaDataManager`. | #278, spacing shim #281, SUV #284 |
-| `adapter/cornerstone/stack.ts` | STACK viewport + its tool group. | #278, #280, #281 |
+| `adapter/cornerstone/stack.ts` | STACK viewport + its tool group (all registered tools, workstation bindings). | #278, #280, #281 |
 | `adapter/cornerstone/volume.ts` | ORTHOGRAPHIC volumes, three views, crosshairs, fusion. | #282–#284 (new) |
 | `adapter/cornerstone/wsi.ts` | WHOLE_SLIDE (`WSIViewport` subclass), dmv `peerImport`. | #285 (new) |
 | `adapter/cornerstone/segmentation.ts` | Labelmaps, segment tools, threshold. | #286 (new) |
 | `inspector/*.ts` | Side-panel parts, one Lit element or template per panel (calibration legend, layers, segments, save…). | #281, #284, #286, #289+ (new) |
 | `*.test.ts` next to the file | vitest, stub adapter, no CS3D. | all |
+
+## Extension points (#280)
+
+Chrome B: series list | tool rail | viewport | inspector. Rail, keys and inspector are built from
+registries, so a capability adds entries **from its own files** and touches shared files with one
+import line each. Registries throw on duplicate ids/keys, so clashes fail in vitest, not in the UI.
+
+- **A tool** (e.g. Calibrate #281, Crosshairs #282, segment tools #286):
+  1. `tools/<capability>.ts`: `tools.register({ id, label, key, group, icon, viewports, annotateOnly })`.
+     `id` = CS3D `toolName` (or a tool-instance name), `group` = rail section (`nav`/`measure`/
+     `annotate`/`segment`), `viewports` = `stack`/`volume`/`wsi` (spec tool sets),
+     `annotateOnly` hides it from view-only roles (rail and key). Add `import "./<capability>.ts"` in `tools/index.ts`.
+  2. `adapter/cornerstone/<capability>.ts`: `registerCornerstoneTool(MyTool)` or, for a tool
+     instance, `registerCornerstoneTool(Base, { id, configuration })`; `passive: true` keeps
+     annotations drawn and editable when the tool is not on a button. Import the module from
+     `adapter/cornerstone/index.ts`. Every stack/volume tool group gets all registered tools.
+  - Keys taken: w p z s l a b o r e f t; reserved for later tickets: x (Crosshairs), c (Calibrate),
+    g d k q j y m (segment tools); never a tool key: 0–9 (presets), i, v, Esc (`RESERVED_KEYS`).
+- **Mouse:** `workstationBindings({ primary, viewport, secondary })` (tools/bindings.ts) is the single
+  source of the workstation mouse; views apply it with `applyBindingPlan` (disable-then-activate,
+  because CS3D's `setToolActive` merges bindings). WSI (#285): `viewport: "wsi"` (wheel = zoom).
+  Segment tools (#286): pass their erase twin as `secondary` (right-drag erases).
+- **An inspector panel** (e.g. calibration legend #281, layout #282, layers #284, segments #286,
+  save #289): `inspector/<panel>.ts` with `inspector.register({ id, order, render(ctx) })`, import it
+  in `inspector/index.ts`. `render` gets the `ViewerContext` and returns a Lit template or `nothing`.
+  Orders are listed in `inspector/registry.ts`. Shared classes: `section.panel`, `h5`, `.grid2`,
+  `.row`, `kbd`, `.hint`; a panel needing its own CSS renders its own custom element.
+- **A key command** (V #282, Ctrl/⌘+S #289): `commands.register({ id, key, ctrlOrMeta, label, available, run })`
+  from the capability's module.
+- **Presets:** `presets.register({ id, label, key, modalities, window | range })` (tools/presets.ts).
+- **A view kind** (volume #282, WSI #285): implement `ViewControls` (adapter.ts) so the rail, keys,
+  presets and inspector work unchanged; the element's `viewportKind` selects the tool set.
+- **Role:** the page sets the boolean `can-annotate` attribute from the server
+  (`ParticipantRights.can_author`: Annotator, PI, Site PI, Admin). It gates Arrow, Calibrate, segment
+  tools and Save in the UI only; the server authorises saves again (#287).
 
 Rules:
 - Only `adapter/cornerstone/**` imports `@cornerstonejs/*`. The element loads it with a dynamic `import()`.
@@ -57,6 +101,7 @@ Headless Chromium with SwiftShader WebGL against Django `runserver` on port 8278
 `MiqaResearch.settings_viewer_harness` (DEBUG, demo encryption keys) and **its own database**
 (`<your dev db>_viewer_harness`, created and migrated automatically; override with
 `VIEWER_HARNESS_DATABASE_URL`). Needs `src/MiqaResearch/.env`, Postgres and `uv`.
-`viewer_harness_seed` seeds a PI user, a session and a synthetic 16-slice CT; tests read them from
-`browser-tests/fixtures.ts` (`seed()`, `ViewerPage`). Add a spec file per feature
+`viewer_harness_seed` seeds a PI user, a view-only (Investigator) user, their sessions and a synthetic
+16-slice CT; tests read them from `browser-tests/fixtures.ts` (`seed()`, `ViewerPage`; log in as the
+view-only user with `test.use({ viewOnly: true })`). Add a spec file per feature
 (`browser-tests/<feature>.spec.ts`) and extend the seed command for new fixture series.
