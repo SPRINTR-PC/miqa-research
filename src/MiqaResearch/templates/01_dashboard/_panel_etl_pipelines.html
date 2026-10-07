@@ -9,6 +9,8 @@
         {% include '01_dashboard/_panel_etl_jobs.html' %}
       {% elif etl_section == 'defaults' %}
         {% include '01_dashboard/_panel_etl_defaults.html' %}
+      {% elif etl_section == 'sources' %}
+        {% include '01_dashboard/_panel_etl_sources.html' %}
       {% else %}
         {% include '01_dashboard/_panel_etl_bindings.html' %}
       {% endif %}

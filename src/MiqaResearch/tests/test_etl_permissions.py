@@ -79,3 +79,39 @@ def test_holding_multiple_roles_takes_the_most_permissive():
     assert permissions.can_view
     assert permissions.can_manage
     assert permissions.can_manage_admin_only
+
+
+# Sources section (#268): Source Locations and location grants.
+
+def test_admin_may_see_sources_and_manage_locations_but_not_grants():
+    permissions = _permissions(PROJECT_ROLE_ADMIN)
+
+    assert permissions.can_view_sources
+    assert permissions.can_manage_source_locations
+    assert not permissions.can_manage_location_grants
+
+
+@pytest.mark.parametrize("role", [
+    PROJECT_ROLE_DATA_MANAGER, PROJECT_ROLE_PI, PROJECT_ROLE_INVESTIGATOR, PROJECT_ROLE_CONTRIBUTOR])
+def test_other_roles_may_not_see_sources(role):
+    permissions = _permissions(role)
+
+    assert not permissions.can_view_sources
+    assert not permissions.can_manage_source_locations
+    assert not permissions.can_manage_location_grants
+
+
+@pytest.mark.parametrize("flags", [{"is_staff": True}, {"is_superuser": True}])
+def test_staff_and_superusers_manage_sources_and_grants_whatever_their_role(flags):
+    permissions = etl_permissions_for_roles(role_names=[PROJECT_ROLE_CONTRIBUTOR], **flags)
+
+    assert permissions.can_view_sources
+    assert permissions.can_manage_source_locations
+    assert permissions.can_manage_location_grants
+
+
+def test_staff_without_an_etl_role_get_read_only_access_to_the_rest_of_the_tab():
+    permissions = etl_permissions_for_roles(is_superuser=False, is_staff=True, role_names=[PROJECT_ROLE_CONTRIBUTOR])
+
+    assert permissions.can_view
+    assert not permissions.can_manage

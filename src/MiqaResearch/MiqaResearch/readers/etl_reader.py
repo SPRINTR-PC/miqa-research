@@ -9,6 +9,7 @@ from MiqaResearch.data.models import (
     EtlProjectSettings,
     EtlScript,
     EtlScriptVersion,
+    EtlSourceLocation,
     PipelineBinding,
     ResearchProject,
 )
@@ -40,7 +41,8 @@ def _config_schema_version_count() -> dict:
 async def get_project_bindings(project: ResearchProject) -> list[PipelineBinding]:
     return [
         binding async for binding in
-        PipelineBinding.objects.filter(project=project).select_related("script_version", "script_version__script")
+        PipelineBinding.objects.filter(project=project).select_related(
+            "script_version", "script_version__script", "source_location")
     ]
 
 
@@ -82,6 +84,14 @@ async def get_project_job(project: ResearchProject, job_id) -> EtlJob | None:
 
 async def get_project_location_grants(project: ResearchProject) -> list[EtlLocationGrant]:
     return [grant async for grant in EtlLocationGrant.objects.filter(project=project)]
+
+
+async def get_project_source_locations(project: ResearchProject) -> list[EtlSourceLocation]:
+    """The project's Source Locations (#268), each annotated with `binding_count`."""
+    return [
+        location async for location in
+        EtlSourceLocation.objects.filter(project=project).annotate(binding_count=Count("bindings"))
+    ]
 
 
 async def get_bindable_script_versions(project: ResearchProject) -> list[EtlScriptVersion]:

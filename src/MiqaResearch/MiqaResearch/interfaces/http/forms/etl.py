@@ -325,22 +325,44 @@ class EtlBindingEditForm(forms.Form):
 
 
 class EtlBindingCreateForm(EtlBindingEditForm):
-    source_bucket = forms.CharField(max_length=200)
-    source_prefix = forms.CharField(max_length=500, required=False)
+    """The wizard picks its source from the project's Source Locations (#268) rather than a typed
+    bucket/prefix; `cleaned_data["source_location"]` is the chosen `EtlSourceLocation`."""
+    source_location = forms.ChoiceField(label=_("Source location"))
 
-    field_order = ["source_bucket", "source_prefix"]
+    field_order = ["source_location"]
 
-    def clean(self):
+    def __init__(self, *args, source_locations, **kwargs):
+        self.source_locations = {str(location.id): location for location in source_locations}
+        super().__init__(*args, **kwargs)
+        self.fields["source_location"].choices = [
+            (location_id, f"{location.name} ({location.bucket}/{location.prefix})")
+            for location_id, location in self.source_locations.items()
+        ]
+
+    def clean_source_location(self):
         from MiqaResearch.readers.etl_reader import location_grant_allows
 
-        cleaned = super().clean()
-        source_bucket = cleaned.get("source_bucket")
-        if source_bucket and not location_grant_allows(
-                self.location_grants, source_bucket, cleaned.get("source_prefix") or ""):
-            self.add_error(
-                "source_bucket",
-                _("This project has not been granted access to that source bucket/prefix."))
-        return cleaned
+        location = self.source_locations[self.cleaned_data["source_location"]]
+        # A location is created inside a grant, but a grant can still be removed in the Django admin.
+        if not location_grant_allows(self.location_grants, location.bucket, location.prefix):
+            raise forms.ValidationError(_("This project has not been granted access to that source bucket/prefix."))
+        return location
+
+
+class EtlSourceLocationForm(forms.Form):
+    name = forms.CharField(max_length=100)
+    bucket = forms.CharField(max_length=200)
+    prefix = forms.CharField(max_length=500, required=False)
+
+
+class EtlSourceLocationRenameForm(forms.Form):
+    name = forms.CharField(max_length=100)
+
+
+class EtlLocationGrantForm(forms.Form):
+    bucket = forms.CharField(max_length=200)
+    prefix = forms.CharField(
+        max_length=500, required=False, help_text=_("Empty grants access to the whole bucket."))
 
 
 class EtlProjectSettingsForm(forms.Form):

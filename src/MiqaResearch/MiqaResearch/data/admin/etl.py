@@ -10,6 +10,7 @@ from MiqaResearch.data.models import (
     EtlProjectSettings,
     EtlScript,
     EtlScriptVersion,
+    EtlSourceLocation,
     PipelineBinding,
 )
 
@@ -90,6 +91,21 @@ class EtlLocationGrantAdmin(ModelAdmin):
 
     class Meta:
         model = EtlLocationGrant
+
+
+@admin.register(EtlSourceLocation)
+class EtlSourceLocationAdmin(ModelAdmin):
+    list_display = ("name", "project", "bucket", "prefix")
+    list_filter = ("project",)
+    search_fields = ("name", "bucket", "prefix")
+    # Bucket/prefix are fixed once created (#268): Bindings copied them.
+    readonly_fields = ("bucket", "prefix")
+
+    def get_readonly_fields(self, request, obj=None):
+        return self.readonly_fields if obj else ()
+
+    class Meta:
+        model = EtlSourceLocation
 
 
 @admin.register(EtlPendingGroup)

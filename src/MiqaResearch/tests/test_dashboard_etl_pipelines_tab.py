@@ -138,7 +138,7 @@ def test_every_sidebar_link_names_a_loading_indicator_that_exists_on_the_page(cl
     refs = re.findall(r'hx-indicator="([^"]+)"', body)
 
     sidebar_refs = [ref for ref in refs if "etl-section-panel" in ref]
-    assert len(sidebar_refs) == 4  # Bindings, Scripts, Jobs, Defaults
+    assert len(sidebar_refs) == 5  # Bindings, Scripts, Jobs, Defaults, Sources
     for reference in sidebar_refs:
         for selector in (part.strip() for part in reference.split(",")):
             assert selector.startswith("#")

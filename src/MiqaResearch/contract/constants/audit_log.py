@@ -12,6 +12,11 @@ EVENT_TYPE_ETL_BINDING_UPDATED = "etl_binding_updated"
 EVENT_TYPE_ETL_SETTINGS_UPDATED = "etl_settings_updated"
 EVENT_TYPE_ETL_SOURCE_CLEANUP_STUCK = "etl_source_cleanup_stuck"
 EVENT_TYPE_ETL_JOB_MANUAL_RETRY = "etl_job_manual_retry"
+EVENT_TYPE_ETL_SOURCE_LOCATION_CREATED = "etl_source_location_created"
+EVENT_TYPE_ETL_SOURCE_LOCATION_RENAMED = "etl_source_location_renamed"
+EVENT_TYPE_ETL_SOURCE_LOCATION_DELETED = "etl_source_location_deleted"
+EVENT_TYPE_ETL_LOCATION_GRANT_CREATED = "etl_location_grant_created"
+EVENT_TYPE_ETL_LOCATION_GRANT_DELETED = "etl_location_grant_deleted"
 
 EVENT_TYPE_CHOICES = [
     (EVENT_TYPE_LOGIN, "Login"),
@@ -28,6 +33,11 @@ EVENT_TYPE_CHOICES = [
     (EVENT_TYPE_ETL_SETTINGS_UPDATED, "ETL project settings updated"),
     (EVENT_TYPE_ETL_SOURCE_CLEANUP_STUCK, "ETL raw-bucket source cleanup stuck"),
     (EVENT_TYPE_ETL_JOB_MANUAL_RETRY, "ETL job manually retried"),
+    (EVENT_TYPE_ETL_SOURCE_LOCATION_CREATED, "ETL source location created"),
+    (EVENT_TYPE_ETL_SOURCE_LOCATION_RENAMED, "ETL source location renamed"),
+    (EVENT_TYPE_ETL_SOURCE_LOCATION_DELETED, "ETL source location deleted"),
+    (EVENT_TYPE_ETL_LOCATION_GRANT_CREATED, "ETL location grant created"),
+    (EVENT_TYPE_ETL_LOCATION_GRANT_DELETED, "ETL location grant deleted"),
 ]
 
 AUTH_METHOD_LOCAL = "local"

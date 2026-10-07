@@ -1,6 +1,7 @@
 """Endpoints for the ETL Pipelines tab beyond its section listings: the manage actions (#158) --
 create/edit/archive a custom Script, add a Version, create a Binding, edit the project's ETL
-settings overrides -- and a Job's detail view (#164). Every view
+settings overrides, manage Source Locations and location grants (#268) -- and a Job's detail view
+(#164). The Sources section's endpoints 404 for a viewer who may not see that section. Every view
 resolves the project through `get_user_etl_project_or_404` first, which 404s a user who can't even
 view the tab; a view whose action needs more than that (manage, or admin-only manage) then checks
 `etl_permissions` itself and responds 403 -- the page exists for them, the action doesn't.
@@ -21,14 +22,24 @@ from MiqaResearch.actions.etl.scripts import (
     update_custom_script,
 )
 from MiqaResearch.actions.etl.settings import update_etl_project_settings
-from MiqaResearch.data.models import EtlScript, PipelineBinding
+from MiqaResearch.actions.etl.sources import (
+    create_location_grant,
+    create_source_location,
+    delete_location_grant,
+    delete_source_location,
+    rename_source_location,
+)
+from MiqaResearch.data.models import EtlLocationGrant, EtlScript, EtlSourceLocation, PipelineBinding
 from MiqaResearch.interfaces.http.forms.etl import (
     EtlBindingCreateForm,
     EtlBindingEditForm,
+    EtlLocationGrantForm,
     EtlProjectSettingsForm,
     EtlScriptCreateForm,
     EtlScriptEditForm,
     EtlScriptVersionCreateForm,
+    EtlSourceLocationForm,
+    EtlSourceLocationRenameForm,
 )
 from MiqaResearch.readers.etl_reader import (
     get_project_job,
@@ -43,7 +54,9 @@ from .tabs import (
     ETL_SECTION_DEFAULTS,
     ETL_SECTION_JOBS,
     ETL_SECTION_SCRIPTS,
+    ETL_SECTION_SOURCES,
     _htmx_tab_response,
+    binding_create_form_kwargs,
     binding_edit_auto_id,
     binding_form_kwargs,
     etl_section_context,
@@ -177,15 +190,14 @@ async def etl_bindings_create(request, project_id):
         return HttpResponseForbidden()
 
     user = await request.auser()
-    form_kwargs = await binding_form_kwargs(research_project, permissions)
+    form_kwargs = await binding_create_form_kwargs(research_project, permissions)
 
     form = EtlBindingCreateForm(request.POST, **form_kwargs)
     if form.is_valid():
         try:
             await create_pipeline_binding(
                 project=research_project, user=user, request=request,
-                source_bucket=form.cleaned_data['source_bucket'],
-                source_prefix=form.cleaned_data['source_prefix'],
+                source_location=form.cleaned_data['source_location'],
                 script_version_id=form.cleaned_data['script_version'],
                 raw_retention=form.cleaned_data['raw_retention'],
                 raw_bucket=form.cleaned_data['raw_bucket'],
@@ -338,3 +350,80 @@ async def _render_job_detail(request, project, permissions, job_id, *, manage_er
         },
         with_sidebar=True,
     )
+
+
+async def _get_sources_project_or_404(request, project_id):
+    research_project, permissions = await get_user_etl_project_or_404(request, project_id)
+    if not permissions.can_view_sources:
+        raise Http404()
+    return research_project, permissions
+
+
+async def _sources_response(request, project, permissions, *, manage_error=None, **forms):
+    section_context = await etl_section_context(project, permissions, ETL_SECTION_SOURCES)
+    section_context |= {name: form for name, form in forms.items() if form is not None}
+    if manage_error:
+        section_context['manage_error'] = manage_error
+    return _htmx_tab_response(
+        request, _ETL_SECTION_PANELS[ETL_SECTION_SOURCES], project, 'etl-pipelines',
+        extra_context={'etl_section': ETL_SECTION_SOURCES} | section_context, with_sidebar=True,
+    )
+
+
+@htmx_login_required
+async def etl_source_locations_create(request, project_id):
+    research_project, permissions = await _get_sources_project_or_404(request, project_id)
+    form = EtlSourceLocationForm(request.POST)
+    if not form.is_valid():
+        return await _sources_response(request, research_project, permissions, source_location_form=form)
+    error = await _attempt(create_source_location(
+        project=research_project, user=await request.auser(), request=request, name=form.cleaned_data['name'],
+        bucket=form.cleaned_data['bucket'], prefix=form.cleaned_data['prefix']))
+    return await _sources_response(
+        request, research_project, permissions, manage_error=error, source_location_form=form if error else None)
+
+
+@htmx_login_required
+async def etl_source_location_rename(request, project_id, location_id):
+    research_project, permissions = await _get_sources_project_or_404(request, project_id)
+    location = await aget_object_or_404(EtlSourceLocation, project=research_project, id=location_id)
+    form = EtlSourceLocationRenameForm(request.POST)
+    error = _form_errors(form) if not form.is_valid() else await _attempt(rename_source_location(
+        project=research_project, user=await request.auser(), request=request, location_id=location.id,
+        name=form.cleaned_data['name']))
+    return await _sources_response(request, research_project, permissions, manage_error=error)
+
+
+@htmx_login_required
+async def etl_source_location_delete(request, project_id, location_id):
+    research_project, permissions = await _get_sources_project_or_404(request, project_id)
+    location = await aget_object_or_404(EtlSourceLocation, project=research_project, id=location_id)
+    error = await _attempt(delete_source_location(
+        project=research_project, user=await request.auser(), request=request, location_id=location.id))
+    return await _sources_response(request, research_project, permissions, manage_error=error)
+
+
+@htmx_login_required
+async def etl_location_grants_create(request, project_id):
+    research_project, permissions = await _get_sources_project_or_404(request, project_id)
+    if not permissions.can_manage_location_grants:
+        return HttpResponseForbidden()
+    form = EtlLocationGrantForm(request.POST)
+    if not form.is_valid():
+        return await _sources_response(request, research_project, permissions, location_grant_form=form)
+    error = await _attempt(create_location_grant(
+        project=research_project, user=await request.auser(), request=request,
+        bucket=form.cleaned_data['bucket'], prefix=form.cleaned_data['prefix']))
+    return await _sources_response(
+        request, research_project, permissions, manage_error=error, location_grant_form=form if error else None)
+
+
+@htmx_login_required
+async def etl_location_grant_delete(request, project_id, grant_id):
+    research_project, permissions = await _get_sources_project_or_404(request, project_id)
+    if not permissions.can_manage_location_grants:
+        return HttpResponseForbidden()
+    grant = await aget_object_or_404(EtlLocationGrant, project=research_project, id=grant_id)
+    error = await _attempt(delete_location_grant(
+        project=research_project, user=await request.auser(), request=request, grant_id=grant.id))
+    return await _sources_response(request, research_project, permissions, manage_error=error)

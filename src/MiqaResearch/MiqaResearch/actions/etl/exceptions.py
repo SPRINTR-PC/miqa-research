@@ -24,3 +24,15 @@ class EtlBindingConfigInvalid(EtlActionError):
 class EtlJobStateError(EtlActionError):
     """The target EtlJob can't be manually retried: it didn't fail, or its Binding already has
     another Job pending or running."""
+
+
+class EtlLocationOutsideGrant(EtlActionError):
+    """A Source Location's bucket/prefix isn't inside any of the project's location grants (#268)."""
+
+
+class EtlLocationConflict(EtlActionError):
+    """A Source Location name or bucket/prefix, or a location grant, already exists in the project."""
+
+
+class EtlLocationInUse(EtlActionError):
+    """A Source Location a Binding uses, or a grant a location or Binding depends on, can't be deleted."""
