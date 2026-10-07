@@ -8,6 +8,8 @@
 // Shadow DOM kept (#191): head-injected WSI CSS is mirrored into the shadow root.
 import { LitElement, css, html, nothing, svg } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
+import { AnnStore, type Kind, type Who } from "./ann-store.js";
+import { annCss, browserDialog, chips, conflictDialog, draftBanner, lockRow, resultsTab, saveTarget, toast, treeChildren } from "./ann-ui.js";
 import { BINDINGS_HELP, Stage, COLORMAPS, type Mode, type Preset, type Role, type SimCal, type ToolDef, type ViewportInfo } from "./stage.js";
 
 @customElement("mires-viewer-toolbar-prototype")
@@ -16,13 +18,21 @@ export class MiresViewerToolbarPrototype extends LitElement {
   @property() mode: Mode = "mpr";
   @property() role: Role = "annotator";
   @property() simcal: SimCal = "";
+  // #202: Annotations/Segmentations UI variant (only inside chrome B), stub-server persona and project flag
+  @property() annui: "" | "A" | "B" | "C" = "";
+  @property() who: Who = "annotator";
+  @property({ type: Boolean }) blinded = false;
+  ann!: AnnStore;
+  @state() private annOpen = new Set<string>();
+  @state() private annTab: "view" | "results" = "view";
+  @state() private annFilter: "all" | "mine" = "all";
   @state() private tick = 0;
   @state() private status = "loading…";
   @state() private open = ""; // open dropdown / overlay id
   @state() private paletteQuery = "";
   stage!: Stage;
 
-  static styles = css`
+  static styles = [annCss, css`
     :host { display: flex; flex-direction: column; height: 100%; background: #0b0d10; color: #d8dde3; font: 13px system-ui, sans-serif; outline: none; }
     button { font: inherit; color: inherit; background: #1b2027; border: 1px solid #2b323c; border-radius: 4px; padding: 4px 8px; cursor: pointer; }
     button:hover { background: #26303b; }
@@ -119,7 +129,7 @@ export class MiresViewerToolbarPrototype extends LitElement {
     .C-box .row { display: flex; justify-content: space-between; padding: 5px 8px; border-radius: 4px; cursor: pointer; }
     .C-box .row:hover, .C-box .row.sel { background: #1f6feb44; }
     .C-sheet { columns: 2; font-size: 12px; } .C-sheet div { display: flex; justify-content: space-between; padding: 2px 6px; break-inside: avoid; }
-  `;
+  `];
 
   constructor() {
     super();
@@ -133,7 +143,10 @@ export class MiresViewerToolbarPrototype extends LitElement {
 
   async firstUpdated() {
     this.stage = new Stage({ mode: this.mode, role: this.role, scheme: this.variant === "B" ? "workstation" : "ohif", simcal: this.simcal });
-    this.stage.onChange = () => this.tick++;
+    this.stage.onChange = () => { this.tick++; this.annDraft(); };
+    this.ann = new AnnStore(this.who, this.blinded);
+    this.ann.onChange = () => this.tick++;
+    (window as any).__ann = this.ann;
     this.stage.log = (s) => (this.status = s);
     try {
       await this.stage.start((id) => this.renderRoot.querySelector<HTMLDivElement>(`#${id}`)!);
@@ -339,6 +352,7 @@ export class MiresViewerToolbarPrototype extends LitElement {
       ["Segment", ts.filter((t) => t.group === "segment")],
     ];
     const infos = this.ready() ? this.s.info() : [];
+    if (this.annui && this.ready()) return this.renderBAnn(groups, infos);
     return html`<div class="main">
       ${this.seriesPanel()}
       <div class="B-rail">${groups.filter(([, g]) => g.length).map(([n, g]) => html`<h6>${n}</h6>${g.map((t) => this.toolBtn(t, html`${t.icon}<kbd>${t.key}</kbd>`))}`)}</div>
@@ -359,6 +373,60 @@ export class MiresViewerToolbarPrototype extends LitElement {
       </div>
       ${this.open.startsWith("save") ? this.saveDialog(this.open) : nothing}
     </div>`;
+  }
+
+  // ---------- #202: Annotations / Segmentations UI variants inside chrome B ----------
+  private annBase() { return this.s.layers[0]?.key ?? "CT"; }
+  private annDirty(): Record<Kind, number> { return { Annotations: this.s.annDirty, Segmentation: this.s.segDirty }; }
+  private annDraft() {
+    if (!this.ann || !this.ready()) return;
+    const d = this.annDirty();
+    for (const k of ["Annotations", "Segmentation"] as Kind[]) if (d[k]) this.ann.writeDraft({ kind: k, series: this.annBase(), basedOn: this.ann.loadedHead(k, this.annBase())?.id, changes: d[k], at: new Date().toLocaleTimeString() });
+  }
+  private annSave(k: Kind) {
+    const base = this.annBase();
+    const sum = k === "Annotations" ? Object.entries(this.s.annotationSummary().measurements).map(([t, n]) => `${n} ${t}`).join(", ") || "edits" : this.s.segmentationSummary().segments.map((g) => g.label).join(", ") || "edits";
+    const r = this.ann.save(k, base, sum, saveTarget(this.ann, k, base).base?.id);
+    if (r !== "409") this.s.markSaved(k === "Annotations" ? "annotations" : "segmentation");
+  }
+  private annRestore() {
+    // prototype: a restored draft only marks the edits dirty again; the real one replays Cornerstone JSON
+    const ds = this.ann.drafts();
+    for (const d of ds) { if (d.basedOn) this.ann.loaded.add(d.basedOn); if (d.kind === "Annotations") this.s.annDirty = d.changes; else this.s.segDirty = d.changes; }
+    this.ann.flash("Draft restored — save or discard it");
+  }
+  private loadedNote() {
+    const n = [...this.ann.loaded].map((id) => this.ann.objs.find((o) => o.id === id)!).filter((o) => o && o.series === this.annBase());
+    return n.length ? html`<div class="loaded-note">showing: ${n.map((o) => `${o.kind === "Annotations" ? "📐" : "🎨"} ${o.summary} v${o.version}`).join(" · ")}</div>` : nothing;
+  }
+  private annSaveBtns() {
+    if (!this.ann.canAuthor()) return html`<div class="B-cal muted">Read-only: your role can view but not save.</div>`;
+    const d = this.annDirty(), b = this.annBase();
+    return html`<div class="saves" style="flex-direction:column">${(["Annotations", "Segmentation"] as Kind[]).map((k) => html`<button class="save ${d[k] ? "dirty" : ""}" ?disabled=${!d[k]} @click=${() => this.annSave(k)}>💾 ${k}: ${saveTarget(this.ann, k, b).label}${d[k] ? html` <span class="dot">●</span>` : ""}</button>`)}</div>`;
+  }
+  private renderBAnn(groups: [string, ToolDef[]][], infos: ViewportInfo[]) {
+    const st = this.ann, v = this.annui, rr = () => this.tick++;
+    const rail = html`<div class="B-rail">${groups.filter(([, g]) => g.length).map(([n, g]) => html`<h6>${n}</h6>${g.map((t) => this.toolBtn(t, html`${t.icon}<kbd>${t.key}</kbd>`))}`)}</div>`;
+    const viewInsp = html`${this.isVol() ? this.layersPanel() : html`<h5>View</h5><button @click=${() => this.s.reset()}>Reset view</button>`}
+      ${this.s.canSegment() && (this.s.isSegTool(this.s.primary) || this.s.segments.length) ? this.segPanel() : nothing}
+      <h5>Measurement units</h5>${infos.map((i) => html`<div class="B-cal"><b>${i.label}</b>: ${i.badge || "mm"}</div>`)}`;
+    // A: tree under each series in the left list
+    const seriesA = html`<div class="B-series"><h5>Series</h5>${lockRow(st)}
+      ${this.s.catalog.filter((c) => c.volumetric).map((c) => html`<div class="ser ${this.s.layers.some((L) => L.key === c.key) ? "shown" : ""}" @dblclick=${() => this.s.replace(c.key)}>
+          <div class="ser-mod">${c.modality}</div><div class="ser-txt"><b>${c.description || c.key}</b><span>${c.count} images</span></div></div>
+        ${treeChildren(st, c.key, this.annOpen, rr)}`)}
+      <p class="hint">☐ click: show/hide on its series · vN: history</p></div>`;
+    const grid = html`<div style="position:relative;flex:1;display:flex;min-width:0">${this.grid()}
+      ${draftBanner(st, () => this.annRestore())}${v === "C" ? chips(st, () => (this.open = "ann-browser")) : nothing}${this.loadedNote()}</div>`;
+    const insp = v === "B"
+      ? html`<div class="B-insp"><div class="tabs"><button class=${this.annTab === "view" ? "on" : ""} @click=${() => (this.annTab = "view")}>View</button>
+          <button class=${this.annTab === "results" ? "on" : ""} @click=${() => (this.annTab = "results")}>Annotations & Seg.${this.s.annDirty || this.s.segDirty ? " ●" : ""}</button></div>
+          ${this.annTab === "results" ? resultsTab(st, this.annBase(), this.annFilter, (f) => (this.annFilter = f), this.annOpen, rr, (k) => this.annSave(k), this.annDirty()) : viewInsp}</div>`
+      : html`<div class="B-insp">${this.annSaveBtns()}${viewInsp}</div>`;
+    return html`<div class="main" style="position:relative">
+      ${v === "A" ? seriesA : this.seriesPanel()}${rail}${grid}${insp}
+      ${this.open === "ann-browser" ? browserDialog(st, this.s.catalog.filter((c) => c.volumetric).map((c) => c.key), () => (this.open = "")) : nothing}
+      ${conflictDialog(st)}${toast(st)}</div>`;
   }
 
   // ---------- segmentation, opacity curve, save (B) ----------

@@ -22,6 +22,14 @@
   <label>Series (entry contract) <select id="mode"><option value="stack">CT stack (2D)</option><option value="mpr">CT three views</option><option value="fusion">PET/CT fusion</option><option value="wsi">WSI pathology</option></select></label>
   <label>Role <select id="role"><option value="annotator">Annotator/PI/Admin</option><option value="viewer">View-only</option></select></label>
   <label>Simulated calibration (stack) <select id="simcal"><option value="">tomographic mm (badge hidden)</option><option value="proj">Proj (X-ray, uncorrected)</option><option value="ermf">ERMF</option><option value="none">none → px</option><option value="us">US region</option></select></label>
+  <span id="annctl" style="display:none;gap:8px;align-items:center">
+    <b style="color:#a60">#202</b>
+    <label>Results UI <select id="annui"><option value="A">A — tree in series list</option><option value="B">B — inspector tab</option><option value="C">C — chips + browser</option></select></label>
+    <label>You are <select id="who"><option value="annotator">Annotator</option><option value="pi">PI</option><option value="viewer">View-only</option></select></label>
+    <label>Blinded project <select id="blinded"><option value="">no</option><option value="1">yes</option></select></label>
+    <button id="other" title="Another user saves a newer version of the object you have loaded">Simulate other user saves</button>
+    <button id="crash" title="Reload without saving; unsaved edits stay in the draft store">Simulate crash</button>
+  </span>
 </div>
 <div id="host"></div>
 <div id="switcher"><button id="prev">←</button><span id="label"></span><button id="next">→</button></div>
@@ -31,20 +39,40 @@
   const params = new URLSearchParams(location.search);
   const v = keys.includes(params.get("variant")) ? params.get("variant") : "A";
   const get = (k, d) => params.get(k) ?? d;
+  // #202: with ?annui= set, the bottom switcher cycles the Results UI instead (chrome fixed to B)
+  const annui = params.get("annui");
+  if (annui) {
+    document.getElementById("annctl").style.display = "flex";
+    for (const k of ["annui", "who", "blinded"]) {
+      const sel = document.getElementById(k);
+      sel.value = params.get(k) ?? sel.options[0].value;
+      sel.onchange = () => { params.set(k, sel.value); location.search = params; };
+    }
+    document.getElementById("crash").onclick = () => location.reload();
+    document.getElementById("other").onclick = () => {
+      const st = window.__ann; const id = [...st.loaded].find((i) => st.objs.find((o) => o.id === i)?.author === st.me) ?? [...st.loaded][0];
+      if (!id) return alert("Load (show) one of your objects first, edit it, then simulate.");
+      st.simulateOther(st.objs.find((o) => o.id === id).chain);
+    };
+  }
   for (const k of ["mode", "role", "simcal"]) {
     const sel = document.getElementById(k);
     sel.value = get(k, sel.options[k === "mode" ? 1 : 0].value);
     sel.onchange = () => { params.set(k, sel.value); location.search = params; };
   }
-  document.getElementById("label").textContent = `${v} — ${variants[v]}`;
-  const go = (d) => { params.set("variant", keys[(keys.indexOf(v) + d + keys.length) % keys.length]); location.search = params; };
+  const annVariants = { A: "Results A — tree in series list", B: "Results B — inspector tab", C: "Results C — chips + browser" };
+  document.getElementById("label").textContent = annui ? annVariants[annui] : `${v} — ${variants[v]}`;
+  const go = (d) => {
+    if (annui) { const ks = ["A", "B", "C"]; params.set("annui", ks[(ks.indexOf(annui) + d + 3) % 3]); location.search = params; return; }
+    params.set("variant", keys[(keys.indexOf(v) + d + keys.length) % keys.length]); location.search = params; };
   document.getElementById("prev").onclick = () => go(-1);
   document.getElementById("next").onclick = () => go(1);
   // switcher: arrows only when the viewer is not focused (viewer owns the keyboard)
   addEventListener("keydown", (e) => { if (e.target !== document.body) return; if (e.key === "ArrowLeft") go(-1); if (e.key === "ArrowRight") go(1); });
   await import("./mireswc-viewer.js");
   const el = document.createElement("mires-viewer-toolbar-prototype");
-  Object.assign(el, { variant: v, mode: get("mode", "mpr"), role: get("role", "annotator"), simcal: get("simcal", "") });
+  Object.assign(el, { variant: annui ? "B" : v, mode: get("mode", "mpr"), role: annui ? (params.get("who") === "viewer" ? "viewer" : "annotator") : get("role", "annotator"), simcal: get("simcal", "") });
+  if (annui) Object.assign(el, { annui, who: params.get("who") ?? "annotator", blinded: params.get("blinded") === "1" });
   document.getElementById("host").appendChild(el);
 </script>
 </body>
