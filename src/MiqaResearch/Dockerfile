@@ -34,6 +34,17 @@ COPY documentation/manuals/ documentation/manuals/
 RUN .venv/bin/python documentation/build_manuals.py --build-dir /app/documentation/builds \
     && rm -rf /app/documentation/builds/.doctrees
 
+# Viewer stage: build the DICOM viewer bundle (static/js/viewer/, gitignored; spec #271).
+# The core/charts web-component bundles stay committed under static/js/webcomponents/.
+FROM node:24-slim AS viewer
+
+WORKDIR /app/.dev-data/webcomponents
+
+COPY .dev-data/webcomponents/package.json .dev-data/webcomponents/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY .dev-data/webcomponents/ ./
+RUN npm run build:viewer
+
 # Final stage
 FROM python:3.14-slim-bookworm
 
@@ -55,6 +66,9 @@ RUN chmod +x /app/tools/celery/start_worker.sh
 
 # Built manuals (MANUALS_BUILD_DIR)
 COPY --from=docs /app/documentation/builds/ /app/documentation/builds/
+
+# Built viewer bundle (served from STATICFILES_DIRS like the other web components)
+COPY --from=viewer /app/static/js/viewer/ /app/static/js/viewer/
 
 # Set environment variables
 ENV PATH="/venv/bin:$PATH"

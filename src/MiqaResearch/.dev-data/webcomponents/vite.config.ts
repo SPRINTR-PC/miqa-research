@@ -42,6 +42,8 @@ export default defineConfig({
   },
   test: {
     environment: "happy-dom",
+    // Unit tests only; Playwright browser tests (browser-tests/) run via `npm run test:browser`.
+    include: ["src/**/*.test.ts"],
     setupFiles: ["./src/vitest-setup.ts"],
   },
 });
