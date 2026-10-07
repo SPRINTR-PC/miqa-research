@@ -16,7 +16,7 @@ from ninja import Router
 from helpers.dicom_deidentification import deidentify
 from MiqaResearch.data.models.dicom_file import DicomFile
 
-from .access import readable_files
+from .access import audit_client_access, readable_files
 from .caching import METADATA_CACHE_CONTROL, matches_if_none_match, not_modified, strong_etag, with_cache_headers
 
 router = Router()
@@ -59,9 +59,11 @@ def _files(request):
 
 
 def _metadata_response(request, dicom_files):
-    instances = [sanitized_instance_json(dicom_file) for dicom_file in dicom_files]
-    if not instances:
+    dicom_files = list(dicom_files)
+    if not dicom_files:
         return HttpResponse(status=404)
+    audit_client_access(request, dicom_files)
+    instances = [sanitized_instance_json(dicom_file) for dicom_file in dicom_files]
     body = json.dumps(instances, separators=(",", ":")).encode()
     etag = strong_etag(body)
     if matches_if_none_match(request, etag):

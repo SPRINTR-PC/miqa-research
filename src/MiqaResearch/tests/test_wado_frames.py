@@ -5,19 +5,17 @@ frame offset index it stores is observed only through the endpoint and
 through the stored-bytes read path), and the backfill task.
 """
 import re
-from datetime import timedelta
 
 import boto3
 import pytest
 from botocore.client import BaseClient
-from django.utils import timezone
 from moto import mock_aws
-from oauth2_provider.models import AccessToken, Application
 
 from MiqaResearch.data.models import DicomFile, ResearchProject
 from MiqaResearch.data.models.dicom_storage import DicomStorage
 from MiqaResearch.tasks.dicom_handling.frame_index_backfill import backfill_frame_indexes
 from MiqaResearch.tasks.dicom_handling.pipeline import run_ingestion
+from tests.client_binding_helpers import bound_client
 from tests.dicom_fixtures import build_multiframe_ct, build_tiled_wsi_jpeg, fake_jpeg_tile, write_dicom
 
 TOKEN = "frames-test-token"
@@ -45,16 +43,9 @@ def research_project(db):
 
 
 @pytest.fixture
-def bearer(db):
-    application = Application.objects.create(
-        name="frames-test", user=None, client_type=Application.CLIENT_CONFIDENTIAL,
-        authorization_grant_type=Application.GRANT_CLIENT_CREDENTIALS,
-    )
-    AccessToken.objects.create(
-        token=TOKEN, application=application, user=None, scope="read",
-        expires=timezone.now() + timedelta(hours=1),
-    )
-    return {"HTTP_AUTHORIZATION": f"Bearer {TOKEN}"}
+def bearer(research_project):
+    """A client bound to the project, all Sites (#277)."""
+    return bound_client(research_project, token=TOKEN)
 
 
 def _ingest(research_project, tmp_path, ds, name="f.dcm") -> DicomFile:

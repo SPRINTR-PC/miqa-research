@@ -14,6 +14,7 @@ from contract.constants.celery import (
 )
 from contract.constants.scopes import (
     SCOPE_ADMIN,
+    SCOPE_DICOM_RAW,
     SCOPE_MONITOR_CLIENT,
     SCOPE_READ,
     SCOPE_UPSERT_CONSENT,
@@ -27,6 +28,7 @@ env = environ.Env(
     MIRES_ADMIN_URL=(str, "miresadm"),
     MIRES_ADFS_AUTHORITY=(str, None),
     MIRES_AUDIT_LOG_RETENTION_DAYS=(int, 90),
+    MIRES_DATA_ACCESS_AUDIT_RETENTION_DAYS=(int, 3650),
     MIRES_AUTHENTICATION_FRAMEWORK=(str, "yubikey"),
     MIRES_DEBUG=(bool, False),
     MIRES_SECRET_KEY=(str, None),
@@ -161,6 +163,8 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = False if DEBUG else True
 SESSION_COOKIE_AGE = env("MIRES_SESSION_COOKIE_AGE")
 SESSION_IDLE_TIMEOUT = env("MIRES_SESSION_IDLE_TIMEOUT")
 AUDIT_LOG_RETENTION_DAYS = env("MIRES_AUDIT_LOG_RETENTION_DAYS")
+# ADR 0024: data-access events (contract.constants.audit_log.DATA_ACCESS_EVENT_TYPES) are kept 10 years by default.
+DATA_ACCESS_AUDIT_RETENTION_DAYS = env("MIRES_DATA_ACCESS_AUDIT_RETENTION_DAYS")
 
 # DICOM ingestion (#120): local source paths must sit inside one of the
 # allowed roots (default-deny: nothing allowed until configured). The S3
@@ -653,13 +657,18 @@ CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 # EXTRA SETTINGS FOR TASKS AND THIRD PARTY INTEGRATIONS
 # =======================================================
 # OAUTH2
+# Spelled out so data.ClientBinding can point at the (swappable) Application model in migrations.
+OAUTH2_PROVIDER_APPLICATION_MODEL = "oauth2_provider.Application"
 OAUTH2_PROVIDER = {
     "SCOPES": {
         SCOPE_READ: "Read access to all data endpoints except ones with higher permission requirements",
         SCOPE_UPSERT_CONSENT: "Upsert study participant consents",
         SCOPE_MONITOR_CLIENT: "Access the MIQA Monitor client API",
         SCOPE_ADMIN: "Full administrative access to MIQA Research",
+        SCOPE_DICOM_RAW: "Raw DICOM files (original UIDs, full PHI) from the WADO endpoints, within the Client Binding",
     },
+    # Which scopes a client may obtain depends on its Client Binding (ADR 0027).
+    "SCOPES_BACKEND_CLASS": "MiqaResearch.interfaces.http.api.client_scopes.ClientBindingScopes",
     "DEFAULT_SCOPES": ["read"],
 }
 

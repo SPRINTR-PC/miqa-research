@@ -308,20 +308,11 @@ def test_file_stored_locally_and_retrievable_via_wado_rs(research_project, tmp_p
         assert stored.read() == raw_bytes
 
     # Retrievable over the existing WADO-RS instance endpoint using only the
-    # pseudonymized UIDs visible in the database
-    from datetime import timedelta
+    # pseudonymized UIDs visible in the database, by a client bound to the project and
+    # granted raw access (#277: raw bytes need `dicom:raw`)
+    from tests.client_binding_helpers import bound_client
 
-    from django.utils import timezone
-    from oauth2_provider.models import AccessToken, Application
-
-    application = Application.objects.create(
-        name="wado-test", user=None, client_type=Application.CLIENT_CONFIDENTIAL,
-        authorization_grant_type=Application.GRANT_CLIENT_CREDENTIALS,
-    )
-    AccessToken.objects.create(
-        token="test-token-123", application=application, user=None, scope="read",
-        expires=timezone.now() + timedelta(hours=1),
-    )
+    bound_client(research_project, dicom_raw=True, scope="read dicom:raw", token="test-token-123")
     url = (
         f"/api/v1/dicom/studies/{dcm_file.series.study.study_instance_uid}"
         f"/series/{dcm_file.series.series_instance_uid}/instances/{dcm_file.sop_instance_uid}"

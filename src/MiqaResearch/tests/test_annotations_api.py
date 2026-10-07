@@ -518,20 +518,10 @@ def test_metadata_backfill_leaves_viewer_saved_objects_alone(client, project, ct
 
 @pytest.mark.django_db
 def test_wado_metadata_serves_a_viewer_saved_object_without_hashing_its_uids_again(client, project, ct):
-    from datetime import timedelta
-
-    from django.utils import timezone as django_timezone
-    from oauth2_provider.models import AccessToken, Application
+    from tests.client_binding_helpers import bound_client
 
     saved = _save(client, _member(project), _seg_for(ct), [ct.series]).json()
-    application = Application.objects.create(
-        name="wado", client_type=Application.CLIENT_CONFIDENTIAL,
-        authorization_grant_type=Application.GRANT_CLIENT_CREDENTIALS,
-    )
-    AccessToken.objects.create(
-        token="ann-wado", application=application, scope="read",
-        expires=django_timezone.now() + timedelta(hours=1),
-    )
+    bound_client(project, token="ann-wado")
     client.logout()
 
     response = client.get(
