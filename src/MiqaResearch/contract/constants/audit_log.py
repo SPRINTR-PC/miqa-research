@@ -30,6 +30,8 @@ EVENT_TYPE_API_CLIENT_REVOKED = "api_client_revoked"
 EVENT_TYPE_DICOM_RAW_GRANTED = "dicom_raw_granted"
 EVENT_TYPE_DICOM_RAW_REVOKED = "dicom_raw_revoked"
 EVENT_TYPE_WADO_CLIENT_ACCESS = "wado_client_access"
+EVENT_TYPE_BLINDED_ANNOTATION_CHANGED = "blinded_annotation_changed"
+EVENT_TYPE_BLINDING_REVEAL = "blinding_reveal"
 
 EVENT_TYPE_CHOICES = [
     (EVENT_TYPE_LOGIN, "Login"),
@@ -64,6 +66,8 @@ EVENT_TYPE_CHOICES = [
     (EVENT_TYPE_DICOM_RAW_GRANTED, "Raw DICOM access granted"),
     (EVENT_TYPE_DICOM_RAW_REVOKED, "Raw DICOM access revoked"),
     (EVENT_TYPE_WADO_CLIENT_ACCESS, "Image series fetched by an API client"),
+    (EVENT_TYPE_BLINDED_ANNOTATION_CHANGED, "Blinded Annotation turned on or off"),
+    (EVENT_TYPE_BLINDING_REVEAL, "Blinding Reveal"),
 ]
 
 # Data-access events (ADR 0024): purged on DATA_ACCESS_AUDIT_RETENTION_DAYS, not AUDIT_LOG_RETENTION_DAYS.
@@ -71,6 +75,8 @@ DATA_ACCESS_EVENT_TYPES = frozenset({
     EVENT_TYPE_DICOM_RAW_GRANTED,
     EVENT_TYPE_DICOM_RAW_REVOKED,
     EVENT_TYPE_WADO_CLIENT_ACCESS,
+    EVENT_TYPE_BLINDED_ANNOTATION_CHANGED,
+    EVENT_TYPE_BLINDING_REVEAL,
 })
 
 AUTH_METHOD_LOCAL = "local"

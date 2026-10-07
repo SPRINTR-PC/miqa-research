@@ -88,7 +88,7 @@ def save_object(
 @router.get("/objects", response=list[ChainOut], url_name="viewer_object_list")
 def list_objects(request, participant: UUID, series: str | None = None, include_retired: bool = False):
     try:
-        return list_participant_objects(request.auth, participant, series, include_retired)
+        return list_participant_objects(request.auth, participant, series, include_retired, request.session)
     except ParticipantNotVisible:
         raise HttpError(404, "Not Found") from None
 
