@@ -56,6 +56,7 @@ is skipped entirely. Only enable it in local development.
 | `MIRES_SESSION_COOKIE_AGE` | `28800` (8 hours) | Absolute maximum lifetime of a session, in seconds, measured from login. |
 | `MIRES_SESSION_IDLE_TIMEOUT` | `1800` (30 minutes) | Sliding idle timeout, in seconds. A session is logged out if no activity is seen within this window. |
 | `MIRES_AUDIT_LOG_RETENTION_DAYS` | `90` | Number of days audit log entries are retained before becoming eligible for cleanup. |
+| `MIRES_DATA_ACCESS_AUDIT_RETENTION_DAYS` | `3650` (10 years) | Retention for data-access audit events (ADR 0024): `dicom:raw` grants and revocations, and WADO fetches by API clients. `purge_old_audit_logs` applies each retention to its own group. |
 
 Both the absolute and idle timeouts are enforced together, so a long-lived but idle
 session is logged out even if it has not yet reached its absolute maximum lifetime.

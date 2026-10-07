@@ -10,13 +10,16 @@ Rule:
   (active or revoked) at that Site, counting only this project's consent types.
 - A user's visibility is the union of their role rows. No role row on the project: nothing.
 
+Machine clients (ADR 0027) have no user: `participants_visible_to_client` applies the same rule to a
+client-credentials Application through its Client Binding, as one role row with the binding's Site.
+
 Everything is lazy (no query until evaluated), so `visible_participants` composes as a subquery,
 e.g. `Exists(visible_participants(u, p).filter(pk=OuterRef(...)))`. The per-Site check is a live
 `EXISTS` on `ParticipantConsent(clinic, study_participant)`; there is no caching.
 """
 from django.db.models import Exists, OuterRef, Q, QuerySet
 
-from MiqaResearch.data.models import ParticipantConsent, ResearchProjectUserRoleMap, StudyParticipant
+from MiqaResearch.data.models import ClientBinding, ParticipantConsent, ResearchProjectUserRoleMap, StudyParticipant
 from contract.constants.research_project_role import PROJECT_ROLE_ADMIN, PROJECT_ROLE_PI
 
 ALL_SITES_ROLES = (PROJECT_ROLE_ADMIN, PROJECT_ROLE_PI)
@@ -65,3 +68,22 @@ def can_see_participant(user, project, participant, roles=None) -> bool:
     """Whether `user` may see `participant` (instance or pk) of `project` (through `roles` only, if given)."""
     participant_pk = getattr(participant, "pk", participant)
     return visible_participants(user, project, roles).filter(pk=participant_pk).exists()
+
+
+def participants_visible_to_client(application) -> QuerySet[StudyParticipant]:
+    """Study Participants a client-credentials `application` may see, as a lazy QuerySet.
+
+    Its Client Binding acts as one non-all-Sites role row on the bound project: no Site means every
+    participant of the project, a Site means participants with a consent (active or revoked) at that
+    Site, counting only the project's consent types. An unbound client sees nothing. Composes like
+    `visible_participants_in_any_project` (an `Exists` over `pk=OuterRef(...)`), no query of its own.
+    """
+    consent_at_bound_site = ParticipantConsent.objects.filter(
+        study_participant=OuterRef(OuterRef("pk")),
+        clinic=OuterRef("clinic"),
+        consent_type__research_project=OuterRef("research_project"),
+    )
+    binding = ClientBinding.objects.filter(
+        application=application, research_project=OuterRef("research_project")
+    ).filter(Q(clinic__isnull=True) | Exists(consent_at_bound_site))
+    return StudyParticipant.objects.filter(Exists(binding))
