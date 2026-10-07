@@ -28,20 +28,35 @@ def visible_participants(user, project, roles=None) -> QuerySet[StudyParticipant
     `roles` (role names) narrows the rule to those role rows only, e.g. "participants this user
     may author Annotations on" (#287). A superuser is not narrowed.
     """
-    participants = StudyParticipant.objects.filter(research_project=project)
+    return visible_participants_in_any_project(user, roles).filter(research_project=project)
+
+
+def visible_participants_in_any_project(user, roles=None) -> QuerySet[StudyParticipant]:
+    """Study Participants `user` may see, each judged against its own Research Project, as a lazy QuerySet.
+
+    For callers that start from an object rather than a project (WADO starts from a DicomFile URL):
+    `Exists(visible_participants_in_any_project(u).filter(pk=OuterRef("...study_participant")))`
+    checks visibility inside the query that loads the object. `roles` as in `visible_participants`.
+    """
+    participants = StudyParticipant.objects.all()
     if not getattr(user, "is_authenticated", False):
         return participants.none()
     if user.is_superuser:
         return participants
 
-    role_rows = ResearchProjectUserRoleMap.objects.filter(user=user, project=project)
+    role_rows = ResearchProjectUserRoleMap.objects.filter(user=user, project=OuterRef("research_project"))
+    own_site_role = {
+        "clinic__researchprojectuserrolemap__user": user,
+        "clinic__researchprojectuserrolemap__project": OuterRef("research_project"),
+    }
     if roles is not None:
         role_rows = role_rows.filter(role__name__in=roles)
+        own_site_role["clinic__researchprojectuserrolemap__role__name__in"] = roles
     all_sites = role_rows.filter(Q(role__name__in=ALL_SITES_ROLES) | Q(clinic__isnull=True))
     consent_at_own_site = ParticipantConsent.objects.filter(
         study_participant=OuterRef("pk"),
-        consent_type__research_project=project,
-        clinic__in=role_rows.filter(clinic__isnull=False).values("clinic"),
+        consent_type__research_project=OuterRef("research_project"),
+        **own_site_role,
     )
     return participants.filter(Exists(all_sites) | Exists(consent_at_own_site))
 
