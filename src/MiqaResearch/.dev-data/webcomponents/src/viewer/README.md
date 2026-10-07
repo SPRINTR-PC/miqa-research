@@ -12,6 +12,7 @@ One file per concern, so parallel tickets touch different files.
 | `../mireswc-viewer.ts` | Bundle entry. Re-exports the element only. | — |
 | `mires-viewer.ts` | The element: attributes, state (`loading`/`ready`/`error`), layout. Talks to the adapter interface only. | #278, chrome #280 |
 | `series.ts` | `/metadata` fetch → ordered `wadors:` frame imageIds. Pure, no CS3D. | #278 |
+| `first-render.ts` | `performance.mark`s, the first-render beacon and the HTTP/1.1 `/frames` warning. Volume views mark `interleaved` / `volume-loaded` on the element's `firstRender`. | #293, volume #282 |
 | `adapter/adapter.ts` | **The seam**: `ViewerAdapter` and its view types. Add one member per capability. | all |
 | `adapter/stub.ts` | Test double for the seam. Extend it with each new member. | all |
 | `adapter/cornerstone/index.ts` | Real adapter: composes the capability modules below. | all (small edits) |
@@ -39,6 +40,9 @@ Rules:
 - Only the viewer page loads `{% static 'js/viewer/mireswc-viewer.js' %}`; `base.html` never does.
 - The static server must serve `.wasm` as `application/wasm` (Django's static view does; checked by
   the browser tests). No CSP today; one would need `'wasm-unsafe-eval'` and `worker-src 'self'`.
+  Both are in the technical manual's deployment requirements (`documentation/manuals/technical/src/deployment.md`).
+- The host page must set the `csrftoken` cookie (`ensure_csrf_cookie`, or any `{% csrf_token %}`):
+  the viewer's POSTs send it as `X-CSRFToken`.
 
 ## Dev page
 

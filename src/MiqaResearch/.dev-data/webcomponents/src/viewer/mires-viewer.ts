@@ -5,6 +5,7 @@ import { LitElement, css, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 
 import type { AdapterFactory, StackState, StackView, ViewerAdapter } from "./adapter/adapter.ts";
+import { FirstRenderReport } from "./first-render.ts";
 import { fetchSeries } from "./series.ts";
 
 export type ViewerState = "loading" | "ready" | "error";
@@ -33,6 +34,8 @@ export class MiresViewer extends LitElement {
   private view: StackView | undefined;
   private resizeObserver: ResizeObserver | undefined;
   private disposed = false;
+  /** First-render marks + beacon (#293); volume views mark "interleaved" / "volume-loaded" on it. */
+  firstRender: FirstRenderReport | undefined;
 
   static styles = css`
     :host { display: block; position: relative; background: #000; color: #ddd; font: 13px system-ui, sans-serif; }
@@ -60,6 +63,7 @@ export class MiresViewer extends LitElement {
     super.disconnectedCallback();
     this.disposed = true;
     this.resizeObserver?.disconnect();
+    this.firstRender?.dispose();
     this.adapter?.destroy();
     this.adapter = undefined;
     this.view = undefined;
@@ -71,12 +75,15 @@ export class MiresViewer extends LitElement {
 
   private async open(): Promise<void> {
     const viewport = this.renderRoot.querySelector<HTMLDivElement>(".viewport")!;
+    this.firstRender = new FirstRenderReport();
     try {
       const series = await fetchSeries({ wadoRoot: this.wadoRoot, studyUid: this.studyUid, seriesUid: this.seriesUid });
+      this.firstRender.series(series);
       this.adapter = await this.adapterFactory();
       if (this.disposed) return this.adapter.destroy();
       this.view = await this.adapter.openStack(viewport, series, () => (this.stack = this.view?.state()));
       this.stack = this.view.state();
+      this.firstRender.mark("first-image");
       this.resizeObserver = new ResizeObserver(() => this.adapter?.resize());
       this.resizeObserver.observe(viewport);
       this.state = "ready";

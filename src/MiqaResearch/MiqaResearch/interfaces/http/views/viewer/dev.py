@@ -8,9 +8,12 @@ from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.http import Http404
 from django.shortcuts import render
+from django.views.decorators.csrf import ensure_csrf_cookie
 
 
+# The viewer's POSTs (first-render beacon, saves) send the csrftoken cookie as X-CSRFToken.
 @login_required
+@ensure_csrf_cookie
 def dev(request):
     if not settings.DEBUG:
         raise Http404

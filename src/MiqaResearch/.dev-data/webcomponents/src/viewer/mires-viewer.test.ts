@@ -93,4 +93,17 @@ describe("<mires-viewer>", () => {
 
     expect(adapter.destroyed).toBe(true);
   });
+
+  it("sends the first-render beacon, without UIDs, when the view closes", async () => {
+    serve(SERIES_METADATA);
+    const el = await mount(new StubAdapter());
+
+    el.remove();
+
+    const fetchMock = vi.mocked(fetch);
+    const beacon = fetchMock.mock.calls.find(([url]) => url === "/api/v1/viewer/first-render");
+    expect(beacon).toBeDefined();
+    const body = JSON.parse(String(beacon![1]!.body));
+    expect(body).toEqual({ first_image_ms: expect.any(Number), slices: 3 });
+  });
 });

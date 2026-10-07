@@ -11,6 +11,12 @@ src/*
 
 * [Architecture](#heading-architecture)
 * [Configuration](#heading-configuration)
+* [Deployment requirements](#heading-deployment)
+  * [TLS and HTTP/2 at the edge](#heading-deployment-http2)
+  * [Headers and caching](#heading-deployment-headers)
+  * [Static files](#heading-deployment-static)
+  * [Checking a deployment](#heading-deployment-check)
+  * [First-render targets](#heading-deployment-first-render)
 * [Help Links](#heading-help-links)
 * [The manuals](#heading-manuals)
 * [ETL Pipelines](#heading-etl)
