@@ -123,7 +123,9 @@ def test_standard_image_geometry_populated_from_file_tags(research_project, tmp_
     assert dcm_file.contains_burned_in_annotations is False
 
 
-def test_metadata_captures_other_tags_with_phi_removed_first(research_project, tmp_path, settings):
+def test_metadata_is_sanitized_by_the_deidentification_profile(research_project, tmp_path, settings):
+    import json
+
     settings.MEDIA_ROOT = tmp_path / "media"
     src = write_dicom(build_ct_image(), tmp_path / "ct1.dcm")
 
@@ -134,17 +136,16 @@ def test_metadata_captures_other_tags_with_phi_removed_first(research_project, t
     # Non-PHI tags survive (DS values are read back as numbers by pydicom)
     assert metadata["KVP"] == 120.0
     assert metadata["BodyPartExamined"] == "HEAD"
-    assert metadata["InstitutionName"] == "FAKE MEDICAL CENTER"
-    # The defined PHI-bearing tags are gone
-    for phi_keyword in (
-        "PatientName",
-        "PatientID",
-        "PatientBirthDate",
-        "ReferringPhysicianName",
-        "OtherPatientIDs",
-        "PatientMotherBirthName",
-    ):
-        assert phi_keyword not in metadata, f"PHI tag {phi_keyword} leaked into metadata"
+    assert metadata["InstitutionName"] == "FAKE MEDICAL CENTER"  # Retain Institution Identity
+    # Patient identity is the Study Participant pseudonym
+    alias = StudyParticipant.objects.get().alias1
+    assert metadata["PatientName"] == alias
+    assert metadata["PatientID"] == alias
+    assert metadata["PatientIdentityRemoved"] == "YES"
+    # PHI values are gone (removed, or emptied where the profile says Z)
+    dump = json.dumps(metadata)
+    for phi_value in ("DOE^JANE", "P-1001", "19750131", "SMITH^ARTHUR", "OLD-ID-99"):
+        assert phi_value not in dump, f"PHI value {phi_value} leaked into metadata"
 
 
 def test_metadata_uid_tags_are_pseudonymized(research_project, tmp_path, settings):
@@ -212,18 +213,18 @@ def test_phi_inside_sequences_is_stripped_from_metadata(research_project, tmp_pa
     settings.MEDIA_ROOT = tmp_path / "media"
     ds = build_ct_image()
     item = Item()
-    item.PhysicianOfRecord = "EVA^LEVY"  # PHI tag nested in a sequence
-    item.RequestedProcedureDescription = "CT HEAD"
-    ds.add_new(0x00400275, "SQ", [item])  # RequestAttributesSequence
+    item.PhysiciansOfRecord = "EVA^LEVY"  # PHI tag nested in a kept sequence
+    item.PhysicalDeltaX = 0.01
+    ds.SequenceOfUltrasoundRegions = [item]
     src = write_dicom(ds, tmp_path / "ct_sq.dcm")
 
     report = run_ingestion(research_project, src)
 
     assert report.counts["ingested"] == 1
     metadata = DicomFile.objects.get().metadata
-    attrs = metadata["RequestAttributesSequence"][0]
-    assert attrs["RequestedProcedureDescription"] == "CT HEAD"
-    assert "PhysicianOfRecord" not in attrs
+    region = metadata["SequenceOfUltrasoundRegions"][0]
+    assert region["PhysicalDeltaX"] == 0.01
+    assert "PhysiciansOfRecord" not in region
     assert "EVA^LEVY" not in json.dumps(metadata)
 
 

@@ -245,14 +245,18 @@ def _ingest_file(
     sop_pseudonym = pseudonyms["sop"]
     try:
         with transaction.atomic():
-            existing = DicomFile.objects.select_related("series__study").filter(sop_instance_uid=sop_pseudonym).first()
+            existing = (
+                DicomFile.objects.select_related("series__study__study_participant")
+                .filter(sop_instance_uid=sop_pseudonym)
+                .first()
+            )
             if existing is not None:
                 outcome, stored_and_verified = _handle_duplicate(
                     existing, dataset, research_project, raw_bytes, overwrite_existing
                 )
                 return finish(outcome, sop_instance_uid=sop_pseudonym, stored_and_verified=stored_and_verified)
             participant = participant_stage.match_or_create_participant(dataset, research_project)
-            extracted = extractors.extract(dataset, research_project)
+            extracted = extractors.extract(dataset, research_project, participant.alias1)
             file_size_in_mb = len(raw_bytes) / (1024 * 1024)
             dcm_file = records.build_hierarchy(
                 participant, research_project, pseudonyms, extracted, file_size_in_mb
@@ -316,7 +320,8 @@ def _handle_duplicate(
         return OUTCOME_SKIPPED_DUPLICATE, False
     update = overwrite_existing if overwrite_existing is not None else research_project.dicom_duplicate_handling == "update"
     if update:
-        extracted = extractors.extract(dataset, research_project)
+        participant_alias = existing.series.study.study_participant.alias1
+        extracted = extractors.extract(dataset, research_project, participant_alias)
         file_size_in_mb = len(raw_bytes) / (1024 * 1024)
         superseded = storage_stage.replace_file_bytes(existing, raw_bytes)
         _set_frame_index(existing, raw_bytes)

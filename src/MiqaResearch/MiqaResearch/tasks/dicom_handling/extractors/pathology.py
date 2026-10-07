@@ -17,8 +17,8 @@ from .common import decimal_list, image_geometry
 from .generic import extract as generic_extract
 
 
-def extract(ds: Dataset, research_project) -> dict:
-    result = generic_extract(ds, research_project)
+def extract(ds: Dataset, research_project, participant_alias: str) -> dict:
+    result = generic_extract(ds, research_project, participant_alias)
     result.update(image_geometry(ds, research_project))
     result["pixel_spacing"] = _functional_group_pixel_spacing(ds)
     result["metadata"]["pathology_summary"] = _pyramid_summary(ds)
