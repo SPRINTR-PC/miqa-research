@@ -4,7 +4,7 @@ from django.contrib.auth import logout
 from django.utils import timezone
 
 from contract.constants.audit_log import EVENT_TYPE_SESSION_EXPIRED
-from helpers.http import get_client_ip
+from helpers.http import CLEAR_SITE_DATA_CACHE, get_client_ip
 
 _CREATED_AT_KEY = "_mires_session_created_at"
 _LAST_ACTIVITY_KEY = "_mires_session_last_activity"
@@ -22,11 +22,17 @@ class SessionTimeoutMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
+        expired = False
         if not settings.DEBUG and getattr(request.user, "is_authenticated", False):
-            self._enforce_timeout(request)
-        return self.get_response(request)
+            expired = self._enforce_timeout(request)
+        response = self.get_response(request)
+        if expired:
+            # Cached WADO frames/metadata must not outlive the session (#276).
+            response["Clear-Site-Data"] = CLEAR_SITE_DATA_CACHE
+        return response
 
-    def _enforce_timeout(self, request):
+    def _enforce_timeout(self, request) -> bool:
+        """Log the user out once the session has expired; True when it just did."""
         from MiqaResearch.data.models import AuditLog
 
         now = timezone.now().timestamp()
@@ -36,7 +42,7 @@ class SessionTimeoutMiddleware:
         if created_at is None:
             request.session[_CREATED_AT_KEY] = now
             request.session[_LAST_ACTIVITY_KEY] = now
-            return
+            return False
 
         reason = None
         if now - created_at > settings.SESSION_COOKIE_AGE:
@@ -56,9 +62,10 @@ class SessionTimeoutMiddleware:
                 session_key=session_key,
                 metadata={"reason": reason},
             )
-            return
+            return True
 
         request.session[_LAST_ACTIVITY_KEY] = now
+        return False
 
 
 class AsyncUserMiddleware:

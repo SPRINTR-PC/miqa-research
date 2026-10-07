@@ -7,7 +7,6 @@ carries the syntax's media type plus ``transfer-syntax=<uid>``; an Accept that
 can't be satisfied gets 406.
 """
 import re
-import uuid
 
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
@@ -16,6 +15,9 @@ from pydicom.uid import UID
 
 from MiqaResearch.data.models.dicom_file import DicomFile
 from MiqaResearch.tasks.dicom_handling.frame_index import build_frame_index, frame_bytes
+
+from .access import readable_files
+from .caching import FRAMES_CACHE_CONTROL, matches_if_none_match, not_modified, strong_etag, with_cache_headers
 
 router = Router()
 
@@ -93,8 +95,9 @@ def retrieve_frames(request, study_instance_uid: str, series_instance_uid: str, 
     except ValueError:
         return HttpResponse("Invalid frame list", status=400)
 
+    # One query: the file, its frame offset index and (session callers) Participant Visibility.
     dicom_file = get_object_or_404(
-        DicomFile,
+        readable_files(request, DicomFile.objects.all()),
         sop_instance_uid=sop_instance_uid,
         series__series_instance_uid=series_instance_uid,
         series__study__study_instance_uid=study_instance_uid,
@@ -114,10 +117,18 @@ def retrieve_frames(request, study_instance_uid: str, series_instance_uid: str, 
         if not 1 <= number <= len(frames):
             return HttpResponse(f"Frame number {number} out of range", status=404)
 
+    # Strong ETag: same stored bytes + same frame list -> byte-identical body (the boundary derives from it).
+    etag = strong_etag(dicom_file.content_sha256 or dicom_file.file.name, transfer_syntax_uid, frame_list)
+    if matches_if_none_match(request, etag):
+        return not_modified(etag, FRAMES_CACHE_CONTROL, vary=("Accept",))
+
     encapsulated = UID(transfer_syntax_uid).is_encapsulated
     storage, name = dicom_file.file.storage, dicom_file.file.name
     payloads = [frame_bytes(storage.read_range(name, *frames[number - 1]), encapsulated) for number in frame_numbers]
-    return _multipart_related(payloads, f"{media_type}; transfer-syntax={transfer_syntax_uid}", media_type)
+    response = _multipart_related(
+        payloads, f"{media_type}; transfer-syntax={transfer_syntax_uid}", media_type, boundary=etag.strip('"')[:32]
+    )
+    return with_cache_headers(response, etag, FRAMES_CACHE_CONTROL, vary=("Accept",))
 
 
 def _ensure_frame_index(dicom_file: DicomFile) -> None:
@@ -131,8 +142,7 @@ def _ensure_frame_index(dicom_file: DicomFile) -> None:
     dicom_file.save(update_fields=["transfer_syntax_uid", "frame_index"])
 
 
-def _multipart_related(payloads: list[bytes], part_content_type: str, media_type: str) -> HttpResponse:
-    boundary = uuid.uuid4().hex
+def _multipart_related(payloads: list[bytes], part_content_type: str, media_type: str, boundary: str) -> HttpResponse:
     body = b"".join(
         f"--{boundary}\r\nContent-Type: {part_content_type}\r\n\r\n".encode() + payload + b"\r\n"
         for payload in payloads

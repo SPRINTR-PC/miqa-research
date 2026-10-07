@@ -3,6 +3,7 @@ from django.shortcuts import get_object_or_404
 from ninja import Router
 from MiqaResearch.data.models.dicom_file import DicomFile
 
+from .access import machine_only
 from .frames import router as frames_router
 from .metadata import router as metadata_router
 
@@ -35,6 +36,7 @@ def multipart_related_response(items, boundary="boundary", content_type_item="ap
 
 # WADO-URI
 @router.get("/wado")
+@machine_only
 def wado_uri(request, requestType: str, studyUID: str, seriesUID: str, objectUID: str, contentType: str = "application/dicom"):
     if requestType != "WADO":
         return HttpResponse("Invalid requestType", status=400)
@@ -50,6 +52,7 @@ def wado_uri(request, requestType: str, studyUID: str, seriesUID: str, objectUID
 
 # WADO-RS Retrieve Study
 @router.get("/studies/{study_instance_uid}")
+@machine_only
 def retrieve_study(request, study_instance_uid: str):
     dicom_files = DicomFile.objects.filter(series__study__study_instance_uid=study_instance_uid)
     if not dicom_files.exists():
@@ -59,6 +62,7 @@ def retrieve_study(request, study_instance_uid: str):
 
 # WADO-RS Retrieve Series
 @router.get("/studies/{study_instance_uid}/series/{series_instance_uid}")
+@machine_only
 def retrieve_series(request, study_instance_uid: str, series_instance_uid: str):
     dicom_files = DicomFile.objects.filter(
         series__series_instance_uid=series_instance_uid,
@@ -71,6 +75,7 @@ def retrieve_series(request, study_instance_uid: str, series_instance_uid: str):
 
 # WADO-RS Retrieve Instance
 @router.get("/studies/{study_instance_uid}/series/{series_instance_uid}/instances/{sop_instance_uid}")
+@machine_only
 def retrieve_instance(request, study_instance_uid: str, series_instance_uid: str, sop_instance_uid: str):
     dicom_file = get_object_or_404(
         DicomFile,

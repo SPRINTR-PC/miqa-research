@@ -24,18 +24,29 @@ ALL_SITES_ROLES = (PROJECT_ROLE_ADMIN, PROJECT_ROLE_PI)
 
 def visible_participants(user, project) -> QuerySet[StudyParticipant]:
     """Study Participants of `project` (instance or pk) that `user` may see, as a lazy QuerySet."""
-    participants = StudyParticipant.objects.filter(research_project=project)
+    return visible_participants_in_any_project(user).filter(research_project=project)
+
+
+def visible_participants_in_any_project(user) -> QuerySet[StudyParticipant]:
+    """Study Participants `user` may see, each judged against its own Research Project, as a lazy QuerySet.
+
+    For callers that start from an object rather than a project (WADO starts from a DicomFile URL):
+    `Exists(visible_participants_in_any_project(u).filter(pk=OuterRef("...study_participant")))`
+    checks visibility inside the query that loads the object.
+    """
+    participants = StudyParticipant.objects.all()
     if not getattr(user, "is_authenticated", False):
         return participants.none()
     if user.is_superuser:
         return participants
 
-    role_rows = ResearchProjectUserRoleMap.objects.filter(user=user, project=project)
+    role_rows = ResearchProjectUserRoleMap.objects.filter(user=user, project=OuterRef("research_project"))
     all_sites = role_rows.filter(Q(role__name__in=ALL_SITES_ROLES) | Q(clinic__isnull=True))
     consent_at_own_site = ParticipantConsent.objects.filter(
         study_participant=OuterRef("pk"),
-        consent_type__research_project=project,
-        clinic__in=role_rows.filter(clinic__isnull=False).values("clinic"),
+        consent_type__research_project=OuterRef("research_project"),
+        clinic__researchprojectuserrolemap__user=user,
+        clinic__researchprojectuserrolemap__project=OuterRef("research_project"),
     )
     return participants.filter(Exists(all_sites) | Exists(consent_at_own_site))
 

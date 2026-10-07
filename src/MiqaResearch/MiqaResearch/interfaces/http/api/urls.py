@@ -12,5 +12,9 @@ api = NinjaAPI(
 )
 
 api.add_router("/v1/monitor/", monitor_router)
-api.add_router("/v1/dicom/", wado_router)
+# WADO serves machine clients (Bearer) and the browser viewer (Session); handlers branch on the
+# caller type (views/dicom/access.py, #276).
+api.add_router(
+    "/v1/dicom/", wado_router, auth=[ClientCredentialsAuth(required_scopes=["read"]), SessionAuth()]
+)
 api.add_router("/v1/consent/", dahboard_router)
