@@ -126,6 +126,12 @@ node_modules/
 dist-ssr/
 out/
 .tscache/
+# DICOM viewer bundle (npm run build:viewer): built at deploy by the Dockerfile, never committed
+src/MiqaResearch/static/js/viewer/
+# Playwright browser-test output and the harness's DICOM media
+src/MiqaResearch/.dev-data/viewer-harness-media/
+src/MiqaResearch/.dev-data/webcomponents/test-results/
+src/MiqaResearch/.dev-data/webcomponents/playwright-report/
 
 # Linter caches
 .eslintcache
