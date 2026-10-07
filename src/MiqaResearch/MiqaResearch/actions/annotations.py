@@ -37,6 +37,7 @@ from contract.constants.audit_log import (
 from helpers.dicom_deidentification import deidentify
 from MiqaResearch.data.models import AuditLog, DerivedObjectProvenance, DicomFile, DicomSeries
 from MiqaResearch.readers.annotation_permissions import ParticipantRights
+from MiqaResearch.readers.blinding import ParticipantBlinding
 from MiqaResearch.readers.participant_visibility import can_see_participant
 from MiqaResearch.tasks.dicom_handling import frame_index, records
 from MiqaResearch.tasks.dicom_handling import storage as storage_stage
@@ -108,7 +109,8 @@ def save_viewer_object(
         if not rights.can_author:
             raise NotAllowed("your roles don't allow saving Annotations or Segmentations for this participant")
         frame_of_reference_uid = _shared_frame_of_reference(sources)
-        predecessor = _lock_head_to_supersede(supersedes, participant, kind, rights) if supersedes else None
+        blinding = ParticipantBlinding(user, project, participant, getattr(request, "session", None))
+        predecessor = _lock_head_to_supersede(supersedes, participant, kind, rights, blinding) if supersedes else None
 
         sanitized = deidentify(
             dataset, research_project=project, participant_alias=participant.alias1, uids_already_pseudonymized=True
@@ -131,7 +133,7 @@ def save_viewer_object(
             if predecessor is None:
                 raise
             # Another save took this head between our lock and insert (backstop for the lock)
-            raise StaleHead(_head_of(predecessor.chain_id)) from None
+            raise _stale(predecessor.chain_id, blinding) from None
         provenance.source_series.set(sources)
 
         created_event, superseded_event, _ = _EVENTS[kind]
@@ -160,8 +162,11 @@ def retire_object(*, user, object_id: UUID, request=None) -> DerivedObjectProven
         project = participant.research_project
         if project is None or not can_see_participant(user, project, participant):
             raise NotFound()
+        blinding = ParticipantBlinding(user, project, participant, getattr(request, "session", None))
+        if blinding.hides(provenance.author_id):
+            raise NotFound()
         if _has_successor(provenance):
-            raise StaleHead(_head_of(provenance.chain_id))
+            raise _stale(provenance.chain_id, blinding)
         if provenance.retired:
             return provenance
         if not ParticipantRights(user, project, participant).can_change(provenance.author_id):
@@ -219,22 +224,34 @@ def _shared_frame_of_reference(sources: list[DicomSeries]) -> str | None:
     return next(iter(uids), None)
 
 
-def _lock_head_to_supersede(object_id: UUID, participant, kind: str, rights: ParticipantRights):
+def _lock_head_to_supersede(
+    object_id: UUID, participant, kind: str, rights: ParticipantRights, blinding: ParticipantBlinding
+):
     predecessor = (
         DerivedObjectProvenance.objects.select_for_update(of=("self",))
         .select_related("series__study")
         .filter(pk=object_id)
         .first()
     )
-    if predecessor is None or predecessor.series.study.study_participant_id != participant.pk:
+    if (
+        predecessor is None
+        or predecessor.series.study.study_participant_id != participant.pk
+        or blinding.hides(predecessor.author_id)
+    ):
         raise NotFound()
     if predecessor.kind != kind:
         raise InvalidObject(f"a {kind} can't supersede a {predecessor.kind}")
     if predecessor.retired or _has_successor(predecessor):
-        raise StaleHead(_head_of(predecessor.chain_id))
+        raise _stale(predecessor.chain_id, blinding)
     if not rights.can_change(predecessor.author_id):
         raise NotAllowed("only the author, a PI, a Site PI or an Admin may supersede this")
     return predecessor
+
+
+def _stale(chain_id, blinding: ParticipantBlinding) -> ObjectError:
+    """409 with the current head, or 404 when Blinded Annotation hides that head from the caller."""
+    head = _head_of(chain_id)
+    return NotFound() if blinding.hides(head.author_id) else StaleHead(head)
 
 
 def _has_successor(provenance: DerivedObjectProvenance) -> bool:

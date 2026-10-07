@@ -27,6 +27,10 @@ class ResearchProject(models.Model):
         blank=True, null=True,
         help_text="Salt used to pseudonymize incoming DICOM UIDs (CTP-style HashUID) for this project. "
                    "Auto-generated once on first use; must never be rotated, or already-ingested UIDs stop matching.")
+    blinded_annotation = models.BooleanField(
+        default=False,
+        help_text="Blinded Annotation (ADR 0026): every user sees only their own Annotations and Segmentations, "
+                  "ingested ones are hidden, and bound machine clients get none. Set by a PI or Project Admin.")
 
     class Meta:
         db_table = "mires_research_project"
