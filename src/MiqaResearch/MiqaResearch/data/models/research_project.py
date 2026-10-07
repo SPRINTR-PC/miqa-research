@@ -1,7 +1,10 @@
 from uuid import uuid7
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.db import models
+
+from contract.constants.research_project_role import PROJECT_ROLE_SITE_PI
 
 from helpers.db_fields import EncryptedCharField
 
@@ -83,3 +86,17 @@ class ResearchProjectUserRoleMap(models.Model):
             models.Index(fields=["user", "project", "role"], name="idx_user_project_role_map"),
             models.Index(fields=["project", "role", "user"], name="idx_project_role_user_map"),
         ]
+
+    def clean(self):
+        super().clean()
+        self._validate_site_pi_clinic()
+
+    def save(self, *args, **kwargs):
+        # Enforced on save too, not only in forms/admin: a Site PI without a clinic would be
+        # all-Sites under Participant Visibility, which is exactly what the role must not be.
+        self._validate_site_pi_clinic()
+        super().save(*args, **kwargs)
+
+    def _validate_site_pi_clinic(self):
+        if self.role_id and self.clinic_id is None and self.role.name == PROJECT_ROLE_SITE_PI:
+            raise ValidationError({"clinic": "A Site PI must be assigned a clinic (Site)."})

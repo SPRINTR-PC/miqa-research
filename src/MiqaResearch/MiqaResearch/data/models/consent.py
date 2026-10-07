@@ -53,6 +53,10 @@ class ParticipantConsent(models.Model):
         verbose_name_plural = "Participant Consents"
         ordering = ["-consent_signed_date"]
         unique_together = [("study_participant", "consent_signed_date", "consent_type")]
+        indexes = [
+            # Participant Visibility's per-Site EXISTS (readers/participant_visibility.py).
+            models.Index(fields=["clinic", "study_participant"], name="idx_consent_clinic_participant"),
+        ]
 
     def __str__(self) -> str:
         return  f"{self.study_participant} - {self.consent_type} ({self.status})"
