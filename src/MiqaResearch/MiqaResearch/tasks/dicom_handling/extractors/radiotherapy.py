@@ -14,8 +14,8 @@ from .common import image_geometry
 from .generic import extract as generic_extract
 
 
-def extract_rtstruct(ds: Dataset, research_project) -> dict:
-    result = generic_extract(ds, research_project)
+def extract_rtstruct(ds: Dataset, research_project, participant_alias: str) -> dict:
+    result = generic_extract(ds, research_project, participant_alias)
     frame_uids, series_uids, image_uids = [], [], []
     for frame in ds.get("ReferencedFrameOfReferenceSequence") or []:
         _append_uid(frame_uids, frame.get("FrameOfReferenceUID"), research_project)
@@ -46,8 +46,8 @@ def extract_rtstruct(ds: Dataset, research_project) -> dict:
     return result
 
 
-def extract_rtplan(ds: Dataset, research_project) -> dict:
-    result = generic_extract(ds, research_project)
+def extract_rtplan(ds: Dataset, research_project, participant_alias: str) -> dict:
+    result = generic_extract(ds, research_project, participant_alias)
     _set_summary(result, "RTPLAN", {
         "referenced_structure_set_sop_instance_uids": _referenced_uids(
             ds, "ReferencedStructureSetSequence", research_project),
@@ -60,8 +60,8 @@ def extract_rtplan(ds: Dataset, research_project) -> dict:
     return result
 
 
-def extract_rtdose(ds: Dataset, research_project) -> dict:
-    result = generic_extract(ds, research_project)
+def extract_rtdose(ds: Dataset, research_project, participant_alias: str) -> dict:
+    result = generic_extract(ds, research_project, participant_alias)
     result.update(image_geometry(ds, research_project))
     _set_summary(result, "RTDOSE", {
         "referenced_rt_plan_sop_instance_uids": _referenced_uids(ds, "ReferencedRTPlanSequence", research_project),
@@ -75,8 +75,8 @@ def extract_rtdose(ds: Dataset, research_project) -> dict:
     return result
 
 
-def extract_rtimage(ds: Dataset, research_project) -> dict:
-    result = generic_extract(ds, research_project)
+def extract_rtimage(ds: Dataset, research_project, participant_alias: str) -> dict:
+    result = generic_extract(ds, research_project, participant_alias)
     result.update(image_geometry(ds, research_project))
     _set_summary(result, "RTIMAGE", {
         "referenced_rt_plan_sop_instance_uids": _referenced_uids(ds, "ReferencedRTPlanSequence", research_project),

@@ -1,4 +1,5 @@
 from .consent.participant_consent import fetch_participant_consent
+from .dicom_handling.metadata_backfill import resanitize_dicom_metadata
 from .dicom_handling.tasks import ingest_dicom_source
 from .etl_orchestrator.tasks import (
     fan_out_etl_polls,
