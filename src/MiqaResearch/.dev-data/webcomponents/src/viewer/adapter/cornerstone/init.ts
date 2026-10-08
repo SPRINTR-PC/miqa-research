@@ -1,7 +1,14 @@
 // One-time Cornerstone3D initialisation (memoised). Browser only: needs Worker + WebGL.
 // Later tickets register their extras here: volume loaders (#282), peerImport for
 // dicom-microscopy-viewer (#285). Tools are registered in tools.ts (registerCornerstoneTool).
-import { init as csInit, metaData, utilities } from "@cornerstonejs/core";
+import {
+  ProgressiveRetrieveImages,
+  cornerstoneStreamingImageVolumeLoader,
+  init as csInit,
+  metaData,
+  utilities,
+  volumeLoader,
+} from "@cornerstonejs/core";
 import dicomImageLoader from "@cornerstonejs/dicom-image-loader";
 import { registerDefaultProviders } from "@cornerstonejs/metadata";
 import * as csTools from "@cornerstonejs/tools";
@@ -20,6 +27,10 @@ export function initCornerstone(): Promise<void> {
       11000,
     );
     dicomImageLoader.init();
+    // #282: CS3D defaults stay (maxCacheSize 3 GiB, preferSizeOverAccuracy false); volumes stream
+    // interleaved (spec "Oversized series": no HTJ2K/rangeIndex stages).
+    volumeLoader.registerVolumeLoader("cornerstoneStreamingImageVolume", cornerstoneStreamingImageVolumeLoader as never);
+    utilities.imageRetrieveMetadataProvider.add("volume", ProgressiveRetrieveImages.interleavedRetrieveStages);
     csInit();
     csTools.init();
     addRegisteredTools();

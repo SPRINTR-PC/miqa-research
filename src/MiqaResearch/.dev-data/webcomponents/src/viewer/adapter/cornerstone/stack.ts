@@ -107,6 +107,7 @@ export async function createStackView(
       ELEMENT_EVENTS.forEach((e) => element.removeEventListener(e, onChange));
       ANNOTATION_EVENTS.forEach((e) => eventTarget.removeEventListener(e, onChange));
       csTools.ToolGroupManager.destroyToolGroup(toolGroupId);
+      engine.disableElement(viewportId);
     },
   };
 }

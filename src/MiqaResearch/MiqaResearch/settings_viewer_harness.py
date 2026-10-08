@@ -10,3 +10,5 @@ from MiqaResearch.settings import *  # noqa: F403
 DEBUG = True
 FERNET_KEY = b"EiGdHopiKZdBZwVCP4dVJitPrrDnOuGAd94W4EZpwQc="
 SENSITIVE_DATA_HASH_KEY = "H2QCB14temR-C2JnLORSE5TxPwLd8iy3YygNPQ-corA="
+# The debug toolbar's handle sits over the viewer's inspector and intercepts clicks (#282).
+DEBUG_TOOLBAR_CONFIG = {"SHOW_TOOLBAR_CALLBACK": lambda request: False}

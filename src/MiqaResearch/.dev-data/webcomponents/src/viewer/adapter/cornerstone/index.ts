@@ -1,23 +1,45 @@
 // The Cornerstone3D ViewerAdapter. Composes one module per capability
-// (stack.ts now; volume.ts #282, wsi.ts #285, ...). Never imported by vitest.
+// (stack.ts, volume.ts #282; wsi.ts #285, ...). Never imported by vitest.
 import { RenderingEngine } from "@cornerstonejs/core";
 
+import type { Orientation } from "../../layout.ts";
 import type { LoadedSeries } from "../../series.ts";
-import type { StackView, ViewerAdapter } from "../adapter.ts";
+import type { StackView, ViewControls, ViewerAdapter, VolumeLoadStage, VolumeView } from "../adapter.ts";
 import { initCornerstone } from "./init.ts";
 import { registerSeriesMetadata } from "./metadata.ts";
-import { createStackView, type StackHandle } from "./stack.ts";
+import { createStackView } from "./stack.ts";
+import { createVolumeView } from "./volume.ts";
 
 let engineCount = 0;
 
+type Handle = ViewControls & { dispose(): void };
+
 class CornerstoneAdapter implements ViewerAdapter {
   private readonly engine = new RenderingEngine(`mires-viewer-${++engineCount}`);
-  private readonly views: StackHandle[] = [];
+  private readonly views: Handle[] = [];
 
   async openStack(element: HTMLDivElement, series: LoadedSeries, onChange: () => void): Promise<StackView> {
     const view = await createStackView(this.engine, element, registerSeriesMetadata(series), onChange);
     this.views.push(view);
     return view;
+  }
+
+  async openVolume(
+    slots: HTMLDivElement[],
+    series: LoadedSeries,
+    orientations: Orientation[],
+    onChange: () => void,
+    onStage: (stage: VolumeLoadStage) => void,
+  ): Promise<VolumeView> {
+    const imageIds = registerSeriesMetadata(series);
+    const view = await createVolumeView(this.engine, slots, imageIds, series.ref.seriesUid, orientations, onChange, onStage);
+    this.views.push(view);
+    return view;
+  }
+
+  close(view: ViewControls): void {
+    const i = this.views.indexOf(view as Handle);
+    if (i >= 0) this.views.splice(i, 1)[0].dispose();
   }
 
   resize(): void {

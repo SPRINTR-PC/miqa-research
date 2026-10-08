@@ -6,6 +6,7 @@
 // Adding a capability (volume #282, WSI #285, ...): add one member here, implement it
 // in its own ./cornerstone/<capability>.ts, and extend the stub.
 
+import type { Orientation } from "../layout.ts";
 import type { LoadedSeries } from "../series.ts";
 
 /** Window as a value range in modality units (e.g. HU after rescale). */
@@ -52,12 +53,55 @@ export interface StackView extends ViewControls {
   scrollTo(imageIndex: number): void;
 }
 
+/** One ORTHOGRAPHIC view of a volume (#282). */
+export interface VolumeViewState {
+  orientation: Orientation;
+  /** Camera focal point in world (patient) mm. */
+  focalPoint: [number, number, number];
+  /** 0-based slice shown along this view's normal. */
+  sliceIndex: number;
+  sliceCount: number;
+}
+
+/** Observable state of a volume view: one or three views of one cached volume. */
+export interface VolumeState {
+  activeTool: string;
+  /** Window of the base volume (the same in every view). */
+  voi: VoiRange | undefined;
+  invert: boolean;
+  /** Slot 0 is the big view. */
+  views: VolumeViewState[];
+}
+
+/** First-render stages a volume reports (#293): coarse interleaved pass done, every slice loaded. */
+export type VolumeLoadStage = "interleaved" | "volume-loaded";
+
+export interface VolumeView extends ViewControls {
+  state(): VolumeState;
+  /** Show the volume in the first `orientations.length` slots (1 or 3), slot 0 = big view. */
+  setOrientations(orientations: Orientation[]): Promise<void>;
+}
+
 export interface ViewerAdapter {
   /**
    * Show a series as a stack in `element` (a sized, empty div in the element's shadow root).
    * `onChange` fires after every change of the view's StackState (scroll, W/L, first render).
    */
   openStack(element: HTMLDivElement, series: LoadedSeries, onChange: () => void): Promise<StackView>;
+  /**
+   * Show a series as one cached streaming volume in ORTHOGRAPHIC views (#282). `slots` are three
+   * empty divs; the first `orientations.length` are visible and sized, and get a view. Only for
+   * series that pass the reconstructability rule (../reconstructable.ts).
+   */
+  openVolume(
+    slots: HTMLDivElement[],
+    series: LoadedSeries,
+    orientations: Orientation[],
+    onChange: () => void,
+    onStage: (stage: VolumeLoadStage) => void,
+  ): Promise<VolumeView>;
+  /** Release one view opened by this adapter (its viewports and tool group); cached images stay. */
+  close(view: ViewControls): void;
   /** Call after the host element changed size; CS3D doesn't observe it. */
   resize(): void;
   /** Release viewports, tool groups and the rendering engine. */
