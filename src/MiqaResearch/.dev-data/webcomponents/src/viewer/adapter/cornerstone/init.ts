@@ -7,6 +7,7 @@ import { registerDefaultProviders } from "@cornerstonejs/metadata";
 import * as csTools from "@cornerstonejs/tools";
 
 import { addRegisteredTools } from "./tools.ts";
+import { peerImport } from "./wsi.ts";
 
 let initPromise: Promise<void> | undefined;
 
@@ -20,7 +21,8 @@ export function initCornerstone(): Promise<void> {
       11000,
     );
     dicomImageLoader.init();
-    csInit();
+    // Partial config: CS3D deep-merges it over its defaults. peerImport supplies dmv for WSI (#285).
+    csInit({ peerImport } as Parameters<typeof csInit>[0]);
     csTools.init();
     addRegisteredTools();
   })();

@@ -30,7 +30,8 @@ One file per concern, so parallel tickets touch different files.
 | `adapter/cornerstone/metadata.ts` | Typed metadata path (`addDicomWebInstance`), never `wadors.metaDataManager`. | #278, spacing shim #281, SUV #284 |
 | `adapter/cornerstone/stack.ts` | STACK viewport + its tool group (all registered tools, workstation bindings). | #278, #280, #281 |
 | `adapter/cornerstone/volume.ts` | ORTHOGRAPHIC volumes, three views, crosshairs, fusion. | #282–#284 (new) |
-| `adapter/cornerstone/wsi.ts` | WHOLE_SLIDE (`WSIViewport` subclass), dmv `peerImport`. | #285 (new) |
+| `wsi.ts` | WSI pure parts: `isWholeSlide`, dmv `tilesCacheSize`, geometric-only text lines. | #285 |
+| `adapter/cornerstone/wsi.ts` | WHOLE_SLIDE (`MiresWSIViewport` subclass with the dmv tile cache), dmv `peerImport`, head-CSS mirroring. | #285 |
 | `adapter/cornerstone/segmentation.ts` | Labelmaps, segment tools, threshold. | #286 (new) |
 | `inspector/*.ts` | Side-panel parts, one Lit element or template per panel (calibration legend, layers, segments, save…). | #281, #284, #286, #289+ (new) |
 | `*.test.ts` next to the file | vitest, stub adapter, no CS3D. | all |
@@ -82,6 +83,8 @@ Rules:
   `static/js/webcomponents/` bundles.
 - `static/js/viewer/` is **gitignored, never committed**: the prod `Dockerfile` builds it in its `viewer`
   stage. Locally, run `npm run build:viewer` before opening the viewer.
+- dicom-microscopy-viewer (WSI) is not bundled: the build copies its `dist/dynamic-import/` (UMD bundle,
+  worker, WASM codecs) to `static/js/viewer/dmv/`, and `peerImport` loads it with a classic `<script>`.
 - Only the viewer page loads `{% static 'js/viewer/mireswc-viewer.js' %}`; `base.html` never does.
 - The static server must serve `.wasm` as `application/wasm` (Django's static view does; checked by
   the browser tests). No CSP today; one would need `'wasm-unsafe-eval'` and `worker-src 'self'`.

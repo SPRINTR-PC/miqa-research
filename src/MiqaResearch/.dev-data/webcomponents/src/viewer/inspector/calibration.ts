@@ -13,7 +13,7 @@ function knownLengthForm(ctx: ViewerContext) {
   const submit = (e: Event) => {
     e.preventDefault();
     const mm = Number((e.target as HTMLFormElement).querySelector("input")!.value);
-    if (mm > 0) view.calibrate(mm);
+    if (mm > 0) view.calibrate?.(mm);
   };
   return html`<form @submit=${submit}>
     <div class="hint">Line measures ${+pending.length.toFixed(2)} ${pending.unit}. Its true length:</div>
@@ -21,7 +21,7 @@ function knownLengthForm(ctx: ViewerContext) {
       <input name="known-length" type="number" min="0" step="any" required aria-label="Known length in mm" style="width: 70px" />
       mm
       <button type="submit">Apply</button>
-      <button type="button" data-action="cancel" @click=${() => view.cancelCalibration()}>Cancel</button>
+      <button type="button" data-action="cancel" @click=${() => view.cancelCalibration?.()}>Cancel</button>
     </div>
   </form>`;
 }

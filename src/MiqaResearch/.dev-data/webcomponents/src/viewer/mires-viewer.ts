@@ -19,6 +19,7 @@ import { burnedInWarning } from "./calibration.ts";
 import { fetchSeries, type LoadedSeries } from "./series.ts";
 import { presets, presetVoi, tools, voiToWindow, type Preset, type ViewportKind } from "./tools/index.ts";
 import { unitTooltip } from "./units.ts";
+import { isWholeSlide, WSI_DEFAULT_TOOL } from "./wsi.ts";
 
 export type ViewerState = "loading" | "ready" | "error";
 
@@ -137,8 +138,11 @@ export class MiresViewer extends LitElement {
       this.loaded = series;
       this.adapter = await this.adapterFactory();
       if (this.disposed) return this.adapter.destroy();
-      this.view = await this.adapter.openStack(viewport, series, () => (this.stack = this.view?.state()));
-      this.view.setTool(DEFAULT_TOOL);
+      const onChange = () => (this.stack = this.view?.state());
+      const wsi = isWholeSlide(series);
+      if (wsi) this.viewportKind = "wsi";
+      this.view = await (wsi ? this.adapter.openWsi(viewport, series, onChange) : this.adapter.openStack(viewport, series, onChange));
+      this.view.setTool(wsi ? WSI_DEFAULT_TOOL : DEFAULT_TOOL);
       this.stack = this.view.state();
       this.firstRender.mark("first-image");
       this.resizeObserver = new ResizeObserver(() => this.adapter?.resize());
@@ -191,7 +195,7 @@ export class MiresViewer extends LitElement {
   };
 
   private overlay() {
-    if (!this.stack) return nothing;
+    if (!this.stack || this.viewportKind === "wsi") return nothing;
     const { imageIndex, imageCount, voi } = this.stack;
     let window = "";
     if (voi) {

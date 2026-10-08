@@ -8,6 +8,7 @@ import "./calibration.ts";
 import { initCornerstone } from "./init.ts";
 import { registerSeriesMetadata } from "./metadata.ts";
 import { createStackView, type StackHandle } from "./stack.ts";
+import { createWsiView } from "./wsi.ts";
 
 let engineCount = 0;
 
@@ -17,6 +18,12 @@ class CornerstoneAdapter implements ViewerAdapter {
 
   async openStack(element: HTMLDivElement, series: LoadedSeries, onChange: () => void): Promise<StackView> {
     const view = await createStackView(this.engine, element, registerSeriesMetadata(series), onChange);
+    this.views.push(view);
+    return view;
+  }
+
+  async openWsi(element: HTMLDivElement, series: LoadedSeries, onChange: () => void): Promise<StackView> {
+    const view = await createWsiView(this.engine, element, series, onChange);
     this.views.push(view);
     return view;
   }

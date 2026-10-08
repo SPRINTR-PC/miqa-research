@@ -12,6 +12,8 @@ export interface Seed {
   cr: SeriesRef;
   sc: SeriesRef;
   noSpacing: SeriesRef;
+  /** Synthetic TILED_FULL whole-slide image, JPEG tiles (#285). */
+  wsi: { studyUid: string; seriesUid: string; levels: number; baseTiles: number };
 }
 
 export interface SeriesRef {

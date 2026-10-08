@@ -90,3 +90,26 @@ def test_seed_gives_2d_spacing_fixtures(settings, client):
     assert sc["00080016"]["Value"] == ["1.2.840.10008.5.1.4.1.1.7"] and "00280030" in sc
     assert "00280301" not in sc  # BurnedInAnnotation missing on an SC → burned-in badge
     assert "00280030" not in no_spacing and "00181164" not in no_spacing
+
+
+@pytest.mark.django_db
+def test_seed_gives_a_tiled_wsi_whose_tiles_are_served_as_jpeg(settings, client):
+    """#285: a TILED_FULL slide the WSI viewer can open; dmv asks /frames with its off-standard Accept."""
+    settings.DEBUG = True
+    seeded = _seed()
+    client.cookies[seeded["sessionCookie"]["name"]] = seeded["sessionCookie"]["value"]
+    series = f"/api/v1/dicom/studies/{seeded['wsi']['studyUid']}/series/{seeded['wsi']['seriesUid']}"
+
+    instances = client.get(f"{series}/metadata").json()
+    base = next(i for i in instances if i["00080008"]["Value"][0] == "ORIGINAL")
+    sop = base["00080018"]["Value"][0]
+    response = client.get(
+        f"{series}/instances/{sop}/frames/{seeded['wsi']['baseTiles']}",
+        headers={"Accept": 'multipart/related; type="application/octet-stream"; transfer-syntax=*'},
+    )
+
+    assert len(instances) == seeded["wsi"]["levels"] == 2
+    assert base["00209311"]["Value"] == ["TILED_FULL"]
+    assert base["00480102"]["Value"]  # ImageOrientationSlide
+    assert response.status_code == 200
+    assert b"image/jpeg" in response.content and b"\xff\xd8\xff" in response.content
