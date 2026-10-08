@@ -24,6 +24,10 @@ One file per concern, so parallel tickets touch different files.
 | `reconstructable.ts` | OHIF reconstructability rule: gates MPR / three views (and fusion). Pure. | #282 |
 | `layout.ts` | `ViewLayout` (stack, or volume orientations; slot 0 = big view), V cycle, swap, split (25–85%, localStorage), orientation colours. Pure. | #282 |
 | `size-guard.ts` | Size guard: grid estimate from `/metadata`, the 2.5 GiB budget ledger (`SizeGuard`), GPU texture checks, reduced-3D decimation, refusal texts, CS3D cache-error test. Pure. | #283; used by #284, #286 |
+| `fusion.ts` | Fusion rules: fuse / replace blockers (Frame of Reference, volumes only), overlay budget, layer display defaults (PET curve), curated colormaps, overlay drag W/L, curve edits. Pure. | #284 |
+| `suv.ts` | SUV inputs from `/metadata` for calculate-suv, `SuvStatus` and the Bq/ml warning. Pure. | #284 |
+| `chrome/drop-zones.ts` | Drop zones over the big view while a series is dragged: top = fuse, bottom = replace. | #284 |
+| `test-fixtures.ts` | DICOM JSON fixtures for unit tests (PET with SUV inputs, volume series). | #284, all |
 | `chrome/size-banner.ts` | Size banner (stack fallback / reduced 3D) and the dismissible refusal message. | #283 |
 | `adapter/cornerstone/gpu.ts` | WebGL2 `MAX_3D_TEXTURE_SIZE` / `MAX_TEXTURE_SIZE`. | #283 |
 | `chrome/volume-grid.ts` | Volume cells (always three, unused ones hidden) + split divider. | #282 |
@@ -35,7 +39,9 @@ One file per concern, so parallel tickets touch different files.
 | `adapter/cornerstone/tools.ts` | CS3D tool registry (id → tool class/instance), applies binding plans. | #280; others call `registerCornerstoneTool` from their module |
 | `adapter/cornerstone/metadata.ts` | Typed metadata path (`addDicomWebInstance`), never `wadors.metaDataManager`. | #278, spacing shim #281, SUV #284 |
 | `adapter/cornerstone/stack.ts` | STACK viewport + its tool group (all registered tools, workstation bindings). | #278, #280, #281 |
-| `adapter/cornerstone/volume.ts` | ORTHOGRAPHIC volumes, three views, crosshairs, fusion. | #282–#284 (new) |
+| `adapter/cornerstone/volume.ts` | ORTHOGRAPHIC volumes, three views, crosshairs, fusion layers. | #282–#284 |
+| `adapter/cornerstone/fusion.ts` | `LayerWindowLevel` tool (right-drag W/L of the selected overlay), layer colormap properties. | #284 |
+| `adapter/cornerstone/suv.ts` | Whole-series SUVbw `scalingModule` (calculate-suv) and the applied/not status per series. | #284 |
 | `wsi.ts` | WSI pure parts: `isWholeSlide`, dmv `tilesCacheSize`, geometric-only text lines. | #285 |
 | `adapter/cornerstone/wsi.ts` | WHOLE_SLIDE (`MiresWSIViewport` subclass with the dmv tile cache), dmv `peerImport`, head-CSS mirroring. | #285 |
 | `bulk-annotations.ts` | Bulk ANN pure parts: find the slide's ANN (object list `?participant=&series=` → `/metadata`, coordinates inline), read its groups. Needs the `participant` attribute. | #292 |
@@ -76,6 +82,7 @@ import line each. Registries throw on duplicate ids/keys, so clashes fail in vit
   because CS3D's `setToolActive` merges bindings). WSI (#285): `viewport: "wsi"` (wheel = zoom).
   Segment tools (#286): stack and volume views apply `segmentBindings` (tools/segmentation.ts), which passes
   the tool's erase twin as `secondary` (right-drag erases with the same shape; Eraser and threshold keep W/L).
+  Volume right-drag precedence: erase twin > `LayerWindowLevel` on a selected overlay (#284) > W/L.
 - **An inspector panel** (e.g. calibration legend #281, layout #282, layers #284, segments #286,
   save #289): `inspector/<panel>.ts` with `inspector.register({ id, order, render(ctx) })`, import it
   in `inspector/index.ts`. `render` gets the `ViewerContext` and returns a Lit template or `nothing`.
@@ -93,6 +100,7 @@ import line each. Registries throw on duplicate ids/keys, so clashes fail in vit
   series (`volumeIdFor(seriesUid)` in `adapter/cornerstone/volume.ts`) and reports the first-render stages
   `interleaved` / `volume-loaded`. `interleavedRetrieveStages` is registered for `'volume'` in `init.ts`.
 - **Size guard** (#283, `size-guard.ts`): see below.
+- **Fusion** (#284): see below.
 - **Role:** the page sets the boolean `can-annotate` attribute from the server
   (`ParticipantRights.can_author`: Annotator, PI, Site PI, Admin). It gates Arrow, Calibrate, segment
   tools and Save in the UI only; the server authorises saves again (#287).
@@ -146,8 +154,9 @@ if (!r.ok) return ctx.refuse(r.message);             // "… Save and close the 
 - **Tools:** Brush, Eraser (Brush with `ERASE_INSIDE_CIRCLE`), Rectangle/Circle/Sphere scissors (+ `…Erase`
   twins), polygon (linear `SplineROI` instances `PolygonSeg`/`PolygonSegErase`, rasterised on completion; on a
   volume only in axis-aligned planes), Rectangle ROI threshold (passive rectangles, consumed by Run).
-- **Threshold:** volumes use CS3D's `rectangleROIThresholdVolumeByRange` on `ctx.thresholdLayer` (the base
-  series now; **#284** sets it to the selected layer: its `volumeIdFor(seriesUid)` volume is read). Stacks use
+- **Threshold:** volumes use CS3D's `rectangleROIThresholdVolumeByRange` on `ctx.thresholdLayer` (the
+  selected layer (#284), else the base series: its `volumeIdFor(seriesUid)` volume is read; the form's default
+  range follows its modality). Stacks use
   our own fill (`thresholdPixels`), in modality units.
 - **Save (#289):** `ctx.segmentationView`: CS3D segmentation `id` (labelmap image ids via
   `segmentation.state.getSegmentation(id)`), segment labels synced into CS3D's `segments`, colours in
@@ -183,6 +192,30 @@ Rules:
 - Only `adapter/cornerstone/**` imports `@cornerstonejs/*`. The element loads it with a dynamic `import()`.
 - Reference CS3D tools by `Tool.toolName`: minify mangles class names.
 - Browser behaviour (rendering, mouse, WASM) is tested in `../../browser-tests/` (Playwright), not vitest.
+
+## Fusion (#284)
+
+- **Series list:** the `related-series` attribute (space-separated UIDs, same study; the dev page's
+  `?related=`, later the entry contract #279) adds rows; their `/metadata` loads after the first image.
+  Rows are draggable; while dragging, the big view shows two drop zones (`chrome/drop-zones.ts`).
+- **Top half = fuse** into every view: `fuseBlocker` (same `FrameOfReferenceUID`, both reconstructable,
+  not shown yet, not reduced 3D, base fits full-resolution 3D) then `overlayBudget` (texture limit + budget,
+  no labelmap reserve). From the stack the base opens in three views first (both checked before anything
+  opens). Refusals show the reason (`ctx.refuse`). The new overlay is selected.
+- **Bottom half = replace:** views closed, shown series evicted from CS3D's cache (`adapter.evict`) and
+  released from the budget, the series opened as a stack/slide, then in the previous volume layout if it
+  fits. Closing a volume view does **not** free overlays: CS3D keeps their volumes cached.
+- **Layers** (`VolumeState.layers`, base first; `inspector/layers.ts`): select (right-drag W/L via
+  `LayerWindowLevel`, `setVoi`/presets and `ctx.modality` follow the selected layer), remove, colormap
+  (curated vtk.js presets; CS3D resolves names its empty registry lacks against vtk.js), opacity
+  multiplier and curve (`opacityMapping`, data units). PET overlay default in SUV: hsv, SUV 0–5,
+  0 % up to SUV 2, 100 % from SUV 4; in Bq/ml: flat 50 %. Reduced 3D shows the panel for the base colormap.
+- **SUV:** `registerSeriesMetadata` adds whole-series SUVbw factors for PT; the status is what CS3D
+  will use (`scalingModule.suvbw` present). PatientSex other than M/F is left out (calculate-suv throws).
+  Not applied → a `.suv-warning` badge ("Bq/ml, not SUV …") in the layers panel or, on the stack, "Units".
+- **CS3D gotchas:** `addVolumesToViewports` hides the actor unless `visibility: true`; the VOI synchronizer
+  copies an overlay's window onto the base of views that don't have the overlay yet, so it is paused
+  while a layer is added. Segmentation (#286): threshold the selected layer via `ctx.selectedLayer`.
 
 ## Build and output
 

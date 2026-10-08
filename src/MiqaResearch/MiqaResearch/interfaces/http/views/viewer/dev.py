@@ -8,6 +8,8 @@ request the viewer makes is checked for Participant Visibility server-side (#276
 tools, Save); saving is authorised again server-side (#287). `participant` (#292) is the
 series' Study Participant id, given only when visible: the viewer lists the participant's
 Annotations (bulk ANN on a slide) through the object API, which checks visibility again.
+`related` (#284, repeated or comma-separated series UIDs of the same study) lists more series to
+drag onto the view (fuse / replace); each is fetched through WADO, so visibility is checked there.
 """
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
@@ -48,4 +50,7 @@ def dev(request):
         "series_uid": series_uid,
         "can_annotate": can_annotate,
         "participant": participant,
+        "related_series": " ".join(
+            uid.strip() for value in request.GET.getlist("related") for uid in value.split(",") if uid.strip()
+        ),
     })

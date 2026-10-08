@@ -7,10 +7,12 @@
 // in its own ./cornerstone/<capability>.ts, and extend the stub.
 
 import type { BulkAnnotationGroup } from "../bulk-annotations.ts";
+import type { LayerDisplay } from "../fusion.ts";
 import type { Orientation } from "../layout.ts";
 import type { DicomJsonInstance, LoadedSeries } from "../series.ts";
 import type { Rgb, SegmentationState, ValueRange } from "../segmentation.ts";
 import type { Decimation, GpuLimits } from "../size-guard.ts";
+import type { SuvStatus } from "../suv.ts";
 
 /** Window as a value range in modality units (e.g. HU after rescale). */
 export interface VoiRange {
@@ -81,14 +83,38 @@ export interface VolumeViewState {
   sliceCount: number;
 }
 
-/** Observable state of a volume view: one or three views of one cached volume. */
+/** One series shown in a volume view (#284): the base (layers[0]) or a fused overlay. */
+export interface LayerState extends LayerDisplay {
+  seriesUid: string;
+  /** "PT PET AC": modality and description. */
+  label: string;
+  modality: string;
+  /** Window in data units (HU; SUV for PET with SUV applied, else Bq/ml). */
+  voi: VoiRange | undefined;
+  /** PET only: whether SUV scaling was applied. */
+  suv?: SuvStatus;
+}
+
+/** Observable state of a volume view: one or three views of one cached volume (plus fused overlays, #284). */
 export interface VolumeState {
   activeTool: string;
-  /** Window of the base volume (the same in every view). */
+  /** Window of the selected layer (the base without fusion), the same in every view. */
   voi: VoiRange | undefined;
   invert: boolean;
   /** Slot 0 is the big view. */
   views: VolumeViewState[];
+  /** Base first, then overlays in the order fused (#284). */
+  layers: LayerState[];
+  /** Series UID of the layer that right-drag W/L, presets and setVoi act on. */
+  selectedLayer: string;
+}
+
+/** Options of `VolumeView.addLayer` (#284). */
+export interface LayerOptions {
+  /** Initial window, e.g. SUV 0–5; undefined = CS3D's default. */
+  voi?: VoiRange;
+  /** CS3D's cache refused a slice of the overlay while streaming; the element removes the layer. */
+  onTooLarge?: () => void;
 }
 
 /** First-render stages a volume reports (#293): coarse interleaved pass done, every slice loaded. */
@@ -98,6 +124,16 @@ export interface VolumeView extends ViewControls {
   state(): VolumeState;
   /** Show the volume in the first `orientations.length` slots (1 or 3), slot 0 = big view. */
   setOrientations(orientations: Orientation[]): Promise<void>;
+  /**
+   * Fuse `series` into every view (#284), on top of the layers shown. Same Frame of Reference and
+   * the budget are checked by the caller (fusion.ts, size guard).
+   */
+  addLayer(series: LoadedSeries, display: LayerDisplay, options?: LayerOptions): Promise<void>;
+  /** Remove an overlay (not the base); the base is selected if it was selected. */
+  removeLayer(seriesUid: string): void;
+  setLayerDisplay(seriesUid: string, change: Partial<LayerDisplay>): void;
+  /** The layer setVoi/resetVoi, presets and right-drag W/L act on. */
+  selectLayer(seriesUid: string): void;
 }
 
 /** A whole-slide view (#285) with read-only bulk annotations (ANN, #292). */
@@ -223,6 +259,16 @@ export interface ViewerAdapter {
   openSegmentation(series: LoadedSeries, id: string, onChange: () => void): Promise<SegmentationView>;
   /** The annotations of every view (#289); `onChange` fires when `revision()` bumps. Call once. */
   watchAnnotations(onChange: () => void): AnnotationSet;
+  /**
+   * PET (#284): whether SUV scaling was applied to `series` once a view opened it (undefined off PET or
+   * before). A missing input falls back to raw Bq/ml silently, so the UI flags it.
+   */
+  suvStatus(series: LoadedSeries): SuvStatus | undefined;
+  /**
+   * Drop a series' cached volumes and images (#284: a removed overlay, a replaced series), so the
+   * size guard can stop counting them. Call after closing or removing every view showing it.
+   */
+  evict(seriesUid: string): void;
   /** Release one view opened by this adapter (its viewports and tool group); cached images stay. */
   close(view: ViewControls): void;
   /** Call after the host element changed size; CS3D doesn't observe it. */

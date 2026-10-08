@@ -95,6 +95,16 @@ describe("SaveController", () => {
     expect(save.label("annotation")).toBe("Supersede v4 → v5");
   });
 
+  it("starts over when another base series is shown", () => {
+    const host = new FakeHost();
+    const save = new SaveController(host);
+    save.setHead("annotation", version(2), true);
+    host.revisions.annotation = 4;
+    save.reset();
+    expect(save.enabled("annotation")).toBe(false);
+    expect(save.label("annotation")).toBe("Save as new (v1)");
+  });
+
   it("never saves an empty object, even on top of a head (that one is retired instead)", () => {
     const host = new FakeHost();
     const save = new SaveController(host);

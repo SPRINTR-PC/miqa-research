@@ -183,7 +183,7 @@ export function volumeEntries(series: string, grid: SeriesGrid, annotate: boolea
   return entries;
 }
 
-function textureOverflow(grid: SeriesGrid, limits: GpuLimits): string | undefined {
+export function textureOverflow(grid: SeriesGrid, limits: GpuLimits): string | undefined {
   const max = limits.max3dTextureSize;
   if (grid.slices > max) return `${grid.slices} slices exceed the GPU's 3D texture limit (${max})`;
   if (grid.rows > max || grid.columns > max) return `${grid.rows} × ${grid.columns} px exceed the GPU's 3D texture limit (${max})`;

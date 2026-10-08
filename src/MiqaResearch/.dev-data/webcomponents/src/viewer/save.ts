@@ -70,6 +70,17 @@ export class SaveController {
     this.host.changed();
   }
 
+  /** Another base series is shown (#284 replace): nothing loaded, no edits counted so far. */
+  reset(): void {
+    for (const kind of OBJECT_KINDS) {
+      delete this.heads[kind];
+      this.baseline[kind] = this.host.revision(kind);
+    }
+    this.conflict = undefined;
+    this.error = "";
+    this.host.changed();
+  }
+
   head(kind: ObjectKind): ObjectVersion | undefined {
     return this.heads[kind]?.version;
   }

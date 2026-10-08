@@ -51,6 +51,15 @@ describe("segment tools", () => {
     expect(segmentBindings({ primary: "Length", viewport: "volume" }).WindowLevel).toEqual(["secondary"]);
   });
 
+  it("segmentBindings: erase twin wins over a requested secondary (#284 overlay W/L), which applies otherwise", () => {
+    const req = { viewport: "volume", secondary: "LayerWindowLevel" } as const;
+    expect(segmentBindings({ ...req, primary: "Brush" }).Eraser).toEqual(["secondary"]);
+    expect(segmentBindings({ ...req, primary: "Brush" }).LayerWindowLevel).toBeUndefined();
+    expect(segmentBindings({ ...req, primary: "Length" }).LayerWindowLevel).toEqual(["secondary"]);
+    expect(segmentBindings({ ...req, primary: "Length" }).WindowLevel).toBeUndefined();
+    expect(segmentBindings({ primary: "Length", viewport: "volume" }).WindowLevel).toEqual(["secondary"]);
+  });
+
   it("lists every segment tool id", () => {
     expect(SEGMENT_TOOLS).toHaveLength(7);
   });

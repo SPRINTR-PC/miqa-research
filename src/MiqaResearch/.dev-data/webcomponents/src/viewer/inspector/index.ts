@@ -4,6 +4,7 @@ import "./save.ts";
 import "./calibration.ts";
 import "./layout.ts";
 import "./segments.ts";
+import "./layers.ts";
 import "./window.ts";
 import "./mouse.ts";
 import "./bulk-annotations.ts";
