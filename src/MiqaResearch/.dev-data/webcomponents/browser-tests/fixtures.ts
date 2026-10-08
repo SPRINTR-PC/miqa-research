@@ -8,6 +8,8 @@ export interface Seed {
   /** Investigator: view-only role (#280). */
   viewOnlySessionCookie: { name: string; value: string };
   ct: { studyUid: string; seriesUid: string; imageCount: number };
+  /** Synthetic TILED_FULL whole-slide image, JPEG tiles (#285). */
+  wsi: { studyUid: string; seriesUid: string; levels: number; baseTiles: number };
 }
 
 export function seed(): Seed {

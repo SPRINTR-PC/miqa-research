@@ -62,6 +62,7 @@ export class StubStackView implements StackView {
 
 export class StubAdapter implements ViewerAdapter {
   opened: { element: HTMLDivElement; series: LoadedSeries }[] = [];
+  openedWsi: { element: HTMLDivElement; series: LoadedSeries }[] = [];
   views: StubStackView[] = [];
   resizes = 0;
   destroyed = false;
@@ -72,6 +73,14 @@ export class StubAdapter implements ViewerAdapter {
     if (this.failWith) throw this.failWith;
     this.opened.push({ element, series });
     const view = new StubStackView(series, onChange);
+    this.views.push(view);
+    return view;
+  }
+
+  async openWsi(element: HTMLDivElement, series: LoadedSeries, onChange: () => void): Promise<StackView> {
+    if (this.failWith) throw this.failWith;
+    this.openedWsi.push({ element, series });
+    const view = new StubStackView({ ...series, images: series.images.slice(0, 1) }, onChange);
     this.views.push(view);
     return view;
   }

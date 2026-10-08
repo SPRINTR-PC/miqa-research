@@ -58,6 +58,11 @@ export interface ViewerAdapter {
    * `onChange` fires after every change of the view's StackState (scroll, W/L, first render).
    */
   openStack(element: HTMLDivElement, series: LoadedSeries, onChange: () => void): Promise<StackView>;
+  /**
+   * Show a whole-slide (WSI) series in `element` (#285). The view is stack-shaped for the chrome:
+   * one image, zoom 1 = fit; `scrollTo` is a no-op.
+   */
+  openWsi(element: HTMLDivElement, series: LoadedSeries, onChange: () => void): Promise<StackView>;
   /** Call after the host element changed size; CS3D doesn't observe it. */
   resize(): void;
   /** Release viewports, tool groups and the rendering engine. */
