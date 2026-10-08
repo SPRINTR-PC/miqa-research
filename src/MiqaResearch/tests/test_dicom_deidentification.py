@@ -293,6 +293,8 @@ def test_sr_content_tree_is_kept_with_its_references_rewritten(research_project)
     out_ref = out.ContentSequence[0].ReferencedSOPSequence[0]
     assert out_ref.ReferencedSOPInstanceUID == pseudonymize_uid("1.2.9999.42.1.5555", research_project)
     assert out.ContentSequence[1].TextValue == "lesion 1"
+    # A deviation (ADR 0028): Basic would replace the content with a dummy; the served header says so.
+    assert any("SR Content" in value for value in out.DeidentificationMethod)
 
 
 def test_overlay_data_in_repeating_groups_is_removed(research_project):

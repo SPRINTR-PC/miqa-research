@@ -5,6 +5,13 @@ read per frame via the DicomFile's frame offset index
 (tasks/dicom_handling/frame_index.py), no server-side frame cache. Each part
 carries the syntax's media type plus ``transfer-syntax=<uid>``; an Accept that
 can't be satisfied gets 406.
+
+Rows ingested before the index existed are covered by the backfill task
+(`tasks/dicom_handling/frame_index_backfill.backfill_frame_indexes`, enqueue it
+once after deploy). Until it reaches a row, the first /frames request for it
+reads the whole file once and stores the index (`_ensure_frame_index`): a
+deliberate safety net (#271 review), so a not-yet-backfilled row is slow once
+rather than unservable; every later request is ranged.
 """
 import re
 
