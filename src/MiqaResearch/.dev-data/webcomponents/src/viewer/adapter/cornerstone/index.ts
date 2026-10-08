@@ -4,7 +4,7 @@ import { RenderingEngine } from "@cornerstonejs/core";
 
 import type { Orientation } from "../../layout.ts";
 import type { LoadedSeries } from "../../series.ts";
-import type { StackView, ViewControls, ViewerAdapter, VolumeLoadStage, VolumeView } from "../adapter.ts";
+import type { StackView, ViewControls, ViewerAdapter, VolumeLoadStage, VolumeView, WsiView } from "../adapter.ts";
 import "./calibration.ts";
 import { initCornerstone } from "./init.ts";
 import { registerSeriesMetadata } from "./metadata.ts";
@@ -26,7 +26,7 @@ class CornerstoneAdapter implements ViewerAdapter {
     return view;
   }
 
-  async openWsi(element: HTMLDivElement, series: LoadedSeries, onChange: () => void): Promise<StackView> {
+  async openWsi(element: HTMLDivElement, series: LoadedSeries, onChange: () => void): Promise<WsiView> {
     const view = await createWsiView(this.engine, element, series, onChange);
     this.views.push(view);
     return view;

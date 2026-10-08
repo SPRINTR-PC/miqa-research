@@ -113,3 +113,33 @@ def test_seed_gives_a_tiled_wsi_whose_tiles_are_served_as_jpeg(settings, client)
     assert base["00480102"]["Value"]  # ImageOrientationSlide
     assert response.status_code == 200
     assert b"image/jpeg" in response.content and b"\xff\xd8\xff" in response.content
+
+
+@pytest.mark.django_db
+def test_seed_gives_bulk_annotations_on_the_slide_with_inline_coordinates(settings, client):
+    """#292: an ingested ANN on the slide, found through the viewer object list and served whole by /metadata."""
+    settings.DEBUG = True
+    seeded = _seed()
+    client.cookies[seeded["sessionCookie"]["name"]] = seeded["sessionCookie"]["value"]
+    wsi = seeded["wsi"]
+
+    chains = client.get(
+        "/api/v1/viewer/objects", {"participant": wsi["participant"], "series": wsi["seriesUid"]},
+    ).json()
+    ann = [c for c in chains if c["modality"] == "ANN"]
+    assert len(ann) == 1 and ann[0]["kind"] == "annotation" and ann[0]["source"] == "ingested"
+
+    series = f"/api/v1/dicom/studies/{wsi['studyUid']}/series"
+    (instance,) = client.get(f"{series}/{ann[0]['series_instance_uid']}/metadata").json()
+    slide = client.get(f"{series}/{wsi['seriesUid']}/metadata").json()
+    groups = instance["006A0002"]["Value"]
+    property_types = [g["006A000A"]["Value"][0]["00080104"]["Value"][0] for g in groups]
+    assert property_types == seeded["wsiAnnotations"]["groups"]
+    assert all("InlineBinary" in g["00660016"] for g in groups)  # PointCoordinatesData, no BulkDataURI
+    assert instance["00081115"]["Value"][0]["0020000E"]["Value"] == [wsi["seriesUid"]]
+    referenced_sop = instance["00081140"]["Value"][0]["00081155"]["Value"][0]
+    assert referenced_sop in {i["00080018"]["Value"][0] for i in slide}
+    assert instance["00200052"] == slide[0]["00200052"]  # same Frame of Reference
+    # the dev page tells the viewer whose objects to list
+    page = client.get(f"/viewer/dev/?study={wsi['studyUid']}&series={wsi['seriesUid']}").content.decode()
+    assert f'participant="{wsi["participant"]}"' in page

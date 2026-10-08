@@ -4,5 +4,6 @@ import "./calibration.ts";
 import "./layout.ts";
 import "./window.ts";
 import "./mouse.ts";
+import "./bulk-annotations.ts";
 
 export { inspector, type InspectorPanel } from "./registry.ts";

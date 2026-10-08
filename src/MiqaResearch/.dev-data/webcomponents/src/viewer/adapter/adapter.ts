@@ -6,8 +6,9 @@
 // Adding a capability (volume #282, WSI #285, ...): add one member here, implement it
 // in its own ./cornerstone/<capability>.ts, and extend the stub.
 
+import type { BulkAnnotationGroup } from "../bulk-annotations.ts";
 import type { Orientation } from "../layout.ts";
-import type { LoadedSeries } from "../series.ts";
+import type { DicomJsonInstance, LoadedSeries } from "../series.ts";
 
 /** Window as a value range in modality units (e.g. HU after rescale). */
 export interface VoiRange {
@@ -97,6 +98,15 @@ export interface VolumeView extends ViewControls {
   setOrientations(orientations: Orientation[]): Promise<void>;
 }
 
+/** A whole-slide view (#285) with read-only bulk annotations (ANN, #292). */
+export interface WsiView extends StackView {
+  /** Show ANN instances on the slide through dmv's annotation-group layer (read-only), all groups shown. */
+  addBulkAnnotations(instances: DicomJsonInstance[]): Promise<void>;
+  bulkAnnotationGroups(): BulkAnnotationGroup[];
+  /** Show or hide one group; fires the view's onChange. */
+  setBulkAnnotationGroupVisible(uid: string, visible: boolean): void;
+}
+
 export interface ViewerAdapter {
   /**
    * Show a series as a stack in `element` (a sized, empty div in the element's shadow root).
@@ -107,7 +117,7 @@ export interface ViewerAdapter {
    * Show a whole-slide (WSI) series in `element` (#285). The view is stack-shaped for the chrome:
    * one image, zoom 1 = fit; `scrollTo` is a no-op.
    */
-  openWsi(element: HTMLDivElement, series: LoadedSeries, onChange: () => void): Promise<StackView>;
+  openWsi(element: HTMLDivElement, series: LoadedSeries, onChange: () => void): Promise<WsiView>;
   /**
    * Show a series as one cached streaming volume in ORTHOGRAPHIC views (#282). `slots` are three
    * empty divs; the first `orientations.length` are visible and sized, and get a view. Only for

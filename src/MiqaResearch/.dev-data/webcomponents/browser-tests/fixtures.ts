@@ -13,7 +13,9 @@ export interface Seed {
   sc: SeriesRef;
   noSpacing: SeriesRef;
   /** Synthetic TILED_FULL whole-slide image, JPEG tiles (#285). */
-  wsi: { studyUid: string; seriesUid: string; levels: number; baseTiles: number };
+  wsi: { studyUid: string; seriesUid: string; levels: number; baseTiles: number; participant: string };
+  /** Bulk annotations (ANN) on the slide (#292): group names (property types), in group order. */
+  wsiAnnotations: { groups: string[] };
 }
 
 export interface SeriesRef {

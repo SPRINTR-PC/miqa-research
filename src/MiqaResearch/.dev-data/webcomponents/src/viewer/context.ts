@@ -4,6 +4,7 @@ import type { StackState, StackView, ViewControls, VolumeState } from "./adapter
 import type { ViewLayout } from "./layout.ts";
 import type { Reconstructability } from "./reconstructable.ts";
 import type { DicomJsonInstance } from "./series.ts";
+import type { BulkAnnotationGroup } from "./bulk-annotations.ts";
 import type { Preset, ViewportKind } from "./tools/index.ts";
 
 export interface ViewerContext {
@@ -31,4 +32,7 @@ export interface ViewerContext {
   mpr: Reconstructability | undefined;
   /** Switch layout (stack ↔ volume, orientations); ignored while a switch is running. */
   setLayout(layout: ViewLayout): void;
+  /** Groups of the slide's bulk ANN (#292); empty off WSI or without ANN. */
+  bulkAnnotationGroups: BulkAnnotationGroup[];
+  setBulkAnnotationGroupVisible(uid: string, visible: boolean): void;
 }

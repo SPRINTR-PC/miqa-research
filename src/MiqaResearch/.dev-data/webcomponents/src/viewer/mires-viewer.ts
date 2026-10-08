@@ -16,7 +16,9 @@ import type {
   ViewerAdapter,
   VolumeState,
   VolumeView,
+  WsiView,
 } from "./adapter/adapter.ts";
+import { fetchBulkAnnotations, type BulkAnnotationGroup } from "./bulk-annotations.ts";
 import { seriesList, seriesListItem, type SeriesListItem } from "./chrome/series-list.ts";
 import { toolRail } from "./chrome/tool-rail.ts";
 import { volumeGrid, volumeGridStyles } from "./chrome/volume-grid.ts";
@@ -27,7 +29,7 @@ import { inspector } from "./inspector/index.ts";
 import { burnedInWarning } from "./calibration.ts";
 import { clampSplit, loadSplit, saveSplit, swapIntoMain, type ViewLayout } from "./layout.ts";
 import { isReconstructable, type Reconstructability } from "./reconstructable.ts";
-import { fetchSeries, type LoadedSeries } from "./series.ts";
+import { fetchSeries, type LoadedSeries, type SeriesRef } from "./series.ts";
 import { presets, presetVoi, tools, voiToWindow, type Preset, type ToolScope, type ViewportKind } from "./tools/index.ts";
 import { CROSSHAIRS } from "./tools/volume.ts";
 import { unitTooltip } from "./units.ts";
@@ -49,6 +51,9 @@ export class MiresViewer extends LitElement {
   @property({ attribute: "series-uid" }) seriesUid = "";
   /** Annotate role on this participant (set by the page from the server): Arrow, Calibrate, segment tools, Save. */
   @property({ type: Boolean, attribute: "can-annotate" }) canAnnotate = false;
+  /** Study Participant id of the series (set by the page): lists its Annotations, e.g. bulk ANN on a slide (#292). */
+  @property() participant = "";
+  @property({ attribute: "api-root" }) apiRoot = "/api/v1/viewer";
 
   /** Reflected for pages and browser tests: loading → ready | error. */
   @property({ reflect: true }) state: ViewerState = "loading";
@@ -60,6 +65,7 @@ export class MiresViewer extends LitElement {
   @state() private error = "";
   @state() private series: SeriesListItem[] = [];
   @state() private viewportKind: ViewportKind = "stack";
+  @state() private bulkGroups: BulkAnnotationGroup[] = [];
 
   /** Stack, or a volume in one / three views (#282). */
   @state() private layout: ViewLayout = { kind: "stack" };
@@ -70,6 +76,7 @@ export class MiresViewer extends LitElement {
 
   private adapter: ViewerAdapter | undefined;
   private view: StackView | undefined;
+  private wsiView: WsiView | undefined;
   private volumeView: VolumeView | undefined;
   private loaded: LoadedSeries | undefined;
   private mpr: Reconstructability | undefined;
@@ -153,6 +160,7 @@ export class MiresViewer extends LitElement {
     this.adapter?.destroy();
     this.adapter = undefined;
     this.view = undefined;
+    this.wsiView = undefined;
     this.volumeView = undefined;
   }
 
@@ -184,6 +192,16 @@ export class MiresViewer extends LitElement {
     }
   }
 
+  /** Bulk ANN on the slide (#292), read-only. A failure leaves the slide usable and is only logged. */
+  private async loadBulkAnnotations(view: WsiView, slide: SeriesRef): Promise<void> {
+    try {
+      const instances = await fetchBulkAnnotations({ apiRoot: this.apiRoot, participant: this.participant }, slide);
+      if (instances.length && !this.disposed) await view.addBulkAnnotations(instances);
+    } catch (e) {
+      console.warn("Bulk annotations could not be shown", e);
+    }
+  }
+
   private fail(e: unknown): void {
     this.error = e instanceof Error ? e.message : String(e);
     this.state = "error";
@@ -191,8 +209,16 @@ export class MiresViewer extends LitElement {
 
   private async openStackView(adapter: ViewerAdapter, series: LoadedSeries): Promise<void> {
     const viewport = this.renderRoot.querySelector<HTMLDivElement>(".viewport")!;
-    const onChange = () => (this.stack = this.view?.state());
-    this.view = await (isWholeSlide(series) ? adapter.openWsi(viewport, series, onChange) : adapter.openStack(viewport, series, onChange));
+    const onChange = () => {
+      this.stack = this.view?.state();
+      this.bulkGroups = this.wsiView?.bulkAnnotationGroups() ?? [];
+    };
+    if (isWholeSlide(series)) {
+      this.view = this.wsiView = await adapter.openWsi(viewport, series, onChange);
+      if (this.participant) void this.loadBulkAnnotations(this.wsiView, series.ref);
+    } else {
+      this.view = await adapter.openStack(viewport, series, onChange);
+    }
   }
 
   /**
@@ -298,6 +324,8 @@ export class MiresViewer extends LitElement {
       volume: this.volume,
       mpr: this.mpr,
       setLayout: (layout) => void this.setLayout(layout),
+      bulkAnnotationGroups: this.bulkGroups,
+      setBulkAnnotationGroupVisible: (uid, visible) => this.wsiView?.setBulkAnnotationGroupVisible(uid, visible),
     };
   }
 
