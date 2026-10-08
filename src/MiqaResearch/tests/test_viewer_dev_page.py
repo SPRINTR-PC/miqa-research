@@ -62,13 +62,24 @@ def test_dev_page_names_the_user_for_per_user_drafts(settings, no_toolbar, clien
     assert f'user="{user.pk}"' in body
 
 
-def test_dev_page_offers_related_series_in_the_series_list(settings, no_toolbar, logged_in_client):
-    """#284: `related` UIDs (repeated or comma-separated) are listed for drag-to-fuse/replace."""
+def test_dev_page_offers_related_series_limited_by_participant_visibility(
+    settings, no_toolbar, client, ct_series, tmp_path
+):
+    """#284/#271: `related` UIDs (repeated or comma-separated) are listed for drag-to-fuse/replace,
+    limited by Participant Visibility: unknown and invisible series are left out."""
     settings.DEBUG = True
+    elsewhere = ResearchProject.objects.create(name="Not mine", description="#271")
+    run_ingestion(elsewhere, write_dicom(build_ct_image(
+        patient_id="OTHER-1", patient_name="Other^Patient", study_instance_uid="1.2.9999.43.1.1001",
+        series_instance_uid="1.2.9999.43.1.1002", sop_instance_uid="1.2.9999.43.1.1003",
+        frame_of_reference_uid="1.2.9999.43.1.1004"), tmp_path / "other.dcm"))
+    invisible = DicomSeries.objects.get(study__study_participant__research_project=elsewhere).series_instance_uid
+    visible = ct_series.series_instance_uid
+    _open_as(client, ct_series, "Annotator")
 
-    body = logged_in_client.get(DEV_PAGE + "?study=2.25.1&series=2.25.2&related=2.25.3,2.25.4&related=2.25.5").content.decode()
+    body = client.get(DEV_PAGE + f"?study=2.25.1&series={visible}&related={visible},2.25.4&related={invisible}").content.decode()
 
-    assert 'related-series="2.25.3 2.25.4 2.25.5"' in body
+    assert f'related-series="{visible}"' in body
 
 
 def test_dev_page_has_no_related_series_by_default(settings, no_toolbar, logged_in_client):
