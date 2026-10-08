@@ -69,3 +69,26 @@ def test_seed_gives_an_annotating_and_a_view_only_session(settings, client):
 
     assert "can-annotate" in dev_page_as(seeded["sessionCookie"])
     assert "can-annotate" not in dev_page_as(seeded["viewOnlySessionCookie"])
+
+
+@pytest.mark.django_db
+def test_seed_gives_a_tiled_wsi_whose_tiles_are_served_as_jpeg(settings, client):
+    """#285: a TILED_FULL slide the WSI viewer can open; dmv asks /frames with its off-standard Accept."""
+    settings.DEBUG = True
+    seeded = _seed()
+    client.cookies[seeded["sessionCookie"]["name"]] = seeded["sessionCookie"]["value"]
+    series = f"/api/v1/dicom/studies/{seeded['wsi']['studyUid']}/series/{seeded['wsi']['seriesUid']}"
+
+    instances = client.get(f"{series}/metadata").json()
+    base = next(i for i in instances if i["00080008"]["Value"][0] == "ORIGINAL")
+    sop = base["00080018"]["Value"][0]
+    response = client.get(
+        f"{series}/instances/{sop}/frames/{seeded['wsi']['baseTiles']}",
+        headers={"Accept": 'multipart/related; type="application/octet-stream"; transfer-syntax=*'},
+    )
+
+    assert len(instances) == seeded["wsi"]["levels"] == 2
+    assert base["00209311"]["Value"] == ["TILED_FULL"]
+    assert base["00480102"]["Value"]  # ImageOrientationSlide
+    assert response.status_code == 200
+    assert b"image/jpeg" in response.content and b"\xff\xd8\xff" in response.content
