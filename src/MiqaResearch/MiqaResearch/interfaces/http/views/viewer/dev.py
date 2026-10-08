@@ -10,6 +10,7 @@ series' Study Participant id, given only when visible: the viewer lists the part
 Annotations (bulk ANN on a slide) through the object API, which checks visibility again.
 `related` (#284, repeated or comma-separated series UIDs of the same study) lists more series to
 drag onto the view (fuse / replace); each is fetched through WADO, so visibility is checked there.
+`user` (#291, the user's pk, in the template) keys the viewer's IndexedDB drafts per user.
 """
 from django.conf import settings
 from django.contrib.auth.decorators import login_required

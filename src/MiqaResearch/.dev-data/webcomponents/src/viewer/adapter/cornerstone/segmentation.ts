@@ -13,6 +13,8 @@ import dcmjs from "dcmjs";
 import {
   DEFAULT_BRUSH_SIZE,
   SegmentList,
+  decodeRuns,
+  encodeRuns,
   polygonPixels,
   thresholdPixels,
   type Rgb,
@@ -56,6 +58,13 @@ export interface ShownViewports {
 }
 
 type Point = Types.Point3;
+
+/** Draft (#291) of a Segmentation: segments, and per base image index `k` its labelmap's runs. */
+interface SegmentationSnapshot {
+  segments: { index: number; label: string; color: Rgb }[];
+  active: number;
+  labels: { k: number; runs: number[] }[];
+}
 
 /** SEG segment description (SegmentSequence item): manual, coded as tissue, with its display colour. */
 function segmentMetadata(index: number, label: string, color: Rgb) {
@@ -353,6 +362,30 @@ export async function createSegmentation(
         { SeriesDescription: "Segmentation" },
       );
       return new Blob([dcmjs.data.datasetToDict(seg.dataset).write()], { type: "application/dicom" });
+    },
+    snapshot(): SegmentationSnapshot {
+      const labels: SegmentationSnapshot["labels"] = [];
+      labelmapIds.forEach((imageId, k) => {
+        const data = cache.getImage(imageId)?.voxelManager?.getScalarData() as ArrayLike<number> | undefined;
+        const runs = data ? encodeRuns(data) : [];
+        if (runs.length) labels.push({ k, runs });
+      });
+      return { segments: list.segments.map((s) => ({ ...s, color: [...s.color] as Rgb })), active: list.active, labels };
+    },
+    restore(snapshot: unknown) {
+      const { segments, active, labels } = snapshot as SegmentationSnapshot;
+      list.segments = segments.map((s) => ({ ...s, color: [...s.color] as Rgb }));
+      list.setActive(active);
+      const runsOf = new Map(labels.map((l) => [l.k, l.runs]));
+      labelmapIds.forEach((imageId, k) => {
+        const vm = cache.getImage(imageId)?.voxelManager as Types.IVoxelManager<number> | undefined;
+        if (!vm) return;
+        const data = vm.getScalarData() as ArrayLike<number>;
+        for (let i = 0; i < data.length; i++) if (data[i]) vm.setAtIndex(i, 0);
+        decodeRuns(runsOf.get(k) ?? [], (i, value) => vm.setAtIndex(i, value));
+      });
+      sync();
+      modified();
     },
     close() {
       ANNOTATION_EVENTS.forEach((ev) => eventTarget.removeEventListener(ev, onAnnotation));

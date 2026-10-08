@@ -59,6 +59,7 @@ One file per concern, so parallel tickets touch different files.
 | `chrome/results-tree.ts` | Result rows under each series (⊕ Fusion badge, ⋯ History / Retire), lock row, "Show retired" footer, chips over the viewport, the Retire / Reveal confirm. | #290 |
 | `saved-seg.ts` | A saved SEG for showing: `/metadata` + all frames in one `/frames` request (multipart/related parser). | #290 |
 | `adapter/cornerstone/annotations.ts` | `AnnotationSet`: edit counting, SR export with `@cornerstonejs/adapters` (WSI: SCOORD3D, simplified, geometric only), SR import + User calibration reapply. | #289 |
+| `drafts.ts`, `chrome/draft-banner.ts` | Drafts: IndexedDB autosave (per user × participant × series × kind, 7-day TTL) and the Restore / Discard banner. No CS3D. | #291 |
 | `inspector/*.ts` | Side-panel parts, one Lit element or template per panel (calibration legend, layers, segments, save…). | #281, #284, #286, #289+ (new) |
 | `*.test.ts` next to the file | vitest, stub adapter, no CS3D. | all |
 
@@ -212,6 +213,20 @@ if (!r.ok) return ctx.refuse(r.message);             // "… Save and close the 
   "Show retired" footer for annotate roles; retired rows are read-only. View-only: rows show/hide and History only.
 - Browser tests: `browser-tests/results.spec.ts`; the seed's `blinded` participant (project "Viewer harness blinded",
   one ingested SR hidden from the PI).
+
+## Drafts (#291)
+
+- `drafts.ts`: `DraftStore` (IndexedDB `mires-viewer-drafts`, key per user × participant × series × kind, 7-day TTL,
+  expired ones purged on open) and `DraftController` (autosave 500 ms after an edit while Save is dirty; `saved(kind)`
+  clears it, from `SaveHost.saved` on 201 and on "load theirs"). No user (`user` attribute, the page sets the pk),
+  no participant or view-only: no drafts. Survive logout (`Clear-Site-Data: "cache"` only).
+- Data = Cornerstone JSON from the adapter: `AnnotationSet.snapshot/restore` (CS3D annotations without cachedStats,
+  plus User calibrations), `SegmentationView.snapshot/restore` (segments + per-image labelmap runs, `encodeRuns`).
+  The draft keeps its base head (`SaveController.base`); Restore sets it as head first, so Save offers "Supersede vN → vN+1".
+- `chrome/draft-banner.ts`: banner over the view on open (and after replace) with Restore / Discard per kind. While a
+  kind's draft is offered it isn't autosaved, so new edits never overwrite it unseen.
+- **#290:** loading a head through the tree should go through `ctx.save.setHead` as before; a loaded head with an
+  offered draft for the same series is fine (Restore replaces what is shown).
 
 Rules:
 - Only `adapter/cornerstone/**` imports `@cornerstonejs/*`. The element loads it with a dynamic `import()`.

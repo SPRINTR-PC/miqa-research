@@ -25,11 +25,13 @@ import { toolRail } from "./chrome/tool-rail.ts";
 import { refusalMessage, sizeBanner, sizeBannerStyles } from "./chrome/size-banner.ts";
 import { conflictDialog, saveDialogStyles, toast } from "./chrome/save-dialogs.ts";
 import { lockRow, resultChips, resultRows, resultsConfirm, resultsFooter, resultsTreeStyles } from "./chrome/results-tree.ts";
+import { draftBanner, draftBannerStyles } from "./chrome/draft-banner.ts";
 import { volumeGrid, volumeGridStyles } from "./chrome/volume-grid.ts";
 import { dropZones, dropZoneStyles, type DropZone } from "./chrome/drop-zones.ts";
 import { commands } from "./commands.ts";
 import type { ViewerContext } from "./context.ts";
 import { FirstRenderReport } from "./first-render.ts";
+import { DraftController, DraftStore, defaultDraftBackend, type Draft, type DraftBackend, type DraftHost } from "./drafts.ts";
 import { inspector } from "./inspector/index.ts";
 import { burnedInWarning } from "./calibration.ts";
 import { fuseBlocker, layerDisplay, modalityOf, overlayBudget, replaceBlocker, seriesLabel } from "./fusion.ts";
@@ -79,6 +81,8 @@ export class MiresViewer extends LitElement {
   @property({ type: Boolean, attribute: "can-annotate" }) canAnnotate = false;
   /** Study Participant id of the series (set by the page): lists its Annotations, e.g. bulk ANN on a slide (#292). */
   @property() participant = "";
+  /** The logged-in user's id (set by the page): drafts (#291) are kept per user. No user, no drafts. */
+  @property() user = "";
   @property({ attribute: "api-root" }) apiRoot = "/api/v1/viewer";
   /**
    * Other series of the same study to offer in the series list (#284), space-separated UIDs; they can be
@@ -91,6 +95,8 @@ export class MiresViewer extends LitElement {
 
   /** Swapped by tests for a stub; defaults to the Cornerstone3D adapter. */
   adapterFactory: AdapterFactory = cornerstoneAdapter;
+  /** Where drafts (#291) live: IndexedDB; unit tests swap in memory. Set before the element connects. */
+  draftBackend: DraftBackend | undefined;
 
   @state() private stack: StackState | undefined;
   @state() private error = "";
@@ -121,6 +127,8 @@ export class MiresViewer extends LitElement {
   readonly results = new ResultsController(this.resultsHost());
   /** Annotation ids each shown SR chain added (by chain id), to hide them again. */
   private readonly resultAnnotations = new Map<string, string[]>();
+  /** Drafts (#291): autosave of unsaved edits, the recovery banner on open. Made on first open. */
+  drafts: DraftController | undefined;
   @state() private toastMessage = "";
   private toastTimer: ReturnType<typeof setTimeout> | undefined;
   @state() private gpu: GpuLimits | undefined;
@@ -151,7 +159,7 @@ export class MiresViewer extends LitElement {
   /** First-render marks + beacon (#293); volume views mark "interleaved" / "volume-loaded" on it. */
   firstRender: FirstRenderReport | undefined;
 
-  static styles = [volumeGridStyles, sizeBannerStyles, dropZoneStyles, saveDialogStyles, resultsTreeStyles, css`
+  static styles = [volumeGridStyles, sizeBannerStyles, dropZoneStyles, saveDialogStyles, resultsTreeStyles, draftBannerStyles, css`
     :host { display: block; position: relative; background: #0b0d10; color: #d8dde3; font: 13px system-ui, sans-serif; outline: none; }
     .chrome { position: absolute; inset: 0; display: grid; grid-template-columns: 180px 56px minmax(0, 1fr) 250px; }
     button { font: inherit; color: inherit; background: #1b2027; border: 1px solid #2b323c; border-radius: 4px; padding: 4px 8px; cursor: pointer; }
@@ -243,6 +251,7 @@ export class MiresViewer extends LitElement {
     this.resizeObserver?.disconnect();
     this.firstRender?.dispose();
     clearTimeout(this.toastTimer);
+    this.drafts?.dispose();
     this.segmentation.close();
     this.annotations?.dispose();
     this.annotations = undefined;
@@ -285,6 +294,8 @@ export class MiresViewer extends LitElement {
       this.resizeObserver = new ResizeObserver(() => this.adapter?.resize());
       this.resizeObserver.observe(this.renderRoot.querySelector(".stage")!);
       this.state = "ready";
+      this.drafts = new DraftController(new DraftStore(this.draftBackend ?? defaultDraftBackend()), this.draftHost());
+      void this.drafts.check();
       void this.loadRelated();
       void this.results.refresh();
     } catch (e) {
@@ -360,7 +371,49 @@ export class MiresViewer extends LitElement {
       loadTheirs: (kind, head) => el.loadTheirs(kind, head),
       changed: () => el.requestUpdate(),
       toast: (message) => el.showToast(message),
+      saved: (kind) => el.drafts?.saved(kind),
     };
+  }
+
+  protected updated(): void {
+    this.drafts?.edited();
+  }
+
+  /** What drafts (#291) need of the element: the key, edits as Save counts them, snapshots from the adapter. */
+  private draftHost(): DraftHost {
+    const el = this;
+    return {
+      key: (kind) =>
+        el.user && el.participant && el.canAnnotate && el.loaded
+          ? { user: el.user, participant: el.participant, seriesUid: el.loaded.ref.seriesUid, kind }
+          : undefined,
+      revision: (kind) => (kind === "annotation" ? (el.annotations?.revision() ?? 0) : el.segmentation.revision()),
+      dirty: (kind) => el.save.dirty(kind),
+      isEmpty: (kind) =>
+        kind === "annotation" ? !el.loaded || !el.annotations?.count(el.loaded) : el.segmentation.isEmpty(),
+      base: (kind) => el.save.base(kind),
+      snapshot: async (kind) => {
+        if (kind === "segmentation") return el.segmentation.view?.snapshot();
+        return el.loaded && el.annotations?.snapshot(el.loaded);
+      },
+      restore: (draft) => el.restoreDraft(draft),
+      changed: () => el.requestUpdate(),
+    };
+  }
+
+  /** Restore a draft: on top of its base head (Save then supersedes it), the edits replace what is shown. */
+  private async restoreDraft(draft: Draft): Promise<void> {
+    const series = this.loaded;
+    if (!series || series.ref.seriesUid !== draft.seriesUid) throw new Error("another series is shown");
+    if (draft.base) this.save.setHead(draft.kind, draft.base.head, draft.base.canChange);
+    if (draft.kind === "annotation") {
+      if (!this.annotations) throw new Error("the viewer isn't ready");
+      this.annotations.restore(draft.data, series);
+    } else {
+      const view = await this.segmentation.ensure(this.controls);
+      if (!view) throw new Error("the Segmentation doesn't fit");
+      view.restore(draft.data);
+    }
   }
 
   /** 409 "Discard mine, load theirs": drop the local edits and show the head saved first (in the results tree too, #290). */
@@ -730,6 +783,7 @@ export class MiresViewer extends LitElement {
       this.seriesUid = uid;
       this.results.hideWhere((c) => baseOf(c) !== uid); // heads of the replaced series go with it (#290)
       this.save.reset(); // Save (#289) starts over on the new base series
+      void this.drafts?.check(); // and its drafts (#291) are offered
       this.mpr = isReconstructable(next);
       this.viewportKind = wsi ? "wsi" : "stack";
       this.layout = { kind: "stack" };
@@ -883,6 +937,9 @@ export class MiresViewer extends LitElement {
       <div class="stage" @pointerdown=${() => this.focus()} @contextmenu=${(e: Event) => e.preventDefault()}>
         ${views} ${this.burnedIn(ctx)} ${sizeBanner(this.volumeFit, this.layout)} ${resultChips(this.results)}
         ${refusalMessage(this.refusal, () => (this.refusal = ""))}
+        ${this.drafts
+          ? draftBanner(this.drafts.pending, this.drafts.error, (kind) => void this.drafts?.restore(kind), (kind) => void this.drafts?.discard(kind))
+          : nothing}
         ${conflictDialog(this.save.conflict, !!this.save.saving, (choice) => void this.save.resolve(choice), () => this.save.dismiss())}
         ${resultsConfirm(this.results)}
         ${toast(this.toastMessage)}

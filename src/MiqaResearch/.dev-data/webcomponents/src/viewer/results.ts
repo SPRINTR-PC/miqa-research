@@ -98,8 +98,9 @@ export class ResultsController {
         getJson<ResultChain[]>(`${this.host.apiRoot}/objects?${query}`),
         getJson<BlindingStatus>(`${this.participantUrl}/blinding`),
       ]);
-      this.chains = chains;
-      this.blinding = blinding;
+      // Keep only what looks like chains (a mis-routed or stubbed response lists nothing rather than breaking the list).
+      this.chains = Array.isArray(chains) ? chains.filter((c) => Array.isArray(c?.source_series_uids) && Array.isArray(c.history)) : [];
+      this.blinding = typeof blinding?.blinded === "boolean" ? blinding : undefined;
       // A head shown before stays shown as the listed (possibly newer) chain.
       for (const [id] of this.shown) {
         const now = chains.find((c) => c.chain_id === id);

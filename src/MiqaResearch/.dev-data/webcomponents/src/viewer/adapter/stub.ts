@@ -350,6 +350,17 @@ export class StubSegmentationView implements SegmentationView {
     return new Blob(["SEG"], { type: "application/dicom" });
   }
 
+  snapshot(): unknown {
+    return { segments: this.list.segments.map((s) => ({ ...s })), voxels: { ...this.voxels } };
+  }
+
+  restore(snapshot: unknown): void {
+    const { segments, voxels } = snapshot as { segments: SegmentationState["segments"]; voxels: Record<number, number> };
+    this.list.segments = segments.map((s) => ({ ...s }));
+    this.edits += 1;
+    this.emit({ voxels: { ...voxels } });
+  }
+
   close(): void {
     this.closed = true;
   }
@@ -421,6 +432,16 @@ export class StubAnnotationSet implements AnnotationSet {
     this.removed.push(...annotationIds);
     this.tools = this.tools.filter((_, i) => keep[i]);
     this.ids = this.ids.filter((_, i) => keep[i]);
+    this.edits += 1;
+    this.onChange();
+  }
+
+  snapshot(): unknown {
+    return { tools: [...this.tools] };
+  }
+
+  restore(snapshot: unknown): void {
+    this.tools = [...(snapshot as { tools: string[] }).tools];
     this.edits += 1;
     this.onChange();
   }
