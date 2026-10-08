@@ -19,6 +19,7 @@ One file per concern, so parallel tickets touch different files.
 | `tools/bindings.ts` | Workstation mouse as a binding plan of abstract buttons. Pure. | #280, #285 (WSI), #286 (erase) |
 | `chrome/*.ts` | Series list, tool rail templates. | #280, #279/#284/#290 (series list) |
 | `units.ts` | Tooltip text for CS3D's raw unit suffixes. | #280, #281 |
+| `calibration.ts` | Calibration legend per unit, SC spacing shim payload, burned-in badge rule. Pure. | #281 |
 | `series.ts` | `/metadata` fetch → ordered `wadors:` frame imageIds. Pure, no CS3D. | #278 |
 | `first-render.ts` | `performance.mark`s, the first-render beacon and the HTTP/1.1 `/frames` warning. Volume views mark `interleaved` / `volume-loaded` on the element's `firstRender`. | #293, volume #282 |
 | `adapter/adapter.ts` | **The seam**: `ViewerAdapter` and its view types. Add one member per capability. | all |
@@ -49,7 +50,7 @@ import line each. Registries throw on duplicate ids/keys, so clashes fail in vit
      instance, `registerCornerstoneTool(Base, { id, configuration })`; `passive: true` keeps
      annotations drawn and editable when the tool is not on a button. Import the module from
      `adapter/cornerstone/index.ts`. Every stack/volume tool group gets all registered tools.
-  - Keys taken: w p z s l a b o r e f t; reserved for later tickets: x (Crosshairs), c (Calibrate),
+  - Keys taken: w p z s l a b o r e f t c (Calibrate, #281); reserved for later tickets: x (Crosshairs),
     g d k q j y m (segment tools); never a tool key: 0–9 (presets), i, v, Esc (`RESERVED_KEYS`).
 - **Mouse:** `workstationBindings({ primary, viewport, secondary })` (tools/bindings.ts) is the single
   source of the workstation mouse; views apply it with `applyBindingPlan` (disable-then-activate,

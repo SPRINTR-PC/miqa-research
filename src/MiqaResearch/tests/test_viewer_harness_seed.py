@@ -69,3 +69,24 @@ def test_seed_gives_an_annotating_and_a_view_only_session(settings, client):
 
     assert "can-annotate" in dev_page_as(seeded["sessionCookie"])
     assert "can-annotate" not in dev_page_as(seeded["viewOnlySessionCookie"])
+
+
+@pytest.mark.django_db
+def test_seed_gives_2d_spacing_fixtures(settings, client):
+    """#281: CR with only ImagerPixelSpacing, SC with PixelSpacing, SC without spacing, served by our WADO."""
+    settings.DEBUG = True
+    seeded = _seed()
+    client.cookies[seeded["sessionCookie"]["name"]] = seeded["sessionCookie"]["value"]
+
+    def metadata(key):
+        ref = seeded[key]
+        response = client.get(f"/api/v1/dicom/studies/{ref['studyUid']}/series/{ref['seriesUid']}/metadata")
+        assert response.status_code == 200
+        return response.json()[0]
+
+    cr, sc, no_spacing = metadata("cr"), metadata("sc"), metadata("noSpacing")
+    assert "00181164" in cr and "00280030" not in cr  # ImagerPixelSpacing only
+    assert cr["00080016"]["Value"] == ["1.2.840.10008.5.1.4.1.1.1"]
+    assert sc["00080016"]["Value"] == ["1.2.840.10008.5.1.4.1.1.7"] and "00280030" in sc
+    assert "00280301" not in sc  # BurnedInAnnotation missing on an SC → burned-in badge
+    assert "00280030" not in no_spacing and "00181164" not in no_spacing

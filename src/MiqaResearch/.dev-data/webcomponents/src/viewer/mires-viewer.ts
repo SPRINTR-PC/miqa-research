@@ -15,7 +15,8 @@ import { commands } from "./commands.ts";
 import type { ViewerContext } from "./context.ts";
 import { FirstRenderReport } from "./first-render.ts";
 import { inspector } from "./inspector/index.ts";
-import { fetchSeries } from "./series.ts";
+import { burnedInWarning } from "./calibration.ts";
+import { fetchSeries, type LoadedSeries } from "./series.ts";
 import { presets, presetVoi, tools, voiToWindow, type Preset, type ViewportKind } from "./tools/index.ts";
 import { unitTooltip } from "./units.ts";
 
@@ -49,6 +50,7 @@ export class MiresViewer extends LitElement {
 
   private adapter: ViewerAdapter | undefined;
   private view: StackView | undefined;
+  private loaded: LoadedSeries | undefined;
   private resizeObserver: ResizeObserver | undefined;
   private disposed = false;
   /** First-render marks + beacon (#293); volume views mark "interleaved" / "volume-loaded" on it. */
@@ -81,6 +83,7 @@ export class MiresViewer extends LitElement {
     .stage { position: relative; background: #000; min-width: 0; min-height: 0; }
     .viewport { position: absolute; inset: 0; }
     .overlay { position: absolute; left: 8px; bottom: 8px; pointer-events: none; text-shadow: 0 0 2px #000; font: 12px ui-monospace, monospace; }
+    .burned-in { position: absolute; left: 8px; top: 8px; z-index: 5; padding: 1px 6px; border-radius: 3px; font-size: 11px; cursor: help; background: #3b2a12; border: 1px solid #8a5a14; color: #ffcf7a; }
     .unit { position: absolute; right: 8px; top: 8px; z-index: 5; padding: 1px 6px; border-radius: 3px; font: 11px ui-monospace, monospace; cursor: help; background: #1d2b3b; border: 1px solid #2f4a6b; }
     [role="alert"] { position: absolute; inset: auto 8px 8px; color: #f88; }
 
@@ -88,6 +91,8 @@ export class MiresViewer extends LitElement {
     .inspector .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
     .inspector .grid2 button { text-align: left; font-size: 12px; }
     .inspector .row { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
+    .inspector .badge { font: 11px ui-monospace, monospace; padding: 1px 6px; border-radius: 3px; background: #1d2b3b; border: 1px solid #2f4a6b; }
+    .inspector .badge[data-level="warn"] { background: #3b2a12; border-color: #8a5a14; color: #ffcf7a; }
   `;
 
   /** Current stack state, for browser tests and diagnostics. */
@@ -129,6 +134,7 @@ export class MiresViewer extends LitElement {
       const series = await fetchSeries({ wadoRoot: this.wadoRoot, studyUid: this.studyUid, seriesUid: this.seriesUid });
       this.firstRender.series(series);
       this.series = [seriesListItem(series)];
+      this.loaded = series;
       this.adapter = await this.adapterFactory();
       if (this.disposed) return this.adapter.destroy();
       this.view = await this.adapter.openStack(viewport, series, () => (this.stack = this.view?.state()));
@@ -153,6 +159,8 @@ export class MiresViewer extends LitElement {
       activeTool: this.stack?.activeTool ?? "",
       view: this.view,
       stack: this.stack,
+      stackView: this.view,
+      image: this.loaded?.images[this.stack?.imageIndex ?? 0]?.instance,
       selectTool: (id) => this.view?.setTool(id),
       applyPreset: (p) => this.applyPreset(p),
     };
@@ -199,6 +207,12 @@ export class MiresViewer extends LitElement {
     return html`<span class="unit" title=${unitTooltip(unit)}>${unit}</span>`;
   }
 
+  /** Burned-in badge (#281): the image may carry identifying text in its pixels. */
+  private burnedIn(ctx: ViewerContext) {
+    if (!burnedInWarning(ctx.image)) return nothing;
+    return html`<span class="burned-in" role="note" title="The image may have identifying text burned into its pixels (BurnedInAnnotation is YES, or missing on a secondary capture or ultrasound). Pixels aren't scrubbed.">⚠ Burned-in annotation</span>`;
+  }
+
   render() {
     const ctx = this.context();
     const rail = tools.rail({ viewport: ctx.viewport, canAnnotate: ctx.canAnnotate });
@@ -207,7 +221,7 @@ export class MiresViewer extends LitElement {
       ${toolRail(rail, ctx.activeTool, ctx.selectTool)}
       <div class="stage">
         <div class="viewport" tabindex="-1" @pointerdown=${() => this.focus()} @contextmenu=${(e: Event) => e.preventDefault()}></div>
-        ${this.overlay()} ${this.unit()}
+        ${this.overlay()} ${this.unit()} ${this.burnedIn(ctx)}
         ${this.error ? html`<div role="alert">${this.error}</div>` : nothing}
       </div>
       <aside class="inspector" aria-label="Inspector">${inspector.panels().map((p) => p.render(ctx))}</aside>
