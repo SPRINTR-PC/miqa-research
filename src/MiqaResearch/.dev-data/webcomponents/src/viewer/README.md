@@ -23,6 +23,9 @@ One file per concern, so parallel tickets touch different files.
 | `series.ts` | `/metadata` fetch → ordered `wadors:` frame imageIds. Pure, no CS3D. | #278 |
 | `reconstructable.ts` | OHIF reconstructability rule: gates MPR / three views (and fusion). Pure. | #282 |
 | `layout.ts` | `ViewLayout` (stack, or volume orientations; slot 0 = big view), V cycle, swap, split (25–85%, localStorage), orientation colours. Pure. | #282 |
+| `size-guard.ts` | Size guard: grid estimate from `/metadata`, the 2.5 GiB budget ledger (`SizeGuard`), GPU texture checks, reduced-3D decimation, refusal texts, CS3D cache-error test. Pure. | #283; used by #284, #286 |
+| `chrome/size-banner.ts` | Size banner (stack fallback / reduced 3D) and the dismissible refusal message. | #283 |
+| `adapter/cornerstone/gpu.ts` | WebGL2 `MAX_3D_TEXTURE_SIZE` / `MAX_TEXTURE_SIZE`. | #283 |
 | `chrome/volume-grid.ts` | Volume cells (always three, unused ones hidden) + split divider. | #282 |
 | `first-render.ts` | `performance.mark`s, the first-render beacon and the HTTP/1.1 `/frames` warning. Volume views mark `interleaved` / `volume-loaded` on the element's `firstRender`. | #293, volume #282 |
 | `adapter/adapter.ts` | **The seam**: `ViewerAdapter` and its view types. Add one member per capability. | all |
@@ -77,9 +80,47 @@ import line each. Registries throw on duplicate ids/keys, so clashes fail in vit
   `isReconstructable` passes. `ctx.setLayout(layout)` switches; `openVolume` caches one streaming volume per
   series (`volumeIdFor(seriesUid)` in `adapter/cornerstone/volume.ts`) and reports the first-render stages
   `interleaved` / `volume-loaded`. `interleavedRetrieveStages` is registered for `'volume'` in `init.ts`.
+- **Size guard** (#283, `size-guard.ts`): see below.
 - **Role:** the page sets the boolean `can-annotate` attribute from the server
   (`ParticipantRights.can_author`: Annotator, PI, Site PI, Admin). It gates Arrow, Calibrate, segment
   tools and Save in the UI only; the server authorises saves again (#287).
+
+## Size guard (#283)
+
+CS3D's 3 GiB cache never evicts the images of a cached volume (or labelmap), so everything open at
+once must fit; it throws `CACHE_SIZE_EXCEEDED` / "not cacheable" otherwise. The guard checks first.
+
+- **Estimate:** `seriesGrid(series)` = rows × columns × slices × bytes per voxel (CS3D's data type:
+  8-bit 1 B, 16-bit 2 B, float-rescaled 16-bit and PET 4 B, × samples). `labelmapBytes(grid)` = 1 B/voxel.
+- **Budget:** 2.5 GiB (`BUDGET_BYTES`), counting `BudgetEntry`s: `volume`, `labelmap`, and one
+  `labelmap-reserve` per base series for annotate roles. Per series a labelmap costs
+  max(reserve, Σ labelmaps): the first one uses the reserve up, more cost extra.
+- **When:** at open (`ctx.volumeFit`) and on every add. The added thing's series (or the series being
+  replaced) is removed before counting. A failed check changes nothing; views already open stay.
+- **GPU:** `adapter.gpuLimits()` (WebGL2, once). Volumes need every axis ≤ `MAX_3D_TEXTURE_SIZE`;
+  a non-WSI 2D image larger than `MAX_TEXTURE_SIZE` is refused at open.
+- **Too big for 3D:** the full-resolution stack (default view) with a banner; MPR, crosshairs, fusion off.
+  The layout panel offers "Open reduced 3D (view only)": `layout.reduced` = `ijkDecimation` from
+  `fitVolume` (in-plane only when rows/columns exceed the 3D texture limit, then the smallest k that fits),
+  loaded by `decimatedVolumeLoader`, no labelmap reserve, tool scope `viewOnly` (nav tools + crosshairs).
+- **CS3D errors:** `isTooLargeError(e)`; the element shows `TOO_LARGE_MESSAGE` and goes back to the stack
+  (open errors, and `VolumeOptions.onTooLarge` for slices refused while streaming).
+
+API for later tickets (`ctx.budget: SizeGuard`, `ctx.refuse(message)`):
+
+```ts
+// Fusion overlay (#284): check, then reserve; release when the layer is removed.
+const entries = volumeEntries(overlayUid, seriesGrid(overlay)!, false); // overlays get no labelmap reserve
+const check = ctx.budget.check(entries);            // replace: ctx.budget.check(entries, [replacedUid])
+if (!check.ok) return ctx.refuse(refusalMessage("fusion", check));
+ctx.budget.reserve(entries);                         // … ctx.budget.releaseSeries(overlayUid)
+// gpu: also refuse when any axis > ctx.gpu.max3dTextureSize (no reduced fusions).
+
+// New labelmap (#286), on the base series' grid:
+const r = ctx.budget.reserveLabelmap(baseUid, segmentationId, labelmapBytes(grid));
+if (!r.ok) return ctx.refuse(r.message);             // "… Save and close the other Segmentation first."
+// … ctx.budget.release(segmentationId) when it's closed; wrap createAndCacheDerived* in isTooLargeError.
+```
 
 Rules:
 - Only `adapter/cornerstone/**` imports `@cornerstonejs/*`. The element loads it with a dynamic `import()`.

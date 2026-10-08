@@ -15,6 +15,6 @@ commands.register({
   available: (ctx) => ctx.layout.kind === "volume" && ctx.layout.orientations.length === 1,
   run(ctx) {
     if (ctx.layout.kind !== "volume") return;
-    ctx.setLayout({ kind: "volume", orientations: [cycleOrientation(ctx.layout.orientations[0])] });
+    ctx.setLayout({ ...ctx.layout, orientations: [cycleOrientation(ctx.layout.orientations[0])] });
   },
 });

@@ -2,12 +2,17 @@
 //   1×1: one orientation, V cycles it. 1×3: big view left, the other two stacked on the right;
 //   draggable split (25–85%, default 66%, remembered per browser); double-click swaps into the big view.
 
+import type { Decimation } from "./size-guard.ts";
+
 export type Orientation = "axial" | "sagittal" | "coronal";
 
 export const ORIENTATIONS: readonly Orientation[] = ["axial", "sagittal", "coronal"];
 
-/** What the viewport area shows: the acquired stack, or a volume in one or three views (slot 0 = big view). */
-export type ViewLayout = { kind: "stack" } | { kind: "volume"; orientations: Orientation[] };
+/**
+ * What the viewport area shows: the acquired stack, or a volume in one or three views (slot 0 = big view).
+ * `reduced` (#283): a decimated, view-only volume for a series too big for full-resolution 3D.
+ */
+export type ViewLayout = { kind: "stack" } | { kind: "volume"; orientations: Orientation[]; reduced?: Decimation };
 
 /** Crosshair line and view frame colour per orientation (CS3D crosshairs example colours). */
 export const ORIENTATION_COLOR: Record<Orientation, string> = {

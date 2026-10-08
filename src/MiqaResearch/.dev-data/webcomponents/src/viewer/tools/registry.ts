@@ -28,6 +28,8 @@ export interface ToolScope {
   canAnnotate: boolean;
   /** Views shown at once (1×1 = 1, three views = 3). Default 1. */
   views?: number;
+  /** Reduced 3D (#283): navigation tools only (no measurements, annotations, segmentation). */
+  viewOnly?: boolean;
 }
 
 export interface RailGroup {
@@ -66,7 +68,8 @@ export class ToolRegistry {
       (t) =>
         t.viewports.includes(scope.viewport) &&
         (scope.canAnnotate || !t.annotateOnly) &&
-        (t.minViews ?? 1) <= (scope.views ?? 1),
+        (t.minViews ?? 1) <= (scope.views ?? 1) &&
+        (!scope.viewOnly || t.group === "nav"),
     );
   }
 

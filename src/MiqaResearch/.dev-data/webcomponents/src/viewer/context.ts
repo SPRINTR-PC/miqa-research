@@ -4,6 +4,7 @@ import type { StackState, StackView, ViewControls, VolumeState } from "./adapter
 import type { ViewLayout } from "./layout.ts";
 import type { Reconstructability } from "./reconstructable.ts";
 import type { DicomJsonInstance } from "./series.ts";
+import type { GpuLimits, SizeGuard, VolumeFit } from "./size-guard.ts";
 import type { Preset, ViewportKind } from "./tools/index.ts";
 
 export interface ViewerContext {
@@ -31,4 +32,12 @@ export interface ViewerContext {
   mpr: Reconstructability | undefined;
   /** Switch layout (stack ↔ volume, orientations); ignored while a switch is running. */
   setLayout(layout: ViewLayout): void;
+  /** Size guard (#283): the 2.5 GiB budget ledger; fusion (#284) and labelmaps (#286) check/reserve/release here. */
+  budget: SizeGuard;
+  /** WebGL limits; undefined before load. */
+  gpu: GpuLimits | undefined;
+  /** Whether the series fits as a full-resolution volume; undefined before load or when not reconstructable. */
+  volumeFit: VolumeFit | undefined;
+  /** Show a refusal message (dismissible) over the view, e.g. an over-budget fusion or labelmap. */
+  refuse(message: string): void;
 }

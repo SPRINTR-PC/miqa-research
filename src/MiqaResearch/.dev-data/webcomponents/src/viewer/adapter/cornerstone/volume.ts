@@ -1,7 +1,8 @@
 // Volume views (#282): the series cached once as a streaming volume, shown in legacy ORTHOGRAPHIC
 // viewports (1 or 3) of one tool group holding every registered tool. Three views: CrosshairsTool
 // (viewports added before it is activated; line colours follow orientation) and a VOI synchronizer.
-// Fusion (#284) and the size guard (#283) build on this module.
+// Fusion (#284) builds on this module. Size guard (#283): `options.decimation` loads a reduced
+// (decimatedVolumeLoader) volume; CS3D cache errors while streaming are reported via `options.onTooLarge`.
 import {
   Enums,
   eventTarget,
@@ -14,7 +15,8 @@ import * as csTools from "@cornerstonejs/tools";
 
 import { ORIENTATION_COLOR, type Orientation } from "../../layout.ts";
 import { workstationBindings } from "../../tools/bindings.ts";
-import type { VoiRange, VolumeLoadStage, VolumeState, VolumeView } from "../adapter.ts";
+import { isTooLargeError, type Decimation } from "../../size-guard.ts";
+import type { VoiRange, VolumeLoadStage, VolumeOptions, VolumeState, VolumeView } from "../adapter.ts";
 import { addToolsToGroup, applyBindingPlan, registerCornerstoneTool } from "./tools.ts";
 
 export interface VolumeHandle extends VolumeView {
@@ -54,9 +56,12 @@ interface StreamingVolume {
   loadStatus?: { loaded: boolean };
 }
 
-/** Cache key of a series' volume: one streaming volume per series, shared by every view. */
-export function volumeIdFor(seriesUid: string): string {
-  return `cornerstoneStreamingImageVolume:${seriesUid}`;
+/**
+ * Cache key of a series' volume: one streaming volume per series, shared by every view; a reduced
+ * (decimated, #283) volume is its own cache entry.
+ */
+export function volumeIdFor(seriesUid: string, decimation?: Decimation): string {
+  return decimation ? `decimatedVolumeLoader:${seriesUid}:${decimation.join("-")}` : `cornerstoneStreamingImageVolume:${seriesUid}`;
 }
 
 export async function createVolumeView(
@@ -67,8 +72,9 @@ export async function createVolumeView(
   initial: Orientation[],
   onChange: () => void,
   onStage: (stage: VolumeLoadStage) => void,
+  { decimation, onTooLarge }: VolumeOptions = {},
 ): Promise<VolumeHandle> {
-  const volumeId = volumeIdFor(seriesUid);
+  const volumeId = volumeIdFor(seriesUid, decimation);
   const toolGroupId = `tg-vol-${engine.id}`;
   const synchronizerId = `voi-vol-${engine.id}`;
   const viewportId = (slot: number) => `vol-${engine.id}-${slot}`;
@@ -81,6 +87,17 @@ export async function createVolumeView(
   const onRetrievalStage = (e: Event) => {
     if ((e as CustomEvent<{ stageId: string }>).detail.stageId !== "initialImages") onStage("interleaved");
   };
+  // #283: the cache refusing a slice of this volume (CACHE_SIZE_EXCEEDED) while it streams.
+  const ownImages = new Set(imageIds);
+  let reported = false;
+  const onLoadError = (e: Event) => {
+    const { imageId, error } = (e as CustomEvent<{ imageId?: string; error?: unknown }>).detail ?? {};
+    if (reported || !isTooLargeError(error) || (imageId && !ownImages.has(imageId.split("#")[0]))) return;
+    reported = true;
+    onTooLarge?.();
+  };
+  const LOAD_ERRORS = [Enums.Events.IMAGE_LOAD_ERROR, Enums.Events.IMAGE_LOAD_FAILED];
+  LOAD_ERRORS.forEach((ev) => eventTarget.addEventListener(ev, onLoadError));
   const stopStageListeners = () => {
     eventTarget.removeEventListener(Enums.Events.IMAGE_RETRIEVAL_STAGE, onRetrievalStage);
     eventTarget.removeEventListener(Enums.Events.IMAGE_VOLUME_LOADING_COMPLETED, onLoaded);
@@ -94,7 +111,12 @@ export async function createVolumeView(
     if ((e as CustomEvent<{ volumeId: string }>).detail.volumeId === volumeId) loaded();
   };
 
-  const volume = (await volumeLoader.createAndCacheVolume(volumeId, { imageIds })) as unknown as StreamingVolume;
+  const volume = (await volumeLoader
+    .createAndCacheVolume(volumeId, { imageIds, ...(decimation ? { ijkDecimation: decimation } : {}) } as never)
+    .catch((e: unknown) => {
+      LOAD_ERRORS.forEach((ev) => eventTarget.removeEventListener(ev, onLoadError));
+      throw e;
+    })) as unknown as StreamingVolume;
   if (volume.loadStatus?.loaded) loaded();
   else {
     eventTarget.addEventListener(Enums.Events.IMAGE_RETRIEVAL_STAGE, onRetrievalStage);
@@ -204,6 +226,7 @@ export async function createVolumeView(
     },
     dispose() {
       stopStageListeners();
+      LOAD_ERRORS.forEach((ev) => eventTarget.removeEventListener(ev, onLoadError));
       teardown();
     },
   };

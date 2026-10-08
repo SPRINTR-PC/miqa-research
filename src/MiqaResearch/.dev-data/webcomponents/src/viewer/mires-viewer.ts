@@ -19,6 +19,7 @@ import type {
 } from "./adapter/adapter.ts";
 import { seriesList, seriesListItem, type SeriesListItem } from "./chrome/series-list.ts";
 import { toolRail } from "./chrome/tool-rail.ts";
+import { refusalMessage, sizeBanner, sizeBannerStyles } from "./chrome/size-banner.ts";
 import { volumeGrid, volumeGridStyles } from "./chrome/volume-grid.ts";
 import { commands } from "./commands.ts";
 import type { ViewerContext } from "./context.ts";
@@ -28,6 +29,18 @@ import { burnedInWarning } from "./calibration.ts";
 import { clampSplit, loadSplit, saveSplit, swapIntoMain, type ViewLayout } from "./layout.ts";
 import { isReconstructable, type Reconstructability } from "./reconstructable.ts";
 import { fetchSeries, type LoadedSeries } from "./series.ts";
+import {
+  SizeGuard,
+  TOO_LARGE_MESSAGE,
+  checkImageTexture,
+  fitVolume,
+  isTooLargeError,
+  seriesGrid,
+  volumeEntries,
+  type BudgetEntry,
+  type GpuLimits,
+  type VolumeFit,
+} from "./size-guard.ts";
 import { presets, presetVoi, tools, voiToWindow, type Preset, type ToolScope, type ViewportKind } from "./tools/index.ts";
 import { CROSSHAIRS } from "./tools/volume.ts";
 import { unitTooltip } from "./units.ts";
@@ -68,6 +81,13 @@ export class MiresViewer extends LitElement {
   /** A layout switch is running (views being closed/opened); further switches are ignored. */
   @state() layoutBusy = false;
 
+  /** Size guard (#283): the budget ledger, shared with fusion (#284) and segmentation (#286) via the context. */
+  readonly budget = new SizeGuard();
+  @state() private gpu: GpuLimits | undefined;
+  /** Whether the series fits as a full-resolution volume; drives the banner and the layout panel. */
+  @state() private volumeFit: VolumeFit | undefined;
+  @state() private refusal = "";
+
   private adapter: ViewerAdapter | undefined;
   private view: StackView | undefined;
   private volumeView: VolumeView | undefined;
@@ -78,7 +98,7 @@ export class MiresViewer extends LitElement {
   /** First-render marks + beacon (#293); volume views mark "interleaved" / "volume-loaded" on it. */
   firstRender: FirstRenderReport | undefined;
 
-  static styles = [volumeGridStyles, css`
+  static styles = [volumeGridStyles, sizeBannerStyles, css`
     :host { display: block; position: relative; background: #0b0d10; color: #d8dde3; font: 13px system-ui, sans-serif; outline: none; }
     .chrome { position: absolute; inset: 0; display: grid; grid-template-columns: 180px 56px minmax(0, 1fr) 250px; }
     button { font: inherit; color: inherit; background: #1b2027; border: 1px solid #2b323c; border-radius: 4px; padding: 4px 8px; cursor: pointer; }
@@ -172,6 +192,13 @@ export class MiresViewer extends LitElement {
       if (this.disposed) return this.adapter.destroy();
       const wsi = isWholeSlide(series);
       if (wsi) this.viewportKind = "wsi";
+      // Size guard (#283): 2D images must fit one texture (WSI is tiled); 3D is checked against the budget.
+      this.gpu = this.adapter.gpuLimits();
+      if (!wsi) {
+        const texture = checkImageTexture(series, this.gpu);
+        if (!texture.ok) throw new Error(texture.message);
+      }
+      this.volumeFit = this.fitVolume();
       await this.openStackView(this.adapter, series);
       this.view!.setTool(wsi ? WSI_DEFAULT_TOOL : DEFAULT_TOOL);
       this.stack = this.view!.state();
@@ -185,7 +212,7 @@ export class MiresViewer extends LitElement {
   }
 
   private fail(e: unknown): void {
-    this.error = e instanceof Error ? e.message : String(e);
+    this.error = isTooLargeError(e) ? TOO_LARGE_MESSAGE : e instanceof Error ? e.message : String(e);
     this.state = "error";
   }
 
@@ -193,6 +220,45 @@ export class MiresViewer extends LitElement {
     const viewport = this.renderRoot.querySelector<HTMLDivElement>(".viewport")!;
     const onChange = () => (this.stack = this.view?.state());
     this.view = await (isWholeSlide(series) ? adapter.openWsi(viewport, series, onChange) : adapter.openStack(viewport, series, onChange));
+  }
+
+  /** Show a refusal message over the view (#283: over-budget fusion #284 / labelmap #286, cache errors). */
+  refuse(message: string): void {
+    this.refusal = message;
+  }
+
+  /** Size guard (#283): does the series fit as a full-resolution volume now? Undefined unless reconstructable. */
+  private fitVolume(): VolumeFit | undefined {
+    const grid = this.loaded && seriesGrid(this.loaded);
+    if (!this.mpr?.ok || !grid || !this.gpu || this.viewportKind === "wsi") return undefined;
+    return fitVolume(grid, this.seriesUid, this.gpu, this.budget.open(), { annotate: this.canAnnotate });
+  }
+
+  /**
+   * Budget entries for opening `next` (#283), reserved in the guard; undefined (with a refusal shown)
+   * when it doesn't fit. Re-checked on every add: the series' own earlier volume entries (same ids) are replaced.
+   */
+  private reserveVolume(next: Extract<ViewLayout, { kind: "volume" }>): BudgetEntry[] | undefined {
+    const fit = (this.volumeFit = this.fitVolume());
+    if (!fit) return undefined;
+    let entries: BudgetEntry[];
+    if (next.reduced) entries = volumeEntries(this.seriesUid, seriesGrid(this.loaded!)!, false, next.reduced);
+    else if (fit.ok) entries = fit.entries;
+    else {
+      this.refusal = fit.message;
+      return undefined;
+    }
+    const check = this.budget.reserve(entries);
+    if (check.ok) return entries;
+    this.refusal = fit.ok ? "Too large for 3D: the budget is full." : fit.message;
+    return undefined;
+  }
+
+  /** CS3D's cache refused the volume (#283): free its budget entries, say so, back to the stack. */
+  private tooLarge(entries: BudgetEntry[]): void {
+    entries.forEach((e) => this.budget.release(e.id));
+    this.refusal = TOO_LARGE_MESSAGE;
+    void this.setLayout({ kind: "stack" });
   }
 
   /**
@@ -205,10 +271,15 @@ export class MiresViewer extends LitElement {
     if (next.kind === "volume" && (!this.mpr?.ok || this.viewportKind === "wsi")) return;
     const previous = this.layout;
     const previousTool = this.context().activeTool;
+    const sameVolume = next.kind === "volume" && previous.kind === "volume" && String(next.reduced) === String(previous.reduced);
+    const opensVolume = next.kind === "volume" && !(sameVolume && this.volumeView);
+    const entries = opensVolume ? this.reserveVolume(next) : [];
+    if (!entries) return;
     this.layoutBusy = true;
+    let tooLarge = false;
     try {
       this.layout = next;
-      if (next.kind === "volume" && this.volumeView) {
+      if (next.kind === "volume" && sameVolume && this.volumeView) {
         await this.updateComplete;
         await this.volumeView.setOrientations(next.orientations);
       } else {
@@ -227,6 +298,7 @@ export class MiresViewer extends LitElement {
             next.orientations,
             () => (this.volume = this.volumeView?.state()),
             (stage) => this.firstRender?.mark(stage),
+            { decimation: next.reduced, onTooLarge: () => this.tooLarge(entries) },
           );
         }
         if (this.disposed) return;
@@ -235,10 +307,12 @@ export class MiresViewer extends LitElement {
       this.stack = this.view?.state();
       this.volume = this.volumeView?.state();
     } catch (e) {
-      this.fail(e);
+      if (next.kind === "volume" && isTooLargeError(e)) tooLarge = true;
+      else this.fail(e);
     } finally {
       this.layoutBusy = false;
     }
+    if (tooLarge) this.tooLarge(entries);
   }
 
   /** Crosshairs when entering three views; else keep the tool if the new layout offers it. */
@@ -250,7 +324,8 @@ export class MiresViewer extends LitElement {
 
   private toolScope(): ToolScope {
     const views = this.layout.kind === "volume" ? this.layout.orientations.length : 1;
-    return { viewport: this.viewportKind, canAnnotate: this.canAnnotate, views };
+    const viewOnly = this.layout.kind === "volume" && !!this.layout.reduced;
+    return { viewport: this.viewportKind, canAnnotate: this.canAnnotate, views, viewOnly };
   }
 
   /** Drag the divider between the big view and the two small ones (25–85%, remembered). */
@@ -278,7 +353,7 @@ export class MiresViewer extends LitElement {
 
   private swapIntoMain(slot: number): void {
     if (this.layout.kind !== "volume") return;
-    void this.setLayout({ kind: "volume", orientations: swapIntoMain(this.layout.orientations, slot) });
+    void this.setLayout({ ...this.layout, orientations: swapIntoMain(this.layout.orientations, slot) });
   }
 
   /** What inspector panels and commands see; see context.ts. */
@@ -298,6 +373,10 @@ export class MiresViewer extends LitElement {
       volume: this.volume,
       mpr: this.mpr,
       setLayout: (layout) => void this.setLayout(layout),
+      budget: this.budget,
+      gpu: this.gpu,
+      volumeFit: this.volumeFit,
+      refuse: (message) => this.refuse(message),
     };
   }
 
@@ -366,7 +445,8 @@ export class MiresViewer extends LitElement {
       ${seriesList(this.series)}
       ${toolRail(rail, ctx.activeTool, ctx.selectTool)}
       <div class="stage" @pointerdown=${() => this.focus()} @contextmenu=${(e: Event) => e.preventDefault()}>
-        ${views} ${this.burnedIn(ctx)}
+        ${views} ${this.burnedIn(ctx)} ${sizeBanner(this.volumeFit, this.layout)}
+        ${refusalMessage(this.refusal, () => (this.refusal = ""))}
         ${this.error ? html`<div role="alert">${this.error}</div>` : nothing}
       </div>
       <aside class="inspector" aria-label="Inspector">${inspector.panels().map((p) => p.render(ctx))}</aside>
