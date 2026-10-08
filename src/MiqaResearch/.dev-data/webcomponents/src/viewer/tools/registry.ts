@@ -19,11 +19,15 @@ export interface ToolDef {
   viewports: readonly ViewportKind[];
   /** Only for annotate roles (Annotator, PI, Site PI, Admin). */
   annotateOnly?: boolean;
+  /** Needs at least this many views shown at once (Crosshairs: 3, #282). Default 1. */
+  minViews?: number;
 }
 
 export interface ToolScope {
   viewport: ViewportKind;
   canAnnotate: boolean;
+  /** Views shown at once (1×1 = 1, three views = 3). Default 1. */
+  views?: number;
 }
 
 export interface RailGroup {
@@ -58,7 +62,12 @@ export class ToolRegistry {
   }
 
   available(scope: ToolScope): ToolDef[] {
-    return this.tools.filter((t) => t.viewports.includes(scope.viewport) && (scope.canAnnotate || !t.annotateOnly));
+    return this.tools.filter(
+      (t) =>
+        t.viewports.includes(scope.viewport) &&
+        (scope.canAnnotate || !t.annotateOnly) &&
+        (t.minViews ?? 1) <= (scope.views ?? 1),
+    );
   }
 
   rail(scope: ToolScope): RailGroup[] {
