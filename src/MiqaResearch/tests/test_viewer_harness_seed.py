@@ -2,10 +2,13 @@
 
 Seam: the command's JSON output, used the way the harness uses it (session cookie → WADO).
 """
+import importlib
 import io
 import json
+import sys
 
 import pytest
+from django.core.exceptions import ImproperlyConfigured
 from django.core.management import CommandError, call_command
 
 
@@ -30,6 +33,19 @@ def test_seed_refuses_to_run_without_debug(settings):
 
     with pytest.raises(CommandError):
         _seed()
+
+
+@pytest.mark.parametrize("env", [{}, {"MIRES_VIEWER_HARNESS": "1", "MIRES_USE_VAULT": "True"}])
+def test_harness_settings_refuse_to_load_outside_the_harness(monkeypatch, env):
+    """Its demo keys and DEBUG must never reach a deployment (#271 review)."""
+    monkeypatch.delenv("MIRES_VIEWER_HARNESS", raising=False)
+    monkeypatch.delenv("MIRES_USE_VAULT", raising=False)
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.delitem(sys.modules, "MiqaResearch.settings_viewer_harness", raising=False)
+
+    with pytest.raises(ImproperlyConfigured):
+        importlib.import_module("MiqaResearch.settings_viewer_harness")
 
 
 @pytest.mark.django_db

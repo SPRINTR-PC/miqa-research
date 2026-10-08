@@ -26,6 +26,7 @@ export function harnessEnv(): Record<string, string> {
   return {
     // DEBUG on + demo encryption keys (no Vault needed); see that module's docstring.
     DJANGO_SETTINGS_MODULE: "MiqaResearch.settings_viewer_harness",
+    MIRES_VIEWER_HARNESS: "1", // the settings module refuses to load without it
     MIRES_USE_VAULT: "False",
     MIRES_DEBUG: "True",
     MIRES_DATABASE_URL: harnessDatabaseUrl(),
