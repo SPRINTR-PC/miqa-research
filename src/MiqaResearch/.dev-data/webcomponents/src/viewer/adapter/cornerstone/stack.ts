@@ -3,12 +3,15 @@
 import { Enums, eventTarget, type RenderingEngine, type Types } from "@cornerstonejs/core";
 import * as csTools from "@cornerstonejs/tools";
 
-import { workstationBindings } from "../../tools/bindings.ts";
+import { segmentBindings } from "../../tools/segmentation.ts";
 import type { StackState, StackView, VoiRange } from "../adapter.ts";
 import { isCalibrationLine, watchCalibration } from "./calibration.ts";
+import { isSegmentationHelper, type ShownViewports } from "./segmentation.ts";
 import { addToolsToGroup, applyBindingPlan } from "./tools.ts";
 
 export interface StackHandle extends StackView {
+  /** Viewports shown, for the Segmentation (#286). */
+  shownViewports(): ShownViewports;
   dispose(): void;
 }
 
@@ -39,7 +42,7 @@ export async function createStackView(
   addToolsToGroup(toolGroup);
   let activeTool = "";
   const setTool = (toolId: string) => {
-    applyBindingPlan(toolGroup, workstationBindings({ primary: toolId, viewport: "stack" }));
+    applyBindingPlan(toolGroup, segmentBindings({ primary: toolId, viewport: "stack" }));
     activeTool = toolId;
     onChange();
   };
@@ -55,7 +58,7 @@ export async function createStackView(
   const annotationCount = () =>
     csTools.annotation.state
       .getAllAnnotations()
-      .filter((a) => ownImages.has(a.metadata?.referencedImageId ?? "") && !isCalibrationLine(a)).length;
+      .filter((a) => ownImages.has(a.metadata?.referencedImageId ?? "") && !isCalibrationLine(a) && !isSegmentationHelper(a)).length;
   const unit = () => {
     // Same image data the measurement tools use (hasPixelSpacing + calibration).
     const imageData = viewport.getImageData();
@@ -83,6 +86,7 @@ export async function createStackView(
       void viewport.setImageIdIndex(imageIndex);
     },
     setTool,
+    shownViewports: () => ({ kind: "stack", viewportIds: [viewportId] }),
     calibrate(knownLengthMm: number) {
       calibration.calibrate(knownLengthMm);
       // Done calibrating: measure with the new spacing.

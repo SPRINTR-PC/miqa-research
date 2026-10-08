@@ -9,6 +9,7 @@
 import type { BulkAnnotationGroup } from "../bulk-annotations.ts";
 import type { Orientation } from "../layout.ts";
 import type { DicomJsonInstance, LoadedSeries } from "../series.ts";
+import type { Rgb, SegmentationState, ValueRange } from "../segmentation.ts";
 import type { Decimation, GpuLimits } from "../size-guard.ts";
 
 /** Window as a value range in modality units (e.g. HU after rescale). */
@@ -122,6 +123,43 @@ export interface VolumeOptions {
   onTooLarge?: () => void;
 }
 
+/** Options of `SegmentationView.threshold`. */
+export interface ThresholdOptions {
+  /** Also fill this many slices before and after the rectangle's (0 = its slice only). */
+  slices: number;
+  /**
+   * Series whose values are thresholded on a volume: the selected layer (#284); default the base
+   * series. A stack thresholds its own images.
+   */
+  sourceSeriesUid?: string;
+}
+
+/**
+ * A Segmentation (#286): one labelmap on the base series' grid (one labelmap image per image),
+ * shown in whichever stack or volume view is open. Segment tools paint its active segment.
+ */
+export interface SegmentationView {
+  /** CS3D segmentation id, also its size-guard budget entry id. */
+  readonly id: string;
+  state(): SegmentationState;
+  /** Show the labelmap in `view` and make it the active one there; call after every open or re-layout. */
+  show(view: ViewControls): Promise<void>;
+  addSegment(): void;
+  renameSegment(index: number, label: string): void;
+  setSegmentColor(index: number, color: Rgb): void;
+  setActiveSegment(index: number): void;
+  setBrushSize(size: number): void;
+  /**
+   * Fill the active segment where the values are within `range`, inside the drawn Rectangle ROI
+   * threshold rectangles, which are then removed. Returns the voxels newly in the segment.
+   */
+  threshold(range: ValueRange, options: ThresholdOptions): number;
+  /** Labelled voxels per segment index (painted ones only). */
+  voxelCounts(): Record<number, number>;
+  /** Drop the labelmap and its cached images. */
+  close(): void;
+}
+
 export interface ViewerAdapter {
   /** WebGL2 MAX_3D_TEXTURE_SIZE / MAX_TEXTURE_SIZE, for the size guard (#283). */
   gpuLimits(): GpuLimits;
@@ -148,6 +186,11 @@ export interface ViewerAdapter {
     onStage: (stage: VolumeLoadStage) => void,
     options?: VolumeOptions,
   ): Promise<VolumeView>;
+  /**
+   * Create a Segmentation on `series`' grid (#286), "Segment 1" active. Check the size guard first;
+   * CS3D cache errors are thrown (`isTooLargeError`). `onChange` fires after every change of its state or voxels.
+   */
+  openSegmentation(series: LoadedSeries, id: string, onChange: () => void): Promise<SegmentationView>;
   /** Release one view opened by this adapter (its viewports and tool group); cached images stay. */
   close(view: ViewControls): void;
   /** Call after the host element changed size; CS3D doesn't observe it. */

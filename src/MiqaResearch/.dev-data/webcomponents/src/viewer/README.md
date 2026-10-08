@@ -40,7 +40,11 @@ One file per concern, so parallel tickets touch different files.
 | `adapter/cornerstone/wsi.ts` | WHOLE_SLIDE (`MiresWSIViewport` subclass with the dmv tile cache), dmv `peerImport`, head-CSS mirroring. | #285 |
 | `bulk-annotations.ts` | Bulk ANN pure parts: find the slide's ANN (object list `?participant=&series=` → `/metadata`, coordinates inline), read its groups. Needs the `participant` attribute. | #292 |
 | `adapter/cornerstone/bulk-annotations.ts` | ANN through dmv's annotation-group layer, read-only, show/hide per group (`inspector/bulk-annotations.ts`). | #292 |
-| `adapter/cornerstone/segmentation.ts` | Labelmaps, segment tools, threshold. | #286 (new) |
+| `segmentation.ts` | Segment list (add, rename, colour, active), stack threshold fill, polygon rasterising, threshold defaults. Pure. | #286 |
+| `segmentation-controller.ts` | The element's one Segmentation: made on first segment tool (size guard), shown in every view, closed with the element. | #286 |
+| `tools/segmentation.ts` | Segment tools (keys g d k q j y m), erase twins, `segmentBindings` (workstation mouse + erase twin on right-drag). | #286 |
+| `inspector/segments.ts` | Segments panel: list, brush size, threshold form. | #286 |
+| `adapter/cornerstone/segmentation.ts` | Labelmap (derived images per base image; volumes get an image-backed labelmap volume), segment tools, threshold, polygon fill. | #286 |
 | `inspector/*.ts` | Side-panel parts, one Lit element or template per panel (calibration legend, layers, segments, save…). | #281, #284, #286, #289+ (new) |
 | `*.test.ts` next to the file | vitest, stub adapter, no CS3D. | all |
 
@@ -60,12 +64,13 @@ import line each. Registries throw on duplicate ids/keys, so clashes fail in vit
      annotations drawn and editable when the tool is not on a button. Import the module from
      `adapter/cornerstone/index.ts`. Every stack/volume tool group gets all registered tools.
   - `minViews` hides a tool unless that many views are shown (Crosshairs: 3); the element passes `views` in the scope.
-  - Keys taken: w p z s l a b o r e f t c (Calibrate, #281) x (Crosshairs, `tools/volume.ts`); reserved for later tickets:
-    g d k q j y m (segment tools); never a tool key: 0–9 (presets), i, v, Esc (`RESERVED_KEYS`).
+  - Keys taken: w p z s l a b o r e f t c (Calibrate, #281) x (Crosshairs, `tools/volume.ts`)
+    g d k q j y m (segment tools, `tools/segmentation.ts`); never a tool key: 0–9 (presets), i, v, Esc (`RESERVED_KEYS`).
 - **Mouse:** `workstationBindings({ primary, viewport, secondary })` (tools/bindings.ts) is the single
   source of the workstation mouse; views apply it with `applyBindingPlan` (disable-then-activate,
   because CS3D's `setToolActive` merges bindings). WSI (#285): `viewport: "wsi"` (wheel = zoom).
-  Segment tools (#286): pass their erase twin as `secondary` (right-drag erases).
+  Segment tools (#286): stack and volume views apply `segmentBindings` (tools/segmentation.ts), which passes
+  the tool's erase twin as `secondary` (right-drag erases with the same shape; Eraser and threshold keep W/L).
 - **An inspector panel** (e.g. calibration legend #281, layout #282, layers #284, segments #286,
   save #289): `inspector/<panel>.ts` with `inspector.register({ id, order, render(ctx) })`, import it
   in `inspector/index.ts`. `render` gets the `ViewerContext` and returns a Lit template or `nothing`.
@@ -123,6 +128,26 @@ const r = ctx.budget.reserveLabelmap(baseUid, segmentationId, labelmapBytes(grid
 if (!r.ok) return ctx.refuse(r.message);             // "… Save and close the other Segmentation first."
 // … ctx.budget.release(segmentationId) when it's closed; wrap createAndCacheDerived* in isTooLargeError.
 ```
+
+## Segmentation (#286)
+
+- **One Segmentation per element**, on the base series' grid: `adapter.openSegmentation(series, id)` makes one
+  Uint8 labelmap image per base image (`createAndCacheDerivedLabelmapImages`), segmentation id = budget id
+  `seg:<seriesUid>`. A stack shows the images; volume views get an image-backed labelmap volume over the
+  same images, so painting in either shows in both and the labelmap survives layout switches.
+- **Made** on the first segment tool (rail or key) or "New segmentation" in the panel, after
+  `ctx.budget.reserveLabelmap`; refused → `ctx.refuse(message)` and the tool stays. CS3D cache errors → "too large".
+  Shown in each view after every open / re-layout (`SegmentationView.show`), not in reduced 3D.
+- **Tools:** Brush, Eraser (Brush with `ERASE_INSIDE_CIRCLE`), Rectangle/Circle/Sphere scissors (+ `…Erase`
+  twins), polygon (linear `SplineROI` instances `PolygonSeg`/`PolygonSegErase`, rasterised on completion; on a
+  volume only in axis-aligned planes), Rectangle ROI threshold (passive rectangles, consumed by Run).
+- **Threshold:** volumes use CS3D's `rectangleROIThresholdVolumeByRange` on `ctx.thresholdLayer` (the base
+  series now; **#284** sets it to the selected layer: its `volumeIdFor(seriesUid)` volume is read). Stacks use
+  our own fill (`thresholdPixels`), in modality units.
+- **Save (#289):** `ctx.segmentationView`: CS3D segmentation `id` (labelmap image ids via
+  `segmentation.state.getSegmentation(id)`), segment labels synced into CS3D's `segments`, colours in
+  `state().segments`; `voxelCounts()` tells which segments are non-empty.
+- Browser tests read `el.segmentationState` (state + `voxels` per segment).
 
 Rules:
 - Only `adapter/cornerstone/**` imports `@cornerstonejs/*`. The element loads it with a dynamic `import()`.
