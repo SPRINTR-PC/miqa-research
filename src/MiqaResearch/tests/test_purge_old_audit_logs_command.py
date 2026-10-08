@@ -40,3 +40,20 @@ def test_data_access_events_are_kept_on_their_own_longer_retention(settings):
     assert AuditLog.objects.filter(pk=aged_access.pk).exists()
     assert not AuditLog.objects.filter(pk=expired_access.pk).exists()
     assert not AuditLog.objects.filter(pk=aged_login.pk).exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("event_type", [
+    "annotation_created", "annotation_superseded", "annotation_retired",
+    "segmentation_created", "segmentation_superseded", "segmentation_retired",
+])
+def test_annotation_and_segmentation_events_are_data_access_events(settings, event_type):
+    """#287: create, supersede and retire of Annotations/Segmentations are data-access events (ADR 0024)."""
+    settings.AUDIT_LOG_RETENTION_DAYS = 90
+    settings.DATA_ACCESS_AUDIT_RETENTION_DAYS = 3650
+    entry = AuditLog.objects.record(event_type)
+    AuditLog.objects.filter(pk=entry.pk).update(logtime=timezone.now() - datetime.timedelta(days=91))
+
+    call_command("purge_old_audit_logs")
+
+    assert AuditLog.objects.filter(pk=entry.pk).exists()
