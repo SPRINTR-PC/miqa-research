@@ -43,14 +43,15 @@ afterEach(() => {
 });
 
 describe("tool rail", () => {
-  it("groups the stack tools under Nav, Measure and Annot. for an annotate role", async () => {
+  it("groups the stack tools under Nav, Measure, Annot. and Segment for an annotate role", async () => {
     const { el } = await mount({ canAnnotate: true });
 
-    expect($$(el, ".rail h6").map((h) => h.textContent)).toEqual(["Nav", "Measure", "Annot."]);
+    expect($$(el, ".rail h6").map((h) => h.textContent)).toEqual(["Nav", "Measure", "Annot.", "Segment"]);
     expect(railTools(el)).toEqual([
       "WindowLevel", "Pan", "Zoom", "StackScroll",
       "Length", "Angle", "Bidirectional", "Probe", "RectangleROI", "EllipticalROI", "PlanarFreehandROI", "Calibrate",
       "ArrowAnnotate",
+      "Brush", "Eraser", "PolygonSeg", "RectangleScissor", "CircleScissor", "SphereScissor", "RectangleROIThreshold",
     ]);
   });
 

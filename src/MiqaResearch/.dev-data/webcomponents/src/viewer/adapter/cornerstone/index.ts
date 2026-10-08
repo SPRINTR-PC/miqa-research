@@ -6,6 +6,7 @@ import type { Orientation } from "../../layout.ts";
 import type { LoadedSeries } from "../../series.ts";
 import type { GpuLimits } from "../../size-guard.ts";
 import type {
+  SegmentationView,
   StackView,
   ViewControls,
   ViewerAdapter,
@@ -18,13 +19,14 @@ import { gpuLimits } from "./gpu.ts";
 import "./calibration.ts";
 import { initCornerstone } from "./init.ts";
 import { registerSeriesMetadata } from "./metadata.ts";
+import { createSegmentation, type ShownViewports } from "./segmentation.ts";
 import { createStackView } from "./stack.ts";
 import { createVolumeView } from "./volume.ts";
 import { createWsiView } from "./wsi.ts";
 
 let engineCount = 0;
 
-type Handle = ViewControls & { dispose(): void };
+type Handle = ViewControls & { dispose(): void; shownViewports?(): ShownViewports };
 
 class CornerstoneAdapter implements ViewerAdapter {
   private readonly engine = new RenderingEngine(`mires-viewer-${++engineCount}`);
@@ -62,6 +64,11 @@ class CornerstoneAdapter implements ViewerAdapter {
     const view = await createVolumeView(this.engine, slots, imageIds, series.ref.seriesUid, orientations, onChange, onStage, options);
     this.views.push(view);
     return view;
+  }
+
+  async openSegmentation(series: LoadedSeries, id: string, onChange: () => void): Promise<SegmentationView> {
+    const viewportsOf = (view: ViewControls) => (this.views.includes(view as Handle) ? (view as Handle).shownViewports?.() : undefined);
+    return createSegmentation(this.engine, registerSeriesMetadata(series), series, id, onChange, viewportsOf);
   }
 
   close(view: ViewControls): void {

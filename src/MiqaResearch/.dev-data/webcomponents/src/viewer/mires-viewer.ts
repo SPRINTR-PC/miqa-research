@@ -45,6 +45,9 @@ import {
 } from "./size-guard.ts";
 import { presets, presetVoi, tools, voiToWindow, type Preset, type ToolScope, type ViewportKind } from "./tools/index.ts";
 import { CROSSHAIRS } from "./tools/volume.ts";
+import { isSegmentTool } from "./tools/segmentation.ts";
+import { SegmentationController } from "./segmentation-controller.ts";
+import type { SegmentationState } from "./segmentation.ts";
 import { unitTooltip } from "./units.ts";
 import { isWholeSlide, WSI_DEFAULT_TOOL } from "./wsi.ts";
 
@@ -89,6 +92,14 @@ export class MiresViewer extends LitElement {
 
   /** Size guard (#283): the budget ledger, shared with fusion (#284) and segmentation (#286) via the context. */
   readonly budget = new SizeGuard();
+  /** Segmentation (#286): one labelmap on the base series, made on first use of a segment tool. */
+  private readonly segmentation = new SegmentationController({
+    adapter: () => this.adapter,
+    series: () => this.loaded,
+    budget: this.budget,
+    refuse: (message) => this.refuse(message),
+    changed: () => this.requestUpdate(),
+  });
   @state() private gpu: GpuLimits | undefined;
   /** Whether the series fits as a full-resolution volume; drives the banner and the layout panel. */
   @state() private volumeFit: VolumeFit | undefined;
@@ -155,6 +166,22 @@ export class MiresViewer extends LitElement {
   }
 
   /** Current volume state (#282), for browser tests and diagnostics. */
+  get segmentationState(): (SegmentationState & { voxels: Record<number, number> }) | undefined {
+    const view = this.segmentation.view;
+    return view && { ...view.state(), voxels: view.voxelCounts() };
+  }
+
+  /** A labelmap is being made (#286). */
+  get segmentationBusy(): boolean {
+    return this.segmentation.busy;
+  }
+
+  /** Select a tool; a segment tool first makes the Segmentation (size guard) and stays off if refused. */
+  private async selectTool(id: string): Promise<void> {
+    if (isSegmentTool(id) && !(await this.segmentation.ensure(this.controls))) return;
+    this.controls?.setTool(id);
+  }
+
   get volumeState(): VolumeState | undefined {
     return this.volumeView?.state();
   }
@@ -177,6 +204,7 @@ export class MiresViewer extends LitElement {
     this.removeEventListener("keydown", this.onKey);
     this.resizeObserver?.disconnect();
     this.firstRender?.dispose();
+    this.segmentation.close();
     this.adapter?.destroy();
     this.adapter = undefined;
     this.view = undefined;
@@ -329,6 +357,8 @@ export class MiresViewer extends LitElement {
         }
         if (this.disposed) return;
       }
+      // The labelmap is on the full-resolution grid: not shown in reduced 3D (segment tools are off there).
+      if (!(next.kind === "volume" && next.reduced)) await this.segmentation.show(this.controls);
       this.controls?.setTool(this.toolAfterSwitch(previous, previousTool));
       this.stack = this.view?.state();
       this.volume = this.volumeView?.state();
@@ -393,7 +423,7 @@ export class MiresViewer extends LitElement {
       stack: this.stack,
       stackView: this.view,
       image: this.loaded?.images[this.stack?.imageIndex ?? 0]?.instance,
-      selectTool: (id) => this.controls?.setTool(id),
+      selectTool: (id) => void this.selectTool(id),
       applyPreset: (p) => this.applyPreset(p),
       layout: this.layout,
       volume: this.volume,
@@ -405,6 +435,13 @@ export class MiresViewer extends LitElement {
       gpu: this.gpu,
       volumeFit: this.volumeFit,
       refuse: (message) => this.refuse(message),
+      segmentation: this.segmentation.view?.state(),
+      segmentationView: this.segmentation.view,
+      ensureSegmentation: () => this.segmentation.ensure(this.controls),
+      // #284: the selected layer.
+      thresholdLayer: { seriesUid: this.seriesUid, modality: this.series[0]?.modality ?? "" },
+      runThreshold: (range, slices) => this.segmentation.runThreshold(range, slices, this.seriesUid),
+      thresholdResult: this.segmentation.thresholdResult,
     };
   }
 

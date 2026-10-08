@@ -1,6 +1,7 @@
 // What the chrome extensions (inspector panels, commands) see of the viewer: state + actions.
 // Built fresh by <mires-viewer> on every render; add fields additively.
-import type { StackState, StackView, ViewControls, VolumeState } from "./adapter/adapter.ts";
+import type { SegmentationView, StackState, StackView, ViewControls, VolumeState } from "./adapter/adapter.ts";
+import type { SegmentationState, ValueRange } from "./segmentation.ts";
 import type { ViewLayout } from "./layout.ts";
 import type { Reconstructability } from "./reconstructable.ts";
 import type { DicomJsonInstance } from "./series.ts";
@@ -44,4 +45,14 @@ export interface ViewerContext {
   volumeFit: VolumeFit | undefined;
   /** Show a refusal message (dismissible) over the view, e.g. an over-budget fusion or labelmap. */
   refuse(message: string): void;
+  /** Segmentation (#286) on the base series; undefined until a segment tool or "New segmentation" makes it. */
+  segmentation: SegmentationState | undefined;
+  segmentationView: SegmentationView | undefined;
+  /** Make the Segmentation if there is none (size guard first); undefined, with a refusal shown, when it doesn't fit. */
+  ensureSegmentation(): Promise<SegmentationView | undefined>;
+  /** The layer threshold runs on: the base series (#284 makes it the selected layer). */
+  thresholdLayer: { seriesUid: string; modality: string };
+  /** Run the threshold on `thresholdLayer`; the voxels set end up in `thresholdResult`. */
+  runThreshold(range: ValueRange, slices: number): void;
+  thresholdResult: number | undefined;
 }

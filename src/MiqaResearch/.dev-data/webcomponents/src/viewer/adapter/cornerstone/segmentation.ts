@@ -1,0 +1,268 @@
+// Segmentation (#286), CS3D side: the segment tools (and their erase twins) and the labelmap.
+// The labelmap is one derived Uint8 image per base image (`createAndCacheDerivedLabelmapImages`), so a
+// stack shows it directly and a volume view gets an image-backed labelmap volume over the same images
+// (CS3D creates it on demand): painting in either shows in both. Threshold: CS3D's
+// `rectangleROIThresholdVolumeByRange` on volumes (any layer's volume); on a stack our own fill
+// (../../segmentation.ts), since the helper is volume-only. Polygon: a linear SplineROI rasterised into
+// the labelmap when closed.
+import { cache, eventTarget, imageLoader, utilities, type RenderingEngine, type Types } from "@cornerstonejs/core";
+import * as csTools from "@cornerstonejs/tools";
+
+import {
+  DEFAULT_BRUSH_SIZE,
+  SegmentList,
+  polygonPixels,
+  thresholdPixels,
+  type Rgb,
+  type SegmentationState,
+  type ValueRange,
+} from "../../segmentation.ts";
+import type { LoadedSeries } from "../../series.ts";
+import { ERASER, POLYGON, POLYGON_ERASE, THRESHOLD } from "../../tools/segmentation.ts";
+import type { SegmentationView, ThresholdOptions, ViewControls } from "../adapter.ts";
+import { registerCornerstoneTool } from "./tools.ts";
+import { volumeIdFor } from "./volume.ts";
+
+const T = csTools;
+const S = csTools.segmentation;
+const LABELMAP = T.Enums.SegmentationRepresentations.Labelmap;
+
+// Tools. Scissors and the brush paint the active segment; their erase twins (right-drag) erase.
+registerCornerstoneTool(T.BrushTool);
+registerCornerstoneTool(T.BrushTool, { id: ERASER, configuration: { activeStrategy: "ERASE_INSIDE_CIRCLE" } });
+for (const tool of [T.RectangleScissorsTool, T.CircleScissorsTool, T.SphereScissorsTool]) {
+  registerCornerstoneTool(tool);
+  registerCornerstoneTool(tool, { id: `${tool.toolName}Erase`, configuration: { activeStrategy: "ERASE_INSIDE" } });
+}
+// Rectangles stay drawn (passive) until the threshold runs.
+registerCornerstoneTool(T.RectangleROIThresholdTool, { passive: true });
+const polygon = { calculateStats: false, spline: { type: "LINEAR", drawPreviewEnabled: true } };
+registerCornerstoneTool(T.SplineROITool, { id: POLYGON, configuration: polygon });
+registerCornerstoneTool(T.SplineROITool, { id: POLYGON_ERASE, configuration: polygon });
+
+/** Helper annotations of the segment tools: not measurements (stack annotationCount, Save #289). */
+export function isSegmentationHelper(annotation: csTools.Types.Annotation): boolean {
+  const tool = annotation.metadata?.toolName;
+  return tool === THRESHOLD || tool === POLYGON || tool === POLYGON_ERASE;
+}
+
+/** Viewports a view shows, and whether they are a stack (own threshold fill) or volume views. */
+export interface ShownViewports {
+  kind: "stack" | "volume";
+  viewportIds: string[];
+}
+
+type Point = Types.Point3;
+
+export function createSegmentation(
+  engine: RenderingEngine,
+  imageIds: string[],
+  series: LoadedSeries,
+  id: string,
+  onChange: () => void,
+  viewportsOf: (view: ViewControls) => ShownViewports | undefined,
+): SegmentationView {
+  // Throws CS3D's cache error when the labelmap doesn't fit (the element shows "too large").
+  const labelmapIds = imageLoader.createAndCacheDerivedLabelmapImages(imageIds).map((image) => image.imageId);
+  const baseIndex = new Map(imageIds.map((imageId, i) => [imageId, i]));
+  const list = new SegmentList();
+  let brushSize = DEFAULT_BRUSH_SIZE;
+  let shown: ShownViewports | undefined;
+
+  S.addSegmentations([{ segmentationId: id, representation: { type: LABELMAP, data: { imageIds: labelmapIds } } }]);
+
+  const toolGroups = () =>
+    [...new Set((shown?.viewportIds ?? []).map((vp) => T.ToolGroupManager.getToolGroupForViewport(vp, engine.id)?.id))].filter(
+      (g): g is string => !!g,
+    );
+
+  /** Segment labels and colours into CS3D (labels go into the SEG on save, #289). */
+  const sync = () => {
+    const segmentation = S.state.getSegmentation(id);
+    if (segmentation) {
+      segmentation.segments = Object.fromEntries(
+        list.segments.map((s) => [
+          s.index,
+          { segmentIndex: s.index, label: s.label, locked: false, cachedStats: {}, active: s.index === list.active },
+        ]),
+      );
+    }
+    S.segmentIndex.setActiveSegmentIndex(id, list.active);
+    for (const vp of shown?.viewportIds ?? []) {
+      for (const s of list.segments) S.config.color.setSegmentIndexColor(vp, id, s.index, [...s.color, 255] as Types.Color);
+    }
+    toolGroups().forEach((g) => T.utilities.segmentation.setBrushSizeForToolGroup(g, brushSize));
+    T.utilities.segmentation.triggerSegmentationRender();
+    onChange();
+  };
+
+  const modified = () => {
+    S.triggerSegmentationEvents.triggerSegmentationDataModified(id);
+    T.utilities.segmentation.triggerSegmentationRender();
+    onChange();
+  };
+
+  const labelmapImage = (baseImageId: string) => {
+    const k = baseIndex.get(baseImageId);
+    return k === undefined ? undefined : cache.getImage(labelmapIds[k]);
+  };
+
+  /** Rasterise a closed polygon into the labelmap on its plane: the active segment, or erase it (value 0). */
+  const fillPolygon = (annotation: csTools.Types.Annotation, value: number) => {
+    const data = annotation.data as { contour?: { polyline?: Point[] }; handles: { points: Point[] } };
+    const points = data.contour?.polyline?.length ? data.contour.polyline : data.handles.points;
+    T.annotation.state.removeAnnotation(annotation.annotationUID!);
+    const set = (vm: Types.IVoxelManager<number>, i: number) => {
+      if (value || vm.getAtIndex(i) === list.active) vm.setAtIndex(i, value);
+    };
+    const refId = annotation.metadata?.referencedImageId;
+    const image = refId ? labelmapImage(refId) : undefined;
+    if (refId && image) {
+      // In an image's plane (stack, or a volume view in the acquired plane).
+      const poly = points.map((p) => utilities.worldToImageCoords(refId, p) as [number, number]);
+      const vm = image.voxelManager as Types.IVoxelManager<number>;
+      polygonPixels(poly, image.columns, image.rows).forEach((i) => set(vm, i));
+    } else {
+      // A volume view in another orientation: axis-aligned planes of the labelmap volume only.
+      const volume = T.utilities.segmentation.getOrCreateSegmentationVolume(id);
+      if (!volume) return;
+      const ijk = points.map((p) => volume.imageData!.worldToIndex(p) as number[]);
+      const spans = [0, 1, 2].map((ax) => Math.max(...ijk.map((p) => p[ax])) - Math.min(...ijk.map((p) => p[ax])));
+      const normal = spans.indexOf(Math.min(...spans));
+      if (spans[normal] > 1) return; // oblique plane
+      const [u, v] = [0, 1, 2].filter((ax) => ax !== normal);
+      const k = Math.round(ijk.reduce((sum, p) => sum + p[normal], 0) / ijk.length);
+      const dims = volume.dimensions;
+      const strides = [1, dims[0], dims[0] * dims[1]];
+      // Index coordinates are voxel centres; polygonPixels takes corner-based coordinates.
+      const poly = ijk.map((p) => [p[u] + 0.5, p[v] + 0.5] as [number, number]);
+      const vm = volume.voxelManager as Types.IVoxelManager<number>;
+      polygonPixels(poly, dims[u], dims[v]).forEach((i) =>
+        set(vm, (i % dims[u]) * strides[u] + Math.floor(i / dims[u]) * strides[v] + k * strides[normal]),
+      );
+    }
+    modified();
+  };
+
+  const thresholdAnnotations = () =>
+    T.annotation.state.getAllAnnotations().filter((a) => a.metadata?.toolName === THRESHOLD);
+
+  const onAnnotation = (e: Event) => {
+    const annotation = (e as CustomEvent<{ annotation?: csTools.Types.Annotation }>).detail?.annotation;
+    const tool = annotation?.metadata?.toolName;
+    if (annotation && e.type === T.Enums.Events.ANNOTATION_COMPLETED && (tool === POLYGON || tool === POLYGON_ERASE)) {
+      fillPolygon(annotation, tool === POLYGON ? list.active : 0);
+    } else if (tool === THRESHOLD) onChange();
+  };
+  const onDataModified = (e: Event) => {
+    if ((e as CustomEvent<{ segmentationId: string }>).detail?.segmentationId === id) onChange();
+  };
+  const ANNOTATION_EVENTS = [T.Enums.Events.ANNOTATION_COMPLETED, T.Enums.Events.ANNOTATION_REMOVED];
+  ANNOTATION_EVENTS.forEach((ev) => eventTarget.addEventListener(ev, onAnnotation));
+  eventTarget.addEventListener(T.Enums.Events.SEGMENTATION_DATA_MODIFIED, onDataModified);
+
+  const voxelCounts = () => {
+    const counts: Record<number, number> = {};
+    for (const imageId of labelmapIds) {
+      const data = cache.getImage(imageId)?.voxelManager?.getScalarData() as ArrayLike<number> | undefined;
+      if (!data) continue;
+      for (let i = 0; i < data.length; i++) if (data[i]) counts[data[i]] = (counts[data[i]] ?? 0) + 1;
+    }
+    return counts;
+  };
+
+  /** Stack threshold: per image, our own fill (CS3D's helper is volume-only). */
+  const thresholdStack = (annotations: csTools.Types.Annotation[], range: ValueRange, slices: number) => {
+    for (const a of annotations) {
+      const refId = a.metadata?.referencedImageId;
+      const k0 = refId ? baseIndex.get(refId) : undefined;
+      if (refId === undefined || k0 === undefined) continue;
+      const corners = (a.data.handles!.points as Point[]).map((p) => utilities.worldToImageCoords(refId, p) as [number, number]);
+      const xs = corners.map((c) => c[0]);
+      const ys = corners.map((c) => c[1]);
+      const rect: [[number, number], [number, number]] = [[Math.min(...xs), Math.min(...ys)], [Math.max(...xs), Math.max(...ys)]];
+      for (let k = Math.max(0, k0 - slices); k <= Math.min(imageIds.length - 1, k0 + slices); k++) {
+        const image = cache.getImage(imageIds[k]);
+        const labels = cache.getImage(labelmapIds[k]);
+        if (!image || !labels) continue; // not loaded yet
+        // Modality units: pre-scaled by the loader, else apply the rescale here.
+        let values = image.voxelManager!.getScalarData() as ArrayLike<number>;
+        const { slope = 1, intercept = 0 } = image;
+        if (!image.preScale?.scaled && (slope !== 1 || intercept !== 0)) values = Float32Array.from(values, (v) => v * slope + intercept);
+        const vm = labels.voxelManager as Types.IVoxelManager<number>;
+        thresholdPixels(values, image.columns, rect, range).forEach((i) => vm.setAtIndex(i, list.active));
+      }
+    }
+  };
+
+  return {
+    id,
+    state(): SegmentationState {
+      return {
+        segments: list.segments.map((s) => ({ ...s, color: [...s.color] as Rgb })),
+        active: list.active,
+        brushSize,
+        thresholdRectangles: thresholdAnnotations().length,
+      };
+    },
+    async show(view: ViewControls) {
+      shown = viewportsOf(view);
+      if (!shown) return;
+      const missing = shown.viewportIds.filter((vp) => !S.state.getSegmentationRepresentations(vp, { segmentationId: id })?.length);
+      if (missing.length) {
+        await S.addLabelmapRepresentationToViewportMap(Object.fromEntries(missing.map((vp) => [vp, [{ segmentationId: id }]])));
+      }
+      shown.viewportIds.forEach((vp) => S.activeSegmentation.setActiveSegmentation(vp, id));
+      sync();
+    },
+    addSegment() {
+      list.add();
+      sync();
+    },
+    renameSegment(index: number, label: string) {
+      list.rename(index, label);
+      sync();
+    },
+    setSegmentColor(index: number, color: Rgb) {
+      list.setColor(index, color);
+      sync();
+    },
+    setActiveSegment(index: number) {
+      list.setActive(index);
+      sync();
+    },
+    setBrushSize(size: number) {
+      brushSize = size;
+      sync();
+    },
+    threshold(range: ValueRange, { slices, sourceSeriesUid }: ThresholdOptions): number {
+      const annotations = thresholdAnnotations();
+      if (!annotations.length || !shown) return 0;
+      const before = voxelCounts()[list.active] ?? 0;
+      if (shown.kind === "stack") thresholdStack(annotations, range, slices);
+      else {
+        const segmentationVolume = T.utilities.segmentation.getOrCreateSegmentationVolume(id);
+        const source = cache.getVolume(volumeIdFor(sourceSeriesUid ?? series.ref.seriesUid));
+        if (!segmentationVolume || !source) return 0;
+        T.utilities.segmentation.rectangleROIThresholdVolumeByRange(
+          annotations.map((a) => a.annotationUID!),
+          segmentationVolume,
+          [{ volume: source, lower: range.lower, upper: range.upper }],
+          { segmentationId: id, segmentIndex: list.active, overwrite: false, numSlicesToProject: slices },
+        );
+      }
+      annotations.forEach((a) => T.annotation.state.removeAnnotation(a.annotationUID!));
+      T.utilities.triggerAnnotationRenderForViewportIds(shown.viewportIds);
+      modified();
+      return (voxelCounts()[list.active] ?? 0) - before;
+    },
+    voxelCounts,
+    close() {
+      ANNOTATION_EVENTS.forEach((ev) => eventTarget.removeEventListener(ev, onAnnotation));
+      eventTarget.removeEventListener(T.Enums.Events.SEGMENTATION_DATA_MODIFIED, onDataModified);
+      S.removeSegmentation(id);
+      labelmapIds.forEach((imageId) => cache.removeImageLoadObject(imageId, { force: true }));
+      shown = undefined;
+    },
+  };
+}

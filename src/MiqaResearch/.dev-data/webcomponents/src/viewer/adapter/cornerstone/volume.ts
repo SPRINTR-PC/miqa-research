@@ -14,12 +14,14 @@ import {
 import * as csTools from "@cornerstonejs/tools";
 
 import { ORIENTATION_COLOR, type Orientation } from "../../layout.ts";
-import { workstationBindings } from "../../tools/bindings.ts";
+import { segmentBindings } from "../../tools/segmentation.ts";
 import { isTooLargeError, type Decimation } from "../../size-guard.ts";
 import type { VoiRange, VolumeLoadStage, VolumeOptions, VolumeState, VolumeView } from "../adapter.ts";
 import { addToolsToGroup, applyBindingPlan, registerCornerstoneTool } from "./tools.ts";
 
 export interface VolumeHandle extends VolumeView {
+  /** Viewports shown, for the Segmentation (#286). */
+  shownViewports(): { kind: "volume"; viewportIds: string[] };
   dispose(): void;
 }
 
@@ -135,7 +137,7 @@ export async function createVolumeView(
     if (!group) return;
     // Crosshairs need several views; a single view falls back to W/L.
     const primary = toolId === CROSSHAIRS && shown.length < 2 ? FALLBACK_TOOL : toolId;
-    applyBindingPlan(group, workstationBindings({ primary, viewport: "volume" }));
+    applyBindingPlan(group, segmentBindings({ primary, viewport: "volume" }));
     // Lines stay visible (and draggable) while another tool is on the left button.
     if (shown.length > 1 && primary !== CROSSHAIRS) group.setToolPassive(CROSSHAIRS);
     activeTool = primary;
@@ -204,6 +206,7 @@ export async function createVolumeView(
     },
     setOrientations: show,
     setTool: applyTool,
+    shownViewports: () => ({ kind: "volume", viewportIds: [...shown] }),
     setVoi(voi: VoiRange) {
       all((vp) => vp.setProperties({ voiRange: voi }, volumeId));
     },

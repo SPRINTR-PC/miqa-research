@@ -2,9 +2,12 @@
 import { annotationGroups, type BulkAnnotationGroup } from "../bulk-annotations.ts";
 import type { Orientation } from "../layout.ts";
 import type { DicomJsonInstance, LoadedSeries } from "../series.ts";
+import { DEFAULT_BRUSH_SIZE, SegmentList, type Rgb, type SegmentationState, type ValueRange } from "../segmentation.ts";
 import type { GpuLimits } from "../size-guard.ts";
 import type {
+  SegmentationView,
   StackState,
+  ThresholdOptions,
   StackView,
   ViewControls,
   ViewerAdapter,
@@ -186,6 +189,89 @@ export class StubVolumeView implements VolumeView {
   }
 }
 
+/** A Segmentation held in memory (#286): the segment list, the views it was shown in, threshold calls. */
+export class StubSegmentationView implements SegmentationView {
+  readonly id: string;
+  readonly series: LoadedSeries;
+  readonly list = new SegmentList();
+  brushSize = DEFAULT_BRUSH_SIZE;
+  /** Test-controlled: rectangles drawn, voxels per segment, voxels the next threshold sets. */
+  thresholdRectangles = 0;
+  voxels: Record<number, number> = {};
+  thresholdResult = 0;
+  shownIn: ViewControls[] = [];
+  thresholds: { range: ValueRange; options: ThresholdOptions }[] = [];
+  closed = false;
+  private readonly onChange: () => void;
+
+  constructor(series: LoadedSeries, id: string, onChange: () => void) {
+    this.series = series;
+    this.id = id;
+    this.onChange = onChange;
+  }
+
+  state(): SegmentationState {
+    return {
+      segments: this.list.segments.map((s) => ({ ...s, color: [...s.color] as Rgb })),
+      active: this.list.active,
+      brushSize: this.brushSize,
+      thresholdRectangles: this.thresholdRectangles,
+    };
+  }
+
+  /** Test helper: change state as the engine would (e.g. a rectangle drawn), and notify. */
+  emit(change: Partial<Pick<StubSegmentationView, "thresholdRectangles" | "voxels">> = {}): void {
+    Object.assign(this, change);
+    this.onChange();
+  }
+
+  async show(view: ViewControls): Promise<void> {
+    this.shownIn.push(view);
+  }
+
+  addSegment(): void {
+    this.list.add();
+    this.onChange();
+  }
+
+  renameSegment(index: number, label: string): void {
+    this.list.rename(index, label);
+    this.onChange();
+  }
+
+  setSegmentColor(index: number, color: Rgb): void {
+    this.list.setColor(index, color);
+    this.onChange();
+  }
+
+  setActiveSegment(index: number): void {
+    this.list.setActive(index);
+    this.onChange();
+  }
+
+  setBrushSize(size: number): void {
+    this.brushSize = size;
+    this.onChange();
+  }
+
+  threshold(range: ValueRange, options: ThresholdOptions): number {
+    this.thresholds.push({ range, options });
+    if (!this.thresholdRectangles) return 0;
+    const active = this.list.active;
+    this.voxels = { ...this.voxels, [active]: (this.voxels[active] ?? 0) + this.thresholdResult };
+    this.emit({ thresholdRectangles: 0 });
+    return this.thresholdResult;
+  }
+
+  voxelCounts(): Record<number, number> {
+    return { ...this.voxels };
+  }
+
+  close(): void {
+    this.closed = true;
+  }
+}
+
 export class StubAdapter implements ViewerAdapter {
   opened: { element: HTMLDivElement; series: LoadedSeries }[] = [];
   openedWsi: { element: HTMLDivElement; series: LoadedSeries }[] = [];
@@ -199,6 +285,10 @@ export class StubAdapter implements ViewerAdapter {
   failWith: Error | undefined;
   /** Set to make the next openVolume reject (e.g. CS3D's CACHE_SIZE_EXCEEDED, #283). */
   volumeFailWith: Error | undefined;
+  /** Segmentations opened (#286). */
+  segmentations: StubSegmentationView[] = [];
+  /** Set to make the next openSegmentation reject (e.g. CS3D's "not cacheable"). */
+  segmentationFailWith: Error | undefined;
   /** GPU limits reported to the size guard (#283); a typical desktop by default. */
   gpu: GpuLimits = { max3dTextureSize: 2048, maxTextureSize: 16384 };
 
@@ -239,6 +329,15 @@ export class StubAdapter implements ViewerAdapter {
     view.options = options;
     this.volumes.push(view);
     return view;
+  }
+
+  async openSegmentation(series: LoadedSeries, id: string, onChange: () => void): Promise<SegmentationView> {
+    const fail = this.segmentationFailWith;
+    this.segmentationFailWith = undefined;
+    if (fail) throw fail;
+    const seg = new StubSegmentationView(series, id, onChange);
+    this.segmentations.push(seg);
+    return seg;
   }
 
   close(view: ViewControls): void {

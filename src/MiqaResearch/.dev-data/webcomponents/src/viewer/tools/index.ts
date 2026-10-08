@@ -4,6 +4,7 @@
 import "./stack.ts";
 import "./calibrate.ts";
 import "./volume.ts";
+import "./segmentation.ts";
 
 export { tools, type RailGroup, type ToolDef, type ToolScope, type ViewportKind } from "./registry.ts";
 export { presets, presetVoi, voiToWindow, type Preset } from "./presets.ts";
