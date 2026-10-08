@@ -4,6 +4,7 @@
 import {
   ProgressiveRetrieveImages,
   cornerstoneStreamingImageVolumeLoader,
+  decimatedVolumeLoader,
   init as csInit,
   metaData,
   utilities,
@@ -31,6 +32,8 @@ export function initCornerstone(): Promise<void> {
     // #282: volumes stream interleaved (spec "Oversized series": no HTJ2K/rangeIndex stages).
     volumeLoader.registerVolumeLoader("cornerstoneStreamingImageVolume", cornerstoneStreamingImageVolumeLoader as never);
     utilities.imageRetrieveMetadataProvider.add("volume", ProgressiveRetrieveImages.interleavedRetrieveStages);
+    // #283 reduced 3D (view only): ijk-decimated volumes for series over the size guard.
+    volumeLoader.registerVolumeLoader("decimatedVolumeLoader", decimatedVolumeLoader as never);
     // Partial config: CS3D deep-merges it over its defaults (maxCacheSize 3 GiB, preferSizeOverAccuracy
     // false stay). peerImport supplies dmv for WSI (#285).
     csInit({ peerImport } as Parameters<typeof csInit>[0]);

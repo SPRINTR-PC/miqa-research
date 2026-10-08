@@ -4,7 +4,17 @@ import { RenderingEngine } from "@cornerstonejs/core";
 
 import type { Orientation } from "../../layout.ts";
 import type { LoadedSeries } from "../../series.ts";
-import type { StackView, ViewControls, ViewerAdapter, VolumeLoadStage, VolumeView, WsiView } from "../adapter.ts";
+import type { GpuLimits } from "../../size-guard.ts";
+import type {
+  StackView,
+  ViewControls,
+  ViewerAdapter,
+  VolumeLoadStage,
+  VolumeOptions,
+  VolumeView,
+  WsiView,
+} from "../adapter.ts";
+import { gpuLimits } from "./gpu.ts";
 import "./calibration.ts";
 import { initCornerstone } from "./init.ts";
 import { registerSeriesMetadata } from "./metadata.ts";
@@ -19,6 +29,10 @@ type Handle = ViewControls & { dispose(): void };
 class CornerstoneAdapter implements ViewerAdapter {
   private readonly engine = new RenderingEngine(`mires-viewer-${++engineCount}`);
   private readonly views: Handle[] = [];
+
+  gpuLimits(): GpuLimits {
+    return gpuLimits();
+  }
 
   async openStack(element: HTMLDivElement, series: LoadedSeries, onChange: () => void): Promise<StackView> {
     const view = await createStackView(this.engine, element, registerSeriesMetadata(series), onChange);
@@ -38,9 +52,14 @@ class CornerstoneAdapter implements ViewerAdapter {
     orientations: Orientation[],
     onChange: () => void,
     onStage: (stage: VolumeLoadStage) => void,
+    options: VolumeOptions = {},
   ): Promise<VolumeView> {
     const imageIds = registerSeriesMetadata(series);
-    const view = await createVolumeView(this.engine, slots, imageIds, series.ref.seriesUid, orientations, onChange, onStage);
+    // Reduced 3D (#283): in-plane decimation loads `<imageId>#decimation=<i>`; the typed metadata
+    // path doesn't strip the fragment, so register those ids too.
+    const i = options.decimation?.[0] ?? 1;
+    if (i > 1) registerSeriesMetadata({ ...series, images: series.images.map((im) => ({ ...im, imageId: `${im.imageId}#decimation=${i}` })) });
+    const view = await createVolumeView(this.engine, slots, imageIds, series.ref.seriesUid, orientations, onChange, onStage, options);
     this.views.push(view);
     return view;
   }

@@ -9,6 +9,7 @@
 import type { BulkAnnotationGroup } from "../bulk-annotations.ts";
 import type { Orientation } from "../layout.ts";
 import type { DicomJsonInstance, LoadedSeries } from "../series.ts";
+import type { Decimation, GpuLimits } from "../size-guard.ts";
 
 /** Window as a value range in modality units (e.g. HU after rescale). */
 export interface VoiRange {
@@ -107,7 +108,23 @@ export interface WsiView extends StackView {
   setBulkAnnotationGroupVisible(uid: string, visible: boolean): void;
 }
 
+/** Options of `openVolume`. */
+export interface VolumeOptions {
+  /**
+   * Reduced 3D (#283): load a decimated volume (CS3D `decimatedVolumeLoader` `ijkDecimation`), view only.
+   * Undefined = the full-resolution streaming volume.
+   */
+  decimation?: Decimation;
+  /**
+   * CS3D's cache refused a slice while streaming (CACHE_SIZE_EXCEEDED, "not cacheable"), after
+   * openVolume resolved (#283). The element shows "too large" and goes back to the stack.
+   */
+  onTooLarge?: () => void;
+}
+
 export interface ViewerAdapter {
+  /** WebGL2 MAX_3D_TEXTURE_SIZE / MAX_TEXTURE_SIZE, for the size guard (#283). */
+  gpuLimits(): GpuLimits;
   /**
    * Show a series as a stack in `element` (a sized, empty div in the element's shadow root).
    * `onChange` fires after every change of the view's StackState (scroll, W/L, first render).
@@ -129,6 +146,7 @@ export interface ViewerAdapter {
     orientations: Orientation[],
     onChange: () => void,
     onStage: (stage: VolumeLoadStage) => void,
+    options?: VolumeOptions,
   ): Promise<VolumeView>;
   /** Release one view opened by this adapter (its viewports and tool group); cached images stay. */
   close(view: ViewControls): void;

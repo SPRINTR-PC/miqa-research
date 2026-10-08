@@ -2,6 +2,7 @@
 import { annotationGroups, type BulkAnnotationGroup } from "../bulk-annotations.ts";
 import type { Orientation } from "../layout.ts";
 import type { DicomJsonInstance, LoadedSeries } from "../series.ts";
+import type { GpuLimits } from "../size-guard.ts";
 import type {
   StackState,
   StackView,
@@ -10,6 +11,7 @@ import type {
   VoiRange,
   VolumeLoadStage,
   VolumeState,
+  VolumeOptions,
   VolumeView,
   WsiView,
 } from "./adapter.ts";
@@ -109,6 +111,8 @@ export class StubVolumeView implements VolumeView {
   orientations: Orientation[];
   readonly slots: HTMLDivElement[];
   readonly series: LoadedSeries;
+  /** Options openVolume was called with (#283 decimation). */
+  options: VolumeOptions | undefined;
   private readonly onChange: () => void;
   private readonly onStage: (stage: VolumeLoadStage) => void;
 
@@ -144,6 +148,11 @@ export class StubVolumeView implements VolumeView {
   emit(change: Partial<VolumeState>): void {
     Object.assign(this.current, change);
     this.onChange();
+  }
+
+  /** Test helper: CS3D's cache refused a slice while streaming (#283). */
+  tooLarge(): void {
+    this.options?.onTooLarge?.();
   }
 
   /** Test helper: report a first-render stage as the engine would. */
@@ -188,6 +197,14 @@ export class StubAdapter implements ViewerAdapter {
   destroyed = false;
   /** Set to make the next openStack reject. */
   failWith: Error | undefined;
+  /** Set to make the next openVolume reject (e.g. CS3D's CACHE_SIZE_EXCEEDED, #283). */
+  volumeFailWith: Error | undefined;
+  /** GPU limits reported to the size guard (#283); a typical desktop by default. */
+  gpu: GpuLimits = { max3dTextureSize: 2048, maxTextureSize: 16384 };
+
+  gpuLimits(): GpuLimits {
+    return this.gpu;
+  }
 
   async openStack(element: HTMLDivElement, series: LoadedSeries, onChange: () => void): Promise<StackView> {
     if (this.failWith) throw this.failWith;
@@ -212,9 +229,14 @@ export class StubAdapter implements ViewerAdapter {
     orientations: Orientation[],
     onChange: () => void,
     onStage: (stage: VolumeLoadStage) => void,
+    options?: VolumeOptions,
   ): Promise<VolumeView> {
     if (this.failWith) throw this.failWith;
+    const fail = this.volumeFailWith;
+    this.volumeFailWith = undefined;
+    if (fail) throw fail;
     const view = new StubVolumeView(slots, series, [...orientations], onChange, onStage);
+    view.options = options;
     this.volumes.push(view);
     return view;
   }
