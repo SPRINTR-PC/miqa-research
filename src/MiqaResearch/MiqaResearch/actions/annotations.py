@@ -35,6 +35,7 @@ from contract.constants.audit_log import (
     EVENT_TYPE_SEGMENTATION_SUPERSEDED,
 )
 from helpers.dicom_deidentification import deidentify
+from MiqaResearch.actions.viewer_exceptions import NotAllowed, NotFound, ViewerActionError
 from MiqaResearch.data.models import AuditLog, DerivedObjectProvenance, DicomFile, DicomSeries
 from MiqaResearch.readers.annotation_permissions import ParticipantRights
 from MiqaResearch.readers.blinding import ParticipantBlinding, viewer_reveals
@@ -54,24 +55,12 @@ _EVENTS = {
 }
 
 
-class ObjectError(Exception):
-    """Base for save/retire refusals; the API maps each subclass to a status code."""
-
-
-class NotFound(ObjectError):
-    """Unknown, or not within the caller's Participant Visibility (never distinguished)."""
-
-
-class InvalidObject(ObjectError):
+class InvalidObject(ViewerActionError):
     """The upload or its source series can't be saved as asked."""
 
 
-class NotAllowed(ObjectError):
-    """Visible, but the caller's roles don't allow this change."""
-
-
 @dataclass
-class StaleHead(ObjectError):
+class StaleHead(ViewerActionError):
     """The version the caller edited is no longer the chain's head (or the chain is retired).
 
     `can_change`: whether the caller may supersede or retire that head (the viewer's "Save mine on top", #289).
@@ -253,7 +242,7 @@ def _lock_head_to_supersede(
     return predecessor
 
 
-def _stale(chain_id, blinding: ParticipantBlinding, rights: ParticipantRights) -> ObjectError:
+def _stale(chain_id, blinding: ParticipantBlinding, rights: ParticipantRights) -> ViewerActionError:
     """409 with the current head, or 404 when Blinded Annotation hides that head from the caller."""
     head = _head_of(chain_id)
     return NotFound() if blinding.hides(head.author_id) else StaleHead(head, rights.can_change(head.author_id))

@@ -1,14 +1,10 @@
 """Read Annotations and Segmentations of a participant as version chains (ADR 0026, #287)."""
 from collections import defaultdict
 
-from MiqaResearch.data.models import DerivedObjectProvenance, StudyParticipant
+from MiqaResearch.data.models import DerivedObjectProvenance
 from MiqaResearch.readers.annotation_permissions import ParticipantRights
 from MiqaResearch.readers.blinding import ParticipantBlinding
-from MiqaResearch.readers.participant_visibility import visible_participants
-
-
-class ParticipantNotVisible(Exception):
-    """Unknown participant, or outside the caller's Participant Visibility."""
+from MiqaResearch.readers.participant_visibility import visible_participant
 
 
 def version_item(provenance: DerivedObjectProvenance) -> dict:
@@ -80,18 +76,6 @@ def participant_blinding_status(user, participant_id, reveals: dict[str, int] | 
         "can_reveal": blinding.can_reveal,
         "hidden": hidden,
     }
-
-
-def visible_participant(user, participant_id):
-    participant = (
-        StudyParticipant.objects.select_related("research_project").filter(pk=participant_id).first()
-    )
-    if participant is None or participant.research_project is None:
-        raise ParticipantNotVisible()
-    project = participant.research_project
-    if not visible_participants(user, project).filter(pk=participant.pk).exists():
-        raise ParticipantNotVisible()
-    return participant, project
 
 
 def _chains(participant) -> list[list[DerivedObjectProvenance]]:

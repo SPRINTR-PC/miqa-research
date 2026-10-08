@@ -77,7 +77,8 @@ def test_dev_page_offers_related_series_limited_by_participant_visibility(
     visible = ct_series.series_instance_uid
     _open_as(client, ct_series, "Annotator")
 
-    body = client.get(DEV_PAGE + f"?study=2.25.1&series={visible}&related={visible},2.25.4&related={invisible}").content.decode()
+    query = f"?study=2.25.1&series={visible}&related={visible},2.25.4&related={invisible}"
+    body = client.get(DEV_PAGE + query).content.decode()
 
     assert f'related-series="{visible}"' in body
 

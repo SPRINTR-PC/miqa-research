@@ -27,7 +27,11 @@ from contract.constants.scopes import SCOPE_DICOM_RAW
 from MiqaResearch.actions.image_access_audit import audit_client_access, audit_viewer_series_open
 from MiqaResearch.data.models import ClientBinding
 from MiqaResearch.data.models.dicom_file import DicomFile
-from MiqaResearch.readers.blinding import unblinded_files_for_client, unblinded_files_for_user, viewer_reveals
+from MiqaResearch.readers.blinding import (
+    files_visible_under_blinding_for_client,
+    files_visible_under_blinding_for_user,
+    viewer_reveals,
+)
 from MiqaResearch.readers.participant_visibility import (
     participants_visible_to_client,
     visible_participants_in_any_project,
@@ -60,11 +64,25 @@ def readable_files(request, files: QuerySet[DicomFile]) -> QuerySet[DicomFile]:
     match caller_of(request):
         case SessionCaller(user):
             visible = visible_participants_in_any_project(user)
-            files = unblinded_files_for_user(user, viewer_reveals(request), files)
+            files = files_visible_under_blinding_for_user(user, viewer_reveals(request), files)
         case ClientCaller(application):
             visible = participants_visible_to_client(application)
-            files = unblinded_files_for_client(files)
+            files = files_visible_under_blinding_for_client(files)
     return files.filter(Exists(visible.filter(pk=OuterRef("series__study__study_participant"))))
+
+
+def readable_dicom_files(request, *related: str) -> QuerySet[DicomFile]:
+    """Every DicomFile the caller may read, with what the audit needs (`series__study__study_participant`)
+    plus `related` loaded."""
+    return readable_files(request, DicomFile.objects.select_related("series__study__study_participant", *related))
+
+
+def audited_files(request, files: QuerySet[DicomFile], *, series_open: bool = False) -> list[DicomFile]:
+    """`files` evaluated and, unless empty (the caller answers 404), audited (`audit_access`)."""
+    dicom_files = list(files)
+    if dicom_files:
+        audit_access(request, dicom_files, series_open=series_open)
+    return dicom_files
 
 
 def not_for_sessions(view):

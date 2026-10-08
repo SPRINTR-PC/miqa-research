@@ -23,7 +23,7 @@ from pydicom.uid import UID
 from MiqaResearch.data.models.dicom_file import DicomFile
 from MiqaResearch.tasks.dicom_handling.frame_index import build_frame_index, frame_bytes
 
-from .access import audit_access, readable_files
+from .access import audit_access, readable_dicom_files
 from .caching import FRAMES_CACHE_CONTROL, matches_if_none_match, not_modified, strong_etag, with_cache_headers
 
 router = Router()
@@ -104,7 +104,7 @@ def retrieve_frames(request, study_instance_uid: str, series_instance_uid: str, 
 
     # One query: the file, its frame offset index and Participant Visibility / the Client Binding.
     dicom_file = get_object_or_404(
-        readable_files(request, DicomFile.objects.select_related("series__study__study_participant")),
+        readable_dicom_files(request),
         sop_instance_uid=sop_instance_uid,
         series__series_instance_uid=series_instance_uid,
         series__study__study_instance_uid=study_instance_uid,

@@ -71,7 +71,9 @@ def _hidden_series() -> QuerySet[DicomSeries]:
     )
 
 
-def unblinded_files_for_user(user, reveals: dict[str, int], files: QuerySet[DicomFile]) -> QuerySet[DicomFile]:
+def files_visible_under_blinding_for_user(
+    user, reveals: dict[str, int], files: QuerySet[DicomFile]
+) -> QuerySet[DicomFile]:
     """`files` without others' (and ingested) Annotation/Segmentation series of blinded projects, except for
     participants in `reveals` (current epoch) while the user may still reveal them. No query of its own."""
     hidden = _hidden_series().exclude(provenance__author=user.pk)
@@ -84,6 +86,6 @@ def unblinded_files_for_user(user, reveals: dict[str, int], files: QuerySet[Dico
     return files.filter(~Exists(hidden))
 
 
-def unblinded_files_for_client(files: QuerySet[DicomFile]) -> QuerySet[DicomFile]:
+def files_visible_under_blinding_for_client(files: QuerySet[DicomFile]) -> QuerySet[DicomFile]:
     """`files` without any Annotation/Segmentation series of blinded projects (machine clients)."""
     return files.filter(~Exists(_hidden_series()))

@@ -70,6 +70,23 @@ def can_see_participant(user, project, participant, roles=None) -> bool:
     return visible_participants(user, project, roles).filter(pk=participant_pk).exists()
 
 
+class ParticipantNotVisible(Exception):
+    """Unknown participant, or outside the caller's Participant Visibility."""
+
+
+def visible_participant(user, participant_id) -> tuple[StudyParticipant, object]:
+    """(participant, its Research Project) if `user` may see it; ParticipantNotVisible otherwise."""
+    participant = (
+        StudyParticipant.objects.select_related("research_project").filter(pk=participant_id).first()
+    )
+    if participant is None or participant.research_project is None:
+        raise ParticipantNotVisible()
+    project = participant.research_project
+    if not can_see_participant(user, project, participant):
+        raise ParticipantNotVisible()
+    return participant, project
+
+
 def participants_visible_to_client(application) -> QuerySet[StudyParticipant]:
     """Study Participants a client-credentials `application` may see, as a lazy QuerySet.
 

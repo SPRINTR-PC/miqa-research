@@ -3,35 +3,24 @@ from django.db import transaction
 
 from contract.constants.audit_log import EVENT_TYPE_BLINDED_ANNOTATION_CHANGED, EVENT_TYPE_BLINDING_REVEAL
 from contract.constants.research_project_role import PROJECT_ROLE_ADMIN, PROJECT_ROLE_PI
+from MiqaResearch.actions.viewer_exceptions import NotAllowed, NotFound, ViewerActionError
 from MiqaResearch.data.models import AuditLog, ResearchProject, ResearchProjectUserRoleMap
-from MiqaResearch.readers.annotation_reader import ParticipantNotVisible, visible_participant
 from MiqaResearch.readers.blinding import (
     MAX_VIEWER_SESSIONS,
     REVEAL_SESSION_KEY,
     can_reveal,
     viewer_session_id,
 )
+from MiqaResearch.readers.participant_visibility import ParticipantNotVisible, visible_participant
 
 FLAG_ROLES = (PROJECT_ROLE_PI, PROJECT_ROLE_ADMIN)
 
 
-class BlindingError(Exception):
-    """Base for refusals; the API maps each subclass to a status code."""
-
-
-class NotFound(BlindingError):
-    """Unknown project or participant, or not visible to the caller (never distinguished)."""
-
-
-class NotAllowed(BlindingError):
-    """Visible, but the caller's roles don't allow it."""
-
-
-class NotBlinded(BlindingError):
+class NotBlinded(ViewerActionError):
     """A Blinding Reveal on a project without Blinded Annotation."""
 
 
-class NoViewerSession(BlindingError):
+class NoViewerSession(ViewerActionError):
     """A Blinding Reveal without a Viewer Session id: it would have nothing to be scoped to."""
 
 

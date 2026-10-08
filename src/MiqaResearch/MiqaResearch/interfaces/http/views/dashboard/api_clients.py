@@ -85,7 +85,7 @@ async def api_client_issue(request, project_id):
     try:
         issued = await issue_client(
             project=project, user=await request.auser(), request=request, name=form.cleaned_data["name"],
-            clinic=await _clinic_or_none(form.cleaned_data["clinic"]), dicom_raw=form.cleaned_data["dicom_raw"])
+            site=await _clinic_or_none(form.cleaned_data["clinic"]), dicom_raw=form.cleaned_data["dicom_raw"])
     except ClientBindingError as error:
         return await _render_panel(request, project, issue_form=form, error=str(error))
     return await _render_panel(request, project, issued=issued)
@@ -108,7 +108,7 @@ async def api_client_update(request, project_id, binding_id):
     try:
         await update_client(
             binding=binding, user=await request.auser(), request=request,
-            clinic=await _clinic_or_none(form.cleaned_data["clinic"]), dicom_raw=form.cleaned_data["dicom_raw"])
+            site=await _clinic_or_none(form.cleaned_data["clinic"]), dicom_raw=form.cleaned_data["dicom_raw"])
     except ClientBindingError as error:
         return await _render_panel(request, project, error=str(error))
     return await _render_panel(request, project)

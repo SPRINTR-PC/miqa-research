@@ -17,20 +17,15 @@ from ninja.errors import HttpError
 from ninja.files import UploadedFile
 from ninja.security import SessionAuth
 
-from MiqaResearch.actions.annotations import (
-    InvalidObject,
-    NotAllowed,
-    NotFound,
-    StaleHead,
-    retire_object,
-    save_viewer_object,
-)
-from MiqaResearch.readers.annotation_reader import ParticipantNotVisible, list_participant_objects, version_item
+from MiqaResearch.actions.annotations import StaleHead, retire_object, save_viewer_object
+from MiqaResearch.actions.viewer_exceptions import ViewerActionError
+from MiqaResearch.readers.annotation_reader import list_participant_objects, version_item
 from MiqaResearch.readers.blinding import viewer_reveals
+from MiqaResearch.readers.participant_visibility import ParticipantNotVisible
+
+from .errors import ErrorOut, http_error
 
 router = Router(auth=SessionAuth(), tags=["viewer"])
-
-_REFUSALS = (InvalidObject, NotAllowed, NotFound)
 
 
 class VersionOut(Schema):
@@ -62,10 +57,6 @@ class ConflictOut(Schema):
     can_change: bool
 
 
-class ErrorOut(Schema):
-    detail: str
-
-
 @router.post(
     "/objects",
     response={201: VersionOut, 400: ErrorOut, 403: ErrorOut, 404: ErrorOut, 409: ConflictOut},
@@ -87,8 +78,8 @@ def save_object(
         )
     except StaleHead as stale:
         return Status(409, _conflict("a newer version was saved first", stale))
-    except _REFUSALS as error:
-        raise _http_error(error) from None
+    except ViewerActionError as error:
+        raise http_error(error) from None
     return Status(201, version_item(provenance))
 
 
@@ -110,18 +101,10 @@ def retire(request, object_id: UUID):
         provenance = retire_object(user=request.auth, object_id=object_id, request=request)
     except StaleHead as stale:
         return Status(409, _conflict("a newer version was saved; retire the head", stale))
-    except _REFUSALS as error:
-        raise _http_error(error) from None
+    except ViewerActionError as error:
+        raise http_error(error) from None
     return Status(200, version_item(provenance))
 
 
 def _conflict(detail: str, stale: StaleHead) -> dict:
     return {"detail": detail, "head": version_item(stale.head), "can_change": stale.can_change}
-
-
-def _http_error(error: Exception) -> HttpError:
-    if isinstance(error, NotFound):
-        return HttpError(404, "Not Found")
-    if isinstance(error, NotAllowed):
-        return HttpError(403, str(error))
-    return HttpError(400, str(error))
