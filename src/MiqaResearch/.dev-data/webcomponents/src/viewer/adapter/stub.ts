@@ -1,11 +1,15 @@
 // In-memory ViewerAdapter for vitest: records calls and lets a test drive state changes.
 import { annotationGroups, type BulkAnnotationGroup } from "../bulk-annotations.ts";
+import { layerDisplay, modalityOf, seriesLabel, type LayerDisplay } from "../fusion.ts";
 import type { Orientation } from "../layout.ts";
 import type { DicomJsonInstance, LoadedSeries } from "../series.ts";
 import { DEFAULT_BRUSH_SIZE, SegmentList, type Rgb, type SegmentationState, type ValueRange } from "../segmentation.ts";
 import type { GpuLimits } from "../size-guard.ts";
+import { suvStatusFor, type SuvStatus } from "../suv.ts";
 import type {
   SegmentationView,
+  LayerOptions,
+  LayerState,
   StackState,
   ThresholdOptions,
   StackView,
@@ -131,7 +135,23 @@ export class StubVolumeView implements VolumeView {
     this.orientations = orientations;
     this.onChange = onChange;
     this.onStage = onStage;
-    this.current = { activeTool: "", voi: undefined, invert: false, views: this.viewStates() };
+    const base: LayerState = {
+      seriesUid: series.ref.seriesUid,
+      label: seriesLabel(series),
+      modality: modalityOf(series),
+      voi: undefined,
+      ...layerDisplay(modalityOf(series), { base: true }),
+      ...(suvStatusFor(series) ? { suv: suvStatusFor(series) } : {}),
+    };
+    this.current = { activeTool: "", voi: undefined, invert: false, views: this.viewStates(), layers: [base], selectedLayer: base.seriesUid };
+  }
+
+  /** Fused overlays (#284): series fused with their options, for tests. */
+  layerOptions = new Map<string, LayerOptions | undefined>();
+
+  /** Base window lives in `current.voi`; overlays keep their own. */
+  private layerStates(): LayerState[] {
+    return this.current.layers.map((l, i) => ({ ...l, curve: l.curve.map((p) => ({ ...p })), voi: i === 0 ? this.current.voi : l.voi }));
   }
 
   private viewStates() {
@@ -145,7 +165,51 @@ export class StubVolumeView implements VolumeView {
   }
 
   state(): VolumeState {
-    return { ...this.current, views: this.current.views.map((v) => ({ ...v })) };
+    const layers = this.layerStates();
+    const voi = layers.find((l) => l.seriesUid === this.current.selectedLayer)?.voi;
+    return { ...this.current, voi, views: this.current.views.map((v) => ({ ...v })), layers };
+  }
+
+  private get selectedIsBase(): boolean {
+    return this.current.selectedLayer === this.current.layers[0].seriesUid;
+  }
+
+  private updateLayer(uid: string, change: Partial<LayerState>): void {
+    this.emit({ layers: this.current.layers.map((l) => (l.seriesUid === uid ? { ...l, ...change } : l)) });
+  }
+
+  async addLayer(series: LoadedSeries, display: LayerDisplay, options?: LayerOptions): Promise<void> {
+    const suv: SuvStatus | undefined = suvStatusFor(series);
+    const layer: LayerState = {
+      seriesUid: series.ref.seriesUid,
+      label: seriesLabel(series),
+      modality: modalityOf(series),
+      voi: options?.voi,
+      ...display,
+      curve: display.curve.map((p) => ({ ...p })),
+      ...(suv ? { suv } : {}),
+    };
+    this.layerOptions.set(layer.seriesUid, options);
+    this.emit({ layers: [...this.current.layers, layer] });
+  }
+
+  removeLayer(seriesUid: string): void {
+    if (seriesUid === this.current.layers[0].seriesUid) return;
+    const selectedLayer = this.current.selectedLayer === seriesUid ? this.current.layers[0].seriesUid : this.current.selectedLayer;
+    this.emit({ layers: this.current.layers.filter((l) => l.seriesUid !== seriesUid), selectedLayer });
+  }
+
+  setLayerDisplay(seriesUid: string, change: Partial<LayerDisplay>): void {
+    this.updateLayer(seriesUid, change);
+  }
+
+  selectLayer(seriesUid: string): void {
+    if (this.current.layers.some((l) => l.seriesUid === seriesUid)) this.emit({ selectedLayer: seriesUid });
+  }
+
+  /** Test helper: CS3D's cache refused a slice of an overlay while streaming. */
+  overlayTooLarge(seriesUid: string): void {
+    this.layerOptions.get(seriesUid)?.onTooLarge?.();
   }
 
   emit(change: Partial<VolumeState>): void {
@@ -173,11 +237,13 @@ export class StubVolumeView implements VolumeView {
   }
 
   setVoi(voi: VoiRange): void {
-    this.emit({ voi });
+    if (this.selectedIsBase) this.emit({ voi });
+    else this.updateLayer(this.current.selectedLayer, { voi });
   }
 
   resetVoi(): void {
-    this.emit({ voi: undefined });
+    if (this.selectedIsBase) this.emit({ voi: undefined });
+    else this.updateLayer(this.current.selectedLayer, { voi: this.layerOptions.get(this.current.selectedLayer)?.voi });
   }
 
   toggleInvert(): void {
@@ -338,6 +404,17 @@ export class StubAdapter implements ViewerAdapter {
     const seg = new StubSegmentationView(series, id, onChange);
     this.segmentations.push(seg);
     return seg;
+  }
+
+  /** Series evicted from the cache (#284). */
+  evicted: string[] = [];
+
+  evict(seriesUid: string): void {
+    this.evicted.push(seriesUid);
+  }
+
+  suvStatus(series: LoadedSeries): SuvStatus | undefined {
+    return suvStatusFor(series);
   }
 
   close(view: ViewControls): void {

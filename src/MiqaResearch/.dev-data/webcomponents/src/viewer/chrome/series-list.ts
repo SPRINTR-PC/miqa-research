@@ -35,7 +35,9 @@ export function seriesList(items: SeriesListItem[]) {
   return html`<aside class="series" aria-label="Series">
     <h5>Series</h5>
     ${items.map(
-      (s) => html`<div class="ser ${s.shown ? "shown" : ""}" data-series-uid=${s.seriesUid}>
+      // Rows are draggable onto the big view (#284 drop zones: top half fuses, bottom half replaces).
+      (s) => html`<div class="ser ${s.shown ? "shown" : ""}" data-series-uid=${s.seriesUid} draggable="true"
+        title="Drag onto the view: top half fuses, bottom half replaces">
         <span class="mod">${s.modality || "?"}</span>
         <span class="txt"><b>${s.description || s.seriesUid}</b><small>${s.imageCount} images</small></span>
       </div>`,

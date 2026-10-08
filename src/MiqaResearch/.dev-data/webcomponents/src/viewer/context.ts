@@ -1,7 +1,9 @@
 // What the chrome extensions (inspector panels, commands) see of the viewer: state + actions.
 // Built fresh by <mires-viewer> on every render; add fields additively.
-import type { SegmentationView, StackState, StackView, ViewControls, VolumeState } from "./adapter/adapter.ts";
+import type { LayerState, SegmentationView, StackState, StackView, ViewControls, VolumeState } from "./adapter/adapter.ts";
+import type { LayerDisplay } from "./fusion.ts";
 import type { SegmentationState, ValueRange } from "./segmentation.ts";
+import type { SuvStatus } from "./suv.ts";
 import type { ViewLayout } from "./layout.ts";
 import type { Reconstructability } from "./reconstructable.ts";
 import type { DicomJsonInstance } from "./series.ts";
@@ -13,7 +15,7 @@ export interface ViewerContext {
   /** Annotate role (Annotator, PI, Site PI, Admin) on this participant: Arrow, Calibrate, segment tools, Save. */
   canAnnotate: boolean;
   viewport: ViewportKind;
-  /** Modality of the series shown (base layer), e.g. "CT"; "" before load. */
+  /** Modality of the series shown (the selected layer when fused, #284), e.g. "CT"; "" before load. Picks the presets. */
   modality: string;
   /** Tool on the left button. */
   activeTool: string;
@@ -50,9 +52,19 @@ export interface ViewerContext {
   segmentationView: SegmentationView | undefined;
   /** Make the Segmentation if there is none (size guard first); undefined, with a refusal shown, when it doesn't fit. */
   ensureSegmentation(): Promise<SegmentationView | undefined>;
-  /** The layer threshold runs on: the base series (#284 makes it the selected layer). */
+  /** The layer threshold runs on: the selected layer (#284), else the base series. */
   thresholdLayer: { seriesUid: string; modality: string };
   /** Run the threshold on `thresholdLayer`; the voxels set end up in `thresholdResult`. */
   runThreshold(range: ValueRange, slices: number): void;
   thresholdResult: number | undefined;
+  /** Fusion (#284): layers of the volume view, base first; empty off volumes. */
+  layers: LayerState[];
+  /** Series UID of the selected layer (right-drag W/L, presets); undefined off volumes. */
+  selectedLayer: string | undefined;
+  selectLayer(seriesUid: string): void;
+  setLayerDisplay(seriesUid: string, change: Partial<LayerDisplay>): void;
+  /** Remove a fused overlay (releases its budget). */
+  removeLayer(seriesUid: string): void;
+  /** SUV status of the series shown (PET); undefined otherwise. */
+  suv: SuvStatus | undefined;
 }

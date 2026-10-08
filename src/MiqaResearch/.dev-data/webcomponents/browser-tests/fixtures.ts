@@ -16,6 +16,10 @@ export interface Seed {
   wsi: { studyUid: string; seriesUid: string; levels: number; baseTiles: number; participant: string };
   /** Bulk annotations (ANN) on the slide (#292): group names (property types), in group order. */
   wsiAnnotations: { groups: string[] };
+  /** #284 fusion series in the CT's study: PETs on the CT's Frame of Reference (with / without SUV inputs), an MR on another. */
+  pet: SeriesRef & { imageCount: number };
+  petNoWeight: SeriesRef & { imageCount: number };
+  mrOtherFor: SeriesRef & { imageCount: number };
 }
 
 export interface SeriesRef {
@@ -55,8 +59,10 @@ export class ViewerPage {
     this.viewport = page.locator("mires-viewer .viewport");
   }
 
-  async open(series: { studyUid: string; seriesUid: string }): Promise<void> {
-    await this.page.goto(`/viewer/dev/?study=${series.studyUid}&series=${series.seriesUid}`);
+  /** Open the dev page; `related` series are offered in the series list (#284). */
+  async open(series: { studyUid: string; seriesUid: string }, related: SeriesRef[] = []): Promise<void> {
+    const extra = related.map((r) => `&related=${r.seriesUid}`).join("");
+    await this.page.goto(`/viewer/dev/?study=${series.studyUid}&series=${series.seriesUid}${extra}`);
     await expect(this.viewer).toHaveAttribute("state", /ready|error/);
   }
 

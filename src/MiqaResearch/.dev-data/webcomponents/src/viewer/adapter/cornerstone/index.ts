@@ -1,10 +1,11 @@
 // The Cornerstone3D ViewerAdapter. Composes one module per capability
 // (stack.ts, volume.ts #282; wsi.ts #285, ...). Never imported by vitest.
-import { RenderingEngine } from "@cornerstonejs/core";
+import { RenderingEngine, cache } from "@cornerstonejs/core";
 
 import type { Orientation } from "../../layout.ts";
 import type { LoadedSeries } from "../../series.ts";
 import type { GpuLimits } from "../../size-guard.ts";
+import type { SuvStatus } from "../../suv.ts";
 import type {
   SegmentationView,
   StackView,
@@ -21,6 +22,7 @@ import { initCornerstone } from "./init.ts";
 import { registerSeriesMetadata } from "./metadata.ts";
 import { createSegmentation, type ShownViewports } from "./segmentation.ts";
 import { createStackView } from "./stack.ts";
+import { suvStatusOf } from "./suv.ts";
 import { createVolumeView } from "./volume.ts";
 import { createWsiView } from "./wsi.ts";
 
@@ -61,7 +63,7 @@ class CornerstoneAdapter implements ViewerAdapter {
     // path doesn't strip the fragment, so register those ids too.
     const i = options.decimation?.[0] ?? 1;
     if (i > 1) registerSeriesMetadata({ ...series, images: series.images.map((im) => ({ ...im, imageId: `${im.imageId}#decimation=${i}` })) });
-    const view = await createVolumeView(this.engine, slots, imageIds, series.ref.seriesUid, orientations, onChange, onStage, options);
+    const view = await createVolumeView(this.engine, slots, imageIds, series, orientations, onChange, onStage, options);
     this.views.push(view);
     return view;
   }
@@ -69,6 +71,18 @@ class CornerstoneAdapter implements ViewerAdapter {
   async openSegmentation(series: LoadedSeries, id: string, onChange: () => void): Promise<SegmentationView> {
     const viewportsOf = (view: ViewControls) => (this.views.includes(view as Handle) ? (view as Handle).shownViewports?.() : undefined);
     return createSegmentation(this.engine, registerSeriesMetadata(series), series, id, onChange, viewportsOf);
+  }
+
+  suvStatus(series: LoadedSeries): SuvStatus | undefined {
+    return suvStatusOf(series.ref.seriesUid);
+  }
+
+  /** #284: drop every cached volume of the series (full and reduced); its images go with them. */
+  evict(seriesUid: string): void {
+    cache
+      .getVolumes()
+      .filter((v) => v.volumeId.split(":")[1] === seriesUid)
+      .forEach((v) => cache.removeVolumeLoadObject(v.volumeId));
   }
 
   close(view: ViewControls): void {

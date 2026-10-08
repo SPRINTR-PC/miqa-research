@@ -49,7 +49,10 @@ export function isSegmentTool(toolId: string): boolean {
   return SEGMENT_TOOLS.some((t) => t.id === toolId);
 }
 
-/** The workstation mouse, with a segment tool's erase twin on the right button. */
+/**
+ * The workstation mouse, with a segment tool's erase twin on the right button. The erase twin wins over a
+ * requested `secondary` (e.g. #284's LayerWindowLevel on a selected overlay), which applies otherwise.
+ */
 export function segmentBindings(request: BindingRequest): BindingPlan {
-  return workstationBindings({ ...request, secondary: request.secondary ?? eraseTwin(request.primary) });
+  return workstationBindings({ ...request, secondary: eraseTwin(request.primary) ?? request.secondary });
 }
