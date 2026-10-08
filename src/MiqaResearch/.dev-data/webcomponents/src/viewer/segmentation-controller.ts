@@ -22,6 +22,9 @@ export class SegmentationController {
   /** Voxels set by the last threshold run. */
   thresholdResult: number | undefined;
   private readonly host: SegmentationHost;
+  /** Edits of Segmentations closed before (discarded), so `revision()` never goes back (#289). */
+  private closedRevisions = 0;
+  private emptyAt: [revision: number, empty: boolean] | undefined;
 
   constructor(host: SegmentationHost) {
     this.host = host;
@@ -68,8 +71,22 @@ export class SegmentationController {
     this.host.changed();
   }
 
+  /** Bumps on every edit of the Segmentation, and when it is closed (#289). */
+  revision(): number {
+    return this.closedRevisions + (this.view?.revision() ?? 0);
+  }
+
+  /** Nothing painted (counted once per revision: it reads every labelmap voxel). */
+  isEmpty(): boolean {
+    if (!this.view) return true;
+    const revision = this.revision();
+    if (this.emptyAt?.[0] !== revision) this.emptyAt = [revision, !Object.values(this.view.voxelCounts()).some(Boolean)];
+    return this.emptyAt[1];
+  }
+
   close(): void {
     if (!this.view) return;
+    this.closedRevisions += this.view.revision() + 1;
     this.host.budget.release(this.view.id);
     this.view.close();
     this.view = undefined;

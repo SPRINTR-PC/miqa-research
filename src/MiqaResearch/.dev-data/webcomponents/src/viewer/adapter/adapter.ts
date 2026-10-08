@@ -192,8 +192,38 @@ export interface SegmentationView {
   threshold(range: ValueRange, options: ThresholdOptions): number;
   /** Labelled voxels per segment index (painted ones only). */
   voxelCounts(): Record<number, number>;
+  /** Bumps on every edit (painting, threshold, polygon fill, segment added / renamed / recoloured) (#289). */
+  revision(): number;
+  /** SEG 66.4 BINARY (DICOM Part 10) of the painted segments (#289). Throws when nothing is painted. */
+  exportSeg(): Promise<Blob>;
   /** Drop the labelmap and its cached images. */
   close(): void;
+}
+
+/**
+ * The annotations (measurements, ROIs, arrows) drawn in the adapter's views (#289): CS3D keeps one
+ * annotation state for every view, so this is per adapter, not per view. Calibrate lines and the
+ * segment tools' helper annotations aren't annotations here.
+ */
+export interface AnnotationSet {
+  /** Bumps on every annotation completed, changed or removed, and on every User calibration. */
+  revision(): number;
+  /** Annotations on `series` (its images, or its volume). */
+  count(series: LoadedSeries): number;
+  /** Tool names of the annotations on `series` (Save warns about those the SR can't hold). */
+  toolNames(series: LoadedSeries): string[];
+  /**
+   * SR TID 1500 (Comprehensive 3D SR, DICOM Part 10) of the annotations on `series`, built with
+   * `@cornerstonejs/adapters`: true UCUM units, the calibration type qualifier, User calibrations
+   * (../sr.ts). On WSI: SCOORD3D in slide mm, freehand contours simplified, geometric measurements only.
+   */
+  exportSr(series: LoadedSeries): Promise<Blob>;
+  /** Remove the annotations on `series`. */
+  clear(series: LoadedSeries): void;
+  /** Show the annotations of an SR (a served DICOM JSON instance) on `series`, reapplying its User calibrations. */
+  importSr(instance: DicomJsonInstance, series: LoadedSeries): Promise<void>;
+  /** Stop listening to CS3D. */
+  dispose(): void;
 }
 
 export interface ViewerAdapter {
@@ -227,6 +257,8 @@ export interface ViewerAdapter {
    * CS3D cache errors are thrown (`isTooLargeError`). `onChange` fires after every change of its state or voxels.
    */
   openSegmentation(series: LoadedSeries, id: string, onChange: () => void): Promise<SegmentationView>;
+  /** The annotations of every view (#289); `onChange` fires when `revision()` bumps. Call once. */
+  watchAnnotations(onChange: () => void): AnnotationSet;
   /**
    * PET (#284): whether SUV scaling was applied to `series` once a view opened it (undefined off PET or
    * before). A missing input falls back to raw Bq/ml silently, so the UI flags it.

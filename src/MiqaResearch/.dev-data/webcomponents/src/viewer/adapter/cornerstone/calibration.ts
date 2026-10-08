@@ -1,5 +1,6 @@
 // User spacing calibration (#281): the Calibrate tool draws a line; once the user gives its known
-// length, `calibrateImageSpacing` (type User) recalibrates that image for the session.
+// length, `calibrateImageSpacing` (type User) recalibrates that image for the session. Each image's
+// reference line and known length are kept, so Save stores them in the SR and reopening reapplies them (#289).
 import { Enums, eventTarget, utilities, type RenderingEngine, type Types } from "@cornerstonejs/core";
 import * as csTools from "@cornerstonejs/tools";
 
@@ -15,6 +16,43 @@ export class CalibrateTool extends csTools.LengthTool {
 registerCornerstoneTool(CalibrateTool);
 
 type Annotation = csTools.Types.Annotation;
+
+/** A User calibration of one image: reference line in DICOM image coordinates (column, row; pixel centres at .5). */
+export interface UserLine {
+  line: [[number, number], [number, number]];
+  knownLengthMm: number;
+}
+
+const userLines = new Map<string, UserLine>();
+const userCalibrationListeners = new Set<() => void>();
+
+/** The User calibration of `imageId` this session, if any. */
+export function userCalibrationOf(imageId: string): UserLine | undefined {
+  return userLines.get(imageId);
+}
+
+/** Called after every User calibration (Save counts it as an edit). */
+export function onUserCalibration(listener: () => void): () => void {
+  userCalibrationListeners.add(listener);
+  return () => userCalibrationListeners.delete(listener);
+}
+
+/** Calibrate `imageId` so `calibration.line` is `knownLengthMm` long (isotropic), and remember it. */
+export function applyUserCalibration(engine: RenderingEngine, imageId: string, calibration: UserLine): void {
+  const [[c0, r0], [c1, r1]] = calibration.line;
+  const pixelsPerMm = Math.hypot(c1 - c0, r1 - r0) / calibration.knownLengthMm;
+  if (!(pixelsPerMm > 0) || !Number.isFinite(pixelsPerMm)) return;
+  // CS3D's unit function takes x scale from `scale` but y from `scale / rowPixelSpacing`:
+  // spacing 1 keeps both equal (isotropic user calibration).
+  csTools.utilities.calibrateImageSpacing(imageId, engine, {
+    type: Enums.CalibrationTypes.USER,
+    scale: pixelsPerMm,
+    rowPixelSpacing: 1,
+    columnPixelSpacing: 1,
+  });
+  userLines.set(imageId, calibration);
+  userCalibrationListeners.forEach((listener) => listener());
+}
 
 export interface CalibrationHandle {
   pending(): PendingCalibration | undefined;
@@ -57,11 +95,6 @@ export function watchCalibration(
     const { imageData } = viewport.getImageData();
     return a.data.handles!.points!.map((point) => utilities.transformWorldToIndex(imageData, point));
   };
-  /** Line length in image pixels, independent of the current calibration. */
-  const pixelLength = (a: Annotation) => {
-    const [p, q] = indexPoints(a);
-    return Math.hypot(q[0] - p[0], q[1] - p[1]);
-  };
 
   return {
     pending() {
@@ -74,17 +107,10 @@ export function watchCalibration(
     calibrate(knownLengthMm: number) {
       if (!line || !(knownLengthMm > 0)) return;
       const imageId = line.metadata!.referencedImageId!;
-      const pixelsPerMm = pixelLength(line) / knownLengthMm;
+      // Index space has pixel centres at integers; DICOM image coordinates at .5.
+      const [p, q] = indexPoints(line).map((point) => [point[0] + 0.5, point[1] + 0.5] as [number, number]);
       drop();
-      if (!(pixelsPerMm > 0)) return onChange();
-      // CS3D's unit function takes x scale from `scale` but y from `scale / rowPixelSpacing`:
-      // spacing 1 keeps both equal (isotropic user calibration).
-      csTools.utilities.calibrateImageSpacing(imageId, engine, {
-        type: Enums.CalibrationTypes.USER,
-        scale: pixelsPerMm,
-        rowPixelSpacing: 1,
-        columnPixelSpacing: 1,
-      });
+      applyUserCalibration(engine, imageId, { line: [p, q], knownLengthMm });
       onChange();
     },
     cancel() {

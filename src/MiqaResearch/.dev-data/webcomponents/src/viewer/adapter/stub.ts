@@ -7,6 +7,7 @@ import { DEFAULT_BRUSH_SIZE, SegmentList, type Rgb, type SegmentationState, type
 import type { GpuLimits } from "../size-guard.ts";
 import { suvStatusFor, type SuvStatus } from "../suv.ts";
 import type {
+  AnnotationSet,
   SegmentationView,
   LayerOptions,
   LayerState,
@@ -333,8 +334,74 @@ export class StubSegmentationView implements SegmentationView {
     return { ...this.voxels };
   }
 
+  /** Test-controlled edit counter (#289). */
+  edits = 0;
+  revision(): number {
+    return this.edits;
+  }
+
+  async exportSeg(): Promise<Blob> {
+    return new Blob(["SEG"], { type: "application/dicom" });
+  }
+
   close(): void {
     this.closed = true;
+  }
+}
+
+/** Annotations held in memory (#289): a test sets the tools drawn and bumps the revision with `draw`. */
+export class StubAnnotationSet implements AnnotationSet {
+  edits = 0;
+  tools: string[] = [];
+  exported: LoadedSeries[] = [];
+  imported: { instance: DicomJsonInstance; series: LoadedSeries }[] = [];
+  cleared = 0;
+  disposed = false;
+  private readonly onChange: () => void;
+
+  constructor(onChange: () => void) {
+    this.onChange = onChange;
+  }
+
+  /** Test helper: draw (or edit) annotations with these tools, as the engine would, and notify. */
+  draw(...tools: string[]): void {
+    this.tools.push(...tools);
+    this.edits += 1;
+    this.onChange();
+  }
+
+  revision(): number {
+    return this.edits;
+  }
+
+  count(): number {
+    return this.tools.length;
+  }
+
+  toolNames(): string[] {
+    return [...this.tools];
+  }
+
+  async exportSr(series: LoadedSeries): Promise<Blob> {
+    this.exported.push(series);
+    return new Blob(["SR"], { type: "application/dicom" });
+  }
+
+  clear(): void {
+    this.cleared += 1;
+    if (this.tools.length) this.edits += 1;
+    this.tools = [];
+    this.onChange();
+  }
+
+  async importSr(instance: DicomJsonInstance, series: LoadedSeries): Promise<void> {
+    this.imported.push({ instance, series });
+    this.tools.push("Length");
+    this.onChange();
+  }
+
+  dispose(): void {
+    this.disposed = true;
   }
 }
 
@@ -404,6 +471,14 @@ export class StubAdapter implements ViewerAdapter {
     const seg = new StubSegmentationView(series, id, onChange);
     this.segmentations.push(seg);
     return seg;
+  }
+
+  /** Annotations of every view (#289). */
+  annotations: StubAnnotationSet | undefined;
+
+  watchAnnotations(onChange: () => void): AnnotationSet {
+    this.annotations = new StubAnnotationSet(onChange);
+    return this.annotations;
   }
 
   /** Series evicted from the cache (#284). */

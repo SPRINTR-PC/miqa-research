@@ -10,6 +10,7 @@ import { customElement, property, state } from "lit/decorators.js";
 
 import type {
   AdapterFactory,
+  AnnotationSet,
   StackState,
   StackView,
   ViewControls,
@@ -22,6 +23,7 @@ import { fetchBulkAnnotations, type BulkAnnotationGroup } from "./bulk-annotatio
 import { seriesList, seriesListItem, type SeriesListItem } from "./chrome/series-list.ts";
 import { toolRail } from "./chrome/tool-rail.ts";
 import { refusalMessage, sizeBanner, sizeBannerStyles } from "./chrome/size-banner.ts";
+import { conflictDialog, saveDialogStyles, toast } from "./chrome/save-dialogs.ts";
 import { volumeGrid, volumeGridStyles } from "./chrome/volume-grid.ts";
 import { dropZones, dropZoneStyles, type DropZone } from "./chrome/drop-zones.ts";
 import { commands } from "./commands.ts";
@@ -32,7 +34,8 @@ import { burnedInWarning } from "./calibration.ts";
 import { fuseBlocker, layerDisplay, modalityOf, overlayBudget, replaceBlocker, seriesLabel } from "./fusion.ts";
 import { clampSplit, loadSplit, saveSplit, swapIntoMain, threeViews, type ViewLayout } from "./layout.ts";
 import { isReconstructable, type Reconstructability } from "./reconstructable.ts";
-import { fetchSeries, type LoadedSeries, type SeriesRef } from "./series.ts";
+import { SaveController, type ObjectKind, type ObjectVersion, type SaveHost } from "./save.ts";
+import { fetchSeries, type DicomJsonInstance, type LoadedSeries, type SeriesRef } from "./series.ts";
 import {
   SizeGuard,
   TOO_LARGE_MESSAGE,
@@ -109,6 +112,10 @@ export class MiresViewer extends LitElement {
     refuse: (message) => this.refuse(message),
     changed: () => this.requestUpdate(),
   });
+  /** Save (#289): Annotations (SR) and the Segmentation (SEG) of the base series. */
+  readonly save = new SaveController(this.saveHost());
+  @state() private toastMessage = "";
+  private toastTimer: ReturnType<typeof setTimeout> | undefined;
   @state() private gpu: GpuLimits | undefined;
   /** Whether the series fits as a full-resolution volume; drives the banner and the layout panel. */
   @state() private volumeFit: VolumeFit | undefined;
@@ -125,6 +132,8 @@ export class MiresViewer extends LitElement {
   private readonly catalog = new Map<string, LoadedSeries>();
 
   private adapter: ViewerAdapter | undefined;
+  /** Annotations of every view (#289). */
+  private annotations: AnnotationSet | undefined;
   private view: StackView | undefined;
   private wsiView: WsiView | undefined;
   private volumeView: VolumeView | undefined;
@@ -135,7 +144,7 @@ export class MiresViewer extends LitElement {
   /** First-render marks + beacon (#293); volume views mark "interleaved" / "volume-loaded" on it. */
   firstRender: FirstRenderReport | undefined;
 
-  static styles = [volumeGridStyles, sizeBannerStyles, dropZoneStyles, css`
+  static styles = [volumeGridStyles, sizeBannerStyles, dropZoneStyles, saveDialogStyles, css`
     :host { display: block; position: relative; background: #0b0d10; color: #d8dde3; font: 13px system-ui, sans-serif; outline: none; }
     .chrome { position: absolute; inset: 0; display: grid; grid-template-columns: 180px 56px minmax(0, 1fr) 250px; }
     button { font: inherit; color: inherit; background: #1b2027; border: 1px solid #2b323c; border-radius: 4px; padding: 4px 8px; cursor: pointer; }
@@ -171,6 +180,9 @@ export class MiresViewer extends LitElement {
     .inspector .grid2 button { text-align: left; font-size: 12px; }
     .inspector .row { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
     .inspector .badge { font: 11px ui-monospace, monospace; padding: 1px 6px; border-radius: 3px; background: #1d2b3b; border: 1px solid #2f4a6b; }
+    .inspector .save-buttons { display: flex; flex-direction: column; gap: 4px; }
+    .inspector .save-buttons button { text-align: left; font-size: 12px; }
+    .inspector .save-dropped, .inspector .save-error { color: #ffcf7a; }
     .inspector .badge[data-level="warn"] { background: #3b2a12; border-color: #8a5a14; color: #ffcf7a; }
   `];
 
@@ -223,7 +235,10 @@ export class MiresViewer extends LitElement {
     this.removeEventListener("keydown", this.onKey);
     this.resizeObserver?.disconnect();
     this.firstRender?.dispose();
+    clearTimeout(this.toastTimer);
     this.segmentation.close();
+    this.annotations?.dispose();
+    this.annotations = undefined;
     this.adapter?.destroy();
     this.adapter = undefined;
     this.view = undefined;
@@ -246,6 +261,7 @@ export class MiresViewer extends LitElement {
       this.mpr = isReconstructable(series);
       this.adapter = await this.adapterFactory();
       if (this.disposed) return this.adapter.destroy();
+      this.annotations = this.adapter.watchAnnotations(() => this.requestUpdate());
       const wsi = isWholeSlide(series);
       if (wsi) this.viewportKind = "wsi";
       // Size guard (#283): 2D images must fit one texture (WSI is tiled); 3D is checked against the budget.
@@ -311,6 +327,57 @@ export class MiresViewer extends LitElement {
       this.view = await adapter.openStack(viewport, series, onChange);
     }
     this.suv = adapter.suvStatus(series);
+  }
+
+  /** What Save (#289) needs of the element: edits, bytes from the adapter, loading the head saved first. */
+  private saveHost(): SaveHost {
+    const el = this;
+    return {
+      get apiRoot() {
+        return el.apiRoot;
+      },
+      revision: (kind) => (kind === "annotation" ? (el.annotations?.revision() ?? 0) : el.segmentation.revision()),
+      isEmpty: (kind) =>
+        kind === "annotation" ? !el.loaded || !el.annotations?.count(el.loaded) : el.segmentation.isEmpty(),
+      // Base series first, then the fused overlays (#284): objects made on a Fusion list them all.
+      sourceSeries: () => [el.seriesUid, ...(el.volume?.layers ?? []).map((l) => l.seriesUid).filter((uid) => uid !== el.seriesUid)],
+      build: async (kind) => {
+        if (kind === "segmentation") {
+          if (!el.segmentation.view) throw new Error("no segmentation");
+          return el.segmentation.view.exportSeg();
+        }
+        if (!el.annotations || !el.loaded) throw new Error("the viewer isn't ready");
+        return el.annotations.exportSr(el.loaded);
+      },
+      loadTheirs: (kind, head) => el.loadTheirs(kind, head),
+      changed: () => el.requestUpdate(),
+      toast: (message) => el.showToast(message),
+    };
+  }
+
+  /** 409 "Discard mine, load theirs": drop the local edits and show the head saved first. */
+  private async loadTheirs(kind: ObjectKind, head: ObjectVersion): Promise<void> {
+    const series = this.loaded;
+    if (!series) return;
+    if (kind === "segmentation") {
+      // Showing a saved SEG comes with the results tree (#290); until then the edits are dropped.
+      this.segmentation.close();
+      this.showToast(`Your Segmentation edits were discarded; v${head.version} is the current version.`);
+      return;
+    }
+    this.annotations?.clear(series);
+    const url = `${this.wadoRoot}/studies/${this.studyUid}/series/${head.series_instance_uid}/metadata`;
+    const response = await fetch(url, { credentials: "same-origin", headers: { Accept: "application/dicom+json" } });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const [instance] = (await response.json()) as DicomJsonInstance[];
+    if (instance) await this.annotations?.importSr(instance, series);
+    this.showToast(`Showing Annotations v${head.version}`);
+  }
+
+  private showToast(message: string): void {
+    this.toastMessage = message;
+    clearTimeout(this.toastTimer);
+    this.toastTimer = setTimeout(() => (this.toastMessage = ""), 4000);
   }
 
   /** Show a refusal message over the view (#283: over-budget fusion #284 / labelmap #286, cache errors). */
@@ -569,6 +636,7 @@ export class MiresViewer extends LitElement {
       this.bulkGroups = [];
       this.loaded = next;
       this.seriesUid = uid;
+      this.save.reset(); // Save (#289) starts over on the new base series
       this.mpr = isReconstructable(next);
       this.viewportKind = wsi ? "wsi" : "stack";
       this.layout = { kind: "stack" };
@@ -623,6 +691,8 @@ export class MiresViewer extends LitElement {
       thresholdLayer: this.thresholdLayer(),
       runThreshold: (range, slices) => this.segmentation.runThreshold(range, slices, this.thresholdLayer().seriesUid),
       thresholdResult: this.segmentation.thresholdResult,
+      save: this.save,
+      annotationTools: (this.loaded && this.annotations?.toolNames(this.loaded)) || [],
       layers: this.volume?.layers ?? [],
       selectedLayer: this.volume?.selectedLayer,
       selectLayer: (uid) => this.volumeView?.selectLayer(uid),
@@ -713,6 +783,8 @@ export class MiresViewer extends LitElement {
       <div class="stage" @pointerdown=${() => this.focus()} @contextmenu=${(e: Event) => e.preventDefault()}>
         ${views} ${this.burnedIn(ctx)} ${sizeBanner(this.volumeFit, this.layout)}
         ${refusalMessage(this.refusal, () => (this.refusal = ""))}
+        ${conflictDialog(this.save.conflict, !!this.save.saving, (choice) => void this.save.resolve(choice), () => this.save.dismiss())}
+        ${toast(this.toastMessage)}
         ${this.dragged
           ? dropZones({
               width: this.layout.kind === "volume" && this.layout.orientations.length === 3 ? this.split : 100,
