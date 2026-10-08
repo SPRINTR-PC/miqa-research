@@ -45,6 +45,8 @@ export interface SaveHost {
   /** State changed: re-render. */
   changed(): void;
   toast(message: string): void;
+  /** `kind` was saved, or its edits dropped for the head saved first (drafts #291 clear it). */
+  saved?(kind: ObjectKind): void;
 }
 
 const NOUN: Record<ObjectKind, string> = { annotation: "Annotations", segmentation: "Segmentation" };
@@ -83,6 +85,12 @@ export class SaveController {
 
   head(kind: ObjectKind): ObjectVersion | undefined {
     return this.heads[kind]?.version;
+  }
+
+  /** The head `kind` is edited on top of and whether the user may supersede it (drafts #291). */
+  base(kind: ObjectKind): { head: ObjectVersion; canChange: boolean } | undefined {
+    const head = this.heads[kind];
+    return head && { head: head.version, canChange: head.canChange };
   }
 
   dirty(kind: ObjectKind): boolean {
@@ -130,6 +138,7 @@ export class SaveController {
         this.error = `Couldn't load v${conflict.head.version}: ${e instanceof Error ? e.message : String(e)}`;
       }
       this.setHead(conflict.kind, conflict.head, conflict.canChange);
+      this.host.saved?.(conflict.kind);
       return;
     }
     await this.post(conflict.kind, choice === "on-top" ? conflict.head.id : undefined);
@@ -164,6 +173,7 @@ export class SaveController {
         this.heads[kind] = { version: body as ObjectVersion, canChange: true }; // the author may change their own
         this.baseline[kind] = revision;
         this.host.toast(`${NOUN[kind]} saved (v${body.version})`);
+        this.host.saved?.(kind);
       } else if (response.status === 409) {
         this.conflict = { kind, head: body.head, canChange: !!body.can_change };
       } else {

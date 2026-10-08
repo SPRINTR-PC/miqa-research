@@ -196,6 +196,13 @@ export interface SegmentationView {
   revision(): number;
   /** SEG 66.4 BINARY (DICOM Part 10) of the painted segments (#289). Throws when nothing is painted. */
   exportSeg(): Promise<Blob>;
+  /**
+   * Draft (#291): the segments and the labelmap as Cornerstone JSON (structured-cloneable; the labelmap
+   * run-length encoded per image).
+   */
+  snapshot(): unknown;
+  /** Draft (#291): replace the segments and the labelmap with a `snapshot()`; an edit (bumps `revision()`). */
+  restore(snapshot: unknown): void;
   /** Drop the labelmap and its cached images. */
   close(): void;
 }
@@ -222,6 +229,13 @@ export interface AnnotationSet {
   clear(series: LoadedSeries): void;
   /** Show the annotations of an SR (a served DICOM JSON instance) on `series`, reapplying its User calibrations. */
   importSr(instance: DicomJsonInstance, series: LoadedSeries): Promise<void>;
+  /**
+   * Draft (#291): the annotations on `series` and the User calibrations of its images as Cornerstone
+   * JSON (structured-cloneable).
+   */
+  snapshot(series: LoadedSeries): unknown;
+  /** Draft (#291): replace the annotations on `series` with a `snapshot()`; an edit (bumps `revision()`). */
+  restore(snapshot: unknown, series: LoadedSeries): void;
   /** Stop listening to CS3D. */
   dispose(): void;
 }
