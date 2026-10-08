@@ -7,6 +7,7 @@
 // in its own ./cornerstone/<capability>.ts, and extend the stub.
 
 import type { BulkAnnotationGroup } from "../bulk-annotations.ts";
+import type { Orientation } from "../layout.ts";
 import type { DicomJsonInstance, LoadedSeries } from "../series.ts";
 
 /** Window as a value range in modality units (e.g. HU after rescale). */
@@ -31,6 +32,14 @@ export interface StackState {
   unit: string;
   /** Annotations (measurements, ROIs, arrows) drawn on this view. */
   annotationCount: number;
+  /** A Calibrate line drawn and waiting for its known length (#281). */
+  pendingCalibration?: PendingCalibration;
+}
+
+/** Calibrate line (#281): its length in the image's current unit. */
+export interface PendingCalibration {
+  length: number;
+  unit: string;
 }
 
 /**
@@ -51,6 +60,42 @@ export interface ViewControls {
 export interface StackView extends ViewControls {
   state(): StackState;
   scrollTo(imageIndex: number): void;
+  /**
+   * User calibration (#281) of the pending Calibrate line's image: the line is `knownLengthMm` long.
+   * Planar stacks only; views without calibration (WSI) leave it out.
+   */
+  calibrate?(knownLengthMm: number): void;
+  /** Drop the pending Calibrate line without calibrating. */
+  cancelCalibration?(): void;
+}
+
+/** One ORTHOGRAPHIC view of a volume (#282). */
+export interface VolumeViewState {
+  orientation: Orientation;
+  /** Camera focal point in world (patient) mm. */
+  focalPoint: [number, number, number];
+  /** 0-based slice shown along this view's normal. */
+  sliceIndex: number;
+  sliceCount: number;
+}
+
+/** Observable state of a volume view: one or three views of one cached volume. */
+export interface VolumeState {
+  activeTool: string;
+  /** Window of the base volume (the same in every view). */
+  voi: VoiRange | undefined;
+  invert: boolean;
+  /** Slot 0 is the big view. */
+  views: VolumeViewState[];
+}
+
+/** First-render stages a volume reports (#293): coarse interleaved pass done, every slice loaded. */
+export type VolumeLoadStage = "interleaved" | "volume-loaded";
+
+export interface VolumeView extends ViewControls {
+  state(): VolumeState;
+  /** Show the volume in the first `orientations.length` slots (1 or 3), slot 0 = big view. */
+  setOrientations(orientations: Orientation[]): Promise<void>;
 }
 
 /** A whole-slide view (#285) with read-only bulk annotations (ANN, #292). */
@@ -73,6 +118,20 @@ export interface ViewerAdapter {
    * one image, zoom 1 = fit; `scrollTo` is a no-op.
    */
   openWsi(element: HTMLDivElement, series: LoadedSeries, onChange: () => void): Promise<WsiView>;
+  /**
+   * Show a series as one cached streaming volume in ORTHOGRAPHIC views (#282). `slots` are three
+   * empty divs; the first `orientations.length` are visible and sized, and get a view. Only for
+   * series that pass the reconstructability rule (../reconstructable.ts).
+   */
+  openVolume(
+    slots: HTMLDivElement[],
+    series: LoadedSeries,
+    orientations: Orientation[],
+    onChange: () => void,
+    onStage: (stage: VolumeLoadStage) => void,
+  ): Promise<VolumeView>;
+  /** Release one view opened by this adapter (its viewports and tool group); cached images stay. */
+  close(view: ViewControls): void;
   /** Call after the host element changed size; CS3D doesn't observe it. */
   resize(): void;
   /** Release viewports, tool groups and the rendering engine. */

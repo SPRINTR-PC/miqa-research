@@ -19,7 +19,11 @@ One file per concern, so parallel tickets touch different files.
 | `tools/bindings.ts` | Workstation mouse as a binding plan of abstract buttons. Pure. | #280, #285 (WSI), #286 (erase) |
 | `chrome/*.ts` | Series list, tool rail templates. | #280, #279/#284/#290 (series list) |
 | `units.ts` | Tooltip text for CS3D's raw unit suffixes. | #280, #281 |
+| `calibration.ts` | Calibration legend per unit, SC spacing shim payload, burned-in badge rule. Pure. | #281 |
 | `series.ts` | `/metadata` fetch → ordered `wadors:` frame imageIds. Pure, no CS3D. | #278 |
+| `reconstructable.ts` | OHIF reconstructability rule: gates MPR / three views (and fusion). Pure. | #282 |
+| `layout.ts` | `ViewLayout` (stack, or volume orientations; slot 0 = big view), V cycle, swap, split (25–85%, localStorage), orientation colours. Pure. | #282 |
+| `chrome/volume-grid.ts` | Volume cells (always three, unused ones hidden) + split divider. | #282 |
 | `first-render.ts` | `performance.mark`s, the first-render beacon and the HTTP/1.1 `/frames` warning. Volume views mark `interleaved` / `volume-loaded` on the element's `firstRender`. | #293, volume #282 |
 | `adapter/adapter.ts` | **The seam**: `ViewerAdapter` and its view types. Add one member per capability. | all |
 | `adapter/stub.ts` | Test double for the seam. Extend it with each new member. | all |
@@ -52,7 +56,8 @@ import line each. Registries throw on duplicate ids/keys, so clashes fail in vit
      instance, `registerCornerstoneTool(Base, { id, configuration })`; `passive: true` keeps
      annotations drawn and editable when the tool is not on a button. Import the module from
      `adapter/cornerstone/index.ts`. Every stack/volume tool group gets all registered tools.
-  - Keys taken: w p z s l a b o r e f t; reserved for later tickets: x (Crosshairs), c (Calibrate),
+  - `minViews` hides a tool unless that many views are shown (Crosshairs: 3); the element passes `views` in the scope.
+  - Keys taken: w p z s l a b o r e f t c (Calibrate, #281) x (Crosshairs, `tools/volume.ts`); reserved for later tickets:
     g d k q j y m (segment tools); never a tool key: 0–9 (presets), i, v, Esc (`RESERVED_KEYS`).
 - **Mouse:** `workstationBindings({ primary, viewport, secondary })` (tools/bindings.ts) is the single
   source of the workstation mouse; views apply it with `applyBindingPlan` (disable-then-activate,
@@ -68,6 +73,12 @@ import line each. Registries throw on duplicate ids/keys, so clashes fail in vit
 - **Presets:** `presets.register({ id, label, key, modalities, window | range })` (tools/presets.ts).
 - **A view kind** (volume #282, WSI #285): implement `ViewControls` (adapter.ts) so the rail, keys,
   presets and inspector work unchanged; the element's `viewportKind` selects the tool set.
+  `ViewerAdapter.close(view)` releases one view (the element closes the stack before opening a volume).
+- **Volumes** (#282; fusion #284, size guard #283, segmentation #286 build on it): the series opens as a
+  stack; the layout panel (`inspector/layout.ts`) offers 1×1 axial/sagittal/coronal and three views when
+  `isReconstructable` passes. `ctx.setLayout(layout)` switches; `openVolume` caches one streaming volume per
+  series (`volumeIdFor(seriesUid)` in `adapter/cornerstone/volume.ts`) and reports the first-render stages
+  `interleaved` / `volume-loaded`. `interleavedRetrieveStages` is registered for `'volume'` in `init.ts`.
 - **Role:** the page sets the boolean `can-annotate` attribute from the server
   (`ParticipantRights.can_author`: Annotator, PI, Site PI, Admin). It gates Arrow, Calibrate, segment
   tools and Save in the UI only; the server authorises saves again (#287).

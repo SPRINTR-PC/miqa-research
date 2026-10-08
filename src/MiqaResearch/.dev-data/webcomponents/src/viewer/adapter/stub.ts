@@ -1,13 +1,26 @@
 // In-memory ViewerAdapter for vitest: records calls and lets a test drive state changes.
 import { annotationGroups, type BulkAnnotationGroup } from "../bulk-annotations.ts";
+import type { Orientation } from "../layout.ts";
 import type { DicomJsonInstance, LoadedSeries } from "../series.ts";
-import type { StackState, StackView, ViewerAdapter, VoiRange, WsiView } from "./adapter.ts";
+import type {
+  StackState,
+  StackView,
+  ViewControls,
+  ViewerAdapter,
+  VoiRange,
+  VolumeLoadStage,
+  VolumeState,
+  VolumeView,
+  WsiView,
+} from "./adapter.ts";
 
 export class StubStackView implements StackView {
   current: StackState;
   /** Window the image came with; resetVoi/resetView go back to it. */
   defaultVoi: VoiRange | undefined;
   resets = 0;
+  /** Known lengths passed to calibrate(). */
+  calibrations: number[] = [];
   private readonly onChange: () => void;
 
   constructor(series: LoadedSeries, onChange: () => void) {
@@ -55,6 +68,15 @@ export class StubStackView implements StackView {
     this.emit({ invert: !this.current.invert });
   }
 
+  calibrate(knownLengthMm: number): void {
+    this.calibrations.push(knownLengthMm);
+    this.emit({ unit: "mm User", pendingCalibration: undefined });
+  }
+
+  cancelCalibration(): void {
+    this.emit({ pendingCalibration: undefined });
+  }
+
   resetView(): void {
     this.resets += 1;
     this.emit({ voi: this.defaultVoi, invert: false, zoom: 1, pan: [0, 0] });
@@ -82,11 +104,86 @@ export class StubWsiView extends StubStackView implements WsiView {
   }
 }
 
+export class StubVolumeView implements VolumeView {
+  current: VolumeState;
+  orientations: Orientation[];
+  readonly slots: HTMLDivElement[];
+  readonly series: LoadedSeries;
+  private readonly onChange: () => void;
+  private readonly onStage: (stage: VolumeLoadStage) => void;
+
+  constructor(
+    slots: HTMLDivElement[],
+    series: LoadedSeries,
+    orientations: Orientation[],
+    onChange: () => void,
+    onStage: (stage: VolumeLoadStage) => void,
+  ) {
+    this.slots = slots;
+    this.series = series;
+    this.orientations = orientations;
+    this.onChange = onChange;
+    this.onStage = onStage;
+    this.current = { activeTool: "", voi: undefined, invert: false, views: this.viewStates() };
+  }
+
+  private viewStates() {
+    const n = this.series.images.length;
+    return this.orientations.map((orientation) => ({
+      orientation,
+      focalPoint: [0, 0, 0] as [number, number, number],
+      sliceIndex: Math.floor(n / 2),
+      sliceCount: n,
+    }));
+  }
+
+  state(): VolumeState {
+    return { ...this.current, views: this.current.views.map((v) => ({ ...v })) };
+  }
+
+  emit(change: Partial<VolumeState>): void {
+    Object.assign(this.current, change);
+    this.onChange();
+  }
+
+  /** Test helper: report a first-render stage as the engine would. */
+  stage(stage: VolumeLoadStage): void {
+    this.onStage(stage);
+  }
+
+  async setOrientations(orientations: Orientation[]): Promise<void> {
+    this.orientations = [...orientations];
+    this.emit({ views: this.viewStates() });
+  }
+
+  setTool(toolId: string): void {
+    this.emit({ activeTool: toolId });
+  }
+
+  setVoi(voi: VoiRange): void {
+    this.emit({ voi });
+  }
+
+  resetVoi(): void {
+    this.emit({ voi: undefined });
+  }
+
+  toggleInvert(): void {
+    this.emit({ invert: !this.current.invert });
+  }
+
+  resetView(): void {
+    this.emit({ voi: undefined, invert: false });
+  }
+}
+
 export class StubAdapter implements ViewerAdapter {
   opened: { element: HTMLDivElement; series: LoadedSeries }[] = [];
   openedWsi: { element: HTMLDivElement; series: LoadedSeries }[] = [];
   views: StubStackView[] = [];
   wsiViews: StubWsiView[] = [];
+  volumes: StubVolumeView[] = [];
+  closed: ViewControls[] = [];
   resizes = 0;
   destroyed = false;
   /** Set to make the next openStack reject. */
@@ -107,6 +204,23 @@ export class StubAdapter implements ViewerAdapter {
     this.views.push(view);
     this.wsiViews.push(view);
     return view;
+  }
+
+  async openVolume(
+    slots: HTMLDivElement[],
+    series: LoadedSeries,
+    orientations: Orientation[],
+    onChange: () => void,
+    onStage: (stage: VolumeLoadStage) => void,
+  ): Promise<VolumeView> {
+    if (this.failWith) throw this.failWith;
+    const view = new StubVolumeView(slots, series, [...orientations], onChange, onStage);
+    this.volumes.push(view);
+    return view;
+  }
+
+  close(view: ViewControls): void {
+    this.closed.push(view);
   }
 
   resize(): void {

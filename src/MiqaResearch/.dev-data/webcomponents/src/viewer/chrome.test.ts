@@ -49,7 +49,7 @@ describe("tool rail", () => {
     expect($$(el, ".rail h6").map((h) => h.textContent)).toEqual(["Nav", "Measure", "Annot."]);
     expect(railTools(el)).toEqual([
       "WindowLevel", "Pan", "Zoom", "StackScroll",
-      "Length", "Angle", "Bidirectional", "Probe", "RectangleROI", "EllipticalROI", "PlanarFreehandROI",
+      "Length", "Angle", "Bidirectional", "Probe", "RectangleROI", "EllipticalROI", "PlanarFreehandROI", "Calibrate",
       "ArrowAnnotate",
     ]);
   });

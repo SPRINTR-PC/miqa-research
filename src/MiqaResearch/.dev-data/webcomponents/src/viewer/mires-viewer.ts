@@ -8,16 +8,30 @@
 import { LitElement, css, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 
-import type { AdapterFactory, StackState, StackView, ViewerAdapter, WsiView } from "./adapter/adapter.ts";
+import type {
+  AdapterFactory,
+  StackState,
+  StackView,
+  ViewControls,
+  ViewerAdapter,
+  VolumeState,
+  VolumeView,
+  WsiView,
+} from "./adapter/adapter.ts";
 import { fetchBulkAnnotations, type BulkAnnotationGroup } from "./bulk-annotations.ts";
 import { seriesList, seriesListItem, type SeriesListItem } from "./chrome/series-list.ts";
 import { toolRail } from "./chrome/tool-rail.ts";
+import { volumeGrid, volumeGridStyles } from "./chrome/volume-grid.ts";
 import { commands } from "./commands.ts";
 import type { ViewerContext } from "./context.ts";
 import { FirstRenderReport } from "./first-render.ts";
 import { inspector } from "./inspector/index.ts";
-import { fetchSeries, type SeriesRef } from "./series.ts";
-import { presets, presetVoi, tools, voiToWindow, type Preset, type ViewportKind } from "./tools/index.ts";
+import { burnedInWarning } from "./calibration.ts";
+import { clampSplit, loadSplit, saveSplit, swapIntoMain, type ViewLayout } from "./layout.ts";
+import { isReconstructable, type Reconstructability } from "./reconstructable.ts";
+import { fetchSeries, type LoadedSeries, type SeriesRef } from "./series.ts";
+import { presets, presetVoi, tools, voiToWindow, type Preset, type ToolScope, type ViewportKind } from "./tools/index.ts";
+import { CROSSHAIRS } from "./tools/volume.ts";
 import { unitTooltip } from "./units.ts";
 import { isWholeSlide, WSI_DEFAULT_TOOL } from "./wsi.ts";
 
@@ -53,15 +67,25 @@ export class MiresViewer extends LitElement {
   @state() private viewportKind: ViewportKind = "stack";
   @state() private bulkGroups: BulkAnnotationGroup[] = [];
 
+  /** Stack, or a volume in one / three views (#282). */
+  @state() private layout: ViewLayout = { kind: "stack" };
+  @state() private volume: VolumeState | undefined;
+  @state() private split = loadSplit();
+  /** A layout switch is running (views being closed/opened); further switches are ignored. */
+  @state() layoutBusy = false;
+
   private adapter: ViewerAdapter | undefined;
   private view: StackView | undefined;
   private wsiView: WsiView | undefined;
+  private volumeView: VolumeView | undefined;
+  private loaded: LoadedSeries | undefined;
+  private mpr: Reconstructability | undefined;
   private resizeObserver: ResizeObserver | undefined;
   private disposed = false;
   /** First-render marks + beacon (#293); volume views mark "interleaved" / "volume-loaded" on it. */
   firstRender: FirstRenderReport | undefined;
 
-  static styles = css`
+  static styles = [volumeGridStyles, css`
     :host { display: block; position: relative; background: #0b0d10; color: #d8dde3; font: 13px system-ui, sans-serif; outline: none; }
     .chrome { position: absolute; inset: 0; display: grid; grid-template-columns: 180px 56px minmax(0, 1fr) 250px; }
     button { font: inherit; color: inherit; background: #1b2027; border: 1px solid #2b323c; border-radius: 4px; padding: 4px 8px; cursor: pointer; }
@@ -88,6 +112,7 @@ export class MiresViewer extends LitElement {
     .stage { position: relative; background: #000; min-width: 0; min-height: 0; }
     .viewport { position: absolute; inset: 0; }
     .overlay { position: absolute; left: 8px; bottom: 8px; pointer-events: none; text-shadow: 0 0 2px #000; font: 12px ui-monospace, monospace; }
+    .burned-in { position: absolute; left: 8px; top: 8px; z-index: 5; padding: 1px 6px; border-radius: 3px; font-size: 11px; cursor: help; background: #3b2a12; border: 1px solid #8a5a14; color: #ffcf7a; }
     .unit { position: absolute; right: 8px; top: 8px; z-index: 5; padding: 1px 6px; border-radius: 3px; font: 11px ui-monospace, monospace; cursor: help; background: #1d2b3b; border: 1px solid #2f4a6b; }
     [role="alert"] { position: absolute; inset: auto 8px 8px; color: #f88; }
 
@@ -95,7 +120,9 @@ export class MiresViewer extends LitElement {
     .inspector .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
     .inspector .grid2 button { text-align: left; font-size: 12px; }
     .inspector .row { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
-  `;
+    .inspector .badge { font: 11px ui-monospace, monospace; padding: 1px 6px; border-radius: 3px; background: #1d2b3b; border: 1px solid #2f4a6b; }
+    .inspector .badge[data-level="warn"] { background: #3b2a12; border-color: #8a5a14; color: #ffcf7a; }
+  `];
 
   /** Current stack state, for browser tests and diagnostics. */
   get stackState(): StackState | undefined {
@@ -105,6 +132,16 @@ export class MiresViewer extends LitElement {
   /** The open stack view (scroll / window), for browser tests and diagnostics. */
   get stackView(): StackView | undefined {
     return this.view;
+  }
+
+  /** Current volume state (#282), for browser tests and diagnostics. */
+  get volumeState(): VolumeState | undefined {
+    return this.volumeView?.state();
+  }
+
+  /** Controls of whichever view is open. */
+  private get controls(): ViewControls | undefined {
+    return this.volumeView ?? this.view;
   }
 
   connectedCallback(): void {
@@ -124,6 +161,7 @@ export class MiresViewer extends LitElement {
     this.adapter = undefined;
     this.view = undefined;
     this.wsiView = undefined;
+    this.volumeView = undefined;
   }
 
   protected firstUpdated(): void {
@@ -131,35 +169,26 @@ export class MiresViewer extends LitElement {
   }
 
   private async open(): Promise<void> {
-    const viewport = this.renderRoot.querySelector<HTMLDivElement>(".viewport")!;
     this.firstRender = new FirstRenderReport();
     try {
       const series = await fetchSeries({ wadoRoot: this.wadoRoot, studyUid: this.studyUid, seriesUid: this.seriesUid });
       this.firstRender.series(series);
       this.series = [seriesListItem(series)];
+      this.loaded = series;
+      this.mpr = isReconstructable(series);
       this.adapter = await this.adapterFactory();
       if (this.disposed) return this.adapter.destroy();
-      const onChange = () => {
-        this.stack = this.view?.state();
-        this.bulkGroups = this.wsiView?.bulkAnnotationGroups() ?? [];
-      };
       const wsi = isWholeSlide(series);
-      if (wsi) {
-        this.viewportKind = "wsi";
-        this.view = this.wsiView = await this.adapter.openWsi(viewport, series, onChange);
-        if (this.participant) void this.loadBulkAnnotations(this.wsiView, series.ref);
-      } else {
-        this.view = await this.adapter.openStack(viewport, series, onChange);
-      }
-      this.view.setTool(wsi ? WSI_DEFAULT_TOOL : DEFAULT_TOOL);
-      this.stack = this.view.state();
+      if (wsi) this.viewportKind = "wsi";
+      await this.openStackView(this.adapter, series);
+      this.view!.setTool(wsi ? WSI_DEFAULT_TOOL : DEFAULT_TOOL);
+      this.stack = this.view!.state();
       this.firstRender.mark("first-image");
       this.resizeObserver = new ResizeObserver(() => this.adapter?.resize());
-      this.resizeObserver.observe(viewport);
+      this.resizeObserver.observe(this.renderRoot.querySelector(".stage")!);
       this.state = "ready";
     } catch (e) {
-      this.error = e instanceof Error ? e.message : String(e);
-      this.state = "error";
+      this.fail(e);
     }
   }
 
@@ -173,17 +202,128 @@ export class MiresViewer extends LitElement {
     }
   }
 
+  private fail(e: unknown): void {
+    this.error = e instanceof Error ? e.message : String(e);
+    this.state = "error";
+  }
+
+  private async openStackView(adapter: ViewerAdapter, series: LoadedSeries): Promise<void> {
+    const viewport = this.renderRoot.querySelector<HTMLDivElement>(".viewport")!;
+    const onChange = () => {
+      this.stack = this.view?.state();
+      this.bulkGroups = this.wsiView?.bulkAnnotationGroups() ?? [];
+    };
+    if (isWholeSlide(series)) {
+      this.view = this.wsiView = await adapter.openWsi(viewport, series, onChange);
+      if (this.participant) void this.loadBulkAnnotations(this.wsiView, series.ref);
+    } else {
+      this.view = await adapter.openStack(viewport, series, onChange);
+    }
+  }
+
+  /**
+   * Switch between the stack and volume layouts (#282). Same volume, other orientations: the view
+   * is re-oriented. Stack ↔ volume: the open view is closed and the other opened on new DOM.
+   */
+  private async setLayout(next: ViewLayout): Promise<void> {
+    const { adapter, loaded } = this;
+    if (!adapter || !loaded || this.layoutBusy) return;
+    if (next.kind === "volume" && (!this.mpr?.ok || this.viewportKind === "wsi")) return;
+    const previous = this.layout;
+    const previousTool = this.context().activeTool;
+    this.layoutBusy = true;
+    try {
+      this.layout = next;
+      if (next.kind === "volume" && this.volumeView) {
+        await this.updateComplete;
+        await this.volumeView.setOrientations(next.orientations);
+      } else {
+        const current = this.controls;
+        if (current) adapter.close(current);
+        this.view = this.volumeView = undefined;
+        this.stack = this.volume = undefined;
+        this.viewportKind = next.kind === "stack" ? "stack" : "volume";
+        await this.updateComplete;
+        if (next.kind === "stack") await this.openStackView(adapter, loaded);
+        else {
+          const slots = [...this.renderRoot.querySelectorAll<HTMLDivElement>(".vslot")];
+          this.volumeView = await adapter.openVolume(
+            slots,
+            loaded,
+            next.orientations,
+            () => (this.volume = this.volumeView?.state()),
+            (stage) => this.firstRender?.mark(stage),
+          );
+        }
+        if (this.disposed) return;
+      }
+      this.controls?.setTool(this.toolAfterSwitch(previous, previousTool));
+      this.stack = this.view?.state();
+      this.volume = this.volumeView?.state();
+    } catch (e) {
+      this.fail(e);
+    } finally {
+      this.layoutBusy = false;
+    }
+  }
+
+  /** Crosshairs when entering three views; else keep the tool if the new layout offers it. */
+  private toolAfterSwitch(previous: ViewLayout, tool: string): string {
+    const views = (l: ViewLayout) => (l.kind === "volume" ? l.orientations.length : 1);
+    if (views(this.layout) === 3 && views(previous) !== 3) return CROSSHAIRS;
+    return tools.available(this.toolScope()).some((t) => t.id === tool) ? tool : DEFAULT_TOOL;
+  }
+
+  private toolScope(): ToolScope {
+    const views = this.layout.kind === "volume" ? this.layout.orientations.length : 1;
+    return { viewport: this.viewportKind, canAnnotate: this.canAnnotate, views };
+  }
+
+  /** Drag the divider between the big view and the two small ones (25–85%, remembered). */
+  private startSplit = (e: PointerEvent): void => {
+    const divider = e.currentTarget as HTMLElement;
+    const grid = divider.parentElement!;
+    divider.setPointerCapture?.(e.pointerId);
+    e.preventDefault();
+    e.stopPropagation();
+    const move = (ev: PointerEvent) => {
+      const r = grid.getBoundingClientRect();
+      this.split = clampSplit(((ev.clientX - r.left) / r.width) * 100);
+      void this.updateComplete.then(() => this.adapter?.resize());
+    };
+    const up = () => {
+      divider.removeEventListener("pointermove", move);
+      divider.removeEventListener("pointerup", up);
+      divider.removeEventListener("pointercancel", up);
+      saveSplit(this.split);
+    };
+    divider.addEventListener("pointermove", move);
+    divider.addEventListener("pointerup", up);
+    divider.addEventListener("pointercancel", up);
+  };
+
+  private swapIntoMain(slot: number): void {
+    if (this.layout.kind !== "volume") return;
+    void this.setLayout({ kind: "volume", orientations: swapIntoMain(this.layout.orientations, slot) });
+  }
+
   /** What inspector panels and commands see; see context.ts. */
   private context(): ViewerContext {
     return {
       canAnnotate: this.canAnnotate,
       viewport: this.viewportKind,
       modality: this.series[0]?.modality ?? "",
-      activeTool: this.stack?.activeTool ?? "",
-      view: this.view,
+      activeTool: (this.volume ?? this.stack)?.activeTool ?? "",
+      view: this.controls,
       stack: this.stack,
-      selectTool: (id) => this.view?.setTool(id),
+      stackView: this.view,
+      image: this.loaded?.images[this.stack?.imageIndex ?? 0]?.instance,
+      selectTool: (id) => this.controls?.setTool(id),
       applyPreset: (p) => this.applyPreset(p),
+      layout: this.layout,
+      volume: this.volume,
+      mpr: this.mpr,
+      setLayout: (layout) => void this.setLayout(layout),
       bulkAnnotationGroups: this.bulkGroups,
       setBulkAnnotationGroupVisible: (uid, visible) => this.wsiView?.setBulkAnnotationGroupVisible(uid, visible),
     };
@@ -191,12 +331,12 @@ export class MiresViewer extends LitElement {
 
   private applyPreset(p: Preset): void {
     const voi = presetVoi(p);
-    if (voi) this.view?.setVoi(voi);
-    else this.view?.resetVoi();
+    if (voi) this.controls?.setVoi(voi);
+    else this.controls?.resetVoi();
   }
 
   private onKey = (e: KeyboardEvent): void => {
-    if (!this.view || e.altKey || e.repeat) return;
+    if (!this.controls || e.altKey || e.repeat) return;
     const target = e.composedPath()[0];
     if (target instanceof HTMLElement && target.matches("input, select, textarea, [contenteditable]")) return;
     const ctx = this.context();
@@ -207,7 +347,7 @@ export class MiresViewer extends LitElement {
       return command.run(ctx);
     }
     if (mod) return;
-    const tool = tools.forKey(e.key, { viewport: ctx.viewport, canAnnotate: ctx.canAnnotate });
+    const tool = tools.forKey(e.key, this.toolScope());
     if (tool) return ctx.selectTool(tool.id);
     const preset = presets.forKey(e.key, ctx.modality);
     if (preset) this.applyPreset(preset);
@@ -230,15 +370,31 @@ export class MiresViewer extends LitElement {
     return html`<span class="unit" title=${unitTooltip(unit)}>${unit}</span>`;
   }
 
+  /** Burned-in badge (#281): the image may carry identifying text in its pixels. */
+  private burnedIn(ctx: ViewerContext) {
+    if (!burnedInWarning(ctx.image)) return nothing;
+    return html`<span class="burned-in" role="note" title="The image may have identifying text burned into its pixels (BurnedInAnnotation is YES, or missing on a secondary capture or ultrasound). Pixels aren't scrubbed.">⚠ Burned-in annotation</span>`;
+  }
+
   render() {
     const ctx = this.context();
-    const rail = tools.rail({ viewport: ctx.viewport, canAnnotate: ctx.canAnnotate });
+    const rail = tools.rail(this.toolScope());
+    const views =
+      this.layout.kind === "volume"
+        ? volumeGrid({
+            orientations: this.layout.orientations,
+            split: this.split,
+            state: this.volume,
+            swap: (slot) => this.swapIntoMain(slot),
+            startSplit: this.startSplit,
+          })
+        : html`<div class="viewport" tabindex="-1"></div>
+            ${this.overlay()} ${this.unit()}`;
     return html`<div class="chrome">
       ${seriesList(this.series)}
       ${toolRail(rail, ctx.activeTool, ctx.selectTool)}
-      <div class="stage">
-        <div class="viewport" tabindex="-1" @pointerdown=${() => this.focus()} @contextmenu=${(e: Event) => e.preventDefault()}></div>
-        ${this.overlay()} ${this.unit()}
+      <div class="stage" @pointerdown=${() => this.focus()} @contextmenu=${(e: Event) => e.preventDefault()}>
+        ${views} ${this.burnedIn(ctx)}
         ${this.error ? html`<div role="alert">${this.error}</div>` : nothing}
       </div>
       <aside class="inspector" aria-label="Inspector">${inspector.panels().map((p) => p.render(ctx))}</aside>

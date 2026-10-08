@@ -5,6 +5,7 @@ import * as csTools from "@cornerstonejs/tools";
 
 import { workstationBindings } from "../../tools/bindings.ts";
 import type { StackState, StackView, VoiRange } from "../adapter.ts";
+import { isCalibrationLine, watchCalibration } from "./calibration.ts";
 import { addToolsToGroup, applyBindingPlan } from "./tools.ts";
 
 export interface StackHandle extends StackView {
@@ -48,12 +49,13 @@ export async function createStackView(
 
   await viewport.setStack(imageIds, 0);
   viewport.render();
+  const calibration = watchCalibration(engine, viewport, onChange);
 
   const ownImages = new Set(imageIds);
   const annotationCount = () =>
     csTools.annotation.state
       .getAllAnnotations()
-      .filter((a) => ownImages.has(a.metadata?.referencedImageId ?? "")).length;
+      .filter((a) => ownImages.has(a.metadata?.referencedImageId ?? "") && !isCalibrationLine(a)).length;
   const unit = () => {
     // Same image data the measurement tools use (hasPixelSpacing + calibration).
     const imageData = viewport.getImageData();
@@ -74,12 +76,19 @@ export async function createStackView(
         pan: [x, y],
         unit: unit(),
         annotationCount: annotationCount(),
+        pendingCalibration: calibration.pending(),
       };
     },
     scrollTo(imageIndex: number) {
       void viewport.setImageIdIndex(imageIndex);
     },
     setTool,
+    calibrate(knownLengthMm: number) {
+      calibration.calibrate(knownLengthMm);
+      // Done calibrating: measure with the new spacing.
+      if (activeTool === "Calibrate") setTool("Length");
+    },
+    cancelCalibration: () => calibration.cancel(),
     setVoi(voi: VoiRange) {
       viewport.setProperties({ voiRange: voi });
       viewport.render();
@@ -104,9 +113,11 @@ export async function createStackView(
       onChange();
     },
     dispose() {
+      calibration.dispose();
       ELEMENT_EVENTS.forEach((e) => element.removeEventListener(e, onChange));
       ANNOTATION_EVENTS.forEach((e) => eventTarget.removeEventListener(e, onChange));
       csTools.ToolGroupManager.destroyToolGroup(toolGroupId);
+      engine.disableElement(viewportId);
     },
   };
 }
