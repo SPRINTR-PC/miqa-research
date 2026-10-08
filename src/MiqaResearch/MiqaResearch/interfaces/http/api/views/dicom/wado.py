@@ -3,7 +3,7 @@ from django.shortcuts import get_object_or_404
 from ninja import Router
 from MiqaResearch.data.models.dicom_file import DicomFile
 
-from .access import audit_client_access, machine_only, readable_files
+from .access import audit_access, machine_only, readable_files
 from .frames import router as frames_router
 from .metadata import router as metadata_router
 
@@ -53,7 +53,7 @@ def wado_uri(request, requestType: str, studyUID: str, seriesUID: str, objectUID
         series__series_instance_uid=seriesUID,
         series__study__study_instance_uid=studyUID
     )
-    audit_client_access(request, [dicom_file])
+    audit_access(request, [dicom_file])
     return FileResponse(dicom_file.file.open('rb'), content_type="application/dicom")
 
 # WADO-RS Retrieve Study
@@ -63,7 +63,7 @@ def retrieve_study(request, study_instance_uid: str):
     dicom_files = list(_readable(request).filter(series__study__study_instance_uid=study_instance_uid))
     if not dicom_files:
         return HttpResponse(status=404)
-    audit_client_access(request, dicom_files)
+    audit_access(request, dicom_files)
     return multipart_related_response([df.file for df in dicom_files])
 
 # WADO-RS Retrieve Series
@@ -76,7 +76,7 @@ def retrieve_series(request, study_instance_uid: str, series_instance_uid: str):
     ))
     if not dicom_files:
         return HttpResponse(status=404)
-    audit_client_access(request, dicom_files)
+    audit_access(request, dicom_files)
     return multipart_related_response([df.file for df in dicom_files])
 
 # WADO-RS Retrieve Instance
@@ -89,5 +89,5 @@ def retrieve_instance(request, study_instance_uid: str, series_instance_uid: str
         series__series_instance_uid=series_instance_uid,
         series__study__study_instance_uid=study_instance_uid
     )
-    audit_client_access(request, [dicom_file])
+    audit_access(request, [dicom_file])
     return multipart_related_response([dicom_file.file])

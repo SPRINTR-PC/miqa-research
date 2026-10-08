@@ -16,7 +16,7 @@ from pydicom.uid import UID
 from MiqaResearch.data.models.dicom_file import DicomFile
 from MiqaResearch.tasks.dicom_handling.frame_index import build_frame_index, frame_bytes
 
-from .access import audit_client_access, readable_files
+from .access import audit_access, readable_files
 from .caching import FRAMES_CACHE_CONTROL, matches_if_none_match, not_modified, strong_etag, with_cache_headers
 
 router = Router()
@@ -102,7 +102,7 @@ def retrieve_frames(request, study_instance_uid: str, series_instance_uid: str, 
         series__series_instance_uid=series_instance_uid,
         series__study__study_instance_uid=study_instance_uid,
     )
-    audit_client_access(request, [dicom_file])
+    audit_access(request, [dicom_file])
     _ensure_frame_index(dicom_file)
     frames = dicom_file.frame_index
     if not frames:

@@ -11,7 +11,9 @@ from django.contrib.auth import get_user_model
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
+from contract.constants.audit_log import DATA_ACCESS_EVENT_TYPES, EVENT_TYPE_VIEWER_SERIES_OPENED
 from MiqaResearch.data.models import (
+    AuditLog,
     Clinic,
     DicomFile,
     ParticipantConsent,
@@ -29,6 +31,7 @@ from tests.dicom_fixtures import build_multiframe_ct, write_dicom
 User = get_user_model()
 TOKEN = "session-access-test-token"
 FRAMES_CACHE_CONTROL = "private, max-age=31536000, immutable"
+VIEWER_SESSION = "X-Mires-Viewer-Session"
 
 
 @pytest.fixture(autouse=True)
@@ -277,3 +280,37 @@ def test_client_callers_are_not_subject_to_participant_visibility(world, client,
 
 def test_anonymous_caller_is_401(world, client):
     assert client.get(_frames_url(world["file"])).status_code == 401
+
+
+def _series_opens():
+    return list(AuditLog.objects.filter(event_type=EVENT_TYPE_VIEWER_SERIES_OPENED))
+
+
+def test_opening_a_series_in_the_viewer_is_audited_once_per_viewer_open(world, visible_client):
+    """#271 story 21: once per open (the series /metadata the viewer opens with), not per frame."""
+    open_1, open_2 = {"headers": {VIEWER_SESSION: "open-1"}}, {"headers": {VIEWER_SESSION: "open-2"}}
+    series_metadata = _metadata_urls(world["file"])[1]
+
+    assert visible_client.get(series_metadata, **open_1).status_code == 200
+    visible_client.get(series_metadata, **open_1)
+    for frame in "123":
+        visible_client.get(_frames_url(world["file"], frame), **open_1)
+
+    (entry,) = _series_opens()
+    assert entry.user_id == int(visible_client.session["_auth_user_id"])
+    assert entry.project_id == world["project"].pk
+    assert entry.metadata["series_instance_uid"] == world["file"].series.series_instance_uid
+    assert entry.event_type in DATA_ACCESS_EVENT_TYPES
+
+    visible_client.get(series_metadata, **open_2)
+    assert len(_series_opens()) == 2
+
+
+def test_denied_series_opens_are_not_audited(world, invisible_client):
+    invisible_client.get(_metadata_urls(world["file"])[1], headers={VIEWER_SESSION: "open-1"})
+    assert _series_opens() == []
+
+
+def test_client_callers_write_no_viewer_series_open(world, client, bearer):
+    client.get(_metadata_urls(world["file"])[1], **bearer)
+    assert _series_opens() == []
