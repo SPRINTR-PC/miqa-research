@@ -1,6 +1,8 @@
 // What the chrome extensions (inspector panels, commands) see of the viewer: state + actions.
 // Built fresh by <mires-viewer> on every render; add fields additively.
-import type { StackState, StackView, ViewControls, VolumeState } from "./adapter/adapter.ts";
+import type { LayerState, StackState, StackView, ViewControls, VolumeState } from "./adapter/adapter.ts";
+import type { LayerDisplay } from "./fusion.ts";
+import type { SuvStatus } from "./suv.ts";
 import type { ViewLayout } from "./layout.ts";
 import type { Reconstructability } from "./reconstructable.ts";
 import type { DicomJsonInstance } from "./series.ts";
@@ -12,7 +14,7 @@ export interface ViewerContext {
   /** Annotate role (Annotator, PI, Site PI, Admin) on this participant: Arrow, Calibrate, segment tools, Save. */
   canAnnotate: boolean;
   viewport: ViewportKind;
-  /** Modality of the series shown (base layer), e.g. "CT"; "" before load. */
+  /** Modality of the series shown (the selected layer when fused, #284), e.g. "CT"; "" before load. Picks the presets. */
   modality: string;
   /** Tool on the left button. */
   activeTool: string;
@@ -44,4 +46,14 @@ export interface ViewerContext {
   volumeFit: VolumeFit | undefined;
   /** Show a refusal message (dismissible) over the view, e.g. an over-budget fusion or labelmap. */
   refuse(message: string): void;
+  /** Fusion (#284): layers of the volume view, base first; empty off volumes. */
+  layers: LayerState[];
+  /** Series UID of the selected layer (right-drag W/L, presets); undefined off volumes. */
+  selectedLayer: string | undefined;
+  selectLayer(seriesUid: string): void;
+  setLayerDisplay(seriesUid: string, change: Partial<LayerDisplay>): void;
+  /** Remove a fused overlay (releases its budget). */
+  removeLayer(seriesUid: string): void;
+  /** SUV status of the series shown (PET); undefined otherwise. */
+  suv: SuvStatus | undefined;
 }

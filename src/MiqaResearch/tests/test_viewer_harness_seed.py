@@ -143,3 +143,30 @@ def test_seed_gives_bulk_annotations_on_the_slide_with_inline_coordinates(settin
     # the dev page tells the viewer whose objects to list
     page = client.get(f"/viewer/dev/?study={wsi['studyUid']}&series={wsi['seriesUid']}").content.decode()
     assert f'participant="{wsi["participant"]}"' in page
+
+
+@pytest.mark.django_db
+def test_seed_gives_fusion_fixtures_in_the_ct_study(settings, client):
+    """#284: a PET with every SUV input and one without PatientWeight on the CT's Frame of Reference,
+    and an MR on another, all in the CT's study; the SUV inputs survive the De-identification Profile."""
+    settings.DEBUG = True
+    seeded = _seed()
+    client.cookies[seeded["sessionCookie"]["name"]] = seeded["sessionCookie"]["value"]
+
+    def metadata(ref):
+        assert ref["studyUid"] == seeded["ct"]["studyUid"]
+        response = client.get(f"/api/v1/dicom/studies/{ref['studyUid']}/series/{ref['seriesUid']}/metadata")
+        assert response.status_code == 200
+        return response.json()
+
+    frame_of_reference = metadata(seeded["ct"])[0]["00200052"]["Value"][0]
+    pet, pet_no_weight, mr = metadata(seeded["pet"]), metadata(seeded["petNoWeight"]), metadata(seeded["mrOtherFor"])
+
+    assert len(pet) == seeded["pet"]["imageCount"] > 1
+    assert {i["00200052"]["Value"][0] for i in pet + pet_no_weight} == {frame_of_reference}
+    assert mr[0]["00200052"]["Value"][0] != frame_of_reference
+    first = pet[0]
+    assert first["00101030"]["Value"] == [75.0]
+    assert first["00541001"]["Value"] == ["BQML"]
+    assert first["00540016"]["Value"][0]["00181074"]["Value"]
+    assert "Value" not in pet_no_weight[0].get("00101030", {})

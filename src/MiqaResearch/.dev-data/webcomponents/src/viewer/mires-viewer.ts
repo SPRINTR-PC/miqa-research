@@ -23,12 +23,14 @@ import { seriesList, seriesListItem, type SeriesListItem } from "./chrome/series
 import { toolRail } from "./chrome/tool-rail.ts";
 import { refusalMessage, sizeBanner, sizeBannerStyles } from "./chrome/size-banner.ts";
 import { volumeGrid, volumeGridStyles } from "./chrome/volume-grid.ts";
+import { dropZones, dropZoneStyles, type DropZone } from "./chrome/drop-zones.ts";
 import { commands } from "./commands.ts";
 import type { ViewerContext } from "./context.ts";
 import { FirstRenderReport } from "./first-render.ts";
 import { inspector } from "./inspector/index.ts";
 import { burnedInWarning } from "./calibration.ts";
-import { clampSplit, loadSplit, saveSplit, swapIntoMain, type ViewLayout } from "./layout.ts";
+import { fuseBlocker, layerDisplay, modalityOf, overlayBudget, replaceBlocker, seriesLabel } from "./fusion.ts";
+import { clampSplit, loadSplit, saveSplit, swapIntoMain, threeViews, type ViewLayout } from "./layout.ts";
 import { isReconstructable, type Reconstructability } from "./reconstructable.ts";
 import { fetchSeries, type LoadedSeries, type SeriesRef } from "./series.ts";
 import {
@@ -37,6 +39,7 @@ import {
   checkImageTexture,
   fitVolume,
   isTooLargeError,
+  refusalMessage as budgetRefusal,
   seriesGrid,
   volumeEntries,
   type BudgetEntry,
@@ -45,6 +48,7 @@ import {
 } from "./size-guard.ts";
 import { presets, presetVoi, tools, voiToWindow, type Preset, type ToolScope, type ViewportKind } from "./tools/index.ts";
 import { CROSSHAIRS } from "./tools/volume.ts";
+import { suvStatusFor, type SuvStatus } from "./suv.ts";
 import { unitTooltip } from "./units.ts";
 import { isWholeSlide, WSI_DEFAULT_TOOL } from "./wsi.ts";
 
@@ -67,6 +71,11 @@ export class MiresViewer extends LitElement {
   /** Study Participant id of the series (set by the page): lists its Annotations, e.g. bulk ANN on a slide (#292). */
   @property() participant = "";
   @property({ attribute: "api-root" }) apiRoot = "/api/v1/viewer";
+  /**
+   * Other series of the same study to offer in the series list (#284), space-separated UIDs; they can be
+   * dropped onto the view to fuse or replace. The entry contract (#279) fills it with the Related Series.
+   */
+  @property({ attribute: "related-series" }) relatedSeries = "";
 
   /** Reflected for pages and browser tests: loading → ready | error. */
   @property({ reflect: true }) state: ViewerState = "loading";
@@ -94,6 +103,16 @@ export class MiresViewer extends LitElement {
   @state() private volumeFit: VolumeFit | undefined;
   @state() private refusal = "";
 
+  /** Fusion (#284): the series being dragged from the list, and the drop zone under the pointer. */
+  @state() private dragged: string | undefined;
+  @state() private dragOver: DropZone | undefined;
+  /** A fuse / replace is running; further drops are ignored. */
+  @state() fusionBusy = false;
+  /** SUV status of the series shown (PET), from the adapter. */
+  @state() private suv: SuvStatus | undefined;
+  /** Loaded /metadata per series UID: the series shown and the related ones. */
+  private readonly catalog = new Map<string, LoadedSeries>();
+
   private adapter: ViewerAdapter | undefined;
   private view: StackView | undefined;
   private wsiView: WsiView | undefined;
@@ -105,7 +124,7 @@ export class MiresViewer extends LitElement {
   /** First-render marks + beacon (#293); volume views mark "interleaved" / "volume-loaded" on it. */
   firstRender: FirstRenderReport | undefined;
 
-  static styles = [volumeGridStyles, sizeBannerStyles, css`
+  static styles = [volumeGridStyles, sizeBannerStyles, dropZoneStyles, css`
     :host { display: block; position: relative; background: #0b0d10; color: #d8dde3; font: 13px system-ui, sans-serif; outline: none; }
     .chrome { position: absolute; inset: 0; display: grid; grid-template-columns: 180px 56px minmax(0, 1fr) 250px; }
     button { font: inherit; color: inherit; background: #1b2027; border: 1px solid #2b323c; border-radius: 4px; padding: 4px 8px; cursor: pointer; }
@@ -194,6 +213,7 @@ export class MiresViewer extends LitElement {
       const series = await fetchSeries({ wadoRoot: this.wadoRoot, studyUid: this.studyUid, seriesUid: this.seriesUid });
       this.firstRender.series(series);
       this.series = [seriesListItem(series)];
+      this.catalog.set(series.ref.seriesUid, series);
       this.loaded = series;
       this.mpr = isReconstructable(series);
       this.adapter = await this.adapterFactory();
@@ -214,9 +234,25 @@ export class MiresViewer extends LitElement {
       this.resizeObserver = new ResizeObserver(() => this.adapter?.resize());
       this.resizeObserver.observe(this.renderRoot.querySelector(".stage")!);
       this.state = "ready";
+      void this.loadRelated();
     } catch (e) {
       this.fail(e);
     }
+  }
+
+  /** Related series (#284): /metadata of each, listed in attribute order; a failure only drops that row. */
+  private async loadRelated(): Promise<void> {
+    const uids = [...new Set(this.relatedSeries.split(/[\s,]+/))].filter((u) => u && !this.catalog.has(u));
+    const results = await Promise.allSettled(
+      uids.map((seriesUid) => fetchSeries({ wadoRoot: this.wadoRoot, studyUid: this.studyUid, seriesUid })),
+    );
+    if (this.disposed) return;
+    results.forEach((r, i) => {
+      if (r.status === "fulfilled") this.catalog.set(uids[i], r.value);
+      else console.warn(`Related series ${uids[i]} could not be loaded`, r.reason);
+    });
+    const loaded = results.flatMap((r) => (r.status === "fulfilled" ? [seriesListItem(r.value, false)] : []));
+    this.series = [...this.series, ...loaded];
   }
 
   /** Bulk ANN on the slide (#292), read-only. A failure leaves the slide usable and is only logged. */
@@ -246,6 +282,7 @@ export class MiresViewer extends LitElement {
     } else {
       this.view = await adapter.openStack(viewport, series, onChange);
     }
+    this.suv = adapter.suvStatus(series);
   }
 
   /** Show a refusal message over the view (#283: over-budget fusion #284 / labelmap #286, cache errors). */
@@ -377,6 +414,151 @@ export class MiresViewer extends LitElement {
     divider.addEventListener("pointercancel", up);
   };
 
+  /** Series UIDs in view: the volume's layers (base first), else the series shown. */
+  private shownUids(): string[] {
+    const layers = this.volume?.layers;
+    return layers?.length ? layers.map((l) => l.seriesUid) : this.loaded ? [this.loaded.ref.seriesUid] : [];
+  }
+
+  private async seriesFor(seriesUid: string): Promise<LoadedSeries | undefined> {
+    const known = this.catalog.get(seriesUid);
+    if (known) return known;
+    try {
+      const series = await fetchSeries({ wadoRoot: this.wadoRoot, studyUid: this.studyUid, seriesUid });
+      this.catalog.set(seriesUid, series);
+      return series;
+    } catch (e) {
+      this.refuse(`Can't load the series: ${e instanceof Error ? e.message : String(e)}`);
+      return undefined;
+    }
+  }
+
+  private onDragStart = (e: DragEvent): void => {
+    const row = (e.target as HTMLElement | null)?.closest?.<HTMLElement>(".ser");
+    const uid = row?.dataset.seriesUid;
+    if (!uid || !this.controls) return;
+    e.dataTransfer?.setData("text/plain", uid);
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = "copy";
+    this.dragged = uid;
+  };
+
+  private onDragEnd = (): void => {
+    this.dragged = this.dragOver = undefined;
+  };
+
+  private async onDrop(zone: DropZone): Promise<void> {
+    const uid = this.dragged;
+    this.dragged = this.dragOver = undefined;
+    if (!uid || this.fusionBusy || this.layoutBusy) return;
+    this.fusionBusy = true;
+    this.refusal = "";
+    try {
+      if (zone === "fuse") await this.fuse(uid);
+      else await this.replace(uid);
+    } finally {
+      this.fusionBusy = false;
+    }
+  }
+
+  /**
+   * Fuse a series into every view (#284): same Frame of Reference, volumes only, within the size
+   * guard's budget. From the stack, the base opens in three views first. The overlay is selected.
+   */
+  private async fuse(uid: string): Promise<void> {
+    const { adapter, loaded, gpu } = this;
+    if (!adapter || !loaded || !gpu) return;
+    const overlay = await this.seriesFor(uid);
+    if (!overlay) return;
+    const fit = this.volumeFit;
+    const why = fuseBlocker({
+      base: loaded,
+      overlay,
+      shown: this.shownUids(),
+      reduced: this.layout.kind === "volume" && !!this.layout.reduced,
+      baseTooLarge: fit && !fit.ok ? fit.message : undefined,
+    });
+    if (why) return this.refuse(why);
+    // From the stack the base volume is added too: check both before opening anything.
+    const budget = overlayBudget(overlay, gpu, this.budget, this.layout.kind === "stack" && fit?.ok ? fit.entries : []);
+    if (!budget.ok) return this.refuse(budget.message);
+    if (this.layout.kind === "stack") await this.setLayout({ kind: "volume", orientations: threeViews("axial") });
+    const view = this.volumeView;
+    if (!view) return;
+    const reserved = this.budget.reserve(budget.entries);
+    if (!reserved.ok) return this.refuse(budgetRefusal("fusion", reserved));
+    const { voi, ...display } = layerDisplay(modalityOf(overlay), { base: false, suv: suvStatusFor(overlay) });
+    try {
+      await view.addLayer(overlay, display, { voi, onTooLarge: () => this.dropOverlay(uid, TOO_LARGE_MESSAGE) });
+      view.selectLayer(uid);
+    } catch (e) {
+      this.budget.releaseSeries(uid);
+      this.refuse(isTooLargeError(e) ? TOO_LARGE_MESSAGE : `Can't fuse ${seriesLabel(overlay)}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    this.volume = view.state();
+  }
+
+  /** Remove an overlay, its cached volume and its budget, optionally saying why. */
+  private dropOverlay(uid: string, message?: string): void {
+    this.volumeView?.removeLayer(uid);
+    this.adapter?.evict(uid);
+    this.budget.releaseSeries(uid);
+    this.volume = this.volumeView?.state();
+    if (message) this.refuse(message);
+  }
+
+  /**
+   * Show another series instead of everything shown (#284, bottom drop zone): views closed, their
+   * budget freed, the series opened as a stack (or slide), then in the previous volume layout when it
+   * is reconstructable and fits.
+   */
+  private async replace(uid: string): Promise<void> {
+    const { adapter, gpu } = this;
+    if (!adapter || !gpu) return;
+    const next = await this.seriesFor(uid);
+    if (!next) return;
+    const why = replaceBlocker(next, this.shownUids());
+    if (why) return this.refuse(why);
+    const wsi = isWholeSlide(next);
+    if (!wsi) {
+      const texture = checkImageTexture(next, gpu);
+      if (!texture.ok) return this.refuse(texture.message);
+    }
+    const wanted = this.layout;
+    this.layoutBusy = true;
+    try {
+      const current = this.controls;
+      const old = this.shownUids();
+      if (current) adapter.close(current);
+      // The replaced series leave CS3D's cache too, so the size guard stops counting them (#283).
+      old.forEach((u) => {
+        adapter.evict(u);
+        this.budget.releaseSeries(u);
+      });
+      this.view = this.wsiView = this.volumeView = undefined;
+      this.stack = this.volume = undefined;
+      this.bulkGroups = [];
+      this.loaded = next;
+      this.seriesUid = uid;
+      this.mpr = isReconstructable(next);
+      this.viewportKind = wsi ? "wsi" : "stack";
+      this.layout = { kind: "stack" };
+      this.volumeFit = this.fitVolume();
+      await this.updateComplete;
+      await this.openStackView(adapter, next);
+      if (this.disposed) return;
+      this.view!.setTool(wsi ? WSI_DEFAULT_TOOL : DEFAULT_TOOL);
+      this.stack = this.view!.state();
+    } catch (e) {
+      this.fail(e);
+      return;
+    } finally {
+      this.layoutBusy = false;
+    }
+    if (wanted.kind === "volume" && !wanted.reduced && this.mpr.ok && this.volumeFit?.ok) {
+      await this.setLayout({ kind: "volume", orientations: wanted.orientations });
+    }
+  }
+
   private swapIntoMain(slot: number): void {
     if (this.layout.kind !== "volume") return;
     void this.setLayout({ ...this.layout, orientations: swapIntoMain(this.layout.orientations, slot) });
@@ -387,7 +569,7 @@ export class MiresViewer extends LitElement {
     return {
       canAnnotate: this.canAnnotate,
       viewport: this.viewportKind,
-      modality: this.series[0]?.modality ?? "",
+      modality: this.selectedLayer()?.modality ?? this.series.find((s) => s.seriesUid === this.loaded?.ref.seriesUid)?.modality ?? "",
       activeTool: (this.volume ?? this.stack)?.activeTool ?? "",
       view: this.controls,
       stack: this.stack,
@@ -405,7 +587,17 @@ export class MiresViewer extends LitElement {
       gpu: this.gpu,
       volumeFit: this.volumeFit,
       refuse: (message) => this.refuse(message),
+      layers: this.volume?.layers ?? [],
+      selectedLayer: this.volume?.selectedLayer,
+      selectLayer: (uid) => this.volumeView?.selectLayer(uid),
+      setLayerDisplay: (uid, change) => this.volumeView?.setLayerDisplay(uid, change),
+      removeLayer: (uid) => this.dropOverlay(uid),
+      suv: this.suv,
     };
+  }
+
+  private selectedLayer() {
+    return this.volume?.layers.find((l) => l.seriesUid === this.volume?.selectedLayer);
   }
 
   private applyPreset(p: Preset): void {
@@ -458,6 +650,7 @@ export class MiresViewer extends LitElement {
   render() {
     const ctx = this.context();
     const rail = tools.rail(this.toolScope());
+    const shown = this.shownUids();
     const views =
       this.layout.kind === "volume"
         ? volumeGrid({
@@ -470,11 +663,22 @@ export class MiresViewer extends LitElement {
         : html`<div class="viewport" tabindex="-1"></div>
             ${this.overlay()} ${this.unit()}`;
     return html`<div class="chrome">
-      ${seriesList(this.series)}
+      <div style="display: contents" @dragstart=${this.onDragStart} @dragend=${this.onDragEnd}>
+        ${seriesList(this.series.map((s) => ({ ...s, shown: shown.includes(s.seriesUid) })))}
+      </div>
       ${toolRail(rail, ctx.activeTool, ctx.selectTool)}
       <div class="stage" @pointerdown=${() => this.focus()} @contextmenu=${(e: Event) => e.preventDefault()}>
         ${views} ${this.burnedIn(ctx)} ${sizeBanner(this.volumeFit, this.layout)}
         ${refusalMessage(this.refusal, () => (this.refusal = ""))}
+        ${this.dragged
+          ? dropZones({
+              width: this.layout.kind === "volume" && this.layout.orientations.length === 3 ? this.split : 100,
+              over: this.dragOver,
+              label: this.series.find((s) => s.seriesUid === this.dragged)?.modality ?? "",
+              onOver: (zone) => (this.dragOver = zone),
+              onDrop: (zone) => void this.onDrop(zone),
+            })
+          : nothing}
         ${this.error ? html`<div role="alert">${this.error}</div>` : nothing}
       </div>
       <aside class="inspector" aria-label="Inspector">${inspector.panels().map((p) => p.render(ctx))}</aside>

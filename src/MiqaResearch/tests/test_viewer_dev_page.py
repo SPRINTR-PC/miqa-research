@@ -51,6 +51,23 @@ def test_dev_page_hosts_the_viewer_for_the_requested_series(settings, no_toolbar
     assert 'series-uid="2.25.2"' in body
 
 
+def test_dev_page_offers_related_series_in_the_series_list(settings, no_toolbar, logged_in_client):
+    """#284: `related` UIDs (repeated or comma-separated) are listed for drag-to-fuse/replace."""
+    settings.DEBUG = True
+
+    body = logged_in_client.get(DEV_PAGE + "?study=2.25.1&series=2.25.2&related=2.25.3,2.25.4&related=2.25.5").content.decode()
+
+    assert 'related-series="2.25.3 2.25.4 2.25.5"' in body
+
+
+def test_dev_page_has_no_related_series_by_default(settings, no_toolbar, logged_in_client):
+    settings.DEBUG = True
+
+    body = logged_in_client.get(DEV_PAGE, {"study": "2.25.1", "series": "2.25.2"}).content.decode()
+
+    assert "related-series" not in body
+
+
 def test_dev_page_escapes_query_params(settings, no_toolbar, logged_in_client):
     settings.DEBUG = True
 

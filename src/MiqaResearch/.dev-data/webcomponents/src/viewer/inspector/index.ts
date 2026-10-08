@@ -2,6 +2,7 @@
 // layers #284, segments #286, save #289, …); see registry.ts for the `order` values.
 import "./calibration.ts";
 import "./layout.ts";
+import "./layers.ts";
 import "./window.ts";
 import "./mouse.ts";
 import "./bulk-annotations.ts";

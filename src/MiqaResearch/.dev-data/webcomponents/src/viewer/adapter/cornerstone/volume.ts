@@ -1,10 +1,13 @@
 // Volume views (#282): the series cached once as a streaming volume, shown in legacy ORTHOGRAPHIC
 // viewports (1 or 3) of one tool group holding every registered tool. Three views: CrosshairsTool
 // (viewports added before it is activated; line colours follow orientation) and a VOI synchronizer.
-// Fusion (#284) builds on this module. Size guard (#283): `options.decimation` loads a reduced
-// (decimatedVolumeLoader) volume; CS3D cache errors while streaming are reported via `options.onTooLarge`.
+// Size guard (#283): `options.decimation` loads a reduced (decimatedVolumeLoader) volume; CS3D cache
+// errors while streaming are reported via `options.onTooLarge`.
+// Fusion (#284): overlays are more volumes in the same viewports (base first), each with its own
+// window, colormap and opacity curve (./fusion.ts); the selected overlay gets right-drag W/L.
 import {
   Enums,
+  addVolumesToViewports,
   eventTarget,
   setVolumesForViewports,
   volumeLoader,
@@ -13,10 +16,16 @@ import {
 } from "@cornerstonejs/core";
 import * as csTools from "@cornerstonejs/tools";
 
+import { dragWindow, layerDisplay, modalityOf, seriesLabel, type LayerDisplay } from "../../fusion.ts";
 import { ORIENTATION_COLOR, type Orientation } from "../../layout.ts";
+import type { LoadedSeries } from "../../series.ts";
 import { workstationBindings } from "../../tools/bindings.ts";
 import { isTooLargeError, type Decimation } from "../../size-guard.ts";
-import type { VoiRange, VolumeLoadStage, VolumeOptions, VolumeState, VolumeView } from "../adapter.ts";
+import type { SuvStatus } from "../../suv.ts";
+import type { LayerOptions, LayerState, VoiRange, VolumeLoadStage, VolumeOptions, VolumeState, VolumeView } from "../adapter.ts";
+import { colormapProperties, LAYER_WINDOW_LEVEL, setLayerWindowHandler } from "./fusion.ts";
+import { registerSeriesMetadata } from "./metadata.ts";
+import { suvStatusOf } from "./suv.ts";
 import { addToolsToGroup, applyBindingPlan, registerCornerstoneTool } from "./tools.ts";
 
 export interface VolumeHandle extends VolumeView {
@@ -51,9 +60,26 @@ const ELEMENT_EVENTS = [
   Enums.Events.IMAGE_RENDERED,
 ];
 
+const LOAD_ERRORS = [Enums.Events.IMAGE_LOAD_ERROR, Enums.Events.IMAGE_LOAD_FAILED];
+
 interface StreamingVolume {
   load(callback?: () => void): void;
   loadStatus?: { loaded: boolean };
+}
+
+/** One series shown in the views: the base (layers[0]) or a fused overlay. */
+interface Layer {
+  seriesUid: string;
+  volumeId: string;
+  label: string;
+  modality: string;
+  display: LayerDisplay;
+  suv: SuvStatus | undefined;
+  /** Window it was added with (resetVoi goes back to it); undefined = CS3D's default. */
+  voi: VoiRange | undefined;
+  /** Base only: a colormap was picked (else CS3D's default grey ramp stays). */
+  styled: boolean;
+  dispose(): void;
 }
 
 /**
@@ -64,16 +90,31 @@ export function volumeIdFor(seriesUid: string, decimation?: Decimation): string 
   return decimation ? `decimatedVolumeLoader:${seriesUid}:${decimation.join("-")}` : `cornerstoneStreamingImageVolume:${seriesUid}`;
 }
 
+/** Report CACHE_SIZE_EXCEEDED for one of `imageIds` once; returns the unsubscribe. */
+function onCacheRefusal(imageIds: string[], report: () => void): () => void {
+  const own = new Set(imageIds);
+  let reported = false;
+  const listener = (e: Event) => {
+    const { imageId, error } = (e as CustomEvent<{ imageId?: string; error?: unknown }>).detail ?? {};
+    if (reported || !isTooLargeError(error) || (imageId && !own.has(imageId.split("#")[0]))) return;
+    reported = true;
+    report();
+  };
+  LOAD_ERRORS.forEach((ev) => eventTarget.addEventListener(ev, listener));
+  return () => LOAD_ERRORS.forEach((ev) => eventTarget.removeEventListener(ev, listener));
+}
+
 export async function createVolumeView(
   engine: RenderingEngine,
   slots: HTMLDivElement[],
   imageIds: string[],
-  seriesUid: string,
+  series: LoadedSeries,
   initial: Orientation[],
   onChange: () => void,
   onStage: (stage: VolumeLoadStage) => void,
   { decimation, onTooLarge }: VolumeOptions = {},
 ): Promise<VolumeHandle> {
+  const seriesUid = series.ref.seriesUid;
   const volumeId = volumeIdFor(seriesUid, decimation);
   const toolGroupId = `tg-vol-${engine.id}`;
   const synchronizerId = `voi-vol-${engine.id}`;
@@ -82,22 +123,14 @@ export async function createVolumeView(
   let shown: string[] = [];
   let group: csTools.Types.IToolGroup | undefined;
   let activeTool = "";
+  let sync: csTools.Synchronizer | undefined;
 
   // First-render stages (#293): the first decimated interleaved pass done, then every slice.
   const onRetrievalStage = (e: Event) => {
     if ((e as CustomEvent<{ stageId: string }>).detail.stageId !== "initialImages") onStage("interleaved");
   };
   // #283: the cache refusing a slice of this volume (CACHE_SIZE_EXCEEDED) while it streams.
-  const ownImages = new Set(imageIds);
-  let reported = false;
-  const onLoadError = (e: Event) => {
-    const { imageId, error } = (e as CustomEvent<{ imageId?: string; error?: unknown }>).detail ?? {};
-    if (reported || !isTooLargeError(error) || (imageId && !ownImages.has(imageId.split("#")[0]))) return;
-    reported = true;
-    onTooLarge?.();
-  };
-  const LOAD_ERRORS = [Enums.Events.IMAGE_LOAD_ERROR, Enums.Events.IMAGE_LOAD_FAILED];
-  LOAD_ERRORS.forEach((ev) => eventTarget.addEventListener(ev, onLoadError));
+  const stopBaseRefusal = onCacheRefusal(imageIds, () => onTooLarge?.());
   const stopStageListeners = () => {
     eventTarget.removeEventListener(Enums.Events.IMAGE_RETRIEVAL_STAGE, onRetrievalStage);
     eventTarget.removeEventListener(Enums.Events.IMAGE_VOLUME_LOADING_COMPLETED, onLoaded);
@@ -114,7 +147,7 @@ export async function createVolumeView(
   const volume = (await volumeLoader
     .createAndCacheVolume(volumeId, { imageIds, ...(decimation ? { ijkDecimation: decimation } : {}) } as never)
     .catch((e: unknown) => {
-      LOAD_ERRORS.forEach((ev) => eventTarget.removeEventListener(ev, onLoadError));
+      stopBaseRefusal();
       throw e;
     })) as unknown as StreamingVolume;
   if (volume.loadStatus?.loaded) loaded();
@@ -124,18 +157,55 @@ export async function createVolumeView(
     volume.load();
   }
 
+  const layers: Layer[] = [
+    {
+      seriesUid,
+      volumeId,
+      label: seriesLabel(series),
+      modality: modalityOf(series),
+      display: layerDisplay(modalityOf(series), { base: true }),
+      suv: suvStatusOf(seriesUid),
+      voi: undefined,
+      styled: false,
+      dispose: stopBaseRefusal,
+    },
+  ];
+  let selected = seriesUid;
+  const base = () => layers[0];
+  const layerOf = (uid: string) => layers.find((l) => l.seriesUid === uid);
+  const selectedLayer = () => layerOf(selected) ?? base();
+
   const viewport = (id: string) => engine.getViewport(id) as Types.IVolumeViewport;
-  const all = (fn: (vp: Types.IVolumeViewport) => void) => {
-    shown.forEach((id) => fn(viewport(id)));
+  const render = () => {
     engine.renderViewports(shown);
     onChange();
+  };
+  const all = (fn: (vp: Types.IVolumeViewport) => void) => {
+    shown.forEach((id) => fn(viewport(id)));
+    render();
+  };
+  const layerVoi = (l: Layer) => (shown[0] ? viewport(shown[0]).getProperties(l.volumeId)?.voiRange : undefined);
+  const setLayerVoi = (l: Layer, voi: VoiRange) => shown.forEach((id) => viewport(id).setProperties({ voiRange: voi }, l.volumeId));
+  const applyDisplay = (l: Layer) => {
+    if (l === base() && !l.styled) return;
+    shown.forEach((id) => viewport(id).setProperties({ colormap: colormapProperties(l.display) } as never, l.volumeId));
+  };
+
+  // Right-drag on an overlay: CS3D's WindowLevelTool would window the base (the first volume).
+  const windowSelectedOverlay = (dx: number, dy: number) => {
+    const l = selectedLayer();
+    const voi = layerVoi(l);
+    if (l === base() || !voi) return;
+    setLayerVoi(l, dragWindow(voi, dx, dy));
+    render();
   };
 
   const applyTool = (toolId: string) => {
     if (!group) return;
     // Crosshairs need several views; a single view falls back to W/L.
     const primary = toolId === CROSSHAIRS && shown.length < 2 ? FALLBACK_TOOL : toolId;
-    applyBindingPlan(group, workstationBindings({ primary, viewport: "volume" }));
+    const overlay = selectedLayer() !== base();
+    applyBindingPlan(group, workstationBindings({ primary, viewport: "volume", ...(overlay ? { secondary: LAYER_WINDOW_LEVEL } : {}) }));
     // Lines stay visible (and draggable) while another tool is on the left button.
     if (shown.length > 1 && primary !== CROSSHAIRS) group.setToolPassive(CROSSHAIRS);
     activeTool = primary;
@@ -150,13 +220,14 @@ export async function createVolumeView(
       ELEMENT_EVENTS.forEach((e) => slots[slot].removeEventListener(e, onChange));
       engine.disableElement(id);
       orientationOf.delete(id);
+      setLayerWindowHandler(id, undefined);
     });
     shown = [];
   };
 
   const show = async (next: Orientation[]) => {
-    // Keep the window and invert across re-layouts.
-    const keep = shown.length ? viewport(shown[0]).getProperties(volumeId) : undefined;
+    // Keep every layer's window, and the base's invert, across re-layouts.
+    const keep = new Map(layers.map((l) => [l.volumeId, shown.length ? viewport(shown[0]).getProperties(l.volumeId) : undefined]));
     teardown();
     orientations = [...next];
     shown = orientations.map((o, slot) => {
@@ -169,50 +240,79 @@ export async function createVolumeView(
       });
       orientationOf.set(id, o);
       ELEMENT_EVENTS.forEach((e) => slots[slot].addEventListener(e, onChange));
+      setLayerWindowHandler(id, windowSelectedOverlay);
       return id;
     });
-    await setVolumesForViewports(engine, [{ volumeId }], shown);
-    if (keep?.voiRange) shown.forEach((id) => viewport(id).setProperties({ voiRange: keep.voiRange, invert: !!keep.invert }, volumeId));
+    await setVolumesForViewports(engine, layers.map((l) => ({ volumeId: l.volumeId })), shown);
+    layers.forEach((l, i) => {
+      applyDisplay(l);
+      const kept = keep.get(l.volumeId);
+      const voi = kept?.voiRange ?? l.voi;
+      if (i === 0 && kept?.voiRange) shown.forEach((id) => viewport(id).setProperties({ voiRange: kept.voiRange, invert: !!kept.invert }, l.volumeId));
+      else if (voi) setLayerVoi(l, voi);
+    });
 
     group = csTools.ToolGroupManager.createToolGroup(toolGroupId)!;
     shown.forEach((id) => group!.addViewport(id, engine.id));
     addToolsToGroup(group);
-    const sync = csTools.synchronizers.createVOISynchronizer(synchronizerId, { syncInvertState: true, syncColormap: false });
-    shown.forEach((id) => sync.add({ renderingEngineId: engine.id, viewportId: id }));
+    const voiSync = (sync = csTools.synchronizers.createVOISynchronizer(synchronizerId, { syncInvertState: true, syncColormap: false }));
+    shown.forEach((id) => voiSync.add({ renderingEngineId: engine.id, viewportId: id }));
     applyTool(activeTool || FALLBACK_TOOL);
-    engine.renderViewports(shown);
-    onChange();
+    render();
   };
 
   await show(initial);
 
+  const layerState = (l: Layer): LayerState => {
+    const voi = layerVoi(l);
+    return {
+      seriesUid: l.seriesUid,
+      label: l.label,
+      modality: l.modality,
+      ...l.display,
+      curve: l.display.curve.map((p) => ({ ...p })),
+      voi: voi ? { lower: voi.lower, upper: voi.upper } : undefined,
+      ...(l.suv ? { suv: l.suv } : {}),
+    };
+  };
+
   return {
     state(): VolumeState {
-      const main = shown[0] ? viewport(shown[0]) : undefined;
-      const props = main?.getProperties(volumeId);
-      const voi = props?.voiRange;
+      const states = shown.length ? layers.map(layerState) : [];
+      const props = shown[0] ? viewport(shown[0]).getProperties(volumeId) : undefined;
       return {
         activeTool,
-        voi: voi ? { lower: voi.lower, upper: voi.upper } : undefined,
+        voi: states.find((l) => l.seriesUid === selected)?.voi,
         invert: !!props?.invert,
         views: shown.map((id, slot) => {
           const vp = viewport(id);
           const [x, y, z] = vp.getCamera().focalPoint ?? [0, 0, 0];
           return { orientation: orientations[slot], focalPoint: [x, y, z], sliceIndex: vp.getSliceIndex(), sliceCount: vp.getNumberOfSlices() };
         }),
+        layers: states,
+        selectedLayer: selected,
       };
     },
     setOrientations: show,
     setTool: applyTool,
     setVoi(voi: VoiRange) {
-      all((vp) => vp.setProperties({ voiRange: voi }, volumeId));
+      const l = selectedLayer();
+      all((vp) => vp.setProperties({ voiRange: voi }, l.volumeId));
     },
     resetVoi() {
+      const l = selectedLayer();
+      if (l !== base()) {
+        if (l.voi) setLayerVoi(l, l.voi);
+        else shown.forEach((id) => viewport(id).resetProperties(l.volumeId));
+        applyDisplay(l);
+        return render();
+      }
       all((vp) => {
         const invert = vp.getProperties(volumeId)?.invert;
         vp.resetProperties(volumeId);
         vp.setProperties({ invert }, volumeId);
       });
+      applyDisplay(base());
     },
     toggleInvert() {
       all((vp) => vp.setProperties({ invert: !vp.getProperties(volumeId)?.invert }, volumeId));
@@ -222,11 +322,78 @@ export async function createVolumeView(
         vp.resetCamera();
         vp.resetProperties(volumeId);
       });
+      applyDisplay(base());
       applyTool(activeTool); // re-centres the crosshairs on the reset cameras
+    },
+    async addLayer(overlay: LoadedSeries, display: LayerDisplay, options: LayerOptions = {}) {
+      const uid = overlay.ref.seriesUid;
+      const ids = registerSeriesMetadata(overlay);
+      const overlayVolumeId = volumeIdFor(uid);
+      const stopRefusal = onCacheRefusal(ids, () => options.onTooLarge?.());
+      try {
+        const v = (await volumeLoader.createAndCacheVolume(overlayVolumeId, { imageIds: ids })) as unknown as StreamingVolume;
+        if (!v.loadStatus?.loaded) v.load();
+        const layer: Layer = {
+          seriesUid: uid,
+          volumeId: overlayVolumeId,
+          label: seriesLabel(overlay),
+          modality: modalityOf(overlay),
+          display: { ...display, curve: display.curve.map((p) => ({ ...p })) },
+          suv: suvStatusOf(uid),
+          voi: options.voi,
+          styled: true,
+          dispose: stopRefusal,
+        };
+        layers.push(layer);
+        // Adding the actor fires VOI_MODIFIED while the other views don't have it yet; the VOI
+        // synchronizer would then copy the overlay's window onto their base. Windows are set per view here.
+        const baseVoi = layerVoi(base());
+        sync?.setEnabled(false);
+        try {
+          // addVolumes hides the actor unless `visibility` is set (setVolumes doesn't).
+          await addVolumesToViewports(engine, [{ volumeId: overlayVolumeId, visibility: true }], shown);
+          applyDisplay(layer);
+          if (layer.voi) setLayerVoi(layer, layer.voi);
+          if (baseVoi) setLayerVoi(base(), baseVoi);
+        } finally {
+          sync?.setEnabled(true);
+        }
+        render();
+      } catch (e) {
+        stopRefusal();
+        const i = layers.findIndex((l) => l.seriesUid === uid);
+        if (i > 0) layers.splice(i, 1);
+        throw e;
+      }
+    },
+    removeLayer(uid: string) {
+      const i = layers.findIndex((l) => l.seriesUid === uid);
+      if (i < 1) return;
+      const [layer] = layers.splice(i, 1);
+      layer.dispose();
+      shown.forEach((id) => viewport(id).removeVolumeActors([layer.volumeId]));
+      if (selected === uid) {
+        selected = base().seriesUid;
+        applyTool(activeTool);
+      }
+      render();
+    },
+    setLayerDisplay(uid: string, change: Partial<LayerDisplay>) {
+      const l = layerOf(uid);
+      if (!l) return;
+      l.display = { ...l.display, ...change, curve: (change.curve ?? l.display.curve).map((p) => ({ ...p })) };
+      if (change.colormap) l.styled = true;
+      applyDisplay(l);
+      render();
+    },
+    selectLayer(uid: string) {
+      if (!layerOf(uid) || uid === selected) return;
+      selected = uid;
+      applyTool(activeTool);
     },
     dispose() {
       stopStageListeners();
-      LOAD_ERRORS.forEach((ev) => eventTarget.removeEventListener(ev, onLoadError));
+      layers.forEach((l) => l.dispose());
       teardown();
     },
   };
