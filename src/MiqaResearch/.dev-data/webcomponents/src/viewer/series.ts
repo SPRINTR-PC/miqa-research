@@ -1,5 +1,6 @@
 // Series loading from our WADO-RS: /metadata (DICOM JSON) → ordered wadors frame imageIds.
 // Pure fetch + data shaping; no Cornerstone3D import, so it runs under vitest/happy-dom.
+import { viewerHeaders } from "./viewer-session.ts";
 
 /** One DICOM JSON instance (PS3.18 F.2), as served by `/series/{uid}/metadata`. */
 export type DicomJsonInstance = Record<string, { vr: string; Value?: unknown[] }>;
@@ -80,7 +81,7 @@ export function seriesUrl(ref: SeriesRef): string {
 export async function fetchSeries(ref: SeriesRef): Promise<LoadedSeries> {
   const response = await fetch(`${seriesUrl(ref)}/metadata`, {
     credentials: "same-origin",
-    headers: { Accept: "application/dicom+json" },
+    headers: viewerHeaders({ Accept: "application/dicom+json" }),
   });
   if (!response.ok) throw new SeriesLoadError(response.status);
   const instances = (await response.json()) as DicomJsonInstance[];

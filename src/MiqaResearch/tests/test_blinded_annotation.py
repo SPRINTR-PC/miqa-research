@@ -38,6 +38,7 @@ from tests.test_annotations_api import (
 )
 
 OBJECTS_URL = "/api/v1/viewer/objects"
+VIEWER_SESSION_HEADER = "X-Mires-Viewer-Session"
 
 
 @pytest.fixture(autouse=True)
@@ -52,6 +53,12 @@ def local_media(settings, tmp_path):
     settings.MEDIA_ROOT = tmp_path / "media"
     settings.DEBUG = False
     settings.MIDDLEWARE = [m for m in settings.MIDDLEWARE if "debug_toolbar" not in m]
+
+
+@pytest.fixture
+def client():
+    """The viewer's own requests carry its per-open Viewer Session id; a Blinding Reveal is scoped to it."""
+    return Client(headers={VIEWER_SESSION_HEADER: "open-1"})
 
 
 @pytest.fixture
@@ -279,6 +286,47 @@ def test_reveal_lasts_only_for_this_session(client, project, ct):
     assert _list_ids(another_session, pi, _participant(ct)) == set()
     client.logout()
     assert _list_ids(client, pi, _participant(ct)) == set()
+
+
+@pytest.mark.django_db
+def test_reveal_lasts_only_for_this_viewer_open(client, project, ct):
+    pi = _member(project, PROJECT_ROLE_PI)
+    others = _save(client, _member(project), _sr_for(ct), [ct.series]).json()
+    _blind(project)
+    _reveal(client, pi, _participant(ct))
+
+    client.force_login(pi)
+    url = f"/api/v1/viewer/participants/{_participant(ct).pk}/blinding"
+    assert client.get(url).json()["revealed"] is True
+    assert client.get(url, headers={VIEWER_SESSION_HEADER: "open-2"}).json()["revealed"] is False
+    same_login_no_viewer = Client()
+    same_login_no_viewer.cookies = client.cookies
+    assert same_login_no_viewer.get(url).json()["revealed"] is False
+    other_open = Client(headers={VIEWER_SESSION_HEADER: "open-2"})
+    other_open.cookies = client.cookies
+    assert others["id"] not in _list_ids(other_open, pi, _participant(ct))
+
+
+@pytest.mark.django_db
+def test_reveal_outside_a_viewer_session_is_refused(project, ct):
+    _blind(project)
+    assert _reveal(Client(), _member(project, PROJECT_ROLE_PI), _participant(ct)).status_code == 400
+    assert not AuditLog.objects.filter(event_type=EVENT_TYPE_BLINDING_REVEAL).exists()
+
+
+@pytest.mark.django_db
+def test_reveal_ends_when_blinded_annotation_is_turned_off_and_on_again(client, project, ct):
+    pi = _member(project, PROJECT_ROLE_PI)
+    others = _save(client, _member(project), _sr_for(ct), [ct.series]).json()
+    _blind(project)
+    _reveal(client, pi, _participant(ct))
+    assert others["id"] in _list_ids(client, pi, _participant(ct))
+
+    _set_flag(client, pi, project, False)
+    _set_flag(client, pi, project, True)
+
+    assert others["id"] not in _list_ids(client, pi, _participant(ct))
+    assert _status(client, pi, _participant(ct)).json()["revealed"] is False
 
 
 @pytest.mark.django_db

@@ -16,7 +16,7 @@ from ninja import Router
 from helpers.dicom_deidentification import deidentify
 from MiqaResearch.data.models.dicom_file import DicomFile
 
-from .access import audit_client_access, readable_files
+from .access import audited_files, not_for_sessions, readable_dicom_files
 from .caching import METADATA_CACHE_CONTROL, matches_if_none_match, not_modified, strong_etag, with_cache_headers
 
 router = Router()
@@ -25,6 +25,7 @@ _AVAILABLE_TRANSFER_SYNTAX_UID = "00083002"
 
 
 @router.get("/studies/{study_instance_uid}/metadata")
+@not_for_sessions
 def retrieve_study_metadata(request, study_instance_uid: str):
     return _metadata_response(request, _files(request).filter(series__study__study_instance_uid=study_instance_uid))
 
@@ -36,11 +37,13 @@ def retrieve_series_metadata(request, study_instance_uid: str, series_instance_u
         _files(request).filter(
             series__series_instance_uid=series_instance_uid,
             series__study__study_instance_uid=study_instance_uid,
-        )
+        ),
+        series_open=True,
     )
 
 
 @router.get("/studies/{study_instance_uid}/series/{series_instance_uid}/instances/{sop_instance_uid}/metadata")
+@not_for_sessions
 def retrieve_instance_metadata(request, study_instance_uid: str, series_instance_uid: str, sop_instance_uid: str):
     return _metadata_response(
         request,
@@ -53,16 +56,15 @@ def retrieve_instance_metadata(request, study_instance_uid: str, series_instance
 
 
 def _files(request):
-    return readable_files(request, DicomFile.objects.select_related(
-        "research_project", "series__study__study_participant__research_project"
-    )).order_by("series_id", "pk")
+    return readable_dicom_files(
+        request, "research_project", "series__study__study_participant__research_project"
+    ).order_by("series_id", "pk")
 
 
-def _metadata_response(request, dicom_files):
-    dicom_files = list(dicom_files)
+def _metadata_response(request, dicom_files, *, series_open: bool = False):
+    dicom_files = audited_files(request, dicom_files, series_open=series_open)
     if not dicom_files:
         return HttpResponse(status=404)
-    audit_client_access(request, dicom_files)
     instances = [sanitized_instance_json(dicom_file) for dicom_file in dicom_files]
     body = json.dumps(instances, separators=(",", ":")).encode()
     etag = strong_etag(body)

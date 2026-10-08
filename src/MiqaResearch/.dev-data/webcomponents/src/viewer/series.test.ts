@@ -25,14 +25,14 @@ function respondWith(body: unknown, status = 200) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("fetchSeries", () => {
-  it("asks for the series /metadata as DICOM JSON with the session cookie", async () => {
+  it("asks for the series /metadata as DICOM JSON with the session cookie and the Viewer Session id", async () => {
     const fetchMock = respondWith([instance("2.25.10", 1)]);
 
     await fetchSeries(REF);
 
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/dicom/studies/2.25.1/series/2.25.2/metadata", {
       credentials: "same-origin",
-      headers: { Accept: "application/dicom+json" },
+      headers: { Accept: "application/dicom+json", "X-Mires-Viewer-Session": expect.stringMatching(/^[0-9a-f-]{36}$/) },
     });
   });
 

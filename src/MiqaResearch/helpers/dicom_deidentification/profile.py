@@ -72,6 +72,7 @@ DEIDENTIFICATION_METHOD: tuple[str, ...] = (
     "UIDs replaced with per-project HashUID",
     "Deviation: Study/Series Description, Protocol",
     "Name, Body Part Examined kept uncleaned",
+    "Deviation: SR Content Sequence kept, its text values too",
 )
 
 _TAG = re.compile(r"\(([0-9A-Fx]{4}),([0-9A-Fx]{4})\)")

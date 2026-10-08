@@ -36,12 +36,12 @@ class IssuedSecret:
     client_secret: str
 
 
-async def issue_client(*, project, user, request, name, clinic=None, dicom_raw=False) -> IssuedSecret:
-    return await sync_to_async(_issue_client)(project, user, request, name, clinic, dicom_raw)
+async def issue_client(*, project, user, request, name, site=None, dicom_raw=False) -> IssuedSecret:
+    return await sync_to_async(_issue_client)(project, user, request, name, site, dicom_raw)
 
 
-async def update_client(*, binding, user, request, clinic, dicom_raw) -> ClientBinding:
-    return await sync_to_async(_update_client)(binding, user, request, clinic, dicom_raw)
+async def update_client(*, binding, user, request, site, dicom_raw) -> ClientBinding:
+    return await sync_to_async(_update_client)(binding, user, request, site, dicom_raw)
 
 
 async def rotate_client_secret(*, binding, user, request) -> IssuedSecret:
@@ -52,8 +52,8 @@ async def revoke_client(*, binding, user, request) -> None:
     await sync_to_async(_revoke_client)(binding, user, request)
 
 
-def _issue_client(project, user, request, name, clinic, dicom_raw) -> IssuedSecret:
-    _require_project_site(project, clinic)
+def _issue_client(project, user, request, name, site, dicom_raw) -> IssuedSecret:
+    _require_project_site(project, site)
     secret = generate_client_secret()
     with transaction.atomic():
         application = Application.objects.create(
@@ -61,23 +61,23 @@ def _issue_client(project, user, request, name, clinic, dicom_raw) -> IssuedSecr
             authorization_grant_type=Application.GRANT_CLIENT_CREDENTIALS, client_secret=secret,
         )
         binding = ClientBinding.objects.create(
-            application=application, research_project=project, clinic=clinic, dicom_raw=dicom_raw, issued_by=user)
-        _record(EVENT_TYPE_API_CLIENT_ISSUED, binding, user, request, clinic_id=_id(clinic))
+            application=application, research_project=project, clinic=site, dicom_raw=dicom_raw, issued_by=user)
+        _record(EVENT_TYPE_API_CLIENT_ISSUED, binding, user, request, clinic_id=_pk_text(site))
         if dicom_raw:
             _record(EVENT_TYPE_DICOM_RAW_GRANTED, binding, user, request)
     return IssuedSecret(binding, secret)
 
 
-def _update_client(binding, user, request, clinic, dicom_raw) -> ClientBinding:
-    _require_project_site(binding.research_project, clinic)
+def _update_client(binding, user, request, site, dicom_raw) -> ClientBinding:
+    _require_project_site(binding.research_project, site)
     with transaction.atomic():
         binding = ClientBinding.objects.select_for_update().select_related("application").get(pk=binding.pk)
-        site_changed = binding.clinic_id != _id_raw(clinic)
+        site_changed = binding.clinic_id != _pk(site)
         raw_changed = binding.dicom_raw != dicom_raw
-        binding.clinic, binding.dicom_raw = clinic, dicom_raw
+        binding.clinic, binding.dicom_raw = site, dicom_raw
         binding.save(update_fields=["clinic", "dicom_raw"])
         if site_changed:
-            _record(EVENT_TYPE_API_CLIENT_UPDATED, binding, user, request, clinic_id=_id(clinic))
+            _record(EVENT_TYPE_API_CLIENT_UPDATED, binding, user, request, clinic_id=_pk_text(site))
         if raw_changed:
             _record(EVENT_TYPE_DICOM_RAW_GRANTED if dicom_raw else EVENT_TYPE_DICOM_RAW_REVOKED, binding, user, request)
     return binding
@@ -103,17 +103,19 @@ def _revoke_client(binding, user, request) -> None:
         binding.application.delete()
 
 
-def _require_project_site(project, clinic) -> None:
-    if clinic is not None and not ResearchProjectClinicMap.objects.filter(project=project, clinic=clinic).exists():
+def _require_project_site(project, site) -> None:
+    if site is not None and not ResearchProjectClinicMap.objects.filter(project=project, clinic=site).exists():
         raise ClientBindingError("That Site is not one of this project's Sites.")
 
 
-def _id(clinic) -> str | None:
-    return str(clinic.pk) if clinic is not None else None
+def _pk(site):
+    """The Site's primary key; None for all Sites."""
+    return site.pk if site is not None else None
 
 
-def _id_raw(clinic):
-    return clinic.pk if clinic is not None else None
+def _pk_text(site) -> str | None:
+    """`_pk` as text, for audit metadata (JSON)."""
+    return str(site.pk) if site is not None else None
 
 
 def _record(event_type, binding, user, request, **extra) -> None:

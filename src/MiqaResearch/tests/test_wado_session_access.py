@@ -11,7 +11,9 @@ from django.contrib.auth import get_user_model
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
+from contract.constants.audit_log import DATA_ACCESS_EVENT_TYPES, EVENT_TYPE_VIEWER_SERIES_OPENED
 from MiqaResearch.data.models import (
+    AuditLog,
     Clinic,
     DicomFile,
     ParticipantConsent,
@@ -29,6 +31,7 @@ from tests.dicom_fixtures import build_multiframe_ct, write_dicom
 User = get_user_model()
 TOKEN = "session-access-test-token"
 FRAMES_CACHE_CONTROL = "private, max-age=31536000, immutable"
+VIEWER_SESSION = "X-Mires-Viewer-Session"
 
 
 @pytest.fixture(autouse=True)
@@ -130,16 +133,23 @@ def test_session_caller_who_cannot_see_the_participant_gets_404_on_frames(world,
     assert invisible_client.get(_frames_url(world["file"])).status_code == 404
 
 
-def test_session_caller_gets_metadata_only_for_visible_participants(world, visible_client):
-    for url in _metadata_urls(world["file"]):
-        response = visible_client.get(url)
-        assert response.status_code == 200, url
-        assert len(response.json()) == 1
+def test_session_caller_gets_series_metadata_only_for_visible_participants(world, visible_client):
+    response = visible_client.get(_metadata_urls(world["file"])[1])
+    assert response.status_code == 200
+    assert len(response.json()) == 1
 
 
 def test_session_caller_who_cannot_see_the_participant_gets_404_on_metadata(world, invisible_client):
-    for url in _metadata_urls(world["file"]):
-        assert invisible_client.get(url).status_code == 404, url
+    assert invisible_client.get(_metadata_urls(world["file"])[1]).status_code == 404
+
+
+@pytest.mark.parametrize("url_index", [0, 2], ids=["study", "instance"])
+def test_study_and_instance_metadata_are_403_for_session_callers(world, visible_client, client, bearer, url_index):
+    """#271: the viewer surface is series /metadata and /frames only; clients keep the other levels."""
+    url = _metadata_urls(world["file"])[url_index]
+    assert visible_client.get(url).status_code == 403
+    visible_client.logout()
+    assert client.get(url, **bearer).status_code == 200
 
 
 def test_visibility_is_checked_on_every_request(world, client):
@@ -151,7 +161,7 @@ def test_visibility_is_checked_on_every_request(world, client):
     ResearchProjectUserRoleMap.objects.filter(user=user).delete()
 
     assert client.get(_frames_url(world["file"])).status_code == 404
-    assert client.get(_metadata_urls(world["file"])[2]).status_code == 404
+    assert client.get(_metadata_urls(world["file"])[1]).status_code == 404
 
 
 def test_logged_in_user_without_a_role_on_the_project_gets_404(world, client):
@@ -226,9 +236,8 @@ def test_frames_304_still_requires_visibility(world, client):
     assert client.get(url, HTTP_IF_NONE_MATCH=etag).status_code == 404
 
 
-@pytest.mark.parametrize("url_index", [0, 1, 2], ids=["study", "series", "instance"])
-def test_metadata_must_be_revalidated_and_answers_304_on_a_matching_etag(world, visible_client, url_index):
-    url = _metadata_urls(world["file"])[url_index]
+def test_metadata_must_be_revalidated_and_answers_304_on_a_matching_etag(world, visible_client):
+    url = _metadata_urls(world["file"])[1]
     first = visible_client.get(url)
     assert first.status_code == 200
     assert first["Cache-Control"] == "private, no-cache"
@@ -244,7 +253,7 @@ def test_metadata_must_be_revalidated_and_answers_304_on_a_matching_etag(world, 
 
 
 def test_metadata_reads_only_the_stored_header_when_the_frame_index_is_known(world, visible_client, monkeypatch):
-    url = _metadata_urls(world["file"])[2]
+    url = _metadata_urls(world["file"])[1]
     DicomFile.objects.filter(pk=world["file"].pk).update(frame_index=None)
     from_whole_file = visible_client.get(url).json()  # no index yet: whole-file read
     DicomFile.objects.filter(pk=world["file"].pk).update(frame_index=world["file"].frame_index)
@@ -277,3 +286,37 @@ def test_client_callers_are_not_subject_to_participant_visibility(world, client,
 
 def test_anonymous_caller_is_401(world, client):
     assert client.get(_frames_url(world["file"])).status_code == 401
+
+
+def _series_opens():
+    return list(AuditLog.objects.filter(event_type=EVENT_TYPE_VIEWER_SERIES_OPENED))
+
+
+def test_opening_a_series_in_the_viewer_is_audited_once_per_viewer_open(world, visible_client):
+    """#271 story 21: once per open (the series /metadata the viewer opens with), not per frame."""
+    open_1, open_2 = {"headers": {VIEWER_SESSION: "open-1"}}, {"headers": {VIEWER_SESSION: "open-2"}}
+    series_metadata = _metadata_urls(world["file"])[1]
+
+    assert visible_client.get(series_metadata, **open_1).status_code == 200
+    visible_client.get(series_metadata, **open_1)
+    for frame in "123":
+        visible_client.get(_frames_url(world["file"], frame), **open_1)
+
+    (entry,) = _series_opens()
+    assert entry.user_id == int(visible_client.session["_auth_user_id"])
+    assert entry.project_id == world["project"].pk
+    assert entry.metadata["series_instance_uid"] == world["file"].series.series_instance_uid
+    assert entry.event_type in DATA_ACCESS_EVENT_TYPES
+
+    visible_client.get(series_metadata, **open_2)
+    assert len(_series_opens()) == 2
+
+
+def test_denied_series_opens_are_not_audited(world, invisible_client):
+    invisible_client.get(_metadata_urls(world["file"])[1], headers={VIEWER_SESSION: "open-1"})
+    assert _series_opens() == []
+
+
+def test_client_callers_write_no_viewer_series_open(world, client, bearer):
+    client.get(_metadata_urls(world["file"])[1], **bearer)
+    assert _series_opens() == []

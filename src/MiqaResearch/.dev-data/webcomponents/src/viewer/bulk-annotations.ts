@@ -3,6 +3,7 @@
 // finding the slide's ANN (viewer object list → WADO /metadata) and reading its groups.
 // The layer itself is adapter/cornerstone/bulk-annotations.ts.
 import type { DicomJsonInstance, SeriesRef } from "./series.ts";
+import { viewerHeaders } from "./viewer-session.ts";
 
 /** Microscopy Bulk Simple Annotations Storage. */
 export const ANN_SOP_CLASS = "1.2.840.10008.5.1.4.1.1.91.1";
@@ -61,7 +62,7 @@ interface ObjectChain {
 }
 
 async function getJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, { credentials: "same-origin", headers: { Accept: "application/json" } });
+  const response = await fetch(url, { credentials: "same-origin", headers: viewerHeaders({ Accept: "application/json" }) });
   if (!response.ok) throw new Error(`Bulk annotations request failed (HTTP ${response.status})`);
   return (await response.json()) as T;
 }

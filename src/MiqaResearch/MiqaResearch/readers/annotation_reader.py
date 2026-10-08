@@ -1,14 +1,10 @@
 """Read Annotations and Segmentations of a participant as version chains (ADR 0026, #287)."""
 from collections import defaultdict
 
-from MiqaResearch.data.models import DerivedObjectProvenance, StudyParticipant
+from MiqaResearch.data.models import DerivedObjectProvenance
 from MiqaResearch.readers.annotation_permissions import ParticipantRights
 from MiqaResearch.readers.blinding import ParticipantBlinding
-from MiqaResearch.readers.participant_visibility import visible_participants
-
-
-class ParticipantNotVisible(Exception):
-    """Unknown participant, or outside the caller's Participant Visibility."""
+from MiqaResearch.readers.participant_visibility import visible_participant
 
 
 def version_item(provenance: DerivedObjectProvenance) -> dict:
@@ -38,17 +34,17 @@ def chain_item(head: DerivedObjectProvenance, history: list[DerivedObjectProvena
 
 
 def list_participant_objects(user, participant_id, series_instance_uid: str | None = None,
-                             include_retired: bool = False, session=None) -> list[dict]:
+                             include_retired: bool = False, reveals: dict[str, int] | None = None) -> list[dict]:
     """Chains of the participant's Annotations and Segmentations, newest chain first.
 
     `series_instance_uid` keeps only chains whose head was made on that source series. Retired
     chains are listed only with `include_retired`, and only those the caller may retire. Under
     Blinded Annotation (#288) a chain is listed only if its head is the caller's, with only the
-    caller's versions in its history, unless `session` holds a Blinding Reveal for the participant.
+    caller's versions in its history, unless `reveals` (`viewer_reveals`) holds a Blinding Reveal for the participant.
     """
     participant, project = visible_participant(user, participant_id)
     rights = ParticipantRights(user, project, participant)
-    blinding = ParticipantBlinding(user, project, participant, session)
+    blinding = ParticipantBlinding(user, project, participant, reveals or {})
 
     result = []
     for history in _chains(participant):
@@ -66,11 +62,11 @@ def list_participant_objects(user, participant_id, series_instance_uid: str | No
     return result
 
 
-def participant_blinding_status(user, participant_id, session=None) -> dict:
-    """Blinded Annotation state of one participant for the caller: on/off, whether this session revealed
+def participant_blinding_status(user, participant_id, reveals: dict[str, int] | None = None) -> dict:
+    """Blinded Annotation state of one participant for the caller: on/off, whether this Viewer Session revealed
     it, whether the caller may reveal, and how many current (not retired) chains are hidden."""
     participant, project = visible_participant(user, participant_id)
-    blinding = ParticipantBlinding(user, project, participant, session)
+    blinding = ParticipantBlinding(user, project, participant, reveals or {})
     hidden = sum(
         1 for history in _chains(participant) if not history[-1].retired and blinding.hides(history[-1].author_id)
     )
@@ -80,18 +76,6 @@ def participant_blinding_status(user, participant_id, session=None) -> dict:
         "can_reveal": blinding.can_reveal,
         "hidden": hidden,
     }
-
-
-def visible_participant(user, participant_id):
-    participant = (
-        StudyParticipant.objects.select_related("research_project").filter(pk=participant_id).first()
-    )
-    if participant is None or participant.research_project is None:
-        raise ParticipantNotVisible()
-    project = participant.research_project
-    if not visible_participants(user, project).filter(pk=participant.pk).exists():
-        raise ParticipantNotVisible()
-    return participant, project
 
 
 def _chains(participant) -> list[list[DerivedObjectProvenance]]:

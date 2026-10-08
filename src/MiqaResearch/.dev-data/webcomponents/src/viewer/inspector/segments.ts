@@ -57,7 +57,7 @@ inspector.register({
         <button data-action="new-segmentation" ?disabled=${!ctx.view} @click=${() => void ctx.ensureSegmentation()}>
           New segmentation
         </button>
-        <div class="hint">Or pick a segment tool. The labelmap is on the base series' grid.</div>
+        <div class="hint">Or pick a segment tool. The Segmentation is on the base series' grid.</div>
       </section>`;
     }
     const tool = ctx.activeTool;

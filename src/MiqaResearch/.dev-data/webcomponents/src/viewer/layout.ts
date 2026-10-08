@@ -30,6 +30,16 @@ export function threeViews(main: Orientation): Orientation[] {
   return [main, ...ORIENTATIONS.filter((o) => o !== main)];
 }
 
+/** How many views the layout shows: 1 for the stack. */
+export function viewCount(layout: ViewLayout): number {
+  return layout.kind === "volume" ? layout.orientations.length : 1;
+}
+
+/** A reduced (decimated, view-only) volume (#283). */
+export function isReduced(layout: ViewLayout): boolean {
+  return layout.kind === "volume" && !!layout.reduced;
+}
+
 export function swapIntoMain(orientations: Orientation[], slot: number): Orientation[] {
   const next = [...orientations];
   [next[0], next[slot]] = [next[slot], next[0]];

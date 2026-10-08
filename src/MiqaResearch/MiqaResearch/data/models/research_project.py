@@ -31,6 +31,9 @@ class ResearchProject(models.Model):
         default=False,
         help_text="Blinded Annotation (ADR 0026): every user sees only their own Annotations and Segmentations, "
                   "ingested ones are hidden, and bound machine clients get none. Set by a PI or Project Admin.")
+    blinding_epoch = models.PositiveIntegerField(
+        default=0,
+        help_text="Bumped on every Blinded Annotation change; a Blinding Reveal counts only in the epoch it was made in.")
 
     class Meta:
         db_table = "mires_research_project"

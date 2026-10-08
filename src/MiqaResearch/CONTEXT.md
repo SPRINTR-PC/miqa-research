@@ -908,6 +908,13 @@ scrub pixels.
   them.
 - Rewriting every UID keeps SEG/SR references to their source images
   resolvable once the source UIDs are pseudonyms.
+- A second deviation (#271 review): Content Sequence (0040,A730) is "D" in
+  E.1-1, but its items are de-identified and kept rather than replaced by a
+  dummy, and free text inside them (TextValue (0040,A160), concept names) is
+  kept. Without that the viewer can't show SR measurements, labels and their
+  image references, its own saved ones or ingested ones. Ingested SRs may
+  therefore carry free-text findings to the browser via `/metadata`; that
+  residual risk is accepted, and `DeidentificationMethod` names it.
 - The raw-bytes endpoints (`dicom:raw`, ADR 0027) still return the original
   files. The profile governs `read` only.
 - Supersedes decision 3 of the WADO-RS ticket (#190): "reuse

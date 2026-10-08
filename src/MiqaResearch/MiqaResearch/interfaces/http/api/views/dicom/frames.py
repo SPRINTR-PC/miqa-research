@@ -5,6 +5,13 @@ read per frame via the DicomFile's frame offset index
 (tasks/dicom_handling/frame_index.py), no server-side frame cache. Each part
 carries the syntax's media type plus ``transfer-syntax=<uid>``; an Accept that
 can't be satisfied gets 406.
+
+Rows ingested before the index existed are covered by the backfill task
+(`tasks/dicom_handling/frame_index_backfill.backfill_frame_indexes`, enqueue it
+once after deploy). Until it reaches a row, the first /frames request for it
+reads the whole file once and stores the index (`_ensure_frame_index`): a
+deliberate safety net (#271 review), so a not-yet-backfilled row is slow once
+rather than unservable; every later request is ranged.
 """
 import re
 
@@ -16,7 +23,7 @@ from pydicom.uid import UID
 from MiqaResearch.data.models.dicom_file import DicomFile
 from MiqaResearch.tasks.dicom_handling.frame_index import build_frame_index, frame_bytes
 
-from .access import audit_client_access, readable_files
+from .access import audit_access, readable_dicom_files
 from .caching import FRAMES_CACHE_CONTROL, matches_if_none_match, not_modified, strong_etag, with_cache_headers
 
 router = Router()
@@ -97,12 +104,12 @@ def retrieve_frames(request, study_instance_uid: str, series_instance_uid: str, 
 
     # One query: the file, its frame offset index and Participant Visibility / the Client Binding.
     dicom_file = get_object_or_404(
-        readable_files(request, DicomFile.objects.select_related("series__study__study_participant")),
+        readable_dicom_files(request),
         sop_instance_uid=sop_instance_uid,
         series__series_instance_uid=series_instance_uid,
         series__study__study_instance_uid=study_instance_uid,
     )
-    audit_client_access(request, [dicom_file])
+    audit_access(request, [dicom_file])
     _ensure_frame_index(dicom_file)
     frames = dicom_file.frame_index
     if not frames:

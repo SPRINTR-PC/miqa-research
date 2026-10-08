@@ -1,10 +1,30 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { DEFAULT_SPLIT, SPLIT_STORAGE_KEY, clampSplit, cycleOrientation, loadSplit, saveSplit, swapIntoMain, threeViews } from "./layout.ts";
+import {
+  DEFAULT_SPLIT,
+  SPLIT_STORAGE_KEY,
+  clampSplit,
+  cycleOrientation,
+  isReduced,
+  loadSplit,
+  saveSplit,
+  swapIntoMain,
+  threeViews,
+  viewCount,
+} from "./layout.ts";
 
 afterEach(() => localStorage.clear());
 
 describe("volume layout", () => {
+  it("counts one view for the stack, one per orientation for a volume; only volumes can be reduced", () => {
+    expect(viewCount({ kind: "stack" })).toBe(1);
+    expect(viewCount({ kind: "volume", orientations: ["sagittal"] })).toBe(1);
+    expect(viewCount({ kind: "volume", orientations: threeViews("axial") })).toBe(3);
+    expect(isReduced({ kind: "stack" })).toBe(false);
+    expect(isReduced({ kind: "volume", orientations: ["axial"] })).toBe(false);
+    expect(isReduced({ kind: "volume", orientations: ["axial"], reduced: { factor: 2 } as never })).toBe(true);
+  });
+
   it("V cycles axial → sagittal → coronal → axial", () => {
     expect(cycleOrientation("axial")).toBe("sagittal");
     expect(cycleOrientation("sagittal")).toBe("coronal");

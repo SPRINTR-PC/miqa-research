@@ -35,10 +35,10 @@ import { DraftController, DraftStore, defaultDraftBackend, type Draft, type Draf
 import { inspector } from "./inspector/index.ts";
 import { burnedInWarning } from "./calibration.ts";
 import { fuseBlocker, layerDisplay, modalityOf, overlayBudget, replaceBlocker, seriesLabel } from "./fusion.ts";
-import { clampSplit, loadSplit, saveSplit, swapIntoMain, threeViews, type ViewLayout } from "./layout.ts";
+import { clampSplit, isReduced, loadSplit, saveSplit, swapIntoMain, threeViews, viewCount, type ViewLayout } from "./layout.ts";
 import { isReconstructable, type Reconstructability } from "./reconstructable.ts";
 import { SaveController, type ObjectKind, type ObjectVersion, type SaveHost } from "./save.ts";
-import { Quiet, ResultsController, baseOf, kindOf, type ResultChain, type ResultsHost } from "./results.ts";
+import { NOUN, Quiet, ResultsController, baseOf, kindOf, type ResultChain, type ResultsHost } from "./results.ts";
 import { fetchSavedSegmentation } from "./saved-seg.ts";
 import { fetchSeries, type DicomJsonInstance, type LoadedSeries, type SeriesRef } from "./series.ts";
 import {
@@ -61,9 +61,30 @@ import { SegmentationController } from "./segmentation-controller.ts";
 import type { SegmentationState } from "./segmentation.ts";
 import { suvStatusFor, type SuvStatus } from "./suv.ts";
 import { unitTooltip } from "./units.ts";
+import { viewerHeaders } from "./viewer-session.ts";
 import { isWholeSlide, WSI_DEFAULT_TOOL } from "./wsi.ts";
 
 export type ViewerState = "loading" | "ready" | "error";
+
+/** One ObjectKind's side of Save, drafts and the results tree, on the base series. */
+interface KindOps {
+  /** Bumps on every edit. */
+  revision(): number;
+  /** Nothing drawn or painted. */
+  isEmpty(): boolean;
+  /** The SR / SEG as DICOM Part 10 bytes. */
+  build(): Promise<Blob>;
+  /** Adapter snapshot (Cornerstone JSON) for a draft. */
+  snapshot(): Promise<unknown>;
+  /** Show a draft's snapshot. */
+  restore(data: unknown, series: LoadedSeries): Promise<void>;
+  /** Drop the local edits. */
+  drop(series: LoadedSeries): void;
+  /** Show a saved head. */
+  show(head: ObjectVersion): Promise<void>;
+  /** Hide a head shown from the results tree. */
+  hide(chain: ResultChain): void;
+}
 
 const DEFAULT_TOOL = "WindowLevel";
 
@@ -121,6 +142,45 @@ export class MiresViewer extends LitElement {
     refuse: (message) => this.refuse(message),
     changed: () => this.requestUpdate(),
   });
+  /** What Save (#289), drafts (#291) and the results tree (#290) do per ObjectKind: SR annotations or the SEG. */
+  private readonly kinds: Record<ObjectKind, KindOps> = {
+    annotation: {
+      revision: () => this.annotations?.revision() ?? 0,
+      isEmpty: () => !this.loaded || !this.annotations?.count(this.loaded),
+      build: async () => {
+        if (!this.annotations || !this.loaded) throw new Error("the viewer isn't ready");
+        return this.annotations.exportSr(this.loaded);
+      },
+      snapshot: async () => this.loaded && this.annotations?.snapshot(this.loaded),
+      restore: async (data, series) => {
+        if (!this.annotations) throw new Error("the viewer isn't ready");
+        this.annotations.restore(data, series);
+      },
+      drop: (series) => this.annotations?.clear(series),
+      show: (head) => this.showSr(head),
+      hide: (chain) => {
+        this.annotations?.remove(this.resultAnnotations.get(chain.chain_id) ?? []);
+        this.resultAnnotations.delete(chain.chain_id);
+      },
+    },
+    segmentation: {
+      revision: () => this.segmentation.revision(),
+      isEmpty: () => this.segmentation.isEmpty(),
+      build: async () => {
+        if (!this.segmentation.view) throw new Error("no segmentation");
+        return this.segmentation.view.exportSeg();
+      },
+      snapshot: async () => this.segmentation.view?.snapshot(),
+      restore: async (data) => {
+        const view = await this.segmentation.ensure(this.controls);
+        if (!view) throw new Error("the Segmentation doesn't fit");
+        view.restore(data);
+      },
+      drop: () => this.segmentation.close(),
+      show: (head) => this.showSavedSegmentation(head),
+      hide: () => this.segmentation.close(),
+    },
+  };
   /** Save (#289): Annotations (SR) and the Segmentation (SEG) of the base series. */
   readonly save = new SaveController(this.saveHost());
   /** Results tree (#290): the participant's Annotations and Segmentations, shown / hidden from the series list. */
@@ -355,19 +415,11 @@ export class MiresViewer extends LitElement {
       get apiRoot() {
         return el.apiRoot;
       },
-      revision: (kind) => (kind === "annotation" ? (el.annotations?.revision() ?? 0) : el.segmentation.revision()),
-      isEmpty: (kind) =>
-        kind === "annotation" ? !el.loaded || !el.annotations?.count(el.loaded) : el.segmentation.isEmpty(),
+      revision: (kind) => el.kinds[kind].revision(),
+      isEmpty: (kind) => el.kinds[kind].isEmpty(),
       // Base series first, then the fused overlays (#284): objects made on a Fusion list them all.
       sourceSeries: () => [el.seriesUid, ...(el.volume?.layers ?? []).map((l) => l.seriesUid).filter((uid) => uid !== el.seriesUid)],
-      build: async (kind) => {
-        if (kind === "segmentation") {
-          if (!el.segmentation.view) throw new Error("no segmentation");
-          return el.segmentation.view.exportSeg();
-        }
-        if (!el.annotations || !el.loaded) throw new Error("the viewer isn't ready");
-        return el.annotations.exportSr(el.loaded);
-      },
+      build: (kind) => el.kinds[kind].build(),
       loadTheirs: (kind, head) => el.loadTheirs(kind, head),
       changed: () => el.requestUpdate(),
       toast: (message) => el.showToast(message),
@@ -387,15 +439,11 @@ export class MiresViewer extends LitElement {
         el.user && el.participant && el.canAnnotate && el.loaded
           ? { user: el.user, participant: el.participant, seriesUid: el.loaded.ref.seriesUid, kind }
           : undefined,
-      revision: (kind) => (kind === "annotation" ? (el.annotations?.revision() ?? 0) : el.segmentation.revision()),
+      revision: (kind) => el.kinds[kind].revision(),
       dirty: (kind) => el.save.dirty(kind),
-      isEmpty: (kind) =>
-        kind === "annotation" ? !el.loaded || !el.annotations?.count(el.loaded) : el.segmentation.isEmpty(),
+      isEmpty: (kind) => el.kinds[kind].isEmpty(),
       base: (kind) => el.save.base(kind),
-      snapshot: async (kind) => {
-        if (kind === "segmentation") return el.segmentation.view?.snapshot();
-        return el.loaded && el.annotations?.snapshot(el.loaded);
-      },
+      snapshot: (kind) => el.kinds[kind].snapshot(),
       restore: (draft) => el.restoreDraft(draft),
       changed: () => el.requestUpdate(),
     };
@@ -406,14 +454,7 @@ export class MiresViewer extends LitElement {
     const series = this.loaded;
     if (!series || series.ref.seriesUid !== draft.seriesUid) throw new Error("another series is shown");
     if (draft.base) this.save.setHead(draft.kind, draft.base.head, draft.base.canChange);
-    if (draft.kind === "annotation") {
-      if (!this.annotations) throw new Error("the viewer isn't ready");
-      this.annotations.restore(draft.data, series);
-    } else {
-      const view = await this.segmentation.ensure(this.controls);
-      if (!view) throw new Error("the Segmentation doesn't fit");
-      view.restore(draft.data);
-    }
+    await this.kinds[draft.kind].restore(draft.data, series);
   }
 
   /** 409 "Discard mine, load theirs": drop the local edits and show the head saved first (in the results tree too, #290). */
@@ -421,17 +462,12 @@ export class MiresViewer extends LitElement {
     const series = this.loaded;
     if (!series) return;
     this.results.hideWhere((c) => kindOf(c) === kind);
-    if (kind === "segmentation") {
-      this.segmentation.close();
-      await this.showSavedSegmentation(head);
-    } else {
-      this.annotations?.clear(series);
-      await this.showSr(head);
-    }
+    this.kinds[kind].drop(series);
+    await this.kinds[kind].show(head);
     await this.results.refresh();
     const chain = this.results.chain(head.chain_id);
     if (chain) this.results.markShown(chain);
-    this.showToast(`Showing ${kind === "segmentation" ? "Segmentation" : "Annotations"} v${head.version}`);
+    this.showToast(`Showing ${NOUN[kind]} v${head.version}`);
   }
 
   /** Import an SR head's annotations onto the base series, remembering them by chain to hide them again. */
@@ -439,7 +475,7 @@ export class MiresViewer extends LitElement {
     const series = this.loaded;
     if (!series || !this.annotations) throw new Error("the viewer isn't ready");
     const url = `${this.wadoRoot}/studies/${this.studyUid}/series/${head.series_instance_uid}/metadata`;
-    const response = await fetch(url, { credentials: "same-origin", headers: { Accept: "application/dicom+json" } });
+    const response = await fetch(url, { credentials: "same-origin", headers: viewerHeaders({ Accept: "application/dicom+json" }) });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const [instance] = (await response.json()) as DicomJsonInstance[];
     if (!instance) throw new Error("the SR has no instance");
@@ -495,24 +531,15 @@ export class MiresViewer extends LitElement {
     } finally {
       this.fusionBusy = false;
     }
-    if (kind === "segmentation") {
-      this.results.hideWhere((c) => kindOf(c) === "segmentation"); // one Segmentation at a time
-      await this.showSavedSegmentation(chain);
-    } else {
-      await this.showSr(chain);
-    }
+    if (kind === "segmentation") this.results.hideWhere((c) => kindOf(c) === "segmentation"); // one Segmentation at a time
+    await this.kinds[kind].show(chain);
     this.save.setHead(kind, chain, chain.can_change);
   }
 
   /** Hide a head: its annotations removed, or its Segmentation closed; Save no longer supersedes it. */
   private hideResult(chain: ResultChain): void {
     const kind = kindOf(chain);
-    if (kind === "annotation") {
-      this.annotations?.remove(this.resultAnnotations.get(chain.chain_id) ?? []);
-      this.resultAnnotations.delete(chain.chain_id);
-    } else {
-      this.segmentation.close();
-    }
+    this.kinds[kind].hide(chain);
     if (this.save.head(kind)?.chain_id !== chain.chain_id) return;
     const other = [...this.results.shown.values()].find((c) => kindOf(c) === kind);
     if (other) this.save.setHead(kind, other, other.can_change);
@@ -622,15 +649,12 @@ export class MiresViewer extends LitElement {
 
   /** Crosshairs when entering three views; else keep the tool if the new layout offers it. */
   private toolAfterSwitch(previous: ViewLayout, tool: string): string {
-    const views = (l: ViewLayout) => (l.kind === "volume" ? l.orientations.length : 1);
-    if (views(this.layout) === 3 && views(previous) !== 3) return CROSSHAIRS;
+    if (viewCount(this.layout) === 3 && viewCount(previous) !== 3) return CROSSHAIRS;
     return tools.available(this.toolScope()).some((t) => t.id === tool) ? tool : DEFAULT_TOOL;
   }
 
   private toolScope(): ToolScope {
-    const views = this.layout.kind === "volume" ? this.layout.orientations.length : 1;
-    const viewOnly = this.layout.kind === "volume" && !!this.layout.reduced;
-    return { viewport: this.viewportKind, canAnnotate: this.canAnnotate, views, viewOnly };
+    return { viewport: this.viewportKind, canAnnotate: this.canAnnotate, views: viewCount(this.layout), viewOnly: isReduced(this.layout) };
   }
 
   /** Drag the divider between the big view and the two small ones (25–85%, remembered). */
@@ -716,7 +740,7 @@ export class MiresViewer extends LitElement {
       base: loaded,
       overlay,
       shown: this.shownUids(),
-      reduced: this.layout.kind === "volume" && !!this.layout.reduced,
+      reduced: isReduced(this.layout),
       baseTooLarge: fit && !fit.ok ? fit.message : undefined,
     });
     if (why) return this.refuse(why);
@@ -945,7 +969,7 @@ export class MiresViewer extends LitElement {
         ${toast(this.toastMessage)}
         ${this.dragged
           ? dropZones({
-              width: this.layout.kind === "volume" && this.layout.orientations.length === 3 ? this.split : 100,
+              width: viewCount(this.layout) === 3 ? this.split : 100,
               over: this.dragOver,
               label: this.series.find((s) => s.seriesUid === this.dragged)?.modality ?? "",
               onOver: (zone) => (this.dragOver = zone),

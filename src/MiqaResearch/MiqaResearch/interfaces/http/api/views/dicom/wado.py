@@ -1,9 +1,8 @@
-from django.http import HttpResponse, FileResponse
+from django.http import FileResponse, HttpResponse
 from django.shortcuts import get_object_or_404
 from ninja import Router
-from MiqaResearch.data.models.dicom_file import DicomFile
 
-from .access import audit_client_access, machine_only, readable_files
+from .access import audit_access, audited_files, machine_only, readable_dicom_files
 from .frames import router as frames_router
 from .metadata import router as metadata_router
 
@@ -11,11 +10,6 @@ router = Router()
 # Retrieve Frames (#274) and Retrieve Metadata (#275) live in their own modules; same URL prefix.
 router.add_router("", frames_router)
 router.add_router("", metadata_router)
-
-
-def _readable(request):
-    """Stored files within the caller's Client Binding (raw endpoints are machine-only), series loaded for the audit."""
-    return readable_files(request, DicomFile.objects.select_related("series__study__study_participant"))
 
 
 # Helper for multipart/related response
@@ -48,35 +42,34 @@ def wado_uri(request, requestType: str, studyUID: str, seriesUID: str, objectUID
         return HttpResponse("Invalid requestType", status=400)
 
     dicom_file = get_object_or_404(
-        _readable(request),
+        readable_dicom_files(request),
         sop_instance_uid=objectUID,
         series__series_instance_uid=seriesUID,
         series__study__study_instance_uid=studyUID
     )
-    audit_client_access(request, [dicom_file])
+    audit_access(request, [dicom_file])
     return FileResponse(dicom_file.file.open('rb'), content_type="application/dicom")
 
 # WADO-RS Retrieve Study
 @router.get("/studies/{study_instance_uid}")
 @machine_only
 def retrieve_study(request, study_instance_uid: str):
-    dicom_files = list(_readable(request).filter(series__study__study_instance_uid=study_instance_uid))
+    dicom_files = audited_files(
+        request, readable_dicom_files(request).filter(series__study__study_instance_uid=study_instance_uid))
     if not dicom_files:
         return HttpResponse(status=404)
-    audit_client_access(request, dicom_files)
     return multipart_related_response([df.file for df in dicom_files])
 
 # WADO-RS Retrieve Series
 @router.get("/studies/{study_instance_uid}/series/{series_instance_uid}")
 @machine_only
 def retrieve_series(request, study_instance_uid: str, series_instance_uid: str):
-    dicom_files = list(_readable(request).filter(
+    dicom_files = audited_files(request, readable_dicom_files(request).filter(
         series__series_instance_uid=series_instance_uid,
         series__study__study_instance_uid=study_instance_uid
     ))
     if not dicom_files:
         return HttpResponse(status=404)
-    audit_client_access(request, dicom_files)
     return multipart_related_response([df.file for df in dicom_files])
 
 # WADO-RS Retrieve Instance
@@ -84,10 +77,10 @@ def retrieve_series(request, study_instance_uid: str, series_instance_uid: str):
 @machine_only
 def retrieve_instance(request, study_instance_uid: str, series_instance_uid: str, sop_instance_uid: str):
     dicom_file = get_object_or_404(
-        _readable(request),
+        readable_dicom_files(request),
         sop_instance_uid=sop_instance_uid,
         series__series_instance_uid=series_instance_uid,
         series__study__study_instance_uid=study_instance_uid
     )
-    audit_client_access(request, [dicom_file])
+    audit_access(request, [dicom_file])
     return multipart_related_response([dicom_file.file])
