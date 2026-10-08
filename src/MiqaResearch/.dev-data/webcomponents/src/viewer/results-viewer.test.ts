@@ -85,7 +85,7 @@ interface Server {
   blinding: { blinded: boolean; revealed: boolean; can_reveal: boolean; hidden: number };
   /** Chains that appear once the Blinding Reveal is made. */
   hiddenChains: Chain[];
-  calls: { url: string; method: string }[];
+  calls: { url: string; method: string; viewerSession: string | null }[];
 }
 
 function stubServer(initial: Partial<Server> = {}): Server {
@@ -102,7 +102,7 @@ function stubServer(initial: Partial<Server> = {}): Server {
     "fetch",
     vi.fn(async (url: string, init?: RequestInit) => {
       const method = init?.method ?? "GET";
-      server.calls.push({ url, method });
+      server.calls.push({ url, method, viewerSession: new Headers(init?.headers).get("X-Mires-Viewer-Session") });
       const retire = url.match(/\/objects\/([^/]+)\/retire$/);
       if (retire && method === "POST") {
         const found = server.chains.find((c) => c.id === retire[1])!;
@@ -408,6 +408,26 @@ describe("Blinded Annotation", () => {
     expect(server.calls.filter((c) => c.method === "POST").map((c) => c.url)).toEqual(["/api/v1/viewer/participants/p1/blinding-reveal"]);
     expect($(el, ".lock-row")!.textContent).toContain("Blinding Reveal active");
     expect($(el, '[data-action="reveal"]')).toBeNull();
+  });
+
+  it("every request of this viewer open carries one Viewer Session id: the reveal lasts for this open only", async () => {
+    const hidden = [chain("h1", { kind: "segmentation", author: "cecilia" }), chain("h2", { author: "cecilia" })];
+    const { el, server } = await mount({ blinding: blinded, hiddenChains: hidden });
+    await click(el, '[data-action="reveal"]');
+    await click(el, '[data-confirm="ok"]');
+    await vi.waitFor(() => expect(row(el, "h1")).not.toBeNull());
+    await el.updateComplete;
+    await click(el, '.result[data-chain="h1"] .show');
+    await settle(el);
+    await click(el, '.result[data-chain="h2"] .show');
+    await settle(el);
+
+    const urls = server.calls.map((c) => c.url);
+    expect(urls.some((u) => u.includes("/series/2.25.seg.h1/instances/") && u.includes("/frames/"))).toBe(true);
+    expect(urls.some((u) => u.endsWith("/series/2.25.sr.h2/metadata"))).toBe(true);
+    const ids = new Set(server.calls.map((c) => c.viewerSession));
+    expect(ids.size).toBe(1);
+    expect([...ids][0]).toMatch(/^[0-9a-f-]{36}$/);
   });
 
   it("no lock row on a project without Blinded Annotation", async () => {

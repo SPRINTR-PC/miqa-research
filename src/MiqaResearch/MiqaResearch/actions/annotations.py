@@ -37,7 +37,7 @@ from contract.constants.audit_log import (
 from helpers.dicom_deidentification import deidentify
 from MiqaResearch.data.models import AuditLog, DerivedObjectProvenance, DicomFile, DicomSeries
 from MiqaResearch.readers.annotation_permissions import ParticipantRights
-from MiqaResearch.readers.blinding import ParticipantBlinding
+from MiqaResearch.readers.blinding import ParticipantBlinding, viewer_reveals
 from MiqaResearch.readers.participant_visibility import can_see_participant
 from MiqaResearch.tasks.dicom_handling import frame_index, records
 from MiqaResearch.tasks.dicom_handling import storage as storage_stage
@@ -113,7 +113,7 @@ def save_viewer_object(
         if not rights.can_author:
             raise NotAllowed("your roles don't allow saving Annotations or Segmentations for this participant")
         frame_of_reference_uid = _shared_frame_of_reference(sources)
-        blinding = ParticipantBlinding(user, project, participant, getattr(request, "session", None))
+        blinding = ParticipantBlinding(user, project, participant, viewer_reveals(request))
         predecessor = _lock_head_to_supersede(supersedes, participant, kind, rights, blinding) if supersedes else None
 
         sanitized = deidentify(
@@ -167,7 +167,7 @@ def retire_object(*, user, object_id: UUID, request=None) -> DerivedObjectProven
         project = participant.research_project
         if project is None or not can_see_participant(user, project, participant):
             raise NotFound()
-        blinding = ParticipantBlinding(user, project, participant, getattr(request, "session", None))
+        blinding = ParticipantBlinding(user, project, participant, viewer_reveals(request))
         if blinding.hides(provenance.author_id):
             raise NotFound()
         if _has_successor(provenance):

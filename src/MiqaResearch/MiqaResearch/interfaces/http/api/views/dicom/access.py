@@ -27,7 +27,7 @@ from contract.constants.scopes import SCOPE_DICOM_RAW
 from helpers.http import get_client_ip
 from MiqaResearch.data.models import AuditLog, ClientBinding
 from MiqaResearch.data.models.dicom_file import DicomFile
-from MiqaResearch.readers.blinding import unblinded_files_for_client, unblinded_files_for_user
+from MiqaResearch.readers.blinding import unblinded_files_for_client, unblinded_files_for_user, viewer_reveals
 from MiqaResearch.readers.participant_visibility import (
     participants_visible_to_client,
     visible_participants_in_any_project,
@@ -60,7 +60,7 @@ def readable_files(request, files: QuerySet[DicomFile]) -> QuerySet[DicomFile]:
     match caller_of(request):
         case SessionCaller(user):
             visible = visible_participants_in_any_project(user)
-            files = unblinded_files_for_user(user, getattr(request, "session", None), files)
+            files = unblinded_files_for_user(user, viewer_reveals(request), files)
         case ClientCaller(application):
             visible = participants_visible_to_client(application)
             files = unblinded_files_for_client(files)

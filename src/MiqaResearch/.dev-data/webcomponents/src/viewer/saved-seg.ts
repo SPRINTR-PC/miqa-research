@@ -2,6 +2,7 @@
 // `/metadata` (DICOM JSON) plus its frames from `/frames` (multipart/related, BINARY frames still bit-packed).
 // The adapter turns them into a labelmap (adapter/cornerstone/segmentation.ts). Pure fetch, no CS3D.
 import { seriesUrl, type DicomJsonInstance, type SeriesRef } from "./series.ts";
+import { viewerHeaders } from "./viewer-session.ts";
 
 /** A SEG instance's header and its frames' pixel bytes (frame n at index n − 1). */
 export interface SavedSegmentation {
@@ -16,14 +17,14 @@ const FRAMES_ACCEPT = 'multipart/related; type="application/octet-stream"; trans
 /** Fetch the (single-instance) SEG series `ref`: its `/metadata`, then every frame in one `/frames` request. */
 export async function fetchSavedSegmentation(ref: SeriesRef): Promise<SavedSegmentation> {
   const url = seriesUrl(ref);
-  const meta = await fetch(`${url}/metadata`, { credentials: "same-origin", headers: { Accept: "application/dicom+json" } });
+  const meta = await fetch(`${url}/metadata`, { credentials: "same-origin", headers: viewerHeaders({ Accept: "application/dicom+json" }) });
   if (!meta.ok) throw new Error(`SEG metadata: HTTP ${meta.status}`);
   const [instance] = (await meta.json()) as DicomJsonInstance[];
   if (!instance) throw new Error("the SEG has no instance");
   const sop = String(instance[SOP_INSTANCE_UID]?.Value?.[0] ?? "");
   const count = Number(instance[NUMBER_OF_FRAMES]?.Value?.[0] ?? 1);
   const list = Array.from({ length: count }, (_, i) => i + 1).join(",");
-  const response = await fetch(`${url}/instances/${sop}/frames/${list}`, { credentials: "same-origin", headers: { Accept: FRAMES_ACCEPT } });
+  const response = await fetch(`${url}/instances/${sop}/frames/${list}`, { credentials: "same-origin", headers: viewerHeaders({ Accept: FRAMES_ACCEPT }) });
   if (!response.ok) throw new Error(`SEG frames: HTTP ${response.status}`);
   const frames = parseMultipartRelated(new Uint8Array(await response.arrayBuffer()), response.headers.get("Content-Type") ?? "");
   if (frames.length !== count) throw new Error(`the SEG has ${count} frames, ${frames.length} were served`);

@@ -56,6 +56,7 @@ One file per concern, so parallel tickets touch different files.
 | `simplify.ts` | Douglas–Peucker for WSI freehand contours. Pure. | #289 |
 | `inspector/save.ts`, `chrome/save-dialogs.ts` | Save buttons (+ Ctrl/⌘+S, dropped-tool warning); toast and 409 dialog over the view. | #289 |
 | `results.ts` | `ResultsController`: the results tree's state (chains from `GET /objects`, blinding status, shown heads, menu / History / confirm) and actions (show / hide via the element, Retire, Blinding Reveal, Show retired). No CS3D. | #290 |
+| `viewer-session.ts` | Per-open Viewer Session id, sent as `X-Mires-Viewer-Session` on every viewer request; the server scopes a Blinding Reveal to it (ends on reload / other tabs). | #288 |
 | `chrome/results-tree.ts` | Result rows under each series (⊕ Fusion badge, ⋯ History / Retire), lock row, "Show retired" footer, chips over the viewport, the Retire / Reveal confirm. | #290 |
 | `saved-seg.ts` | A saved SEG for showing: `/metadata` + all frames in one `/frames` request (multipart/related parser). | #290 |
 | `adapter/cornerstone/annotations.ts` | `AnnotationSet`: edit counting, SR export with `@cornerstonejs/adapters` (WSI: SCOORD3D, simplified, geometric only), SR import + User calibration reapply. | #289 |

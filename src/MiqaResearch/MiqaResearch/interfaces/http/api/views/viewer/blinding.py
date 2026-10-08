@@ -1,8 +1,9 @@
 """Viewer API for Blinded Annotation (ADR 0026, #288). Session auth only (CSRF on PUT/POST).
 
 - PUT /projects/{id}/blinded-annotation {"blinded": bool}: PI or Project Admin turn the flag on/off.
-- GET /participants/{id}/blinding: flag, this session's reveal, whether the caller may reveal, hidden count.
-- POST /participants/{id}/blinding-reveal: a Blinding Reveal for this participant and login session.
+- GET /participants/{id}/blinding: flag, this Viewer Session's reveal, whether the caller may reveal, hidden count.
+- POST /participants/{id}/blinding-reveal: a Blinding Reveal for this participant and Viewer Session
+  (`X-Mires-Viewer-Session`, sent by the viewer on each request; 400 without it).
 
 Unknown or invisible projects and participants are 404 alike; 403 for roles that may not; 400 for a
 reveal on a project without Blinded Annotation.
@@ -15,12 +16,14 @@ from ninja.security import SessionAuth
 
 from MiqaResearch.actions.blinding import (
     NotAllowed,
+    NoViewerSession,
     NotBlinded,
     NotFound,
     reveal_participant,
     set_blinded_annotation,
 )
 from MiqaResearch.readers.annotation_reader import ParticipantNotVisible, participant_blinding_status
+from MiqaResearch.readers.blinding import viewer_reveals
 
 router = Router(auth=SessionAuth(), tags=["viewer"])
 
@@ -61,7 +64,7 @@ def set_flag(request, project_id: UUID, payload: FlagIn):
 @router.get("/participants/{participant_id}/blinding", response=BlindingOut, url_name="viewer_blinding")
 def blinding_status(request, participant_id: UUID):
     try:
-        return participant_blinding_status(request.auth, participant_id, request.session)
+        return participant_blinding_status(request.auth, participant_id, viewer_reveals(request))
     except ParticipantNotVisible:
         raise HttpError(404, "Not Found") from None
 
@@ -74,9 +77,9 @@ def blinding_status(request, participant_id: UUID):
 def reveal(request, participant_id: UUID):
     try:
         reveal_participant(user=request.auth, participant_id=participant_id, request=request)
-    except (NotFound, NotAllowed, NotBlinded) as error:
+    except (NotFound, NotAllowed, NotBlinded, NoViewerSession) as error:
         raise _http_error(error) from None
-    return participant_blinding_status(request.auth, participant_id, request.session)
+    return participant_blinding_status(request.auth, participant_id, viewer_reveals(request))
 
 
 def _http_error(error: Exception) -> HttpError:

@@ -61,6 +61,7 @@ import { SegmentationController } from "./segmentation-controller.ts";
 import type { SegmentationState } from "./segmentation.ts";
 import { suvStatusFor, type SuvStatus } from "./suv.ts";
 import { unitTooltip } from "./units.ts";
+import { viewerHeaders } from "./viewer-session.ts";
 import { isWholeSlide, WSI_DEFAULT_TOOL } from "./wsi.ts";
 
 export type ViewerState = "loading" | "ready" | "error";
@@ -439,7 +440,7 @@ export class MiresViewer extends LitElement {
     const series = this.loaded;
     if (!series || !this.annotations) throw new Error("the viewer isn't ready");
     const url = `${this.wadoRoot}/studies/${this.studyUid}/series/${head.series_instance_uid}/metadata`;
-    const response = await fetch(url, { credentials: "same-origin", headers: { Accept: "application/dicom+json" } });
+    const response = await fetch(url, { credentials: "same-origin", headers: viewerHeaders({ Accept: "application/dicom+json" }) });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const [instance] = (await response.json()) as DicomJsonInstance[];
     if (!instance) throw new Error("the SR has no instance");

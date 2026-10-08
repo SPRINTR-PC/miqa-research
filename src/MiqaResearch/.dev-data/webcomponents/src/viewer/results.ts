@@ -5,6 +5,7 @@
 // Blinding Reveal. No CS3D; the server decides what's listed and who may retire or reveal.
 import { csrfToken } from "./first-render.ts";
 import type { ObjectKind, ObjectVersion } from "./save.ts";
+import { viewerHeaders } from "./viewer-session.ts";
 
 /** A version from the object API (its VersionOut). */
 export interface ResultVersion extends ObjectVersion {
@@ -226,13 +227,13 @@ export class Quiet extends Error {}
 const summary = (chain: ResultVersion) => `${NOUN[kindOf(chain)]} v${chain.version}`;
 
 async function getJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, { credentials: "same-origin", headers: { Accept: "application/json" } });
+  const response = await fetch(url, { credentials: "same-origin", headers: viewerHeaders({ Accept: "application/json" }) });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return (await response.json()) as T;
 }
 
 export async function postJson<T>(url: string): Promise<{ status: number; body: T }> {
-  const response = await fetch(url, { method: "POST", credentials: "same-origin", headers: { "X-CSRFToken": csrfToken() } });
+  const response = await fetch(url, { method: "POST", credentials: "same-origin", headers: viewerHeaders({ "X-CSRFToken": csrfToken() }) });
   return { status: response.status, body: (await response.json().catch(() => ({}))) as T };
 }
 

@@ -26,6 +26,7 @@ from MiqaResearch.actions.annotations import (
     save_viewer_object,
 )
 from MiqaResearch.readers.annotation_reader import ParticipantNotVisible, list_participant_objects, version_item
+from MiqaResearch.readers.blinding import viewer_reveals
 
 router = Router(auth=SessionAuth(), tags=["viewer"])
 
@@ -94,7 +95,7 @@ def save_object(
 @router.get("/objects", response=list[ChainOut], url_name="viewer_object_list")
 def list_objects(request, participant: UUID, series: str | None = None, include_retired: bool = False):
     try:
-        return list_participant_objects(request.auth, participant, series, include_retired, request.session)
+        return list_participant_objects(request.auth, participant, series, include_retired, viewer_reveals(request))
     except ParticipantNotVisible:
         raise HttpError(404, "Not Found") from None
 

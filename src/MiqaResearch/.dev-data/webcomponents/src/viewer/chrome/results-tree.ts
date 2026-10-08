@@ -138,7 +138,7 @@ const CONFIRM = {
   }),
   reveal: () => ({
     title: "Reveal everyone's work for this participant?",
-    text: "You'll see all Annotations and Segmentations of this participant for this viewer session. The Blinding Reveal is audit-logged.",
+    text: "You'll see all Annotations and Segmentations of this participant for this viewer session, until you close or reload it. The Blinding Reveal is audit-logged.",
     ok: "Reveal",
   }),
 };

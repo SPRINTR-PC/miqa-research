@@ -4,6 +4,7 @@
 // a separate object, or save mine on top (only if allowed). No merge; edits stay until the user chooses.
 // No CS3D: the host (the element) builds the bytes through the adapter and loads heads.
 import { csrfToken } from "./first-render.ts";
+import { viewerHeaders } from "./viewer-session.ts";
 
 export type ObjectKind = "annotation" | "segmentation";
 export const OBJECT_KINDS: readonly ObjectKind[] = ["annotation", "segmentation"];
@@ -171,7 +172,7 @@ export class SaveController {
         method: "POST",
         body: form,
         credentials: "same-origin",
-        headers: { "X-CSRFToken": csrfToken() },
+        headers: viewerHeaders({ "X-CSRFToken": csrfToken() }),
       });
       const body = await response.json().catch(() => ({}));
       if (response.status === 201) {
