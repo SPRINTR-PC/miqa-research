@@ -5,7 +5,8 @@ an ingested synthetic CT stack, three 2D images for spacing calibration (#281: a
 ImagerPixelSpacing, an SC with PixelSpacing, an SC without spacing), a synthetic TILED_FULL
 whole-slide image (#285) and bulk annotations (ANN) on it (#292), and fusion series in the CT's study (#284:
 a PET with every SUV input and one without PatientWeight on the CT's Frame of Reference, an MR on another),
-then prints JSON for the harness:
+and a "Viewer harness blinded" project (#290: Blinded Annotation on, the PI as PI, a 2D image and an ingested
+SR on it, hidden until a Blinding Reveal), then prints JSON for the harness:
 fresh session cookies for both and the pseudonymized study/series UIDs to open. Idempotent: re-runs
 reuse the project and its series.
 Fully synthetic pixel data and demo identifiers only.
@@ -26,6 +27,7 @@ from PIL import Image
 from pydicom.dataset import Dataset, FileMetaDataset
 from pydicom.encaps import encapsulate
 from pydicom.uid import (
+    Comprehensive3DSRStorage,
     ComputedRadiographyImageStorage,
     CTImageStorage,
     ExplicitVRLittleEndian,
@@ -47,6 +49,8 @@ from MiqaResearch.data.models import (
 from MiqaResearch.tasks.dicom_handling.pipeline import run_ingestion
 
 PROJECT_NAME = "Viewer harness"
+BLINDED_PROJECT_NAME = "Viewer harness blinded"
+BLINDED_UID_ROOT = "2.25.290290290"
 USERNAME = "viewer-harness"
 VIEW_ONLY_USERNAME = "viewer-harness-view-only"
 CT_SLICES = 16
@@ -293,6 +297,44 @@ def build_wsi_level(level: int) -> Dataset:
     return ds
 
 
+def build_blinded_image() -> Dataset:
+    """#290: the blinded project's 2D image (another patient, its own UIDs)."""
+    ds = build_planar_image("sc", 9)
+    sop = f"{BLINDED_UID_ROOT}.3"
+    ds.file_meta.MediaStorageSOPInstanceUID = ds.SOPInstanceUID = sop
+    ds.StudyInstanceUID, ds.SeriesInstanceUID = f"{BLINDED_UID_ROOT}.1", f"{BLINDED_UID_ROOT}.2"
+    ds.PatientID, ds.PatientName, ds.StudyID = "HARNESS-B", "HARNESS^BLINDED", "HB"
+    ds.SeriesDescription = "Harness blinded SC"
+    return ds
+
+
+def build_blinded_sr(image: Dataset) -> Dataset:
+    """#290: an SR on the blinded image, as another tool would export it (ingested: no author, so hidden)."""
+    ds = Dataset()
+    sop = f"{BLINDED_UID_ROOT}.13"
+    ds.file_meta = FileMetaDataset()
+    ds.file_meta.MediaStorageSOPClassUID = Comprehensive3DSRStorage
+    ds.file_meta.MediaStorageSOPInstanceUID = sop
+    ds.file_meta.TransferSyntaxUID = ExplicitVRLittleEndian
+    ds.SOPClassUID, ds.SOPInstanceUID = Comprehensive3DSRStorage, sop
+    ds.StudyInstanceUID, ds.SeriesInstanceUID = image.StudyInstanceUID, f"{BLINDED_UID_ROOT}.12"
+    ds.PatientID, ds.PatientName = image.PatientID, image.PatientName
+    ds.StudyDate, ds.StudyTime, ds.StudyID = image.StudyDate, image.StudyTime, image.StudyID
+    ds.Modality, ds.SeriesNumber, ds.InstanceNumber, ds.SeriesDescription = "SR", 2, 1, "Imported measurements"
+    ds.ValueType, ds.ContinuityOfContent = "CONTAINER", "SEPARATE"
+    ds.ConceptNameCodeSequence = [_code("126000", "DCM", "Imaging Measurement Report")]
+    referenced = Dataset()
+    referenced.ReferencedSOPClassUID, referenced.ReferencedSOPInstanceUID = image.SOPClassUID, image.SOPInstanceUID
+    series_ref = Dataset()
+    series_ref.SeriesInstanceUID = image.SeriesInstanceUID
+    series_ref.ReferencedSOPSequence = [referenced]
+    study_ref = Dataset()
+    study_ref.StudyInstanceUID = image.StudyInstanceUID
+    study_ref.ReferencedSeriesSequence = [series_ref]
+    ds.CurrentRequestedProcedureEvidenceSequence = [study_ref]
+    return ds
+
+
 def _code(value: str, scheme: str, meaning: str) -> Dataset:
     code = Dataset()
     code.CodeValue, code.CodingSchemeDesignator, code.CodeMeaning = value, scheme, meaning
@@ -410,6 +452,7 @@ class Command(BaseCommand):
         wsi = self._wsi_series(project)
         fusion = {key: self._fusion_series(project, key) for key in FUSION_FIXTURES}
         self._wsi_annotations(project)
+        blinded = self._blinded_series()
         self.stdout.write(json.dumps({
             "sessionCookie": _session_cookie(user),
             "viewOnlySessionCookie": _session_cookie(view_only),
@@ -428,7 +471,32 @@ class Command(BaseCommand):
                 "participant": str(wsi.study.study_participant_id),
             },
             "wsiAnnotations": {"groups": [meaning for _, (_, meaning), _, _ in ANN_GROUPS]},
+            "blinded": {**_series_ref(blinded), "participant": str(blinded.study.study_participant_id)},
         }))
+
+    def _blinded_series(self) -> DicomSeries:
+        """#290: Blinded Annotation project, the harness PI as PI, a 2D image and an ingested SR on it."""
+        project, _ = ResearchProject.objects.get_or_create(
+            name=BLINDED_PROJECT_NAME, defaults={"description": "Blinded Annotation for the viewer browser tests (#290)"},
+        )
+        if not project.blinded_annotation:
+            project.blinded_annotation = True
+            project.save(update_fields=["blinded_annotation"])
+        _member(project, USERNAME, PROJECT_ROLE_PI)
+        lookup = {"study__study_participant__research_project": project, "modality": "OT"}
+        existing = DicomSeries.objects.filter(**lookup).first()
+        if existing:
+            return existing
+        image = build_blinded_image()
+        with tempfile.TemporaryDirectory() as tmp:
+            image.save_as(Path(tmp) / "image.dcm", enforce_file_format=True)
+            build_blinded_sr(image).save_as(Path(tmp) / "sr.dcm", enforce_file_format=True)
+            with override_settings(DICOM_ALLOWED_SOURCE_ROOTS=[Path(tmp)]):
+                report = run_ingestion(project, tmp)
+        if report.counts.get("ingested") != 2:
+            errors = sorted({r.error for r in report.results if r.error})
+            raise CommandError(f"Blinded fixture ingestion failed: {report.counts} {errors}")
+        return DicomSeries.objects.get(**lookup)
 
     def _ct_series(self, project) -> DicomSeries:
         existing = DicomSeries.objects.filter(study__study_participant__research_project=project, modality="CT").first()

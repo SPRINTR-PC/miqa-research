@@ -197,7 +197,7 @@ export function watchAnnotations(engine: RenderingEngine, onChange: () => void):
       engine.getViewports().forEach((vp) => vp.render());
     },
 
-    async importSr(instance: DicomJsonInstance, series: LoadedSeries): Promise<void> {
+    async importSr(instance: DicomJsonInstance, series: LoadedSeries): Promise<string[]> {
       const dataset = dcmjs.data.DicomMetaDictionary.naturalizeDataset(structuredClone(instance)) as SrItem;
       const sopFrameToImageId: Record<string, string> = {};
       for (const im of series.images) sopFrameToImageId[`${first(im.instance, TAG.SOPInstanceUID)}:${frameOf(im.imageId)}`] = im.imageId;
@@ -212,13 +212,20 @@ export function watchAnnotations(engine: RenderingEngine, onChange: () => void):
         string,
         { annotation: Annotation }[]
       >;
+      const added: string[] = [];
       for (const states of Object.values(byTool)) {
         for (const { annotation } of states) {
           if (wsi) annotation.metadata!.referencedImageId ??= series.images[0].imageId;
           annotation.invalidated = true;
-          csTools.annotation.state.addAnnotation(annotation, annotation.metadata?.FrameOfReferenceUID ?? frameOfReference);
+          added.push(csTools.annotation.state.addAnnotation(annotation, annotation.metadata?.FrameOfReferenceUID ?? frameOfReference));
         }
       }
+      engine.getViewports().forEach((vp: Types.IViewport) => vp.render());
+      return added;
+    },
+
+    remove(annotationIds: string[]): void {
+      for (const id of annotationIds) if (csTools.annotation.state.getAnnotation(id)) csTools.annotation.state.removeAnnotation(id);
       engine.getViewports().forEach((vp: Types.IViewport) => vp.render());
     },
 

@@ -452,6 +452,22 @@ def test_list_shows_chain_heads_with_history(client, project, ct):
 
 
 @pytest.mark.django_db
+def test_an_object_made_on_a_fusion_names_its_base_series(client, project, ct, tmp_path):
+    # Same Frame of Reference as the CT (the builder's default), another series: a fused overlay.
+    overlay = _ingest(project, tmp_path, build_ct_image(
+        series_instance_uid="1.2.9999.42.1.3002", sop_instance_uid="1.2.9999.42.1.3003",
+    ), "overlay.dcm")
+    annotator = _member(project)
+
+    saved = _save(client, annotator, _seg_for(overlay), [overlay.series, ct.series]).json()
+
+    assert saved["base_series_uid"] == overlay.series.series_instance_uid
+    [chain] = _list(client, annotator, ct.series.study.study_participant).json()
+    assert chain["base_series_uid"] == overlay.series.series_instance_uid
+    assert chain["history"][0]["base_series_uid"] == overlay.series.series_instance_uid
+
+
+@pytest.mark.django_db
 def test_list_filters_by_source_series(client, project, ct):
     annotator = _member(project)
     _save(client, annotator, _sr_for(ct), [ct.series])
@@ -501,6 +517,7 @@ def test_ingested_sr_and_seg_get_provenance_without_author(client, project, ct, 
     assert chains[0]["source"] == "ingested"
     assert chains[0]["author"] is None
     assert chains[0]["source_series_uids"] == [ct.series.series_instance_uid]
+    assert chains[0]["base_series_uid"] == ct.series.series_instance_uid
     assert chains[0]["can_change"] is True
 
 

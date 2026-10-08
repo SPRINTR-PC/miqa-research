@@ -24,6 +24,7 @@ import { seriesList, seriesListItem, type SeriesListItem } from "./chrome/series
 import { toolRail } from "./chrome/tool-rail.ts";
 import { refusalMessage, sizeBanner, sizeBannerStyles } from "./chrome/size-banner.ts";
 import { conflictDialog, saveDialogStyles, toast } from "./chrome/save-dialogs.ts";
+import { lockRow, resultChips, resultRows, resultsConfirm, resultsFooter, resultsTreeStyles } from "./chrome/results-tree.ts";
 import { draftBanner, draftBannerStyles } from "./chrome/draft-banner.ts";
 import { volumeGrid, volumeGridStyles } from "./chrome/volume-grid.ts";
 import { dropZones, dropZoneStyles, type DropZone } from "./chrome/drop-zones.ts";
@@ -37,6 +38,8 @@ import { fuseBlocker, layerDisplay, modalityOf, overlayBudget, replaceBlocker, s
 import { clampSplit, loadSplit, saveSplit, swapIntoMain, threeViews, type ViewLayout } from "./layout.ts";
 import { isReconstructable, type Reconstructability } from "./reconstructable.ts";
 import { SaveController, type ObjectKind, type ObjectVersion, type SaveHost } from "./save.ts";
+import { Quiet, ResultsController, baseOf, kindOf, type ResultChain, type ResultsHost } from "./results.ts";
+import { fetchSavedSegmentation } from "./saved-seg.ts";
 import { fetchSeries, type DicomJsonInstance, type LoadedSeries, type SeriesRef } from "./series.ts";
 import {
   SizeGuard,
@@ -120,6 +123,10 @@ export class MiresViewer extends LitElement {
   });
   /** Save (#289): Annotations (SR) and the Segmentation (SEG) of the base series. */
   readonly save = new SaveController(this.saveHost());
+  /** Results tree (#290): the participant's Annotations and Segmentations, shown / hidden from the series list. */
+  readonly results = new ResultsController(this.resultsHost());
+  /** Annotation ids each shown SR chain added (by chain id), to hide them again. */
+  private readonly resultAnnotations = new Map<string, string[]>();
   /** Drafts (#291): autosave of unsaved edits, the recovery banner on open. Made on first open. */
   drafts: DraftController | undefined;
   @state() private toastMessage = "";
@@ -152,7 +159,7 @@ export class MiresViewer extends LitElement {
   /** First-render marks + beacon (#293); volume views mark "interleaved" / "volume-loaded" on it. */
   firstRender: FirstRenderReport | undefined;
 
-  static styles = [volumeGridStyles, sizeBannerStyles, dropZoneStyles, saveDialogStyles, draftBannerStyles, css`
+  static styles = [volumeGridStyles, sizeBannerStyles, dropZoneStyles, saveDialogStyles, resultsTreeStyles, draftBannerStyles, css`
     :host { display: block; position: relative; background: #0b0d10; color: #d8dde3; font: 13px system-ui, sans-serif; outline: none; }
     .chrome { position: absolute; inset: 0; display: grid; grid-template-columns: 180px 56px minmax(0, 1fr) 250px; }
     button { font: inherit; color: inherit; background: #1b2027; border: 1px solid #2b323c; border-radius: 4px; padding: 4px 8px; cursor: pointer; }
@@ -290,6 +297,7 @@ export class MiresViewer extends LitElement {
       this.drafts = new DraftController(new DraftStore(this.draftBackend ?? defaultDraftBackend()), this.draftHost());
       void this.drafts.check();
       void this.loadRelated();
+      void this.results.refresh();
     } catch (e) {
       this.fail(e);
     }
@@ -408,23 +416,107 @@ export class MiresViewer extends LitElement {
     }
   }
 
-  /** 409 "Discard mine, load theirs": drop the local edits and show the head saved first. */
+  /** 409 "Discard mine, load theirs": drop the local edits and show the head saved first (in the results tree too, #290). */
   private async loadTheirs(kind: ObjectKind, head: ObjectVersion): Promise<void> {
     const series = this.loaded;
     if (!series) return;
+    this.results.hideWhere((c) => kindOf(c) === kind);
     if (kind === "segmentation") {
-      // Showing a saved SEG comes with the results tree (#290); until then the edits are dropped.
       this.segmentation.close();
-      this.showToast(`Your Segmentation edits were discarded; v${head.version} is the current version.`);
-      return;
+      await this.showSavedSegmentation(head);
+    } else {
+      this.annotations?.clear(series);
+      await this.showSr(head);
     }
-    this.annotations?.clear(series);
+    await this.results.refresh();
+    const chain = this.results.chain(head.chain_id);
+    if (chain) this.results.markShown(chain);
+    this.showToast(`Showing ${kind === "segmentation" ? "Segmentation" : "Annotations"} v${head.version}`);
+  }
+
+  /** Import an SR head's annotations onto the base series, remembering them by chain to hide them again. */
+  private async showSr(head: ObjectVersion): Promise<void> {
+    const series = this.loaded;
+    if (!series || !this.annotations) throw new Error("the viewer isn't ready");
     const url = `${this.wadoRoot}/studies/${this.studyUid}/series/${head.series_instance_uid}/metadata`;
     const response = await fetch(url, { credentials: "same-origin", headers: { Accept: "application/dicom+json" } });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const [instance] = (await response.json()) as DicomJsonInstance[];
-    if (instance) await this.annotations?.importSr(instance, series);
-    this.showToast(`Showing Annotations v${head.version}`);
+    if (!instance) throw new Error("the SR has no instance");
+    this.resultAnnotations.set(head.chain_id, await this.annotations.importSr(instance, series));
+  }
+
+  /** Show a saved SEG as the element's Segmentation (`/metadata` + `/frames`: sessions can't fetch raw bytes). */
+  private async showSavedSegmentation(head: ObjectVersion): Promise<void> {
+    const saved = await fetchSavedSegmentation({ wadoRoot: this.wadoRoot, studyUid: this.studyUid, seriesUid: head.series_instance_uid });
+    if (!(await this.segmentation.load(saved, this.controls))) throw new Quiet("refused"); // the refusal says why
+  }
+
+  /** What the results tree (#290) needs of the element: bring the source series in, show / hide heads. */
+  private resultsHost(): ResultsHost {
+    const el = this;
+    return {
+      get apiRoot() {
+        return el.apiRoot;
+      },
+      get participant() {
+        return el.participant;
+      },
+      show: (chain) => el.showResult(chain),
+      hide: (chain) => el.hideResult(chain),
+      changed: () => el.requestUpdate(),
+      toast: (message) => el.showToast(message),
+    };
+  }
+
+  /**
+   * Show a head from the results tree: its base series replaces the one shown if needed, the other sources
+   * of a Fusion are fused (both within the size guard; refusals are shown), then the SR / SEG is imported
+   * and becomes what Save supersedes.
+   */
+  private async showResult(chain: ResultChain): Promise<void> {
+    if (this.layoutBusy || this.fusionBusy) throw new Error("the viewer is busy");
+    const kind = kindOf(chain);
+    if (kind === "segmentation" && this.segmentation.view && this.save.dirty("segmentation") && !this.segmentation.isEmpty()) {
+      this.refuse("Save your Segmentation edits first: one Segmentation is shown at a time.");
+      throw new Quiet("unsaved segmentation");
+    }
+    const base = baseOf(chain);
+    this.refusal = "";
+    this.fusionBusy = true;
+    try {
+      if (this.loaded?.ref.seriesUid !== base) {
+        await this.replace(base);
+        if (this.loaded?.ref.seriesUid !== base) throw new Quiet("not replaced");
+      }
+      for (const uid of chain.source_series_uids) {
+        if (uid !== base && !this.shownUids().includes(uid)) await this.fuse(uid);
+      }
+    } finally {
+      this.fusionBusy = false;
+    }
+    if (kind === "segmentation") {
+      this.results.hideWhere((c) => kindOf(c) === "segmentation"); // one Segmentation at a time
+      await this.showSavedSegmentation(chain);
+    } else {
+      await this.showSr(chain);
+    }
+    this.save.setHead(kind, chain, chain.can_change);
+  }
+
+  /** Hide a head: its annotations removed, or its Segmentation closed; Save no longer supersedes it. */
+  private hideResult(chain: ResultChain): void {
+    const kind = kindOf(chain);
+    if (kind === "annotation") {
+      this.annotations?.remove(this.resultAnnotations.get(chain.chain_id) ?? []);
+      this.resultAnnotations.delete(chain.chain_id);
+    } else {
+      this.segmentation.close();
+    }
+    if (this.save.head(kind)?.chain_id !== chain.chain_id) return;
+    const other = [...this.results.shown.values()].find((c) => kindOf(c) === kind);
+    if (other) this.save.setHead(kind, other, other.can_change);
+    else this.save.forgetHead(kind);
   }
 
   private showToast(message: string): void {
@@ -689,6 +781,7 @@ export class MiresViewer extends LitElement {
       this.bulkGroups = [];
       this.loaded = next;
       this.seriesUid = uid;
+      this.results.hideWhere((c) => baseOf(c) !== uid); // heads of the replaced series go with it (#290)
       this.save.reset(); // Save (#289) starts over on the new base series
       void this.drafts?.check(); // and its drafts (#291) are offered
       this.mpr = isReconstructable(next);
@@ -831,16 +924,24 @@ export class MiresViewer extends LitElement {
             ${this.overlay()} ${this.unit()}`;
     return html`<div class="chrome">
       <div style="display: contents" @dragstart=${this.onDragStart} @dragend=${this.onDragEnd}>
-        ${seriesList(this.series.map((s) => ({ ...s, shown: shown.includes(s.seriesUid) })))}
+        ${seriesList(
+          this.series.map((s) => ({ ...s, shown: shown.includes(s.seriesUid) })),
+          {
+            top: lockRow(this.results),
+            nested: (uid) => resultRows(this.results, uid, (u) => this.series.find((s) => s.seriesUid === u)?.modality ?? "", this.canAnnotate),
+            footer: resultsFooter(this.results, this.canAnnotate),
+          },
+        )}
       </div>
       ${toolRail(rail, ctx.activeTool, ctx.selectTool)}
       <div class="stage" @pointerdown=${() => this.focus()} @contextmenu=${(e: Event) => e.preventDefault()}>
-        ${views} ${this.burnedIn(ctx)} ${sizeBanner(this.volumeFit, this.layout)}
+        ${views} ${this.burnedIn(ctx)} ${sizeBanner(this.volumeFit, this.layout)} ${resultChips(this.results)}
         ${refusalMessage(this.refusal, () => (this.refusal = ""))}
         ${this.drafts
           ? draftBanner(this.drafts.pending, this.drafts.error, (kind) => void this.drafts?.restore(kind), (kind) => void this.drafts?.discard(kind))
           : nothing}
         ${conflictDialog(this.save.conflict, !!this.save.saving, (choice) => void this.save.resolve(choice), () => this.save.dismiss())}
+        ${resultsConfirm(this.results)}
         ${toast(this.toastMessage)}
         ${this.dragged
           ? dropZones({

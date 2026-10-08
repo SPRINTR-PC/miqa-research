@@ -3,6 +3,7 @@
 import { RenderingEngine, cache } from "@cornerstonejs/core";
 
 import type { Orientation } from "../../layout.ts";
+import type { SavedSegmentation } from "../../saved-seg.ts";
 import type { LoadedSeries } from "../../series.ts";
 import type { GpuLimits } from "../../size-guard.ts";
 import type { SuvStatus } from "../../suv.ts";
@@ -70,9 +71,9 @@ class CornerstoneAdapter implements ViewerAdapter {
     return view;
   }
 
-  async openSegmentation(series: LoadedSeries, id: string, onChange: () => void): Promise<SegmentationView> {
+  async openSegmentation(series: LoadedSeries, id: string, onChange: () => void, saved?: SavedSegmentation): Promise<SegmentationView> {
     const viewportsOf = (view: ViewControls) => (this.views.includes(view as Handle) ? (view as Handle).shownViewports?.() : undefined);
-    return createSegmentation(this.engine, registerSeriesMetadata(series), series, id, onChange, viewportsOf);
+    return createSegmentation(this.engine, registerSeriesMetadata(series), series, id, onChange, viewportsOf, saved);
   }
 
   watchAnnotations(onChange: () => void): AnnotationSet {

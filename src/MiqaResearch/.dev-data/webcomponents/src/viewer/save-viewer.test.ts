@@ -38,6 +38,10 @@ function stubFetch(posts: Reply[], srMetadata: unknown[] = []) {
         const [status, body] = posts.shift()!;
         return new Response(JSON.stringify(body), { status });
       }
+      if (url.includes("/frames/")) {
+        const body = "--b\r\nContent-Type: application/octet-stream\r\n\r\n\x07\r\n--b--\r\n";
+        return new Response(body, { headers: { "Content-Type": 'multipart/related; type="application/octet-stream"; boundary=b' } });
+      }
       if (url.includes("/series/2.25.sr")) return new Response(JSON.stringify(srMetadata));
       return new Response(JSON.stringify(ct(4)));
     }),
@@ -193,6 +197,30 @@ describe("the 409 dialog", () => {
     expect($(el, '[role="dialog"]')).toBeNull();
     expect($(el, '[data-save="annotation"]')!.disabled).toBe(true);
     expect($(el, '[data-save="annotation"]')!.textContent).toContain("Save as new (v1)");
+  });
+
+  it("Discard mine, load theirs on a SEG: drops the local labelmap and shows their SEG (#290)", async () => {
+    const seg = { "00080060": { vr: "CS", Value: ["SEG"] }, "00080018": { vr: "UI", Value: ["2.25.seg"] } };
+    const { el, adapter } = await mount({
+      posts: [[409, { detail: "stale", head: version(2, { kind: "segmentation" }), can_change: false }]],
+      srMetadata: [seg],
+    });
+    el.dispatchEvent(new KeyboardEvent("keydown", { key: "g", bubbles: true, composed: true }));
+    await vi.waitFor(() => expect(adapter.segmentations).toHaveLength(1));
+    adapter.segmentations[0].edits = 1;
+    adapter.segmentations[0].emit({ voxels: { 1: 20 } });
+    await el.updateComplete;
+    $(el, '[data-save="segmentation"]')!.click();
+    await settle(el);
+
+    $(el, '[data-choice="load-theirs"]')!.click();
+    await vi.waitFor(() => expect(adapter.segmentations).toHaveLength(2));
+    await el.updateComplete;
+
+    expect(adapter.segmentations[0].closed).toBe(true);
+    expect(adapter.segmentations[1].saved!.instance).toEqual(seg);
+    expect(adapter.segmentations[1].saved!.frames.map((f) => [...f])).toEqual([[7]]);
+    expect($(el, '[data-save="segmentation"]')!.disabled).toBe(true);
   });
 
   it("Save mine as a separate object, or on top", async () => {

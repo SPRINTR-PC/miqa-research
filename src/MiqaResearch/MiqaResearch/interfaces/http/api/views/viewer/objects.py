@@ -45,6 +45,8 @@ class VersionOut(Schema):
     created_at: datetime
     retired: bool
     source_series_uids: list[str]
+    # The source series it's drawn on: the Fusion base (#290); the results tree nests it there.
+    base_series_uid: str | None
 
 
 class ChainOut(VersionOut):

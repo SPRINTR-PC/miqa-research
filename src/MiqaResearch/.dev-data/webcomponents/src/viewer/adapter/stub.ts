@@ -2,6 +2,7 @@
 import { annotationGroups, type BulkAnnotationGroup } from "../bulk-annotations.ts";
 import { layerDisplay, modalityOf, seriesLabel, type LayerDisplay } from "../fusion.ts";
 import type { Orientation } from "../layout.ts";
+import type { SavedSegmentation } from "../saved-seg.ts";
 import type { DicomJsonInstance, LoadedSeries } from "../series.ts";
 import { DEFAULT_BRUSH_SIZE, SegmentList, type Rgb, type SegmentationState, type ValueRange } from "../segmentation.ts";
 import type { GpuLimits } from "../size-guard.ts";
@@ -271,10 +272,15 @@ export class StubSegmentationView implements SegmentationView {
   closed = false;
   private readonly onChange: () => void;
 
-  constructor(series: LoadedSeries, id: string, onChange: () => void) {
+  /** The saved SEG it was opened from (#290). */
+  readonly saved: SavedSegmentation | undefined;
+
+  constructor(series: LoadedSeries, id: string, onChange: () => void, saved?: SavedSegmentation) {
     this.series = series;
     this.id = id;
     this.onChange = onChange;
+    this.saved = saved;
+    if (saved) this.voxels = { 1: saved.frames.length };
   }
 
   state(): SegmentationState {
@@ -366,6 +372,9 @@ export class StubAnnotationSet implements AnnotationSet {
   tools: string[] = [];
   exported: LoadedSeries[] = [];
   imported: { instance: DicomJsonInstance; series: LoadedSeries }[] = [];
+  /** Annotation id per entry of `tools` (undefined for drawn ones); ids removed (#290). */
+  private ids: (string | undefined)[] = [];
+  removed: string[] = [];
   cleared = 0;
   disposed = false;
   private readonly onChange: () => void;
@@ -377,6 +386,7 @@ export class StubAnnotationSet implements AnnotationSet {
   /** Test helper: draw (or edit) annotations with these tools, as the engine would, and notify. */
   draw(...tools: string[]): void {
     this.tools.push(...tools);
+    this.ids.push(...tools.map(() => undefined));
     this.edits += 1;
     this.onChange();
   }
@@ -402,12 +412,27 @@ export class StubAnnotationSet implements AnnotationSet {
     this.cleared += 1;
     if (this.tools.length) this.edits += 1;
     this.tools = [];
+    this.ids = [];
     this.onChange();
   }
 
-  async importSr(instance: DicomJsonInstance, series: LoadedSeries): Promise<void> {
+  /** Each import adds one Length, id `sr-<n>`. */
+  async importSr(instance: DicomJsonInstance, series: LoadedSeries): Promise<string[]> {
     this.imported.push({ instance, series });
+    const id = `sr-${this.imported.length}`;
     this.tools.push("Length");
+    this.ids.push(id);
+    this.onChange();
+    return [id];
+  }
+
+  remove(annotationIds: string[]): void {
+    const keep = this.ids.map((id) => !id || !annotationIds.includes(id));
+    if (keep.every(Boolean)) return;
+    this.removed.push(...annotationIds);
+    this.tools = this.tools.filter((_, i) => keep[i]);
+    this.ids = this.ids.filter((_, i) => keep[i]);
+    this.edits += 1;
     this.onChange();
   }
 
@@ -485,11 +510,11 @@ export class StubAdapter implements ViewerAdapter {
     return view;
   }
 
-  async openSegmentation(series: LoadedSeries, id: string, onChange: () => void): Promise<SegmentationView> {
+  async openSegmentation(series: LoadedSeries, id: string, onChange: () => void, saved?: SavedSegmentation): Promise<SegmentationView> {
     const fail = this.segmentationFailWith;
     this.segmentationFailWith = undefined;
     if (fail) throw fail;
-    const seg = new StubSegmentationView(series, id, onChange);
+    const seg = new StubSegmentationView(series, id, onChange, saved);
     this.segmentations.push(seg);
     return seg;
   }

@@ -2,6 +2,7 @@
 // through the size guard (#283), then shown in every stack / volume view the element opens.
 // One per element, on the base series' grid; Save (#289) exports it as SEG.
 import type { SegmentationView, ViewControls, ViewerAdapter } from "./adapter/adapter.ts";
+import type { SavedSegmentation } from "./saved-seg.ts";
 import type { ValueRange } from "./segmentation.ts";
 import type { LoadedSeries } from "./series.ts";
 import { TOO_LARGE_MESSAGE, isTooLargeError, labelmapBytes, seriesGrid, type SizeGuard } from "./size-guard.ts";
@@ -31,8 +32,20 @@ export class SegmentationController {
   }
 
   /** The Segmentation, made and shown in `shownIn` if there is none; undefined (refusal shown) when it doesn't fit. */
-  async ensure(shownIn: ViewControls | undefined): Promise<SegmentationView | undefined> {
-    if (this.view || this.busy) return this.view;
+  // Not async: returns open()'s promise itself, so callers resume as soon as it settles.
+  ensure(shownIn: ViewControls | undefined): Promise<SegmentationView | undefined> {
+    if (this.view || this.busy) return Promise.resolve(this.view);
+    return this.open(shownIn);
+  }
+
+  /** Show a saved SEG instead of the open Segmentation (#290); undefined (refusal shown) when it doesn't fit. */
+  load(saved: SavedSegmentation, shownIn: ViewControls | undefined): Promise<SegmentationView | undefined> {
+    if (this.busy) return Promise.resolve(undefined);
+    this.close();
+    return this.open(shownIn, saved);
+  }
+
+  private async open(shownIn: ViewControls | undefined, saved?: SavedSegmentation): Promise<SegmentationView | undefined> {
     const adapter = this.host.adapter();
     const series = this.host.series();
     const grid = series && seriesGrid(series);
@@ -45,7 +58,7 @@ export class SegmentationController {
     }
     this.busy = true;
     try {
-      this.view = await adapter.openSegmentation(series, id, () => this.host.changed());
+      this.view = await adapter.openSegmentation(series, id, () => this.host.changed(), saved);
       if (shownIn) await this.view.show(shownIn);
       return this.view;
     } catch (e) {

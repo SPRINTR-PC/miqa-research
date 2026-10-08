@@ -21,6 +21,7 @@ import {
   type SegmentationState,
   type ValueRange,
 } from "../../segmentation.ts";
+import type { SavedSegmentation } from "../../saved-seg.ts";
 import type { LoadedSeries } from "../../series.ts";
 import { ERASER, POLYGON, POLYGON_ERASE, THRESHOLD } from "../../tools/segmentation.ts";
 import type { SegmentationView, ThresholdOptions, ViewControls } from "../adapter.ts";
@@ -78,18 +79,63 @@ function segmentMetadata(index: number, label: string, color: Rgb) {
   };
 }
 
-export function createSegmentation(
+/**
+ * A saved SEG (#290) into the labelmap images (one per base image) and the segment list. CS3D's reader takes
+ * the served header as the multiframe and our fetched frames (bit-packed BINARY is unpacked by it); its own
+ * labelmap images are copied, then dropped from the cache.
+ */
+async function readSavedSeg(saved: SavedSegmentation, imageIds: string[], labelmapIds: string[], list: SegmentList): Promise<void> {
+  const dataset = dcmjs.data.DicomMetaDictionary.naturalizeDataset(structuredClone(saved.instance));
+  const multiframe = dcmjs.normalizers.Normalizer.normalizeToDataset([dataset]);
+  const segImageId = `mires-seg:${String(dataset.SOPInstanceUID ?? "")}`;
+  const result = await adaptersSEG.Cornerstone3D.Segmentation.createLabelmapsFromSegImageIds(imageIds, segImageId, metaData, {
+    multiframe,
+    frameImageIds: saved.frames.map((_, i) => `${segImageId}/frames/${i + 1}`),
+    decodeImageData: async (_frameImageId: string, frameNumber: number) => saved.frames[frameNumber - 1],
+  });
+  // Overlapping segments come as several labelmap layers; later layers win where they overlap.
+  const layers = result.labelMapImages as Types.IImage[][];
+  for (const layer of layers) {
+    layer.forEach((image, k) => {
+      const source = image?.voxelManager?.getScalarData() as ArrayLike<number> | undefined;
+      const target = cache.getImage(labelmapIds[k])?.voxelManager as Types.IVoxelManager<number> | undefined;
+      if (!source || !target) return;
+      for (let i = 0; i < source.length; i++) if (source[i]) target.setAtIndex(i, source[i]);
+    });
+    layer.forEach((image) => image && cache.removeImageLoadObject(image.imageId, { force: true }));
+  }
+  type SegmentItem = { SegmentLabel?: string; RecommendedDisplayCIELabValue?: number[] };
+  const segments = (result.segMetadata.data as (SegmentItem | undefined)[]).flatMap((item, index) => (item && index > 0 ? [{ index, item }] : []));
+  for (const { index, item } of segments) {
+    while (Math.max(...list.segments.map((s) => s.index)) < index) list.add();
+    if (item.SegmentLabel) list.rename(index, item.SegmentLabel);
+    const lab = item.RecommendedDisplayCIELabValue;
+    if (lab?.length === 3) list.setColor(index, dcmjs.data.Colors.dicomlab2RGB(lab.map(Number)).map((c) => Math.round(c * 255)) as Rgb);
+  }
+  if (segments.length) list.setActive(segments[0].index);
+}
+
+export async function createSegmentation(
   engine: RenderingEngine,
   imageIds: string[],
   series: LoadedSeries,
   id: string,
   onChange: () => void,
   viewportsOf: (view: ViewControls) => ShownViewports | undefined,
-): SegmentationView {
+  saved?: SavedSegmentation,
+): Promise<SegmentationView> {
   // Throws CS3D's cache error when the labelmap doesn't fit (the element shows "too large").
   const labelmapIds = imageLoader.createAndCacheDerivedLabelmapImages(imageIds).map((image) => image.imageId);
   const baseIndex = new Map(imageIds.map((imageId, i) => [imageId, i]));
   const list = new SegmentList();
+  if (saved) {
+    try {
+      await readSavedSeg(saved, imageIds, labelmapIds, list);
+    } catch (e) {
+      labelmapIds.forEach((imageId) => cache.removeImageLoadObject(imageId, { force: true }));
+      throw e;
+    }
+  }
   let brushSize = DEFAULT_BRUSH_SIZE;
   let shown: ShownViewports | undefined;
   /** Edits (#289): painting, threshold, polygon fill, segments added / renamed / recoloured. */
