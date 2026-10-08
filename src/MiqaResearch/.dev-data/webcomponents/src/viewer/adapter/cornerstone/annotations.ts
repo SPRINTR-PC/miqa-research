@@ -15,11 +15,17 @@ import { simplifyContour, type Point3 } from "../../simplify.ts";
 import { EXPORTABLE_TOOLS, annotateReport, readUserCalibrations, type MeasurementUnits, type SrItem } from "../../sr.ts";
 import { isWholeSlide } from "../../wsi.ts";
 import type { AnnotationSet } from "../adapter.ts";
-import { applyUserCalibration, isCalibrationLine, onUserCalibration, userCalibrationOf } from "./calibration.ts";
+import { applyUserCalibration, isCalibrationLine, onUserCalibration, userCalibrationOf, type UserLine } from "./calibration.ts";
 import { isSegmentationHelper } from "./segmentation.ts";
 
 type Annotation = csTools.Types.Annotation;
 type Stats = Record<string, unknown>;
+
+/** Draft (#291) of the annotations on a series: CS3D annotations as JSON, and its images' User calibrations. */
+interface AnnotationSnapshot {
+  annotations: Annotation[];
+  calibrations: ({ imageId: string } & UserLine)[];
+}
 
 const { MeasurementReport, NO_IMAGE_ID } = adaptersSR.Cornerstone3D;
 const COMPREHENSIVE_3D_SR = "1.2.840.10008.5.1.4.1.1.88.34";
@@ -213,6 +219,30 @@ export function watchAnnotations(engine: RenderingEngine, onChange: () => void):
           csTools.annotation.state.addAnnotation(annotation, annotation.metadata?.FrameOfReferenceUID ?? frameOfReference);
         }
       }
+      engine.getViewports().forEach((vp: Types.IViewport) => vp.render());
+    },
+
+    snapshot(series: LoadedSeries): AnnotationSnapshot {
+      // Plain JSON; stats are recomputed on render (cachedStats can hold NaN).
+      const annotations = annotationsOn(series).map((a) => JSON.parse(JSON.stringify({ ...a, data: { ...a.data, cachedStats: {} } })) as Annotation);
+      const calibrations = series.images.flatMap((im) => {
+        const line = userCalibrationOf(im.imageId);
+        return line ? [{ imageId: im.imageId, ...line }] : [];
+      });
+      return { annotations, calibrations };
+    },
+
+    restore(snapshot: unknown, series: LoadedSeries): void {
+      const { annotations, calibrations } = snapshot as AnnotationSnapshot;
+      for (const { imageId, ...line } of calibrations) applyUserCalibration(engine, imageId, line);
+      for (const a of annotationsOn(series)) csTools.annotation.state.removeAnnotation(a.annotationUID!);
+      const frameOfReference = first(series.images[0].instance, TAG.FrameOfReferenceUID);
+      for (const a of annotations) {
+        const annotation = structuredClone(a);
+        annotation.invalidated = true;
+        csTools.annotation.state.addAnnotation(annotation, annotation.metadata?.FrameOfReferenceUID ?? frameOfReference);
+      }
+      bump();
       engine.getViewports().forEach((vp: Types.IViewport) => vp.render());
     },
 

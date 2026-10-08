@@ -46,6 +46,25 @@ const PALETTE: Rgb[] = [
 
 export const MAX_SEGMENTS = 255;
 
+/** Drafts (#291): a labelmap image's non-zero voxels as flat [start, length, value, …] runs. */
+export function encodeRuns(data: ArrayLike<number>): number[] {
+  const runs: number[] = [];
+  for (let i = 0; i < data.length; ) {
+    const value = data[i];
+    let j = i + 1;
+    while (j < data.length && data[j] === value) j++;
+    if (value) runs.push(i, j - i, value);
+    i = j;
+  }
+  return runs;
+}
+
+export function decodeRuns(runs: readonly number[], set: (index: number, value: number) => void): void {
+  for (let r = 0; r + 2 < runs.length; r += 3) {
+    for (let i = runs[r]; i < runs[r] + runs[r + 1]; i++) set(i, runs[r + 2]);
+  }
+}
+
 /** The segments of one Segmentation. Starts with "Segment 1", active. */
 export class SegmentList {
   segments: Segment[] = [];

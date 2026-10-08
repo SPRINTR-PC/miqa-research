@@ -51,6 +51,17 @@ def test_dev_page_hosts_the_viewer_for_the_requested_series(settings, no_toolbar
     assert 'series-uid="2.25.2"' in body
 
 
+def test_dev_page_names_the_user_for_per_user_drafts(settings, no_toolbar, client, db):
+    """#291: drafts in IndexedDB are keyed per user, so the element is told who is logged in."""
+    settings.DEBUG = True
+    user = get_user_model().objects.create_user(username="draft-user", password="pw")
+    client.force_login(user)
+
+    body = client.get(DEV_PAGE, {"study": "2.25.1", "series": "2.25.2"}).content.decode()
+
+    assert f'user="{user.pk}"' in body
+
+
 def test_dev_page_offers_related_series_in_the_series_list(settings, no_toolbar, logged_in_client):
     """#284: `related` UIDs (repeated or comma-separated) are listed for drag-to-fuse/replace."""
     settings.DEBUG = True

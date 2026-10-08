@@ -1,7 +1,21 @@
 // #286 segmentation, pure parts: the segment list, the stack threshold fill and polygon rasterising.
 import { describe, expect, it } from "vitest";
 
-import { SegmentList, defaultThresholdRange, polygonPixels, thresholdPixels } from "./segmentation.ts";
+import { SegmentList, decodeRuns, defaultThresholdRange, encodeRuns, polygonPixels, thresholdPixels } from "./segmentation.ts";
+
+describe("labelmap runs (drafts #291)", () => {
+  it("encode the non-zero voxels as [start, length, value] runs", () => {
+    expect(encodeRuns(Uint8Array.from([0, 2, 2, 0, 0, 3, 1, 1]))).toEqual([1, 2, 2, 5, 1, 3, 6, 2, 1]);
+    expect(encodeRuns(new Uint8Array(4))).toEqual([]);
+  });
+
+  it("decode back to the same voxels", () => {
+    const set: [number, number][] = [];
+    decodeRuns([1, 2, 2, 5, 1, 3], (i, v) => set.push([i, v]));
+
+    expect(set).toEqual([[1, 2], [2, 2], [5, 3]]);
+  });
+});
 
 describe("SegmentList", () => {
   it("starts with Segment 1 active", () => {
