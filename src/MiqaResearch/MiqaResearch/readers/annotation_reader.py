@@ -13,6 +13,7 @@ class ParticipantNotVisible(Exception):
 
 def version_item(provenance: DerivedObjectProvenance) -> dict:
     """One version as the API shows it."""
+    sources = sorted(series.series_instance_uid for series in provenance.source_series.all())
     return {
         "id": provenance.pk,
         "chain_id": provenance.chain_id,
@@ -25,7 +26,9 @@ def version_item(provenance: DerivedObjectProvenance) -> dict:
         "author": provenance.author.username if provenance.author_id else None,
         "created_at": provenance.created_at,
         "retired": provenance.retired,
-        "source_series_uids": sorted(series.series_instance_uid for series in provenance.source_series.all()),
+        "source_series_uids": sources,
+        # The series it's drawn on (the Fusion base); ingested objects record none, so their first source.
+        "base_series_uid": provenance.base_series.series_instance_uid if provenance.base_series_id else next(iter(sources), None),
     }
 
 
@@ -95,7 +98,7 @@ def _chains(participant) -> list[list[DerivedObjectProvenance]]:
     """The participant's version chains, each oldest version first."""
     versions = (
         DerivedObjectProvenance.objects.filter(series__study__study_participant=participant)
-        .select_related("series", "author")
+        .select_related("series", "author", "base_series")
         .prefetch_related("source_series")
         .order_by("chain_id", "version")
     )

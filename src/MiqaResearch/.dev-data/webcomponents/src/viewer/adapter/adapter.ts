@@ -10,6 +10,7 @@ import type { BulkAnnotationGroup } from "../bulk-annotations.ts";
 import type { LayerDisplay } from "../fusion.ts";
 import type { Orientation } from "../layout.ts";
 import type { DicomJsonInstance, LoadedSeries } from "../series.ts";
+import type { SavedSegmentation } from "../saved-seg.ts";
 import type { Rgb, SegmentationState, ValueRange } from "../segmentation.ts";
 import type { Decimation, GpuLimits } from "../size-guard.ts";
 import type { SuvStatus } from "../suv.ts";
@@ -220,8 +221,13 @@ export interface AnnotationSet {
   exportSr(series: LoadedSeries): Promise<Blob>;
   /** Remove the annotations on `series`. */
   clear(series: LoadedSeries): void;
-  /** Show the annotations of an SR (a served DICOM JSON instance) on `series`, reapplying its User calibrations. */
-  importSr(instance: DicomJsonInstance, series: LoadedSeries): Promise<void>;
+  /**
+   * Show the annotations of an SR (a served DICOM JSON instance) on `series`, reapplying its User calibrations.
+   * Returns the ids of the annotations added, for `remove` (#290 hide).
+   */
+  importSr(instance: DicomJsonInstance, series: LoadedSeries): Promise<string[]>;
+  /** Remove these annotations (those `importSr` added), wherever they are drawn (#290). */
+  remove(annotationIds: string[]): void;
   /** Stop listening to CS3D. */
   dispose(): void;
 }
@@ -255,8 +261,9 @@ export interface ViewerAdapter {
   /**
    * Create a Segmentation on `series`' grid (#286), "Segment 1" active. Check the size guard first;
    * CS3D cache errors are thrown (`isTooLargeError`). `onChange` fires after every change of its state or voxels.
+   * With `saved` (#290), the labelmap and segments (labels, colours) are a saved SEG's; that isn't an edit.
    */
-  openSegmentation(series: LoadedSeries, id: string, onChange: () => void): Promise<SegmentationView>;
+  openSegmentation(series: LoadedSeries, id: string, onChange: () => void, saved?: SavedSegmentation): Promise<SegmentationView>;
   /** The annotations of every view (#289); `onChange` fires when `revision()` bumps. Call once. */
   watchAnnotations(onChange: () => void): AnnotationSet;
   /**

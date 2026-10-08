@@ -20,6 +20,8 @@ export interface Seed {
   pet: SeriesRef & { imageCount: number };
   petNoWeight: SeriesRef & { imageCount: number };
   mrOtherFor: SeriesRef & { imageCount: number };
+  /** #290 Blinded Annotation project: a 2D image with one hidden (ingested) SR; the PI may reveal it. */
+  blinded: SeriesRef & { participant: string };
 }
 
 export interface SeriesRef {

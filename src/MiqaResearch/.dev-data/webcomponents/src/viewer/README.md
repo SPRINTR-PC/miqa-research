@@ -55,6 +55,9 @@ One file per concern, so parallel tickets touch different files.
 | `sr.ts` | SR TID 1500 post-processing (true UCUM units, calibration qualifier, User reference line) and reading User calibrations back; the adapter's 12 exportable tools. Pure. | #289 |
 | `simplify.ts` | Douglas–Peucker for WSI freehand contours. Pure. | #289 |
 | `inspector/save.ts`, `chrome/save-dialogs.ts` | Save buttons (+ Ctrl/⌘+S, dropped-tool warning); toast and 409 dialog over the view. | #289 |
+| `results.ts` | `ResultsController`: the results tree's state (chains from `GET /objects`, blinding status, shown heads, menu / History / confirm) and actions (show / hide via the element, Retire, Blinding Reveal, Show retired). No CS3D. | #290 |
+| `chrome/results-tree.ts` | Result rows under each series (⊕ Fusion badge, ⋯ History / Retire), lock row, "Show retired" footer, chips over the viewport, the Retire / Reveal confirm. | #290 |
+| `saved-seg.ts` | A saved SEG for showing: `/metadata` + all frames in one `/frames` request (multipart/related parser). | #290 |
 | `adapter/cornerstone/annotations.ts` | `AnnotationSet`: edit counting, SR export with `@cornerstonejs/adapters` (WSI: SCOORD3D, simplified, geometric only), SR import + User calibration reapply. | #289 |
 | `inspector/*.ts` | Side-panel parts, one Lit element or template per panel (calibration legend, layers, segments, save…). | #281, #284, #286, #289+ (new) |
 | `*.test.ts` next to the file | vitest, stub adapter, no CS3D. | all |
@@ -185,8 +188,30 @@ if (!r.ok) return ctx.refuse(r.message);             // "… Save and close the 
 - **SEG:** `SegmentationView.exportSeg()`: `generateSegmentation` (66.4 BINARY) over the cached base images and their labelmaps,
   segment label + colour (CIELab), algorithm MANUAL, coded as Tissue.
 - **Reopen:** `AnnotationSet.importSr(instance, series)` takes the SR's `/metadata` DICOM JSON (sessions can't fetch raw bytes),
-  reapplies its User calibrations (`applyUserCalibration`), then adds the annotations. Used by "load theirs";
-  **#290** reuses it for the results tree. A saved SEG isn't shown yet: "load theirs" on a SEG only drops the local labelmap (#290 loads SEG).
+  reapplies its User calibrations (`applyUserCalibration`), then adds the annotations (returns their ids for `remove`).
+  Used by "load theirs" and the results tree (#290). "Load theirs" on a SEG shows their SEG (below).
+
+## Results tree (#290)
+
+- **Listing:** `GET /objects?participant=` (+ `include_retired=true` with "Show retired") and `GET /participants/{id}/blinding`
+  once the element is ready; nothing without the `participant` attribute. Rows nest under the series row of their
+  `base_series_uid` (the first source series sent on save = the Fusion base; ingested objects: their first source),
+  with "⊕ PT" naming the other sources. Chains whose base isn't in the series list aren't shown.
+- **Show:** the base series replaces the shown one if needed (`replace`, size guard), other sources are fused (`fuse`),
+  then SR → `importSr` (ids kept per chain) or SEG → `SegmentationController.load` (see below). The head becomes
+  Save's head (`save.setHead`). One Segmentation at a time: another SEG replaces the shown one; unsaved Segmentation
+  edits refuse the load. Replacing the base series (drag or tree) hides heads of the old one.
+- **Hide** (row click again, chip ✕): `AnnotationSet.remove(ids)` / `segmentation.close()`; Save forgets that head
+  (`save.forgetHead`) or moves to another shown head of the kind.
+- **SEG load:** `saved-seg.ts` fetches `/metadata` + `/frames/1,…,n` (sessions get 403 on raw bytes); `openSegmentation(…, saved)`
+  runs `createLabelmapsFromSegImageIds` with the served header as `multiframe` and our frames as `decodeImageData`
+  (it unpacks BINARY), copies its labelmaps into ours and drops them; segment labels and colours (CIELab → RGB) from
+  `SegmentSequence`. Planar SEGs only (CS3D refuses others).
+- **Retire / Reveal:** ⋯ → Retire… (only `can_change`, annotate roles) → confirm → `POST /objects/{id}/retire`, list refreshed.
+  Lock row on Blinded Annotation: "N hidden"; `can_reveal` → confirm → `POST /participants/{id}/blinding-reveal`.
+  "Show retired" footer for annotate roles; retired rows are read-only. View-only: rows show/hide and History only.
+- Browser tests: `browser-tests/results.spec.ts`; the seed's `blinded` participant (project "Viewer harness blinded",
+  one ingested SR hidden from the PI).
 
 Rules:
 - Only `adapter/cornerstone/**` imports `@cornerstonejs/*`. The element loads it with a dynamic `import()`.

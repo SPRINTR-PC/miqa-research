@@ -170,3 +170,22 @@ def test_seed_gives_fusion_fixtures_in_the_ct_study(settings, client):
     assert first["00541001"]["Value"] == ["BQML"]
     assert first["00540016"]["Value"][0]["00181074"]["Value"]
     assert "Value" not in pet_no_weight[0].get("00101030", {})
+
+
+@pytest.mark.django_db
+def test_seed_gives_a_blinded_participant_with_hidden_ingested_work(settings, client):
+    """#290: a Blinded Annotation project where the PI sees an image, one hidden (ingested) Annotation,
+    and may make a Blinding Reveal that lists it."""
+    settings.DEBUG = True
+    seeded = _seed()
+    blinded = seeded["blinded"]
+    client.cookies[seeded["sessionCookie"]["name"]] = seeded["sessionCookie"]["value"]
+    participant = blinded["participant"]
+
+    assert client.get(
+        f"/api/v1/dicom/studies/{blinded['studyUid']}/series/{blinded['seriesUid']}/metadata").status_code == 200
+    status = client.get(f"/api/v1/viewer/participants/{participant}/blinding").json()
+    assert status == {"blinded": True, "revealed": False, "can_reveal": True, "hidden": 1}
+    assert client.get("/api/v1/viewer/objects", {"participant": participant}).json() == []
+    page = client.get(f"/viewer/dev/?study={blinded['studyUid']}&series={blinded['seriesUid']}").content.decode()
+    assert f'participant="{participant}"' in page

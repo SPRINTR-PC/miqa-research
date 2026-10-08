@@ -25,6 +25,9 @@ class DerivedObjectProvenance(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
         help_text="Who saved it in the viewer; null for ingested objects")
     source_series = models.ManyToManyField(DicomSeries, related_name="derived_objects", blank=True)
+    base_series = models.ForeignKey(
+        DicomSeries, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+        help_text="The source series whose grid it is on (the Fusion base, #290); null for ingested objects")
     predecessor = models.OneToOneField(
         "self", on_delete=models.PROTECT, null=True, blank=True, related_name="successor")
     chain_id = models.UUIDField(db_index=True, help_text="The id of the chain's first version")

@@ -81,6 +81,12 @@ export class SaveController {
     this.host.changed();
   }
 
+  /** The head of `kind` was hidden (#290): later saves start a new object; edits stay counted. */
+  forgetHead(kind: ObjectKind): void {
+    delete this.heads[kind];
+    this.host.changed();
+  }
+
   head(kind: ObjectKind): ObjectVersion | undefined {
     return this.heads[kind]?.version;
   }

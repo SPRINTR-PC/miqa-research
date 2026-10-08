@@ -131,6 +131,7 @@ def save_viewer_object(
                     author=user,
                     predecessor=predecessor,
                     version=predecessor.version + 1 if predecessor else 1,
+                    base_series=sources[0],
                 )
         except IntegrityError:
             _discard(dcm_file)

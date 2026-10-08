@@ -12,7 +12,13 @@ declare module "dcmjs" {
       Colors: {
         /** sRGB in 0–1 → DICOM CIELab (0–65535). */
         rgb2DICOMLAB(rgb: number[]): number[];
+        /** DICOM CIELab (0–65535) → sRGB in 0–1. */
+        dicomlab2RGB(lab: number[]): number[];
       };
+    };
+    normalizers: {
+      /** Naturalized SOP instances → one multiframe dataset (what the SEG reader expects). */
+      Normalizer: { normalizeToDataset(datasets: Dataset[]): Dataset };
     };
   };
   export default dcmjs;
