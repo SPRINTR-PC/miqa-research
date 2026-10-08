@@ -4,6 +4,7 @@ import { RenderingEngine } from "@cornerstonejs/core";
 
 import type { LoadedSeries } from "../../series.ts";
 import type { StackView, ViewerAdapter } from "../adapter.ts";
+import "./calibration.ts";
 import { initCornerstone } from "./init.ts";
 import { registerSeriesMetadata } from "./metadata.ts";
 import { createStackView, type StackHandle } from "./stack.ts";

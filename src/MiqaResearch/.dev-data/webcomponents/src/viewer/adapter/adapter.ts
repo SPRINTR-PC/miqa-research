@@ -30,6 +30,14 @@ export interface StackState {
   unit: string;
   /** Annotations (measurements, ROIs, arrows) drawn on this view. */
   annotationCount: number;
+  /** A Calibrate line drawn and waiting for its known length (#281). */
+  pendingCalibration?: PendingCalibration;
+}
+
+/** Calibrate line (#281): its length in the image's current unit. */
+export interface PendingCalibration {
+  length: number;
+  unit: string;
 }
 
 /**
@@ -50,6 +58,13 @@ export interface ViewControls {
 export interface StackView extends ViewControls {
   state(): StackState;
   scrollTo(imageIndex: number): void;
+  /**
+   * User calibration (#281) of the pending Calibrate line's image: the line is `knownLengthMm` long.
+   * Planar stacks only; views without calibration (WSI) leave it out.
+   */
+  calibrate?(knownLengthMm: number): void;
+  /** Drop the pending Calibrate line without calibrating. */
+  cancelCalibration?(): void;
 }
 
 export interface ViewerAdapter {

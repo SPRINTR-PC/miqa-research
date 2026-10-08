@@ -8,8 +8,17 @@ export interface Seed {
   /** Investigator: view-only role (#280). */
   viewOnlySessionCookie: { name: string; value: string };
   ct: { studyUid: string; seriesUid: string; imageCount: number };
+  /** #281 2D spacing fixtures: CR with only ImagerPixelSpacing, SC with PixelSpacing, SC without spacing. */
+  cr: SeriesRef;
+  sc: SeriesRef;
+  noSpacing: SeriesRef;
   /** Synthetic TILED_FULL whole-slide image, JPEG tiles (#285). */
   wsi: { studyUid: string; seriesUid: string; levels: number; baseTiles: number };
+}
+
+export interface SeriesRef {
+  studyUid: string;
+  seriesUid: string;
 }
 
 export function seed(): Seed {
@@ -28,6 +37,7 @@ export interface StackState {
   pan: [number, number];
   unit: string;
   annotationCount: number;
+  pendingCalibration?: { length: number; unit: string };
 }
 
 export type Button = "left" | "right" | "middle";

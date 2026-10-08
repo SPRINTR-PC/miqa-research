@@ -7,6 +7,8 @@ export class StubStackView implements StackView {
   /** Window the image came with; resetVoi/resetView go back to it. */
   defaultVoi: VoiRange | undefined;
   resets = 0;
+  /** Known lengths passed to calibrate(). */
+  calibrations: number[] = [];
   private readonly onChange: () => void;
 
   constructor(series: LoadedSeries, onChange: () => void) {
@@ -52,6 +54,15 @@ export class StubStackView implements StackView {
 
   toggleInvert(): void {
     this.emit({ invert: !this.current.invert });
+  }
+
+  calibrate(knownLengthMm: number): void {
+    this.calibrations.push(knownLengthMm);
+    this.emit({ unit: "mm User", pendingCalibration: undefined });
+  }
+
+  cancelCalibration(): void {
+    this.emit({ pendingCalibration: undefined });
   }
 
   resetView(): void {
