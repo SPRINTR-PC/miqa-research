@@ -8,14 +8,15 @@
 import { LitElement, css, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 
-import type { AdapterFactory, StackState, StackView, ViewerAdapter } from "./adapter/adapter.ts";
+import type { AdapterFactory, StackState, StackView, ViewerAdapter, WsiView } from "./adapter/adapter.ts";
+import { fetchBulkAnnotations, type BulkAnnotationGroup } from "./bulk-annotations.ts";
 import { seriesList, seriesListItem, type SeriesListItem } from "./chrome/series-list.ts";
 import { toolRail } from "./chrome/tool-rail.ts";
 import { commands } from "./commands.ts";
 import type { ViewerContext } from "./context.ts";
 import { FirstRenderReport } from "./first-render.ts";
 import { inspector } from "./inspector/index.ts";
-import { fetchSeries } from "./series.ts";
+import { fetchSeries, type SeriesRef } from "./series.ts";
 import { presets, presetVoi, tools, voiToWindow, type Preset, type ViewportKind } from "./tools/index.ts";
 import { unitTooltip } from "./units.ts";
 import { isWholeSlide, WSI_DEFAULT_TOOL } from "./wsi.ts";
@@ -36,6 +37,9 @@ export class MiresViewer extends LitElement {
   @property({ attribute: "series-uid" }) seriesUid = "";
   /** Annotate role on this participant (set by the page from the server): Arrow, Calibrate, segment tools, Save. */
   @property({ type: Boolean, attribute: "can-annotate" }) canAnnotate = false;
+  /** Study Participant id of the series (set by the page): lists its Annotations, e.g. bulk ANN on a slide (#292). */
+  @property() participant = "";
+  @property({ attribute: "api-root" }) apiRoot = "/api/v1/viewer";
 
   /** Reflected for pages and browser tests: loading → ready | error. */
   @property({ reflect: true }) state: ViewerState = "loading";
@@ -47,9 +51,11 @@ export class MiresViewer extends LitElement {
   @state() private error = "";
   @state() private series: SeriesListItem[] = [];
   @state() private viewportKind: ViewportKind = "stack";
+  @state() private bulkGroups: BulkAnnotationGroup[] = [];
 
   private adapter: ViewerAdapter | undefined;
   private view: StackView | undefined;
+  private wsiView: WsiView | undefined;
   private resizeObserver: ResizeObserver | undefined;
   private disposed = false;
   /** First-render marks + beacon (#293); volume views mark "interleaved" / "volume-loaded" on it. */
@@ -117,6 +123,7 @@ export class MiresViewer extends LitElement {
     this.adapter?.destroy();
     this.adapter = undefined;
     this.view = undefined;
+    this.wsiView = undefined;
   }
 
   protected firstUpdated(): void {
@@ -132,10 +139,18 @@ export class MiresViewer extends LitElement {
       this.series = [seriesListItem(series)];
       this.adapter = await this.adapterFactory();
       if (this.disposed) return this.adapter.destroy();
-      const onChange = () => (this.stack = this.view?.state());
+      const onChange = () => {
+        this.stack = this.view?.state();
+        this.bulkGroups = this.wsiView?.bulkAnnotationGroups() ?? [];
+      };
       const wsi = isWholeSlide(series);
-      if (wsi) this.viewportKind = "wsi";
-      this.view = await (wsi ? this.adapter.openWsi(viewport, series, onChange) : this.adapter.openStack(viewport, series, onChange));
+      if (wsi) {
+        this.viewportKind = "wsi";
+        this.view = this.wsiView = await this.adapter.openWsi(viewport, series, onChange);
+        if (this.participant) void this.loadBulkAnnotations(this.wsiView, series.ref);
+      } else {
+        this.view = await this.adapter.openStack(viewport, series, onChange);
+      }
       this.view.setTool(wsi ? WSI_DEFAULT_TOOL : DEFAULT_TOOL);
       this.stack = this.view.state();
       this.firstRender.mark("first-image");
@@ -145,6 +160,16 @@ export class MiresViewer extends LitElement {
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e);
       this.state = "error";
+    }
+  }
+
+  /** Bulk ANN on the slide (#292), read-only. A failure leaves the slide usable and is only logged. */
+  private async loadBulkAnnotations(view: WsiView, slide: SeriesRef): Promise<void> {
+    try {
+      const instances = await fetchBulkAnnotations({ apiRoot: this.apiRoot, participant: this.participant }, slide);
+      if (instances.length && !this.disposed) await view.addBulkAnnotations(instances);
+    } catch (e) {
+      console.warn("Bulk annotations could not be shown", e);
     }
   }
 
@@ -159,6 +184,8 @@ export class MiresViewer extends LitElement {
       stack: this.stack,
       selectTool: (id) => this.view?.setTool(id),
       applyPreset: (p) => this.applyPreset(p),
+      bulkAnnotationGroups: this.bulkGroups,
+      setBulkAnnotationGroupVisible: (uid, visible) => this.wsiView?.setBulkAnnotationGroupVisible(uid, visible),
     };
   }
 

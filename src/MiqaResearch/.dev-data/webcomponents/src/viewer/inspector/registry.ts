@@ -1,7 +1,7 @@
 // Inspector (right side panel) slots. Each panel registers from its own inspector/<panel>.ts,
 // imported by inspector/index.ts; the element renders them sorted by `order`.
 // Orders in use / reserved (leave gaps): 10 save buttons (#289), 20 layout (#282), 25 segments (#286),
-// 30 layers (#284), 40 calibration legend (#281), 50 window presets (#280), 90 mouse help (#280).
+// 30 layers (#284), 35 bulk annotations (#292), 40 calibration legend (#281), 50 window presets (#280), 90 mouse help (#280).
 import type { ViewerContext } from "../context.ts";
 
 export interface InspectorPanel {

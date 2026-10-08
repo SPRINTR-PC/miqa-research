@@ -39,6 +39,7 @@ class VersionOut(Schema):
     version: int
     series_instance_uid: str
     series_description: str | None
+    modality: str | None
     author: str | None
     created_at: datetime
     retired: bool

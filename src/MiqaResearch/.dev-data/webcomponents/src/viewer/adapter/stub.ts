@@ -1,6 +1,7 @@
 // In-memory ViewerAdapter for vitest: records calls and lets a test drive state changes.
-import type { LoadedSeries } from "../series.ts";
-import type { StackState, StackView, ViewerAdapter, VoiRange } from "./adapter.ts";
+import { annotationGroups, type BulkAnnotationGroup } from "../bulk-annotations.ts";
+import type { DicomJsonInstance, LoadedSeries } from "../series.ts";
+import type { StackState, StackView, ViewerAdapter, VoiRange, WsiView } from "./adapter.ts";
 
 export class StubStackView implements StackView {
   current: StackState;
@@ -60,10 +61,32 @@ export class StubStackView implements StackView {
   }
 }
 
+/** A slide view: one image, plus ANN groups held in memory. */
+export class StubWsiView extends StubStackView implements WsiView {
+  bulkInstances: DicomJsonInstance[] = [];
+  private groups: BulkAnnotationGroup[] = [];
+
+  async addBulkAnnotations(instances: DicomJsonInstance[]): Promise<void> {
+    this.bulkInstances.push(...instances);
+    this.groups.push(...annotationGroups(instances));
+    this.emit({});
+  }
+
+  bulkAnnotationGroups(): BulkAnnotationGroup[] {
+    return this.groups.map((g) => ({ ...g }));
+  }
+
+  setBulkAnnotationGroupVisible(uid: string, visible: boolean): void {
+    this.groups = this.groups.map((g) => (g.uid === uid ? { ...g, visible } : g));
+    this.emit({});
+  }
+}
+
 export class StubAdapter implements ViewerAdapter {
   opened: { element: HTMLDivElement; series: LoadedSeries }[] = [];
   openedWsi: { element: HTMLDivElement; series: LoadedSeries }[] = [];
   views: StubStackView[] = [];
+  wsiViews: StubWsiView[] = [];
   resizes = 0;
   destroyed = false;
   /** Set to make the next openStack reject. */
@@ -77,11 +100,12 @@ export class StubAdapter implements ViewerAdapter {
     return view;
   }
 
-  async openWsi(element: HTMLDivElement, series: LoadedSeries, onChange: () => void): Promise<StackView> {
+  async openWsi(element: HTMLDivElement, series: LoadedSeries, onChange: () => void): Promise<WsiView> {
     if (this.failWith) throw this.failWith;
     this.openedWsi.push({ element, series });
-    const view = new StubStackView({ ...series, images: series.images.slice(0, 1) }, onChange);
+    const view = new StubWsiView({ ...series, images: series.images.slice(0, 1) }, onChange);
     this.views.push(view);
+    this.wsiViews.push(view);
     return view;
   }
 

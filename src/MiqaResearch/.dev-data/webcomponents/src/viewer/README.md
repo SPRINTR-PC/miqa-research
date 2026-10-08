@@ -31,6 +31,8 @@ One file per concern, so parallel tickets touch different files.
 | `adapter/cornerstone/volume.ts` | ORTHOGRAPHIC volumes, three views, crosshairs, fusion. | #282–#284 (new) |
 | `wsi.ts` | WSI pure parts: `isWholeSlide`, dmv `tilesCacheSize`, geometric-only text lines. | #285 |
 | `adapter/cornerstone/wsi.ts` | WHOLE_SLIDE (`MiresWSIViewport` subclass with the dmv tile cache), dmv `peerImport`, head-CSS mirroring. | #285 |
+| `bulk-annotations.ts` | Bulk ANN pure parts: find the slide's ANN (object list `?participant=&series=` → `/metadata`, coordinates inline), read its groups. Needs the `participant` attribute. | #292 |
+| `adapter/cornerstone/bulk-annotations.ts` | ANN through dmv's annotation-group layer, read-only, show/hide per group (`inspector/bulk-annotations.ts`). | #292 |
 | `adapter/cornerstone/segmentation.ts` | Labelmaps, segment tools, threshold. | #286 (new) |
 | `inspector/*.ts` | Side-panel parts, one Lit element or template per panel (calibration legend, layers, segments, save…). | #281, #284, #286, #289+ (new) |
 | `*.test.ts` next to the file | vitest, stub adapter, no CS3D. | all |

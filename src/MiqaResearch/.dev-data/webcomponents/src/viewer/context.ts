@@ -1,6 +1,7 @@
 // What the chrome extensions (inspector panels, commands) see of the viewer: state + actions.
 // Built fresh by <mires-viewer> on every render; add fields additively.
 import type { StackState, ViewControls } from "./adapter/adapter.ts";
+import type { BulkAnnotationGroup } from "./bulk-annotations.ts";
 import type { Preset, ViewportKind } from "./tools/index.ts";
 
 export interface ViewerContext {
@@ -16,4 +17,7 @@ export interface ViewerContext {
   stack: StackState | undefined;
   selectTool(toolId: string): void;
   applyPreset(preset: Preset): void;
+  /** Groups of the slide's bulk ANN (#292); empty off WSI or without ANN. */
+  bulkAnnotationGroups: BulkAnnotationGroup[];
+  setBulkAnnotationGroupVisible(uid: string, visible: boolean): void;
 }

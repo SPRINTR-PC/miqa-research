@@ -17,7 +17,8 @@ import { api } from "dicomweb-client";
 import type { DicomJsonInstance, LoadedSeries } from "../../series.ts";
 import { workstationBindings } from "../../tools/bindings.ts";
 import { geometricTextLines, tilesCacheSize, wsiImageIds, type MeasurementStats } from "../../wsi.ts";
-import type { StackState, StackView, VoiRange } from "../adapter.ts";
+import type { StackState, StackView, VoiRange, WsiView } from "../adapter.ts";
+import { bulkAnnotationLayer, type DmvAnnotationViewer } from "./bulk-annotations.ts";
 import { registerSeriesMetadata } from "./metadata.ts";
 import type { StackHandle } from "./stack.ts";
 import { addToolsToGroup, applyBindingPlan } from "./tools.ts";
@@ -187,7 +188,7 @@ export async function createWsiView(
   element: HTMLDivElement,
   series: LoadedSeries,
   onChange: () => void,
-): Promise<StackHandle> {
+): Promise<WsiView & Pick<StackHandle, "dispose">> {
   registerWsiViewport();
   const levels = wsiImageIds(series);
   const imageIds = registerSeriesMetadata({ ...series, images: levels });
@@ -304,8 +305,13 @@ export async function createWsiView(
       onChange();
     },
   };
+  // Read-only bulk ANN (#292) on dmv's map.
+  const bulk = bulkAnnotationLayer(() => (viewport as unknown as { viewer: DmvAnnotationViewer }).viewer, onChange);
   return {
     ...view,
+    addBulkAnnotations: (instances) => bulk.add(instances),
+    bulkAnnotationGroups: () => bulk.groups(),
+    setBulkAnnotationGroupVisible: (uid, visible) => bulk.setVisible(uid, visible),
     dispose() {
       ELEMENT_EVENTS.forEach((e) => element.removeEventListener(e, onChange));
       ANNOTATION_EVENTS.forEach((e) => eventTarget.removeEventListener(e, onChange));

@@ -9,7 +9,9 @@ export interface Seed {
   viewOnlySessionCookie: { name: string; value: string };
   ct: { studyUid: string; seriesUid: string; imageCount: number };
   /** Synthetic TILED_FULL whole-slide image, JPEG tiles (#285). */
-  wsi: { studyUid: string; seriesUid: string; levels: number; baseTiles: number };
+  wsi: { studyUid: string; seriesUid: string; levels: number; baseTiles: number; participant: string };
+  /** Bulk annotations (ANN) on the slide (#292): group names (property types), in group order. */
+  wsiAnnotations: { groups: string[] };
 }
 
 export function seed(): Seed {

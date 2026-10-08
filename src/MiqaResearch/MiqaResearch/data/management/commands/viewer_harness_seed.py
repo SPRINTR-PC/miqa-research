@@ -1,8 +1,8 @@
 """Seed data for the local Playwright viewer harness (#278). DEBUG only.
 
 Creates (once) a "Viewer harness" Research Project with a PI user, a view-only (Investigator) user,
-an ingested synthetic CT stack and a synthetic TILED_FULL whole-slide image (#285), then prints JSON for the harness: fresh session cookies for both and the
-pseudonymized study/series UIDs to open. Idempotent: re-runs reuse the project and its series.
+an ingested synthetic CT stack, a synthetic TILED_FULL whole-slide image (#285) and bulk annotations (ANN) on
+it (#292), then prints JSON for the harness: fresh session cookies for both and the pseudonymized study/series UIDs to open. Idempotent: re-runs reuse the project and its series.
 Fully synthetic pixel data and demo identifiers only.
 """
 import io
@@ -20,7 +20,13 @@ from django.test import Client, override_settings
 from PIL import Image
 from pydicom.dataset import Dataset, FileMetaDataset
 from pydicom.encaps import encapsulate
-from pydicom.uid import CTImageStorage, ExplicitVRLittleEndian, JPEGBaseline8Bit, VLWholeSlideMicroscopyImageStorage
+from pydicom.uid import (
+    CTImageStorage,
+    ExplicitVRLittleEndian,
+    JPEGBaseline8Bit,
+    MicroscopyBulkSimpleAnnotationsStorage,
+    VLWholeSlideMicroscopyImageStorage,
+)
 
 from MiqaResearch.data.models import (
     DicomSeries,
@@ -43,6 +49,19 @@ WSI_TILE = 256
 WSI_WIDTH, WSI_HEIGHT = 2048, 1536  # base level, pixels: 8 × 6 tiles
 WSI_PIXEL_MM = 0.0005  # 0.5 µm at the base level
 WSI_DOWNSAMPLES = (1, 4)  # two pyramid levels, so the viewer opens zoomed out and can zoom in
+# Bulk annotations (#292): label, property type (SCT code, meaning), display colour (DICOM CIELab of pure
+# green / magenta) and closed polygons in base-level (column, row) pixels. Colours unlike the slide's, so a
+# test can find them on screen. The label is PHI-scrubbed at serve time (De-identification Profile: D), the
+# property type is not.
+ANN_GROUPS = (
+    ("Tumour", ("108369006", "Neoplasm"), (57498, 10747, 54273), (
+        ((200, 200), (700, 200), (700, 600), (200, 600)),
+        ((1300, 900), (1800, 900), (1800, 1300), (1300, 1300)),
+    )),
+    ("Stroma", ("21793004", "Connective tissue"), (39530, 58148, 17258), (
+        ((1200, 150), (1850, 150), (1525, 650)),
+    )),
+)
 
 
 def build_ct_slice(index: int) -> Dataset:
@@ -161,6 +180,70 @@ def build_wsi_level(level: int) -> Dataset:
     return ds
 
 
+def _code(value: str, scheme: str, meaning: str) -> Dataset:
+    code = Dataset()
+    code.CodeValue, code.CodingSchemeDesignator, code.CodeMeaning = value, scheme, meaning
+    return code
+
+
+def build_wsi_annotations() -> Dataset:
+    """Microscopy Bulk Simple Annotations (ANN) on the synthetic slide's base level: one POLYGON group per
+    ANN_GROUPS entry, 2D coordinates, algorithm output. Same study and Frame of Reference as the slide."""
+    ds = Dataset()
+    sop = f"{WSI_UID_ROOT}.6.1"
+    ds.file_meta = FileMetaDataset()
+    ds.file_meta.MediaStorageSOPClassUID = MicroscopyBulkSimpleAnnotationsStorage
+    ds.file_meta.MediaStorageSOPInstanceUID = sop
+    ds.file_meta.TransferSyntaxUID = ExplicitVRLittleEndian
+    ds.SOPClassUID, ds.SOPInstanceUID = MicroscopyBulkSimpleAnnotationsStorage, sop
+    ds.StudyInstanceUID, ds.SeriesInstanceUID = f"{WSI_UID_ROOT}.1", f"{WSI_UID_ROOT}.5"
+    ds.FrameOfReferenceUID = f"{WSI_UID_ROOT}.4"
+    ds.PatientID, ds.PatientName, ds.PatientSex = "HARNESS-1", "HARNESS^CT", "O"
+    ds.StudyDate, ds.StudyTime, ds.StudyID = "20260102", "120000", "H2"
+    ds.StudyDescription, ds.SeriesDescription = "Viewer harness slide", "Synthetic regions (algorithm)"
+    ds.Modality, ds.SeriesNumber, ds.InstanceNumber = "ANN", 2, 1
+    ds.ContentLabel, ds.ContentDate, ds.ContentTime = "REGIONS", "20260102", "120000"
+    ds.ContainerIdentifier = "HARNESS-SLIDE-1"
+    ds.AnnotationCoordinateType = "2D"
+    ds.PixelOriginInterpretation = "VOLUME"
+    base = Dataset()
+    base.ReferencedSOPClassUID = VLWholeSlideMicroscopyImageStorage
+    base.ReferencedSOPInstanceUID = f"{WSI_UID_ROOT}.3.1"
+    ds.ReferencedImageSequence = [base]
+    referenced_series = Dataset()
+    referenced_series.SeriesInstanceUID = f"{WSI_UID_ROOT}.2"
+    referenced_series.ReferencedInstanceSequence = [base]
+    ds.ReferencedSeriesSequence = [referenced_series]
+
+    algorithm = Dataset()
+    algorithm.AlgorithmName, algorithm.AlgorithmVersion = "harness-regions", "1"
+    algorithm.AlgorithmFamilyCodeSequence = [_code("123109", "DCM", "Manual Processing")]
+    groups = []
+    for number, (label, (type_code, type_meaning), lab, polygons) in enumerate(ANN_GROUPS, start=1):
+        group = Dataset()
+        group.AnnotationGroupNumber = number
+        group.AnnotationGroupUID = f"{WSI_UID_ROOT}.7.{number}"
+        group.AnnotationGroupLabel = label
+        group.AnnotationGroupGenerationType = "AUTOMATIC"
+        group.AnnotationGroupAlgorithmIdentificationSequence = [algorithm]
+        group.AnnotationPropertyCategoryCodeSequence = [_code("91723000", "SCT", "Anatomical structure")]
+        group.AnnotationPropertyTypeCodeSequence = [_code(type_code, "SCT", type_meaning)]
+        group.AnnotationAppliesToAllOpticalPaths = "YES"
+        group.GraphicType = "POLYGON"
+        group.NumberOfAnnotations = len(polygons)
+        group.RecommendedDisplayCIELabValue = list(lab)
+        points = [float(v) for polygon in polygons for point in polygon for v in point]
+        group.PointCoordinatesData = np.asarray(points, dtype="<f4").tobytes()
+        starts, index = [], 1  # 1-based index of each polygon's first value
+        for polygon in polygons:
+            starts.append(index)
+            index += 2 * len(polygon)
+        group.LongPrimitivePointIndexList = np.asarray(starts, dtype="<u4").tobytes()
+        groups.append(group)
+    ds.AnnotationGroupSequence = groups
+    return ds
+
+
 def _create_database_if_missing() -> None:
     name = connection.settings_dict["NAME"]
     with connection._nodb_cursor() as cursor:
@@ -207,6 +290,7 @@ class Command(BaseCommand):
 
         series = self._ct_series(project)
         wsi = self._wsi_series(project)
+        self._wsi_annotations(project)
         self.stdout.write(json.dumps({
             "sessionCookie": _session_cookie(user),
             "viewOnlySessionCookie": _session_cookie(view_only),
@@ -220,7 +304,9 @@ class Command(BaseCommand):
                 "seriesUid": wsi.series_instance_uid,
                 "levels": len(WSI_DOWNSAMPLES),
                 "baseTiles": (WSI_WIDTH // WSI_TILE) * (WSI_HEIGHT // WSI_TILE),
+                "participant": str(wsi.study.study_participant_id),
             },
+            "wsiAnnotations": {"groups": [meaning for _, (_, meaning), _, _ in ANN_GROUPS]},
         }))
 
     def _ct_series(self, project) -> DicomSeries:
@@ -250,3 +336,16 @@ class Command(BaseCommand):
             errors = sorted({r.error for r in report.results if r.error})
             raise CommandError(f"WSI ingestion failed: {report.counts} {errors}")
         return DicomSeries.objects.get(study__study_participant__research_project=project, modality="SM")
+
+    def _wsi_annotations(self, project) -> DicomSeries:
+        existing = DicomSeries.objects.filter(study__study_participant__research_project=project, modality="ANN").first()
+        if existing:
+            return existing
+        with tempfile.TemporaryDirectory() as tmp:
+            build_wsi_annotations().save_as(Path(tmp) / "ann.dcm", enforce_file_format=True)
+            with override_settings(DICOM_ALLOWED_SOURCE_ROOTS=[Path(tmp)]):
+                report = run_ingestion(project, tmp)
+        if report.counts.get("ingested") != 1:
+            errors = sorted({r.error for r in report.results if r.error})
+            raise CommandError(f"ANN ingestion failed: {report.counts} {errors}")
+        return DicomSeries.objects.get(study__study_participant__research_project=project, modality="ANN")

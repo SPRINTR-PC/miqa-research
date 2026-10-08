@@ -21,6 +21,7 @@ def version_item(provenance: DerivedObjectProvenance) -> dict:
         "version": provenance.version,
         "series_instance_uid": provenance.series.series_instance_uid,
         "series_description": provenance.series.series_description,
+        "modality": provenance.series.modality,
         "author": provenance.author.username if provenance.author_id else None,
         "created_at": provenance.created_at,
         "retired": provenance.retired,
