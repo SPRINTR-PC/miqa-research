@@ -55,7 +55,8 @@ export function isHttp11Frames(entry: ResourceEntry): boolean {
   return isFrames(entry) && entry.nextHopProtocol === "http/1.1";
 }
 
-function csrfToken(): string {
+/** Django's CSRF token from the `csrftoken` cookie (the host page sets it), sent as `X-CSRFToken`. */
+export function csrfToken(): string {
   return document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/)?.[1] ?? "";
 }
 

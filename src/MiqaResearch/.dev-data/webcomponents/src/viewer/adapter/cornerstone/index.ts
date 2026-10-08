@@ -6,6 +6,7 @@ import type { Orientation } from "../../layout.ts";
 import type { LoadedSeries } from "../../series.ts";
 import type { GpuLimits } from "../../size-guard.ts";
 import type {
+  AnnotationSet,
   SegmentationView,
   StackView,
   ViewControls,
@@ -15,6 +16,7 @@ import type {
   VolumeView,
   WsiView,
 } from "../adapter.ts";
+import { watchAnnotations } from "./annotations.ts";
 import { gpuLimits } from "./gpu.ts";
 import "./calibration.ts";
 import { initCornerstone } from "./init.ts";
@@ -69,6 +71,10 @@ class CornerstoneAdapter implements ViewerAdapter {
   async openSegmentation(series: LoadedSeries, id: string, onChange: () => void): Promise<SegmentationView> {
     const viewportsOf = (view: ViewControls) => (this.views.includes(view as Handle) ? (view as Handle).shownViewports?.() : undefined);
     return createSegmentation(this.engine, registerSeriesMetadata(series), series, id, onChange, viewportsOf);
+  }
+
+  watchAnnotations(onChange: () => void): AnnotationSet {
+    return watchAnnotations(this.engine, onChange);
   }
 
   close(view: ViewControls): void {

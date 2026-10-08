@@ -280,6 +280,18 @@ def test_superseding_a_stale_head_is_409_with_the_current_head(client, project, 
 
 
 @pytest.mark.django_db
+def test_the_409_says_whether_the_caller_may_save_on_top_of_the_newer_head(client, project, ct):
+    """The viewer's 409 dialog offers "Save mine on top" only when the caller may change the head (#289)."""
+    author, other, pi = _member(project), _member(project), _member(project, PROJECT_ROLE_PI)
+    first = _save(client, author, _sr_for(ct), [ct.series]).json()
+    _save(client, author, _sr_for(ct), [ct.series], supersedes=first["id"])
+
+    assert _save(client, author, _sr_for(ct), [ct.series], supersedes=first["id"]).json()["can_change"] is True
+    assert _save(client, pi, _sr_for(ct), [ct.series], supersedes=first["id"]).json()["can_change"] is True
+    assert _save(client, other, _sr_for(ct), [ct.series], supersedes=first["id"]).json()["can_change"] is False
+
+
+@pytest.mark.django_db
 def test_a_segmentation_cannot_supersede_an_annotation(client, project, ct):
     annotator = _member(project)
     first = _save(client, annotator, _sr_for(ct), [ct.series]).json()

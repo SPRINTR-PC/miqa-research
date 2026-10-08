@@ -72,9 +72,13 @@ class NotAllowed(ObjectError):
 
 @dataclass
 class StaleHead(ObjectError):
-    """The version the caller edited is no longer the chain's head (or the chain is retired)."""
+    """The version the caller edited is no longer the chain's head (or the chain is retired).
+
+    `can_change`: whether the caller may supersede or retire that head (the viewer's "Save mine on top", #289).
+    """
 
     head: DerivedObjectProvenance
+    can_change: bool = False
 
 
 def save_viewer_object(
@@ -133,7 +137,7 @@ def save_viewer_object(
             if predecessor is None:
                 raise
             # Another save took this head between our lock and insert (backstop for the lock)
-            raise _stale(predecessor.chain_id, blinding) from None
+            raise _stale(predecessor.chain_id, blinding, rights) from None
         provenance.source_series.set(sources)
 
         created_event, superseded_event, _ = _EVENTS[kind]
@@ -166,7 +170,7 @@ def retire_object(*, user, object_id: UUID, request=None) -> DerivedObjectProven
         if blinding.hides(provenance.author_id):
             raise NotFound()
         if _has_successor(provenance):
-            raise _stale(provenance.chain_id, blinding)
+            raise _stale(provenance.chain_id, blinding, ParticipantRights(user, project, participant))
         if provenance.retired:
             return provenance
         if not ParticipantRights(user, project, participant).can_change(provenance.author_id):
@@ -242,16 +246,16 @@ def _lock_head_to_supersede(
     if predecessor.kind != kind:
         raise InvalidObject(f"a {kind} can't supersede a {predecessor.kind}")
     if predecessor.retired or _has_successor(predecessor):
-        raise _stale(predecessor.chain_id, blinding)
+        raise _stale(predecessor.chain_id, blinding, rights)
     if not rights.can_change(predecessor.author_id):
         raise NotAllowed("only the author, a PI, a Site PI or an Admin may supersede this")
     return predecessor
 
 
-def _stale(chain_id, blinding: ParticipantBlinding) -> ObjectError:
+def _stale(chain_id, blinding: ParticipantBlinding, rights: ParticipantRights) -> ObjectError:
     """409 with the current head, or 404 when Blinded Annotation hides that head from the caller."""
     head = _head_of(chain_id)
-    return NotFound() if blinding.hides(head.author_id) else StaleHead(head)
+    return NotFound() if blinding.hides(head.author_id) else StaleHead(head, rights.can_change(head.author_id))
 
 
 def _has_successor(provenance: DerivedObjectProvenance) -> bool:

@@ -5,8 +5,10 @@
 // `rectangleROIThresholdVolumeByRange` on volumes (any layer's volume); on a stack our own fill
 // (../../segmentation.ts), since the helper is volume-only. Polygon: a linear SplineROI rasterised into
 // the labelmap when closed.
-import { cache, eventTarget, imageLoader, utilities, type RenderingEngine, type Types } from "@cornerstonejs/core";
+import { cache, eventTarget, imageLoader, metaData, utilities, type RenderingEngine, type Types } from "@cornerstonejs/core";
+import { adaptersSEG } from "@cornerstonejs/adapters";
 import * as csTools from "@cornerstonejs/tools";
+import dcmjs from "dcmjs";
 
 import {
   DEFAULT_BRUSH_SIZE,
@@ -54,6 +56,19 @@ export interface ShownViewports {
 
 type Point = Types.Point3;
 
+/** SEG segment description (SegmentSequence item): manual, coded as tissue, with its display colour. */
+function segmentMetadata(index: number, label: string, color: Rgb) {
+  const tissue = { CodeValue: "85756007", CodingSchemeDesignator: "SCT", CodeMeaning: "Tissue" };
+  return {
+    SegmentNumber: index,
+    SegmentLabel: label,
+    SegmentAlgorithmType: "MANUAL",
+    RecommendedDisplayCIELabValue: dcmjs.data.Colors.rgb2DICOMLAB(color.map((c) => c / 255)).map(Math.round),
+    SegmentedPropertyCategoryCodeSequence: tissue,
+    SegmentedPropertyTypeCodeSequence: tissue,
+  };
+}
+
 export function createSegmentation(
   engine: RenderingEngine,
   imageIds: string[],
@@ -68,6 +83,8 @@ export function createSegmentation(
   const list = new SegmentList();
   let brushSize = DEFAULT_BRUSH_SIZE;
   let shown: ShownViewports | undefined;
+  /** Edits (#289): painting, threshold, polygon fill, segments added / renamed / recoloured. */
+  let revision = 0;
 
   S.addSegmentations([{ segmentationId: id, representation: { type: LABELMAP, data: { imageIds: labelmapIds } } }]);
 
@@ -97,6 +114,7 @@ export function createSegmentation(
   };
 
   const modified = () => {
+    revision += 1;
     S.triggerSegmentationEvents.triggerSegmentationDataModified(id);
     T.utilities.segmentation.triggerSegmentationRender();
     onChange();
@@ -155,7 +173,9 @@ export function createSegmentation(
     } else if (tool === THRESHOLD) onChange();
   };
   const onDataModified = (e: Event) => {
-    if ((e as CustomEvent<{ segmentationId: string }>).detail?.segmentationId === id) onChange();
+    if ((e as CustomEvent<{ segmentationId: string }>).detail?.segmentationId !== id) return;
+    revision += 1;
+    onChange();
   };
   const ANNOTATION_EVENTS = [T.Enums.Events.ANNOTATION_COMPLETED, T.Enums.Events.ANNOTATION_REMOVED];
   ANNOTATION_EVENTS.forEach((ev) => eventTarget.addEventListener(ev, onAnnotation));
@@ -217,14 +237,17 @@ export function createSegmentation(
     },
     addSegment() {
       list.add();
+      revision += 1;
       sync();
     },
     renameSegment(index: number, label: string) {
       list.rename(index, label);
+      revision += 1;
       sync();
     },
     setSegmentColor(index: number, color: Rgb) {
       list.setColor(index, color);
+      revision += 1;
       sync();
     },
     setActiveSegment(index: number) {
@@ -257,6 +280,34 @@ export function createSegmentation(
       return (voxelCounts()[list.active] ?? 0) - before;
     },
     voxelCounts,
+    revision: () => revision,
+    async exportSeg(): Promise<Blob> {
+      sync(); // labels and colours as shown
+      // Frames of the images in cache (a stack paints only images it has shown), labelmap per base image.
+      const frames = imageIds.map((imageId, k) => ({ image: cache.getImage(imageId), labels: cache.getImage(labelmapIds[k]) })).filter(
+        (f): f is { image: Types.IImage; labels: Types.IImage } => !!f.image && !!f.labels,
+      );
+      const labelmaps2D = frames.map(({ labels }) => {
+        const pixelData = labels.voxelManager!.getScalarData() as ArrayLike<number>;
+        const segments = new Set<number>();
+        for (let i = 0; i < pixelData.length; i++) if (pixelData[i]) segments.add(pixelData[i]);
+        return { segmentsOnLabelmap: [...segments], pixelData, rows: labels.rows, columns: labels.columns };
+      });
+      const painted = [...new Set(labelmaps2D.flatMap((l) => l.segmentsOnLabelmap))].sort((a, b) => a - b);
+      if (!painted.length) throw new Error("nothing is painted");
+      const metadata: unknown[] = [];
+      for (const index of painted) {
+        const segment = list.segments.find((s) => s.index === index);
+        metadata[index] = segmentMetadata(index, segment?.label ?? `Segment ${index}`, segment?.color ?? [255, 0, 0]);
+      }
+      const seg = adaptersSEG.Cornerstone3D.Segmentation.generateSegmentation(
+        frames.map((f) => f.image),
+        { segmentsOnLabelmap: painted, metadata, labelmaps2D },
+        metaData,
+        { SeriesDescription: "Segmentation" },
+      );
+      return new Blob([dcmjs.data.datasetToDict(seg.dataset).write()], { type: "application/dicom" });
+    },
     close() {
       ANNOTATION_EVENTS.forEach((ev) => eventTarget.removeEventListener(ev, onAnnotation));
       eventTarget.removeEventListener(T.Enums.Events.SEGMENTATION_DATA_MODIFIED, onDataModified);

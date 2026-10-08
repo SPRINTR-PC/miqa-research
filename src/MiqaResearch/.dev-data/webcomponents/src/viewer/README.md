@@ -45,6 +45,11 @@ One file per concern, so parallel tickets touch different files.
 | `tools/segmentation.ts` | Segment tools (keys g d k q j y m), erase twins, `segmentBindings` (workstation mouse + erase twin on right-drag). | #286 |
 | `inspector/segments.ts` | Segments panel: list, brush size, threshold form. | #286 |
 | `adapter/cornerstone/segmentation.ts` | Labelmap (derived images per base image; volumes get an image-backed labelmap volume), segment tools, threshold, polygon fill. | #286 |
+| `save.ts` | `SaveController`: Save per kind (edits = revisions past the last save/load), "Supersede vN → vN+1" / "Save as new (v1)", POST `/objects`, the 409 conflict and its three outcomes. No CS3D. | #289 |
+| `sr.ts` | SR TID 1500 post-processing (true UCUM units, calibration qualifier, User reference line) and reading User calibrations back; the adapter's 12 exportable tools. Pure. | #289 |
+| `simplify.ts` | Douglas–Peucker for WSI freehand contours. Pure. | #289 |
+| `inspector/save.ts`, `chrome/save-dialogs.ts` | Save buttons (+ Ctrl/⌘+S, dropped-tool warning); toast and 409 dialog over the view. | #289 |
+| `adapter/cornerstone/annotations.ts` | `AnnotationSet`: edit counting, SR export with `@cornerstonejs/adapters` (WSI: SCOORD3D, simplified, geometric only), SR import + User calibration reapply. | #289 |
 | `inspector/*.ts` | Side-panel parts, one Lit element or template per panel (calibration legend, layers, segments, save…). | #281, #284, #286, #289+ (new) |
 | `*.test.ts` next to the file | vitest, stub adapter, no CS3D. | all |
 
@@ -148,6 +153,31 @@ if (!r.ok) return ctx.refuse(r.message);             // "… Save and close the 
   `segmentation.state.getSegmentation(id)`), segment labels synced into CS3D's `segments`, colours in
   `state().segments`; `voxelCounts()` tells which segments are non-empty.
 - Browser tests read `el.segmentationState` (state + `voxels` per segment).
+
+## Save (#289)
+
+- **Buttons:** `inspector/save.ts` (order 10), one per kind, annotate roles only; Ctrl/⌘+S saves both. Enabled when the
+  kind's revision moved past the last save/load and there is something to save (never an empty SR/SEG: retire instead, #290).
+  Label: "Supersede vN → vN+1" on top of a head the user may change (`can_change`), else "Save as new (v1)".
+  A toast confirms; the 409 dialog (`chrome/save-dialogs.ts`) names author, version and time and offers
+  "Discard mine, load theirs", "Save mine as a separate object", "Save mine on top" (only with `can_change` from the 409 body).
+- **Edits:** `adapter.watchAnnotations(onChange)` (`AnnotationSet.revision()`: annotation completed/changed/removed,
+  not `StatsUpdated`, and every User calibration) and `SegmentationController.revision()` (painting, threshold,
+  polygon, segment add/rename/colour; closing bumps it).
+- **SR:** CS3D's `MeasurementReport.generateReport` (one measurement group per annotation, in toolState order),
+  then `sr.ts`: units rewritten from CS3D's raw unit (`mm`, `cm`, `{pixels}`, `{square pixels}`; dcmjs labels every Length `mm`),
+  qualifier `(SpacingCalib, 99MIRES)` = CS3D's unit suffix (`Proj`, `User`, …; `Uncalibrated` for px; none for plain mm),
+  and for `User` a nested `(UserCalibration, 99MIRES)` container: NUM `(CalKnownLength)` in mm inferred from a SCOORD POLYLINE
+  (reference line, image coordinates) on its IMAGE. Nested because the adapter reads a group's first NUM as its measurement.
+  SOP class Comprehensive 3D SR. Only the adapter's 12 tools are exported; the panel warns about others.
+- **WSI:** annotations go through the adapter's 3D path (`SlideReport`: the slide's base level as referenced image) → SCOORD3D
+  in slide mm with the Frame of Reference; only geometric stats; PlanarFreehandROI contours simplified (`simplify.ts`) at 1 screen
+  pixel in mm measured when the contour was completed.
+- **SEG:** `SegmentationView.exportSeg()`: `generateSegmentation` (66.4 BINARY) over the cached base images and their labelmaps,
+  segment label + colour (CIELab), algorithm MANUAL, coded as Tissue.
+- **Reopen:** `AnnotationSet.importSr(instance, series)` takes the SR's `/metadata` DICOM JSON (sessions can't fetch raw bytes),
+  reapplies its User calibrations (`applyUserCalibration`), then adds the annotations. Used by "load theirs";
+  **#290** reuses it for the results tree. A saved SEG isn't shown yet: "load theirs" on a SEG only drops the local labelmap (#290 loads SEG).
 
 Rules:
 - Only `adapter/cornerstone/**` imports `@cornerstonejs/*`. The element loads it with a dynamic `import()`.

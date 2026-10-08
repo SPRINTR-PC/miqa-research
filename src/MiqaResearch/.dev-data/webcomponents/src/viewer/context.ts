@@ -7,6 +7,7 @@ import type { Reconstructability } from "./reconstructable.ts";
 import type { DicomJsonInstance } from "./series.ts";
 import type { BulkAnnotationGroup } from "./bulk-annotations.ts";
 import type { GpuLimits, SizeGuard, VolumeFit } from "./size-guard.ts";
+import type { SaveController } from "./save.ts";
 import type { Preset, ViewportKind } from "./tools/index.ts";
 
 export interface ViewerContext {
@@ -55,4 +56,8 @@ export interface ViewerContext {
   /** Run the threshold on `thresholdLayer`; the voxels set end up in `thresholdResult`. */
   runThreshold(range: ValueRange, slices: number): void;
   thresholdResult: number | undefined;
+  /** Save (#289): enabled/label per kind, save, the 409 conflict. */
+  save: SaveController;
+  /** Tool names of the annotations on the base series: Save warns about those the SR can't hold. */
+  annotationTools: string[];
 }

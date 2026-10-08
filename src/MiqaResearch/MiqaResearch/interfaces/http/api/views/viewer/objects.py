@@ -2,7 +2,8 @@
 
 - POST /objects: multipart `file` (the browser-built SR or SEG), `source_series` (one or more
   Series Instance UIDs, base series first) and optional `supersedes` (the head id the user edited).
-  201 with the new version; 409 with the current head when `supersedes` is stale.
+  201 with the new version; 409 with the current head (and `can_change`: may the caller supersede it)
+  when `supersedes` is stale.
 - GET /objects?participant=<id>[&series=<uid>][&include_retired=true]: version chains.
 - POST /objects/{id}/retire: retires the chain through its head; 409 with the head when stale.
 
@@ -54,6 +55,8 @@ class ChainOut(VersionOut):
 class ConflictOut(Schema):
     detail: str
     head: VersionOut
+    # Whether the caller may supersede that head ("Save mine on top" in the viewer's 409 dialog, #289).
+    can_change: bool
 
 
 class ErrorOut(Schema):
@@ -80,7 +83,7 @@ def save_object(
             request=request,
         )
     except StaleHead as stale:
-        return Status(409, {"detail": "a newer version was saved first", "head": version_item(stale.head)})
+        return Status(409, _conflict("a newer version was saved first", stale))
     except _REFUSALS as error:
         raise _http_error(error) from None
     return Status(201, version_item(provenance))
@@ -103,11 +106,14 @@ def retire(request, object_id: UUID):
     try:
         provenance = retire_object(user=request.auth, object_id=object_id, request=request)
     except StaleHead as stale:
-        return Status(409, {"detail": "a newer version was saved; retire the head", "head": version_item(stale.head)})
+        return Status(409, _conflict("a newer version was saved; retire the head", stale))
     except _REFUSALS as error:
         raise _http_error(error) from None
     return Status(200, version_item(provenance))
 
+
+def _conflict(detail: str, stale: StaleHead) -> dict:
+    return {"detail": detail, "head": version_item(stale.head), "can_change": stale.can_change}
 
 
 def _http_error(error: Exception) -> HttpError:
