@@ -16,7 +16,7 @@ from ninja import Router
 from helpers.dicom_deidentification import deidentify
 from MiqaResearch.data.models.dicom_file import DicomFile
 
-from .access import audit_access, readable_files
+from .access import audit_access, not_for_sessions, readable_files
 from .caching import METADATA_CACHE_CONTROL, matches_if_none_match, not_modified, strong_etag, with_cache_headers
 
 router = Router()
@@ -25,6 +25,7 @@ _AVAILABLE_TRANSFER_SYNTAX_UID = "00083002"
 
 
 @router.get("/studies/{study_instance_uid}/metadata")
+@not_for_sessions
 def retrieve_study_metadata(request, study_instance_uid: str):
     return _metadata_response(request, _files(request).filter(series__study__study_instance_uid=study_instance_uid))
 
@@ -42,6 +43,7 @@ def retrieve_series_metadata(request, study_instance_uid: str, series_instance_u
 
 
 @router.get("/studies/{study_instance_uid}/series/{series_instance_uid}/instances/{sop_instance_uid}/metadata")
+@not_for_sessions
 def retrieve_instance_metadata(request, study_instance_uid: str, series_instance_uid: str, sop_instance_uid: str):
     return _metadata_response(
         request,

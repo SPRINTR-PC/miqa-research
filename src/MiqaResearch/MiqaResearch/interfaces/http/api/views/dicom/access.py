@@ -67,6 +67,18 @@ def readable_files(request, files: QuerySet[DicomFile]) -> QuerySet[DicomFile]:
     return files.filter(Exists(visible.filter(pk=OuterRef("series__study__study_participant"))))
 
 
+def not_for_sessions(view):
+    """Endpoints outside the viewer surface (series `/metadata` and `/frames`, #271): 403 for session callers."""
+
+    @wraps(view)
+    def wrapper(request, *args, **kwargs):
+        if isinstance(caller_of(request), SessionCaller):
+            return HttpResponse("Not available to browser sessions", status=403)
+        return view(request, *args, **kwargs)
+
+    return wrapper
+
+
 def machine_only(view):
     """Raw-bytes endpoints: 403 for session callers (the viewer never needs the stored file). Clients
     need a binding (404 without) and `dicom:raw` on both the token and the binding (403 otherwise)."""
