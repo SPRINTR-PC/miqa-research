@@ -108,7 +108,7 @@ temp/
 
 # Development tools
 AGENTS.md
-CONTEXT.md
+GLOSSARY.md
 .agents/
 .claude/
 .skills/
