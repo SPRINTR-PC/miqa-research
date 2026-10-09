@@ -1,6 +1,6 @@
 # Data Table server-driven pagination, sort & filter — handoff spec
 
-Destination of the wayfinder map "Data Table: server-driven pagination, sort & filter — design spec". Every decision below is settled; an implementing session should not need to reopen any of them. Domain terms (**Data Table**, **Data Table Definition**, **Data Table Pagination**) are defined in `CONTEXT.md`. Supporting research: branch `research/ninja-async-pagination`, `docs/research/ninja-async-pagination.md` (django-ninja 1.6.3, pinned in `uv.lock`).
+Destination of the wayfinder map "Data Table: server-driven pagination, sort & filter — design spec". Every decision below is settled; an implementing session should not need to reopen any of them. Domain terms (**Data Table**, **Data Table Definition**, **Data Table Pagination**) are defined in `GLOSSARY.md`. Supporting research: branch `research/ninja-async-pagination`, `docs/research/ninja-async-pagination.md` (django-ninja 1.6.3, pinned in `uv.lock`).
 
 Scope: a generic, reusable server-driven Data Table. The consent statistics table is the first consumer and the acceptance case. Other tables adopt the class later (out of scope). Chart endpoints and their casing behaviour are untouched.
 

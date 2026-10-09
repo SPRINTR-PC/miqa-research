@@ -25,7 +25,7 @@ export interface HeatmapChartConfig extends ChartConfig {
   zMid?: number;
 }
 
-/** Resolved Chart Palette colors a trace-builder needs but must not resolve itself (keeps it pure — CONTEXT.md Chart Palette, ADR 0023). */
+/** Resolved Chart Palette colors a trace-builder needs but must not resolve itself (keeps it pure — GLOSSARY.md Chart Palette, ADR 0023). */
 export interface HeatmapChartColors {
   sequential: string[];
   diverging: [negative: string, neutral: string, positive: string];

@@ -1,5 +1,5 @@
 /**
- * Chart Config (CONTEXT.md, ADR 0020): layout/behaviour settings fixed across
+ * Chart Config (GLOSSARY.md, ADR 0020): layout/behaviour settings fixed across
  * every Chart Grouping in a response.
  */
 export interface ChartConfig {
@@ -25,7 +25,7 @@ export interface ChartGroupingLabels {
 }
 
 /**
- * Chart Grouping (CONTEXT.md): one of possibly several alternative groupings
+ * Chart Grouping (GLOSSARY.md): one of possibly several alternative groupings
  * of the same underlying dataset a `dataUrl` response can return.
  */
 export interface ChartGrouping<TData> {
@@ -49,7 +49,7 @@ export interface ChartResponse<TConfig, TData> {
 export type ChartCallbackEvent = "click" | "zoom";
 
 /**
- * Chart Event Callback (CONTEXT.md, ADR 0021): the normalized payload passed
+ * Chart Event Callback (GLOSSARY.md, ADR 0021): the normalized payload passed
  * to a registered callback function.
  */
 export interface ChartCallbackPayload {

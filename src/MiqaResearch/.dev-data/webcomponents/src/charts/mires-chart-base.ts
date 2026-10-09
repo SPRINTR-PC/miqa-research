@@ -17,7 +17,7 @@ import type {
 } from "./chart-types.js";
 
 /**
- * Shared base class for every chart web component (CONTEXT.md: Chart
+ * Shared base class for every chart web component (GLOSSARY.md: Chart
  * Grouping, Chart Config, Chart Data, WebGL Threshold, Chart Event Callback,
  * Chart Palette; `docs/charts-handoff.md` §3). Owns everything except one
  * abstract method — `buildTraces` — which a concrete chart-type element

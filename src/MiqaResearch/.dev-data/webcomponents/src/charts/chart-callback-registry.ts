@@ -1,7 +1,7 @@
 import type { ChartCallback } from "./chart-types.js";
 
 /**
- * Chart Event Callback registry (CONTEXT.md, ADR 0021). A chart resolves the
+ * Chart Event Callback registry (GLOSSARY.md, ADR 0021). A chart resolves the
  * function named in `config.eventCallbacks.click`/`.zoom` against this
  * client-side registry only — never a raw `window[name]` lookup or `eval` —
  * so a server-supplied name can at most reference an unregistered no-op or a

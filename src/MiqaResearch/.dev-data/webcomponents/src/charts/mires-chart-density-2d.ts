@@ -39,7 +39,7 @@ export interface Density2DChartConfig extends ChartConfig {
   densityBins?: Density2DBins;
 }
 
-/** Resolved Chart Palette colors a trace-builder needs but must not resolve itself (keeps it pure — CONTEXT.md Chart Palette, ADR 0023). */
+/** Resolved Chart Palette colors a trace-builder needs but must not resolve itself (keeps it pure — GLOSSARY.md Chart Palette, ADR 0023). */
 export interface Density2DChartColors {
   sequential: string[];
 }
