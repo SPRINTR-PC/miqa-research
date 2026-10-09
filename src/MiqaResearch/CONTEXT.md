@@ -328,6 +328,12 @@ Segmentations for one participant for the current viewer session. Annotators
 can never reveal.
 _Avoid_: Unblind (as a project-wide switch)
 
+### Viewer Session
+One opening of the DICOM viewer in a browser tab, from load until the tab is
+closed or reloaded. A Blinding Reveal lasts for one Viewer Session, and each
+Viewer Session is audit-logged as one viewer open.
+_Avoid_: Session (that is the login), launch
+
 ### Spacing Calibration
 How trustworthy an image's pixel-to-millimetre scale is: tomographic,
 magnification-corrected, detector-plane, ultrasound-region, user-calibrated,
