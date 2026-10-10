@@ -1,7 +1,8 @@
 """Viewer page (#279) on the entry contract decided in #184.
 
 Seam: the HTTP response of `/projects/<project>/participants/<participant>/viewer/?series=…`
-(status, the JSON series list, the element's attributes) and the Audit Log.
+(status, the JSON series list, the element's attributes), the Audit Log, and `viewer_url`, which builds
+the page URL for "Open" links.
 """
 import json
 import re
@@ -20,6 +21,7 @@ from MiqaResearch.data.models import (
     ResearchProjectRole,
     ResearchProjectUserRoleMap,
 )
+from MiqaResearch.interfaces.http.views.viewer.page import viewer_url
 from MiqaResearch.tasks.dicom_handling.pipeline import run_ingestion
 from tests.dicom_derived_fixtures import build_viewer_sr
 from tests.dicom_fixtures import build_ct_image, write_dicom
@@ -228,3 +230,26 @@ def test_a_refused_open_is_not_audited(client, project, ct):
     _open(client, ct, "2.25.404")
 
     assert not AuditLog.objects.filter(event_type=EVENT_TYPE_VIEWER_OPEN).exists()
+
+
+def test_related_series_are_only_the_participants_own(client, project, ct, tmp_path):
+    someone_else = _ingest(project, tmp_path, "else", patient_id="OTHER-1", patient_name="Other^Patient",
+                           study_instance_uid="1.2.9999.43.1.1001", series_instance_uid="1.2.9999.43.1.1002",
+                           sop_instance_uid="1.2.9999.43.1.1003")
+    _member(client, project)
+
+    listed = [r["series"] for r in _series_list(_open(client, ct))]
+
+    assert someone_else.series_instance_uid not in listed
+
+
+def test_viewer_url_opens_the_series_in_order(client, project, ct, tmp_path):
+    pet = _ingest(project, tmp_path, "pet", series_instance_uid="1.2.9999.42.1.2002",
+                  sop_instance_uid="1.2.9999.42.1.2003", modality="PT")
+    _member(client, project)
+    participant = ct.study.study_participant
+
+    url = viewer_url(project.pk, participant.pk, [pet.series_instance_uid, ct.series_instance_uid])
+
+    rows = _series_list(client.get(url))
+    assert [(r["series"], r["open"]) for r in rows] == [(pet.series_instance_uid, True), (ct.series_instance_uid, True)]

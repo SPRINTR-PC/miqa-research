@@ -4,15 +4,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{{ participant.alias1 }}</title>
+  <title>{{ open.participant.alias1 }}</title>
   <style>
     html, body { margin: 0; height: 100%; background: #000; }
     mires-viewer { display: block; height: 100vh; }
   </style>
 </head>
 <body>
-{{ series|json_script:"viewer-series" }}
-<mires-viewer wado-root="/api/v1/dicom" user="{{ request.user.pk }}" participant="{{ participant.pk }}" series-list="viewer-series" viewer-session="{{ viewer_session }}"{% if can_annotate %} can-annotate{% endif %}></mires-viewer>
+{{ open.series|json_script:"viewer-series" }}
+<mires-viewer wado-root="/api/v1/dicom" user="{{ request.user.pk }}" participant="{{ open.participant.pk }}" series-list="viewer-series" viewer-session="{{ viewer_session }}"{% if open.can_annotate %} can-annotate{% endif %}></mires-viewer>
 <script src="{% static 'js/viewer/mireswc-viewer.js' %}" type="module"></script>
 </body>
 </html>

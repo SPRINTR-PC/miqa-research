@@ -86,7 +86,7 @@ urlpatterns = [
     path('manuals/', include('documentation.urls')),
     path('monitor/', monitor_index, name='monitor'),
     path('projects/<uuid:project_id>/participants/<uuid:participant_id>/viewer/', viewer_page, name='viewer_page'),
-    path('viewer/dev/', viewer_dev, name='viewer_dev'),  # DEBUG-only, temporary (#278 → #279)
+    path('viewer/dev/', viewer_dev, name='viewer_dev'),  # DEBUG-only, for the browser harness (#278, #279)
     path('accounts/bankid/login/', bankid_login_redirect, name='bankid_login'),
     path('accounts/eid/callback/', eid_callback, name='eid_callback'),
     path('accounts/login/', LoginView.as_view(), name='account_login'),

@@ -11,8 +11,8 @@
   </style>
 </head>
 <body>
-{{ series|json_script:"viewer-series" }}
-<mires-viewer wado-root="/api/v1/dicom" user="{{ request.user.pk }}" series-list="viewer-series"{% if participant %} participant="{{ participant.pk }}"{% endif %}{% if can_annotate %} can-annotate{% endif %}></mires-viewer>
+{{ open.series|json_script:"viewer-series" }}
+<mires-viewer wado-root="/api/v1/dicom" user="{{ request.user.pk }}" series-list="viewer-series"{% if open.participant %} participant="{{ open.participant.pk }}"{% endif %}{% if open.can_annotate %} can-annotate{% endif %}></mires-viewer>
 <script src="{% static 'js/viewer/mireswc-viewer.js' %}" type="module"></script>
 </body>
 </html>

@@ -17,12 +17,11 @@ from django.utils.http import urlencode
 from django.views.decorators.csrf import ensure_csrf_cookie
 
 from MiqaResearch.actions.image_access_audit import audit_viewer_open
-from MiqaResearch.readers.annotation_permissions import ParticipantRights
-from MiqaResearch.readers.viewer_launch import ViewerOpenNotFound, viewer_participant, viewer_series
+from MiqaResearch.readers.viewer_open import ViewerOpenNotFound, viewer_open
 
 
 def viewer_url(project_id, participant_id, series_uids: list[str]) -> str:
-    """The page URL opening `series_uids` (first = base) for a participant: what launch links point at."""
+    """The page URL opening `series_uids` (first = base) for a participant: what "Open" links point at."""
     path = reverse("viewer_page", kwargs={"project_id": project_id, "participant_id": participant_id})
     return f"{path}?{urlencode({'series': series_uids}, doseq=True)}"
 
@@ -32,15 +31,9 @@ def viewer_url(project_id, participant_id, series_uids: list[str]) -> str:
 @ensure_csrf_cookie
 def viewer_page(request, project_id, participant_id):
     try:
-        participant = viewer_participant(request.user, project_id, participant_id)
-        series = viewer_series(participant, request.GET.getlist("series"))
+        opened = viewer_open(request.user, project_id, participant_id, request.GET.getlist("series"))
     except ViewerOpenNotFound:
         raise Http404 from None
     viewer_session = str(uuid4())
-    audit_viewer_open(request, participant, [row["series"] for row in series if row["open"]], viewer_session)
-    return render(request, "05_viewer/page.html", {
-        "participant": participant,
-        "series": series,
-        "viewer_session": viewer_session,
-        "can_annotate": ParticipantRights(request.user, project_id, participant).can_author,
-    })
+    audit_viewer_open(request, opened.participant, opened.opened_uids, viewer_session)
+    return render(request, "05_viewer/page.html", {"open": opened, "viewer_session": viewer_session})

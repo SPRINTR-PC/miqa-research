@@ -61,7 +61,7 @@ import { SegmentationController } from "./segmentation-controller.ts";
 import type { SegmentationState } from "./segmentation.ts";
 import { suvStatusFor, type SuvStatus } from "./suv.ts";
 import { unitTooltip } from "./units.ts";
-import { useViewerSession, viewerHeaders } from "./viewer-session.ts";
+import { adoptViewerSession, viewerHeaders } from "./viewer-session.ts";
 import { isWholeSlide, WSI_DEFAULT_TOOL } from "./wsi.ts";
 
 export type ViewerState = "loading" | "ready" | "error";
@@ -333,7 +333,7 @@ export class MiresViewer extends LitElement {
   private async open(): Promise<void> {
     this.firstRender = new FirstRenderReport();
     try {
-      useViewerSession(this.viewerSession);
+      adoptViewerSession(this.viewerSession);
       if (!this.entries.length && this.seriesListId) this.entries = readSeriesList(this.seriesListId);
       const [base, ...fused] = this.entries.filter((e) => e.open).map((e) => e.series);
       if (!base) throw new Error("No series to open");
@@ -495,8 +495,10 @@ export class MiresViewer extends LitElement {
 
   /** Show a saved SEG as the element's Segmentation (`/metadata` + `/frames`: sessions can't fetch raw bytes). */
   private async showSavedSegmentation(head: ObjectVersion): Promise<void> {
-    const studyUid = this.loaded?.ref.studyUid ?? "";
-    const saved = await fetchSavedSegmentation({ wadoRoot: this.wadoRoot, studyUid, seriesUid: head.series_instance_uid });
+    const series = this.loaded;
+    if (!series) throw new Error("the viewer isn't ready");
+    // Saved objects live in their base series' study.
+    const saved = await fetchSavedSegmentation({ wadoRoot: this.wadoRoot, studyUid: series.ref.studyUid, seriesUid: head.series_instance_uid });
     if (!(await this.segmentation.load(saved, this.controls))) throw new Quiet("refused"); // the refusal says why
   }
 

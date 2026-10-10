@@ -12,8 +12,8 @@ function newId(): string {
 
 let viewerSessionId = newId();
 
-/** Adopt the Viewer Session id the page made for this open. */
-export function useViewerSession(id: string): void {
+/** Adopt the Viewer Session id the page made for this open (cut to 64 characters, as the server reads it). */
+export function adoptViewerSession(id: string): void {
   if (id) viewerSessionId = id.slice(0, 64);
 }
 

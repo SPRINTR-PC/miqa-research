@@ -24,7 +24,7 @@ export interface SeriesEntry {
   instances: number;
   /** Pseudonymized Frame of Reference UID; null when absent or mixed. */
   frame_of_reference: string | null;
-  /** Opened at launch (the first is the base, the rest are fused onto it); else a Related Series. */
+  /** Opened when the viewer opens (the first is the base, the rest are fused onto it); else a Related Series. */
   open: boolean;
 }
 
