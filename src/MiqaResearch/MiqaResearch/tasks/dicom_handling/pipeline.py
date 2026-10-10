@@ -266,6 +266,7 @@ def _ingest_file(
             storage_stage.store_file_bytes(dcm_file, raw_bytes)
             dcm_file.save()
             records.add_file_size_to_series(dcm_file.series, file_size_in_mb)
+            records.set_series_frame_of_reference(dcm_file.series)
             derived_provenance.record_ingested_provenance(dcm_file, dataset, research_project)
             stored_and_verified = _verify_stored(dcm_file, dcm_file.content_sha256, source_path)
     except ValueError:

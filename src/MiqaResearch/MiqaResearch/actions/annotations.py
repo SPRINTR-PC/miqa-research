@@ -294,6 +294,7 @@ def _store(
         series_instance_uid=ds.SeriesInstanceUID,
         modality=str(ds.Modality).strip(),
         series_description=description,
+        frame_of_reference_uid=frame_of_reference_uid,
     )
     file_size_in_mb = len(stored_bytes) / (1024 * 1024)
     dcm_file = DicomFile(
