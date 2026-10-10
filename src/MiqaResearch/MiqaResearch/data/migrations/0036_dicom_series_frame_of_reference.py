@@ -7,17 +7,23 @@ from django.db.models import Count, Max, Q
 def backfill_series_frame_of_reference(series_model, file_model) -> None:
     """Set every series' Frame of Reference from its files' (already pseudonymized) column (#197).
 
-    Null when any file lacks one or the files disagree. Self-contained so later
+    Null when any file lacks one or the files disagree. One grouped query, then
+    batched updates of only the series that share one. Self-contained so later
     app changes can't alter what this migration does.
     """
-    for series_id in series_model.objects.values_list("pk", flat=True):
-        stats = file_model.objects.filter(series_id=series_id).aggregate(
+    series_model.objects.update(frame_of_reference_uid=None)
+    shared = (
+        file_model.objects.values("series_id")
+        .annotate(
             distinct=Count("frame_of_reference_uid", distinct=True),
             missing=Count("pk", filter=Q(frame_of_reference_uid__isnull=True) | Q(frame_of_reference_uid="")),
             value=Max("frame_of_reference_uid"),
         )
-        shared = stats["value"] if stats["distinct"] == 1 and stats["missing"] == 0 else None
-        series_model.objects.filter(pk=series_id).update(frame_of_reference_uid=shared)
+        .filter(distinct=1, missing=0)
+        .values_list("series_id", "value")
+    )
+    batch = [series_model(pk=series_id, frame_of_reference_uid=value) for series_id, value in shared.iterator()]
+    series_model.objects.bulk_update(batch, ["frame_of_reference_uid"], batch_size=1000)
 
 
 def backfill(apps, schema_editor):

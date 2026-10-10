@@ -29,13 +29,15 @@ def storage(settings, tmp_path):
 
 @pytest.fixture
 def research_project(db):
-    return ResearchProject.objects.create(name="FoR backfill project", description="#197")
+    return ResearchProject.objects.create(name="Frame of Reference backfill project", description="#197")
 
 
 def _ingest_series(research_project, tmp_path, series_uid, files):
-    """Ingest one series of files, given as (sop_uid, frame_of_reference_uid), then forget its series FoR."""
-    for sop_uid, for_uid in files:
-        ds = build_ct_image(series_instance_uid=series_uid, sop_instance_uid=sop_uid, frame_of_reference_uid=for_uid)
+    """Ingest one series of files, given as (sop_uid, frame_of_reference_uid), then clear its series value."""
+    for sop_uid, frame_of_reference_uid in files:
+        ds = build_ct_image(
+            series_instance_uid=series_uid, sop_instance_uid=sop_uid, frame_of_reference_uid=frame_of_reference_uid
+        )
         run_ingestion(research_project, write_dicom(ds, tmp_path / f"{sop_uid}.dcm"))
     series = DicomFile.objects.order_by("-id").first().series
     DicomSeries.objects.filter(pk=series.pk).update(frame_of_reference_uid=None)
