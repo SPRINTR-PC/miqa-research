@@ -35,8 +35,9 @@ def dev(request):
     series = dev_viewer_series(request.user, opened, related)
     participant, can_annotate = None, False
     if series:
-        base = DicomSeries.objects.select_related("study__study_participant").get(series_instance_uid=series[0]["series"])
-        participant = base.study.study_participant
+        participant = DicomSeries.objects.select_related("study__study_participant").get(
+            series_instance_uid=series[0]["series"]
+        ).study.study_participant
         can_annotate = ParticipantRights(request.user, participant.research_project_id, participant).can_author
     return render(request, "05_viewer/dev.html", {
         "series": series,

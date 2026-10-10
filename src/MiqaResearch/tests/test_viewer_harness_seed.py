@@ -189,6 +189,23 @@ def test_seed_gives_fusion_fixtures_in_the_ct_study(settings, client):
 
 
 @pytest.mark.django_db
+def test_seed_gives_a_follow_up_study_of_the_ct_participant(settings, client):
+    """#279: a series in a later study of the CT's participant, for Related Series across studies."""
+    settings.DEBUG = True
+    seeded = _seed()
+    client.cookies[seeded["sessionCookie"]["name"]] = seeded["sessionCookie"]["value"]
+    ct, follow_up = seeded["ct"], seeded["followUp"]
+
+    response = client.get(f"/api/v1/dicom/studies/{follow_up['studyUid']}/series/{follow_up['seriesUid']}/metadata")
+
+    assert follow_up["studyUid"] != ct["studyUid"]
+    assert response.status_code == 200
+    assert response.json()[0]["00100020"]["Value"] == client.get(
+        f"/api/v1/dicom/studies/{ct['studyUid']}/series/{ct['seriesUid']}/metadata"
+    ).json()[0]["00100020"]["Value"]
+
+
+@pytest.mark.django_db
 def test_seed_gives_a_blinded_participant_with_hidden_ingested_work(settings, client):
     """#290: a Blinded Annotation project where the PI sees an image, one hidden (ingested) Annotation,
     and may make a Blinding Reveal that lists it."""

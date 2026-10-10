@@ -65,12 +65,14 @@ def _member(client, project, role_name=PROJECT_ROLE_ANNOTATOR, clinic=None):
 
 def _open(client, series: DicomSeries, *uids: str, project_id=None, participant_id=None):
     participant = series.study.study_participant
-    url = f"/projects/{project_id or participant.research_project_id}/participants/{participant_id or participant.pk}/viewer/"
+    project_id = project_id or participant.research_project_id
+    url = f"/projects/{project_id}/participants/{participant_id or participant.pk}/viewer/"
     return client.get(url, {"series": list(uids) or [series.series_instance_uid]})
 
 
 def _series_list(response) -> list[dict]:
-    match = re.search(r'<script id="viewer-series" type="application/json">(.*?)</script>', response.content.decode(), re.S)
+    pattern = r'<script id="viewer-series" type="application/json">(.*?)</script>'
+    match = re.search(pattern, response.content.decode(), re.S)
     assert match, "no series list on the page"
     return json.loads(match.group(1))
 
@@ -93,7 +95,8 @@ def test_page_lists_the_opened_series_for_the_viewer(client, project, ct):
 
 
 def test_opened_series_come_first_in_request_order_then_related_series_from_every_study(client, project, ct, tmp_path):
-    pet = _ingest(project, tmp_path, "pet", series_instance_uid="1.2.9999.42.1.2002", sop_instance_uid="1.2.9999.42.1.2003",
+    pet = _ingest(project, tmp_path, "pet", series_instance_uid="1.2.9999.42.1.2002",
+                  sop_instance_uid="1.2.9999.42.1.2003",
                   modality="PT", series_description="PET AC")
     follow_up = _ingest(project, tmp_path, "followup", study_instance_uid="1.2.9999.42.2.1001",
                         series_instance_uid="1.2.9999.42.2.1002", sop_instance_uid="1.2.9999.42.2.1003",
@@ -186,7 +189,9 @@ def test_page_hosts_the_viewer_named_by_alias_only(client, project, ct):
     assert "csrftoken" in response.cookies
 
 
-@pytest.mark.parametrize(("role_name", "annotates"), [(PROJECT_ROLE_ANNOTATOR, True), (PROJECT_ROLE_INVESTIGATOR, False)])
+@pytest.mark.parametrize(
+    ("role_name", "annotates"), [(PROJECT_ROLE_ANNOTATOR, True), (PROJECT_ROLE_INVESTIGATOR, False)]
+)
 def test_annotate_tools_follow_the_users_rights(client, project, ct, role_name, annotates):
     _member(client, project, role_name)
 
@@ -194,7 +199,8 @@ def test_annotate_tools_follow_the_users_rights(client, project, ct, role_name, 
 
 
 def test_each_page_load_is_one_viewer_open_audit_entry(client, project, ct, tmp_path):
-    pet = _ingest(project, tmp_path, "pet", series_instance_uid="1.2.9999.42.1.2002", sop_instance_uid="1.2.9999.42.1.2003",
+    pet = _ingest(project, tmp_path, "pet", series_instance_uid="1.2.9999.42.1.2002",
+                  sop_instance_uid="1.2.9999.42.1.2003",
                   modality="PT")
     user = _member(client, project)
 

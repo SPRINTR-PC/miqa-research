@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { StubAdapter } from "./adapter/stub.ts";
 import { memoryDraftBackend, type Draft, type DraftBackend } from "./drafts.ts";
 import { MiresViewer } from "./mires-viewer.ts";
+import { seriesEntries } from "./test-fixtures.ts";
 
 const ct = (n: number) =>
   Array.from({ length: n }, (_, i) => ({
@@ -44,8 +45,7 @@ async function mount(backend: DraftBackend, { user = "7", participant = "p1", ca
   const el = document.createElement("mires-viewer") as MiresViewer;
   el.adapterFactory = async () => adapter;
   el.draftBackend = backend;
-  el.setAttribute("study-uid", "2.25.100");
-  el.setAttribute("series-uid", "2.25.200");
+  el.entries = seriesEntries(["2.25.200"], [], "2.25.100");
   if (user) el.setAttribute("user", user);
   el.participant = participant;
   el.canAnnotate = canAnnotate;

@@ -20,7 +20,7 @@ import type {
   WsiView,
 } from "./adapter/adapter.ts";
 import { fetchBulkAnnotations, type BulkAnnotationGroup } from "./bulk-annotations.ts";
-import { seriesList, seriesListItem, type SeriesListItem } from "./chrome/series-list.ts";
+import { seriesList, seriesListItemFromEntry, type SeriesEntry, type SeriesListItem } from "./chrome/series-list.ts";
 import { toolRail } from "./chrome/tool-rail.ts";
 import { refusalMessage, sizeBanner, sizeBannerStyles } from "./chrome/size-banner.ts";
 import { conflictDialog, saveDialogStyles, toast } from "./chrome/save-dialogs.ts";
@@ -61,7 +61,7 @@ import { SegmentationController } from "./segmentation-controller.ts";
 import type { SegmentationState } from "./segmentation.ts";
 import { suvStatusFor, type SuvStatus } from "./suv.ts";
 import { unitTooltip } from "./units.ts";
-import { viewerHeaders } from "./viewer-session.ts";
+import { useViewerSession, viewerHeaders } from "./viewer-session.ts";
 import { isWholeSlide, WSI_DEFAULT_TOOL } from "./wsi.ts";
 
 export type ViewerState = "loading" | "ready" | "error";
@@ -96,8 +96,17 @@ const cornerstoneAdapter: AdapterFactory = async () => {
 @customElement("mires-viewer")
 export class MiresViewer extends LitElement {
   @property({ attribute: "wado-root" }) wadoRoot = "/api/v1/dicom";
-  @property({ attribute: "study-uid" }) studyUid = "";
-  @property({ attribute: "series-uid" }) seriesUid = "";
+  /**
+   * The page's series list (#279, entry contract #184): the opened series (first = base, the rest fused
+   * onto it), then the Related Series, possibly of other studies. Set directly, or named by `series-list`.
+   */
+  @property({ attribute: false }) entries: SeriesEntry[] = [];
+  /** Id of the page's `<script type="application/json">` holding the series list. */
+  @property({ attribute: "series-list" }) seriesListId = "";
+  /** The Viewer Session id the page made for this open (it audited the open under it). */
+  @property({ attribute: "viewer-session" }) viewerSession = "";
+  /** The base series shown (the first opened one, until another replaces it). */
+  @property({ attribute: false }) seriesUid = "";
   /** Annotate role on this participant (set by the page from the server): Arrow, Calibrate, segment tools, Save. */
   @property({ type: Boolean, attribute: "can-annotate" }) canAnnotate = false;
   /** Study Participant id of the series (set by the page): lists its Annotations, e.g. bulk ANN on a slide (#292). */
@@ -105,11 +114,6 @@ export class MiresViewer extends LitElement {
   /** The logged-in user's id (set by the page): drafts (#291) are kept per user. No user, no drafts. */
   @property() user = "";
   @property({ attribute: "api-root" }) apiRoot = "/api/v1/viewer";
-  /**
-   * Other series of the same study to offer in the series list (#284), space-separated UIDs; they can be
-   * dropped onto the view to fuse or replace. The entry contract (#279) fills it with the Related Series.
-   */
-  @property({ attribute: "related-series" }) relatedSeries = "";
 
   /** Reflected for pages and browser tests: loading → ready | error. */
   @property({ reflect: true }) state: ViewerState = "loading";
@@ -329,9 +333,14 @@ export class MiresViewer extends LitElement {
   private async open(): Promise<void> {
     this.firstRender = new FirstRenderReport();
     try {
-      const series = await fetchSeries({ wadoRoot: this.wadoRoot, studyUid: this.studyUid, seriesUid: this.seriesUid });
+      useViewerSession(this.viewerSession);
+      if (!this.entries.length && this.seriesListId) this.entries = readSeriesList(this.seriesListId);
+      const [base, ...fused] = this.entries.filter((e) => e.open).map((e) => e.series);
+      if (!base) throw new Error("No series to open");
+      this.seriesUid = base;
+      const series = await fetchSeries({ wadoRoot: this.wadoRoot, studyUid: this.studyOf(base), seriesUid: base });
       this.firstRender.series(series);
-      this.series = [seriesListItem(series)];
+      this.series = this.entries.map((e) => seriesListItemFromEntry(e, e.series === base));
       this.catalog.set(series.ref.seriesUid, series);
       this.loaded = series;
       this.mpr = isReconstructable(series);
@@ -356,27 +365,28 @@ export class MiresViewer extends LitElement {
       this.state = "ready";
       this.drafts = new DraftController(new DraftStore(this.draftBackend ?? defaultDraftBackend()), this.draftHost());
       void this.drafts.check();
-      void this.loadRelated();
       void this.results.refresh();
+      if (fused.length) await this.fuseAtOpen(fused);
     } catch (e) {
       this.fail(e);
     }
   }
 
-  /** Related series (#284): /metadata of each, listed in attribute order; a failure only drops that row. */
-  private async loadRelated(): Promise<void> {
-    const uids = [...new Set(this.relatedSeries.split(/[\s,]+/))].filter((u) => u && !this.catalog.has(u));
-    const results = await Promise.allSettled(
-      uids.map((seriesUid) => fetchSeries({ wadoRoot: this.wadoRoot, studyUid: this.studyUid, seriesUid })),
-    );
-    if (this.disposed) return;
-    results.forEach((r, i) => {
-      if (r.status === "fulfilled") this.catalog.set(uids[i], r.value);
-      else console.warn(`Related series ${uids[i]} could not be loaded`, r.reason);
-    });
-    const loaded = results.flatMap((r) => (r.status === "fulfilled" ? [seriesListItem(r.value, false)] : []));
-    this.series = [...this.series, ...loaded];
+  /** Fuse the other opened series onto the base (#279 "Open fused"); each refusal says why, as on a drop. */
+  private async fuseAtOpen(uids: string[]): Promise<void> {
+    this.fusionBusy = true;
+    try {
+      for (const uid of uids) await this.fuse(uid);
+    } finally {
+      this.fusionBusy = false;
+    }
   }
+
+  /** The study a series of the list belongs to (Related Series may be of other studies). */
+  private studyOf(seriesUid: string): string {
+    return this.entries.find((e) => e.series === seriesUid)?.study ?? this.loaded?.ref.studyUid ?? "";
+  }
+
 
   /** Bulk ANN on the slide (#292), read-only. A failure leaves the slide usable and is only logged. */
   private async loadBulkAnnotations(view: WsiView, slide: SeriesRef): Promise<void> {
@@ -474,7 +484,8 @@ export class MiresViewer extends LitElement {
   private async showSr(head: ObjectVersion): Promise<void> {
     const series = this.loaded;
     if (!series || !this.annotations) throw new Error("the viewer isn't ready");
-    const url = `${this.wadoRoot}/studies/${this.studyUid}/series/${head.series_instance_uid}/metadata`;
+    // Saved objects live in their base series' study.
+    const url = `${this.wadoRoot}/studies/${series.ref.studyUid}/series/${head.series_instance_uid}/metadata`;
     const response = await fetch(url, { credentials: "same-origin", headers: viewerHeaders({ Accept: "application/dicom+json" }) });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const [instance] = (await response.json()) as DicomJsonInstance[];
@@ -484,7 +495,8 @@ export class MiresViewer extends LitElement {
 
   /** Show a saved SEG as the element's Segmentation (`/metadata` + `/frames`: sessions can't fetch raw bytes). */
   private async showSavedSegmentation(head: ObjectVersion): Promise<void> {
-    const saved = await fetchSavedSegmentation({ wadoRoot: this.wadoRoot, studyUid: this.studyUid, seriesUid: head.series_instance_uid });
+    const studyUid = this.loaded?.ref.studyUid ?? "";
+    const saved = await fetchSavedSegmentation({ wadoRoot: this.wadoRoot, studyUid, seriesUid: head.series_instance_uid });
     if (!(await this.segmentation.load(saved, this.controls))) throw new Quiet("refused"); // the refusal says why
   }
 
@@ -690,7 +702,7 @@ export class MiresViewer extends LitElement {
     const known = this.catalog.get(seriesUid);
     if (known) return known;
     try {
-      const series = await fetchSeries({ wadoRoot: this.wadoRoot, studyUid: this.studyUid, seriesUid });
+      const series = await fetchSeries({ wadoRoot: this.wadoRoot, studyUid: this.studyOf(seriesUid), seriesUid });
       this.catalog.set(seriesUid, series);
       return series;
     } catch (e) {
@@ -986,5 +998,15 @@ export class MiresViewer extends LitElement {
 declare global {
   interface HTMLElementTagNameMap {
     "mires-viewer": MiresViewer;
+  }
+}
+
+/** The series list from the page's JSON script (`json_script`); empty when missing or malformed. */
+function readSeriesList(id: string): SeriesEntry[] {
+  try {
+    const parsed: unknown = JSON.parse(document.getElementById(id)?.textContent ?? "[]");
+    return Array.isArray(parsed) ? (parsed as SeriesEntry[]) : [];
+  } catch {
+    return [];
   }
 }

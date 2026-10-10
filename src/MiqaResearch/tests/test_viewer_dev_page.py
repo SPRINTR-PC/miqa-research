@@ -44,7 +44,8 @@ def test_dev_page_requires_login(settings, no_toolbar, client, db):
 
 
 def _series_list(response) -> list[dict]:
-    match = re.search(r'<script id="viewer-series" type="application/json">(.*?)</script>', response.content.decode(), re.S)
+    pattern = r'<script id="viewer-series" type="application/json">(.*?)</script>'
+    match = re.search(pattern, response.content.decode(), re.S)
     assert match, "no series list on the page"
     return json.loads(match.group(1))
 

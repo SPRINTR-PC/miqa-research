@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { StubAdapter } from "./adapter/stub.ts";
 import { SPLIT_STORAGE_KEY } from "./layout.ts";
 import { MiresViewer } from "./mires-viewer.ts";
+import { seriesEntries } from "./test-fixtures.ts";
 
 const ct = (n: number) =>
   Array.from({ length: n }, (_, i) => ({
@@ -24,8 +25,7 @@ async function mount(metadata: unknown[] = ct(8)) {
   const adapter = new StubAdapter();
   const el = document.createElement("mires-viewer") as MiresViewer;
   el.adapterFactory = async () => adapter;
-  el.setAttribute("study-uid", "2.25.100");
-  el.setAttribute("series-uid", "2.25.200");
+  el.entries = seriesEntries(["2.25.200"], [], "2.25.100");
   document.body.append(el);
   await vi.waitFor(() => expect(el.getAttribute("state")).toBe("ready"));
   await el.updateComplete;

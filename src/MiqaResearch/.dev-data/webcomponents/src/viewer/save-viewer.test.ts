@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { StubAdapter } from "./adapter/stub.ts";
 import { MiresViewer } from "./mires-viewer.ts";
+import { seriesEntries } from "./test-fixtures.ts";
 
 const ct = (n: number) =>
   Array.from({ length: n }, (_, i) => ({
@@ -54,8 +55,7 @@ async function mount({ canAnnotate = true, posts = [] as Reply[], srMetadata = [
   const adapter = new StubAdapter();
   const el = document.createElement("mires-viewer") as MiresViewer;
   el.adapterFactory = async () => adapter;
-  el.setAttribute("study-uid", "2.25.100");
-  el.setAttribute("series-uid", "2.25.200");
+  el.entries = seriesEntries(["2.25.200"], [], "2.25.100");
   el.canAnnotate = canAnnotate;
   document.body.append(el);
   await vi.waitFor(() => expect(el.getAttribute("state")).toBe("ready"));

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { StubAdapter } from "./adapter/stub.ts";
 import { MiresViewer } from "./mires-viewer.ts";
+import { seriesEntries } from "./test-fixtures.ts";
 
 const WSI_SOP_CLASS = "1.2.840.10008.5.1.4.1.1.77.1.6";
 const ANN_SOP_CLASS = "1.2.840.10008.5.1.4.1.1.91.1";
@@ -45,8 +46,7 @@ function stubServer(objects: unknown[] = [chain("ANN", "2.25.500"), chain("SR", 
 async function mount(adapter: StubAdapter, participant = PARTICIPANT): Promise<MiresViewer> {
   const el = document.createElement("mires-viewer") as MiresViewer;
   el.adapterFactory = async () => adapter;
-  el.setAttribute("study-uid", "2.25.100");
-  el.setAttribute("series-uid", "2.25.200");
+  el.entries = seriesEntries(["2.25.200"], [], "2.25.100");
   if (participant) el.setAttribute("participant", participant);
   document.body.append(el);
   await vi.waitFor(() => expect(el.getAttribute("state")).toMatch(/ready|error/));

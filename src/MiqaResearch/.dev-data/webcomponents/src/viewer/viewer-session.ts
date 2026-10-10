@@ -1,5 +1,6 @@
 // Viewer Session (#288): one id per viewer open (page load), sent on every request the viewer makes.
 // The server scopes a Blinding Reveal to it, so a reveal ends on reload, in other tabs and outside the viewer.
+// The viewer page (#279) makes the id itself and audits the open under it; the element adopts it.
 
 export const VIEWER_SESSION_HEADER = "X-Mires-Viewer-Session";
 
@@ -9,7 +10,12 @@ function newId(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-export const viewerSessionId = newId();
+let viewerSessionId = newId();
+
+/** Adopt the Viewer Session id the page made for this open. */
+export function useViewerSession(id: string): void {
+  if (id) viewerSessionId = id.slice(0, 64);
+}
 
 /** `headers` plus the Viewer Session header. */
 export function viewerHeaders(headers: Record<string, string> = {}): Record<string, string> {

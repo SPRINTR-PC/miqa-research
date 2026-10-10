@@ -1,5 +1,6 @@
-// Series list (far left). #280 lists the open series; the entry contract's related series (#279),
-// drag-to-fuse/replace drop zones (#284) and the Annotation/Segmentation tree (#290, chrome/results-tree.ts) extend it.
+// Series list (far left). #280 lists the open series; the entry contract's series list (#279: the opened
+// series and the Related Series, from the page), drag-to-fuse/replace drop zones (#284) and the
+// Annotation/Segmentation tree (#290, chrome/results-tree.ts) extend it.
 import { html, nothing } from "lit";
 
 import type { LoadedSeries } from "../series.ts";
@@ -12,6 +13,31 @@ export interface SeriesListItem {
   imageCount: number;
   /** Shown in the viewport. */
   shown: boolean;
+}
+
+/** One series of the page's JSON series list (#279, entry contract #184). */
+export interface SeriesEntry {
+  study: string;
+  series: string;
+  modality: string;
+  description: string;
+  instances: number;
+  /** Pseudonymized Frame of Reference UID; null when absent or mixed. */
+  frame_of_reference: string | null;
+  /** Opened at launch (the first is the base, the rest are fused onto it); else a Related Series. */
+  open: boolean;
+}
+
+/** List row for an entry of the page's series list: no /metadata needed until the series is shown. */
+export function seriesListItemFromEntry(entry: SeriesEntry, shown: boolean): SeriesListItem {
+  return {
+    studyUid: entry.study,
+    seriesUid: entry.series,
+    modality: entry.modality,
+    description: entry.description,
+    imageCount: entry.instances,
+    shown,
+  };
 }
 
 const MODALITY = "00080060";
