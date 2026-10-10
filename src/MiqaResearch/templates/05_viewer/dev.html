@@ -1,5 +1,5 @@
 {% load static %}<!DOCTYPE html>
-{# Temporary DEBUG-only viewer page (#278); replaced by the viewer page of #279. Never extends base.html. #}
+{# DEBUG-only viewer page for the browser harness (#278); same series list input as the viewer page (#279). Never extends base.html. #}
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -11,7 +11,8 @@
   </style>
 </head>
 <body>
-<mires-viewer wado-root="/api/v1/dicom" user="{{ request.user.pk }}" study-uid="{{ study_uid }}" series-uid="{{ series_uid }}"{% if participant %} participant="{{ participant }}"{% endif %}{% if related_series %} related-series="{{ related_series }}"{% endif %}{% if can_annotate %} can-annotate{% endif %}></mires-viewer>
+{{ series|json_script:"viewer-series" }}
+<mires-viewer wado-root="/api/v1/dicom" user="{{ request.user.pk }}" series-list="viewer-series"{% if participant %} participant="{{ participant.pk }}"{% endif %}{% if can_annotate %} can-annotate{% endif %}></mires-viewer>
 <script src="{% static 'js/viewer/mireswc-viewer.js' %}" type="module"></script>
 </body>
 </html>

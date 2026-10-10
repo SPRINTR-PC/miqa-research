@@ -1,7 +1,11 @@
 """Viewer dev page (#278): temporary, DEBUG-only, login-required host page for the viewer element.
 
 Seam: the HTTP response of `/viewer/dev/`, plus the shared `base.html` layout.
+Since #279 it hands the viewer the same JSON series list as the viewer page, built by the same reader.
 """
+import json
+import re
+
 import pytest
 from django.contrib.auth import get_user_model
 
@@ -39,16 +43,30 @@ def test_dev_page_requires_login(settings, no_toolbar, client, db):
     assert "/accounts/login/" in response["Location"]
 
 
-def test_dev_page_hosts_the_viewer_for_the_requested_series(settings, no_toolbar, logged_in_client):
-    settings.DEBUG = True
+def _series_list(response) -> list[dict]:
+    match = re.search(r'<script id="viewer-series" type="application/json">(.*?)</script>', response.content.decode(), re.S)
+    assert match, "no series list on the page"
+    return json.loads(match.group(1))
 
-    response = logged_in_client.get(DEV_PAGE, {"study": "2.25.1", "series": "2.25.2"})
+
+def test_dev_page_hosts_the_viewer_for_the_requested_series(settings, no_toolbar, client, ct_series):
+    settings.DEBUG = True
+    _open_as(client, ct_series, "Annotator")
+
+    response = client.get(DEV_PAGE, {"series": ct_series.series_instance_uid})
 
     assert response.status_code == 200
-    body = response.content.decode()
-    assert VIEWER_BUNDLE in body
-    assert 'study-uid="2.25.1"' in body
-    assert 'series-uid="2.25.2"' in body
+    assert VIEWER_BUNDLE in response.content.decode()
+    assert 'series-list="viewer-series"' in response.content.decode()
+    assert _series_list(response) == [{
+        "study": ct_series.study.study_instance_uid,
+        "series": ct_series.series_instance_uid,
+        "modality": "CT",
+        "description": "PHASE_1",
+        "instances": 1,
+        "frame_of_reference": ct_series.frame_of_reference_uid,
+        "open": True,
+    }]
 
 
 def test_dev_page_names_the_user_for_per_user_drafts(settings, no_toolbar, client, db):
@@ -57,7 +75,7 @@ def test_dev_page_names_the_user_for_per_user_drafts(settings, no_toolbar, clien
     user = get_user_model().objects.create_user(username="draft-user", password="pw")
     client.force_login(user)
 
-    body = client.get(DEV_PAGE, {"study": "2.25.1", "series": "2.25.2"}).content.decode()
+    body = client.get(DEV_PAGE, {"series": "2.25.2"}).content.decode()
 
     assert f'user="{user.pk}"' in body
 
@@ -77,24 +95,36 @@ def test_dev_page_offers_related_series_limited_by_participant_visibility(
     visible = ct_series.series_instance_uid
     _open_as(client, ct_series, "Annotator")
 
-    query = f"?study=2.25.1&series={visible}&related={visible},2.25.4&related={invisible}"
-    body = client.get(DEV_PAGE + query).content.decode()
+    query = f"?series={visible}&related={visible},2.25.4&related={invisible}"
+    rows = _series_list(client.get(DEV_PAGE + query))
 
-    assert f'related-series="{visible}"' in body
+    assert [(row["series"], row["open"]) for row in rows] == [(visible, True)]
 
 
-def test_dev_page_has_no_related_series_by_default(settings, no_toolbar, logged_in_client):
+def test_dev_page_lists_related_series_after_the_opened_one(settings, no_toolbar, client, ct_series, tmp_path):
+    settings.DEBUG = True
+    project = ct_series.study.study_participant.research_project
+    run_ingestion(project, write_dicom(build_ct_image(
+        series_instance_uid="1.2.9999.42.1.2002", sop_instance_uid="1.2.9999.42.1.2003", modality="PT"),
+        tmp_path / "pet.dcm"))
+    pet = DicomSeries.objects.get(modality="PT").series_instance_uid
+    _open_as(client, ct_series, "Annotator")
+
+    rows = _series_list(client.get(DEV_PAGE, {"series": ct_series.series_instance_uid, "related": pet}))
+
+    assert [(row["series"], row["open"]) for row in rows] == [(ct_series.series_instance_uid, True), (pet, False)]
+
+
+def test_dev_page_with_an_unknown_series_has_an_empty_series_list(settings, no_toolbar, logged_in_client):
     settings.DEBUG = True
 
-    body = logged_in_client.get(DEV_PAGE, {"study": "2.25.1", "series": "2.25.2"}).content.decode()
-
-    assert "related-series" not in body
+    assert _series_list(logged_in_client.get(DEV_PAGE, {"series": "2.25.2"})) == []
 
 
 def test_dev_page_escapes_query_params(settings, no_toolbar, logged_in_client):
     settings.DEBUG = True
 
-    body = logged_in_client.get(DEV_PAGE, {"study": '"><script>x</script>', "series": "1"}).content.decode()
+    body = logged_in_client.get(DEV_PAGE, {"series": '"><script>x</script>'}).content.decode()
 
     assert "<script>x</script>" not in body
 
@@ -131,7 +161,7 @@ def _open_as(client, series, role_name) -> str:
         user=user, project=series.study.study_participant.research_project, role=role
     )
     client.force_login(user)
-    response = client.get(DEV_PAGE, {"study": series.study.study_instance_uid, "series": series.series_instance_uid})
+    response = client.get(DEV_PAGE, {"series": series.series_instance_uid})
     return response.content.decode()
 
 
@@ -152,6 +182,6 @@ def test_view_only_roles_get_no_annotate_tools(settings, no_toolbar, client, ct_
 def test_unknown_series_gets_no_annotate_tools(settings, no_toolbar, logged_in_client):
     settings.DEBUG = True
 
-    body = logged_in_client.get(DEV_PAGE, {"study": "2.25.1", "series": "2.25.2"}).content.decode()
+    body = logged_in_client.get(DEV_PAGE, {"series": "2.25.2"}).content.decode()
 
     assert "can-annotate" not in body
