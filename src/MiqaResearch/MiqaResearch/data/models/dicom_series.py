@@ -14,6 +14,10 @@ class DicomSeries(models.Model):
     modality = models.CharField(max_length=12, blank=True, null=True)  # noqa: DJ001
     anatomic_site_concept = models.ForeignKey(Concept, on_delete=models.SET_NULL, blank=True, null=True)
     file_size_in_mb = models.FloatField(blank=True, null=True, help_text="Sum of file_size_in_mb across this series' DicomFile rows")
+    frame_of_reference_uid = models.CharField(  # noqa: DJ001
+        max_length=128, blank=True, null=True, db_index=True,
+        help_text="Pseudonymized Frame of Reference UID shared by every file of the series; null if absent or mixed",
+    )
 
 
     class Meta:

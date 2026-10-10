@@ -447,3 +447,33 @@ def test_truncated_dicom_file_is_per_file_error(research_project, tmp_path, sett
 
     assert report.counts == {"ingested": 0, "skipped_duplicate": 0, "duplicate_conflict": 0, "error": 1}
     assert DicomFile.objects.count() == 0
+
+
+def test_series_carries_its_files_pseudonymized_frame_of_reference(research_project, tmp_path, settings):
+    settings.MEDIA_ROOT = tmp_path / "media"
+    src = write_dicom(build_ct_image(frame_of_reference_uid="1.2.9999.42.1.1004"), tmp_path / "ct.dcm")
+
+    run_ingestion(research_project, src)
+
+    series = DicomSeries.objects.get()
+    dcm_file = DicomFile.objects.get()
+    assert series.frame_of_reference_uid == dcm_file.frame_of_reference_uid
+    assert series.frame_of_reference_uid not in (None, "", "1.2.9999.42.1.1004")
+
+
+def test_series_without_frame_of_reference_stays_null(research_project, tmp_path, settings):
+    settings.MEDIA_ROOT = tmp_path / "media"
+    run_ingestion(research_project, write_dicom(build_ct_image(frame_of_reference_uid=None), tmp_path / "ct.dcm"))
+
+    assert DicomSeries.objects.get().frame_of_reference_uid is None
+
+
+def test_series_whose_files_disagree_on_frame_of_reference_is_null(research_project, tmp_path, settings):
+    settings.MEDIA_ROOT = tmp_path / "media"
+    run_ingestion(research_project, write_dicom(build_ct_image(), tmp_path / "ct1.dcm"))
+    assert DicomSeries.objects.get().frame_of_reference_uid is not None
+
+    other = build_ct_image(sop_instance_uid="1.2.9999.42.1.2003", frame_of_reference_uid="1.2.9999.42.1.2004")
+    run_ingestion(research_project, write_dicom(other, tmp_path / "ct2.dcm"))
+
+    assert DicomSeries.objects.get().frame_of_reference_uid is None

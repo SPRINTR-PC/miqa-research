@@ -193,6 +193,15 @@ def test_saved_seg_is_a_segmentation_whose_metadata_dump_keeps_pseudonymized_ref
 
 
 @pytest.mark.django_db
+def test_saved_object_series_carries_the_sources_frame_of_reference(client, project, ct):
+    body = _save(client, _member(project), _seg_for(ct), [ct.series]).json()
+
+    series = DicomSeries.objects.get(series_instance_uid=body["series_instance_uid"])
+    assert ct.frame_of_reference_uid
+    assert series.frame_of_reference_uid == ct.frame_of_reference_uid
+
+
+@pytest.mark.django_db
 def test_save_is_audited_as_a_create_event(client, project, ct):
     annotator = _member(project)
 
