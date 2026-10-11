@@ -292,7 +292,7 @@ and is titled with the participant's alias. It 404s on anything the user can't s
 ## Dev page
 
 `/viewer/dev/?series=<uid>&related=<uid>,…` (pseudonymized UIDs, any participant): the same series list,
-built by `dev_viewer_series`, for the browser harness. Login required, 404 unless DEBUG, no `viewer_open`.
+built by `dev_viewer_open`, for the browser harness. Login required, 404 unless DEBUG, no `viewer_open`.
 
 ## Browser tests (local only, not in CI)
 

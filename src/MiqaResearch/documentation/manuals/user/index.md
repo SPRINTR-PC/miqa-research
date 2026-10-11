@@ -23,6 +23,19 @@ src/*
 * [API Clients](#heading-api-clients)
   * [Issuing a client](#heading-api-clients-issue)
   * [Changing, rotating and revoking](#heading-api-clients-manage)
+* [The DICOM Viewer](#heading-viewer)
+  * [Who can do what](#heading-viewer-access)
+  * [Opening the viewer](#heading-viewer-open)
+  * [The screen](#heading-viewer-layout)
+  * [Navigating the images](#heading-viewer-navigate)
+    * [Three views (MPR)](#heading-viewer-volume)
+  * [Measuring](#heading-viewer-measure)
+  * [Fusion](#heading-viewer-fusion)
+  * [Segmenting](#heading-viewer-segment)
+  * [Saving](#heading-viewer-save)
+    * [Unsaved work](#heading-viewer-drafts)
+  * [Saved results](#heading-viewer-results)
+    * [Blinded Annotation](#heading-viewer-blinding)
 
 (app-dashboard-overview)=
 # The Dashboard
