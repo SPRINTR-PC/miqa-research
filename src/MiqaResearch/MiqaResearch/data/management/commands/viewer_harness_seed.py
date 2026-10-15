@@ -74,7 +74,10 @@ FUSION_FIXTURES = {
     "pet": ("Harness PET SUV", "PT", "20", f"{CT_UID_ROOT}.4", 75),
     "petNoWeight": ("Harness PET no weight", "PT", "21", f"{CT_UID_ROOT}.4", None),
     "mrOtherFor": ("Harness MR other FoR", "MR", "22", f"{CT_UID_ROOT}.40", None),
+    "followUp": ("Harness MR follow-up", "MR", "23", f"{CT_UID_ROOT}.41", None),
 }
+# #279: series in a later study of the same participant (Related Series across studies): study UID, date.
+FOLLOW_UP_STUDIES = {"followUp": (f"{CT_UID_ROOT}.5", "20270101")}
 # PET activity: SUVbw = Bq/ml × weight (g) / decayed dose. 370 MBq F-18 injected 1 h before the scan,
 # 75 kg: background SUV 1, a hot sphere of SUV 6 in the CT sphere's centre.
 PET_DOSE_BQ, PET_HALF_LIFE_S, PET_DELAY_S = 370e6, 6586.2, 3600
@@ -145,10 +148,11 @@ def build_fusion_slice(key: str, index: int) -> Dataset:
     ds.file_meta.MediaStorageSOPInstanceUID = sop
     ds.file_meta.TransferSyntaxUID = ExplicitVRLittleEndian
     ds.SOPClassUID, ds.SOPInstanceUID = sop_class, sop
-    ds.StudyInstanceUID, ds.SeriesInstanceUID = f"{CT_UID_ROOT}.1", f"{CT_UID_ROOT}.2.{suffix}"
+    study_uid, study_date = FOLLOW_UP_STUDIES.get(key, (f"{CT_UID_ROOT}.1", "20260101"))
+    ds.StudyInstanceUID, ds.SeriesInstanceUID = study_uid, f"{CT_UID_ROOT}.2.{suffix}"
     ds.FrameOfReferenceUID = frame_of_reference
     ds.PatientID, ds.PatientName, ds.PatientSex = "HARNESS-1", "HARNESS^CT", "O"
-    ds.StudyDate, ds.StudyTime, ds.StudyID = "20260101", "120000", "H1"
+    ds.StudyDate, ds.StudyTime, ds.StudyID = study_date, "120000", "H1"
     ds.StudyDescription, ds.SeriesDescription = "Viewer harness CT", description
     ds.Modality, ds.SeriesNumber, ds.InstanceNumber = modality, int(suffix), index + 1
     ds.ImageOrientationPatient = [1, 0, 0, 0, 1, 0]

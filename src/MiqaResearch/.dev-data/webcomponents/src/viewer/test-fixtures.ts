@@ -1,5 +1,6 @@
 // DICOM JSON fixtures shared by viewer unit tests (not a test file itself).
 import type { DicomJsonInstance } from "./series.ts";
+import type { SeriesEntry } from "./chrome/series-list.ts";
 
 /** A PET instance with every SUV input (BQML, decay-corrected to START); `undefined` in overrides removes a tag. */
 export function petInstance(overrides: Record<string, unknown> = {}): DicomJsonInstance {
@@ -56,4 +57,17 @@ export function volumeInstances(n: number, { modality = "CT", frameOfReference =
     "00280002": { vr: "US", Value: [1] },
     "00280100": { vr: "US", Value: [16] },
   })) as DicomJsonInstance[];
+}
+
+/** The page's series list (#279) for element tests: `open` series (first = base), then `related`. */
+export function seriesEntries(
+  open: string[],
+  related: string[] = [],
+  study = "2.25.100",
+  details: Record<string, Partial<SeriesEntry>> = {},
+): SeriesEntry[] {
+  const entry = (series: string, isOpen: boolean): SeriesEntry => ({
+    study, series, modality: "", description: "", instances: 0, frame_of_reference: null, ...details[series], open: isOpen,
+  });
+  return [...open.map((uid) => entry(uid, true)), ...related.map((uid) => entry(uid, false))];
 }

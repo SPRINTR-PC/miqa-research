@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { StubAdapter } from "./adapter/stub.ts";
 import { MiresViewer } from "./mires-viewer.ts";
+import { seriesEntries } from "./test-fixtures.ts";
 
 const WSI_SOP_CLASS = "1.2.840.10008.5.1.4.1.1.77.1.6";
 
@@ -21,8 +22,7 @@ async function mount(adapter: StubAdapter, canAnnotate = true): Promise<MiresVie
   vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(WSI_METADATA))));
   const el = document.createElement("mires-viewer") as MiresViewer;
   el.adapterFactory = async () => adapter;
-  el.setAttribute("study-uid", "2.25.100");
-  el.setAttribute("series-uid", "2.25.200");
+  el.entries = seriesEntries(["2.25.200"], [], "2.25.100");
   el.toggleAttribute("can-annotate", canAnnotate);
   document.body.append(el);
   await vi.waitFor(() => expect(el.getAttribute("state")).toMatch(/ready|error/));

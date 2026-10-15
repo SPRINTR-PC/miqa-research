@@ -1,6 +1,8 @@
 """Data-access audit entries for image reads over WADO (ADR 0024, ADR 0027, #271 story 21).
 
 - client callers: one entry per client x series x access token, whatever the endpoint;
+- a viewer open (#279): one entry per page load, written by the viewer page, naming the series it opened
+  and the Viewer Session the page gives the viewer;
 - session callers (the viewer): one entry per series opened per viewer open (Viewer Session id,
   else the login session), written by the series `/metadata` the viewer opens a series with;
   frames are never audited one by one.
@@ -8,7 +10,11 @@
 Repeats are dropped by the entry's dedupe key within the same INSERT. `dicom_files` must have
 `series__study__study_participant` loaded.
 """
-from contract.constants.audit_log import EVENT_TYPE_VIEWER_SERIES_OPENED, EVENT_TYPE_WADO_CLIENT_ACCESS
+from contract.constants.audit_log import (
+    EVENT_TYPE_VIEWER_OPEN,
+    EVENT_TYPE_VIEWER_SERIES_OPENED,
+    EVENT_TYPE_WADO_CLIENT_ACCESS,
+)
 from helpers.http import get_client_ip
 from MiqaResearch.data.models import AuditLog
 from MiqaResearch.readers.blinding import viewer_session_id
@@ -61,3 +67,19 @@ def audit_viewer_series_open(request, user, dicom_files) -> None:
         )
         for series in _series_of(dicom_files)
     ], ignore_conflicts=True)
+
+
+def audit_viewer_open(request, participant, series_uids: list[str], viewer_session: str) -> None:
+    AuditLog.objects.create(
+        event_type=EVENT_TYPE_VIEWER_OPEN,
+        user=request.user,
+        ip_address=get_client_ip(request),
+        session_key=getattr(getattr(request, "session", None), "session_key", None),
+        project_id=participant.research_project_id,
+        metadata={
+            "viewer_session": viewer_session,
+            "series_uids": series_uids,
+            "participant_ids": [str(participant.pk)],
+            "fused": len(series_uids) > 1,
+        },
+    )

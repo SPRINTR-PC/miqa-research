@@ -17,7 +17,7 @@ One file per concern, so parallel tickets touch different files.
 | `tools/<capability>.ts` | Tool definitions, one module per capability; `tools/stack.ts` = #280's. | #280, #281, #282, #285, #286 |
 | `tools/presets.ts` | Window presets (0–8) per modality. Pure. | #280, #284 |
 | `tools/bindings.ts` | Workstation mouse as a binding plan of abstract buttons. Pure. | #280, #285 (WSI), #286 (erase) |
-| `chrome/*.ts` | Series list, tool rail templates. | #280, #279/#284/#290 (series list) |
+| `chrome/*.ts` | Series list (with the page's `SeriesEntry`), tool rail templates. | #280, #279/#284/#290 (series list) |
 | `units.ts` | Tooltip text for CS3D's raw unit suffixes. | #280, #281 |
 | `calibration.ts` | Calibration legend per unit, SC spacing shim payload, burned-in badge rule. Pure. | #281 |
 | `series.ts` | `/metadata` fetch → ordered `wadors:` frame imageIds. Pure, no CS3D. | #278 |
@@ -56,7 +56,7 @@ One file per concern, so parallel tickets touch different files.
 | `simplify.ts` | Douglas–Peucker for WSI freehand contours. Pure. | #289 |
 | `inspector/save.ts`, `chrome/save-dialogs.ts` | Save buttons (+ Ctrl/⌘+S, dropped-tool warning); toast and 409 dialog over the view. | #289 |
 | `results.ts` | `ResultsController`: the results tree's state (chains from `GET /objects`, blinding status, shown heads, menu / History / confirm) and actions (show / hide via the element, Retire, Blinding Reveal, Show retired). No CS3D. | #290 |
-| `viewer-session.ts` | Per-open Viewer Session id, sent as `X-Mires-Viewer-Session` on every viewer request; the server scopes a Blinding Reveal to it (ends on reload / other tabs). | #288 |
+| `viewer-session.ts` | Per-open Viewer Session id (the page's `viewer-session`, else made here), sent as `X-Mires-Viewer-Session` on every viewer request; the server scopes a Blinding Reveal to it (ends on reload / other tabs). | #288, #279 |
 | `chrome/results-tree.ts` | Result rows under each series (⊕ Fusion badge, ⋯ History / Retire), lock row, "Show retired" footer, chips over the viewport, the Retire / Reveal confirm. | #290 |
 | `saved-seg.ts` | A saved SEG for showing: `/metadata` + all frames in one `/frames` request (multipart/related parser). | #290 |
 | `adapter/cornerstone/annotations.ts` | `AnnotationSet`: edit counting, SR export with `@cornerstonejs/adapters` (WSI: SCOORD3D, simplified, geometric only), SR import + User calibration reapply. | #289 |
@@ -236,8 +236,8 @@ Rules:
 
 ## Fusion (#284)
 
-- **Series list:** the `related-series` attribute (space-separated UIDs, same study; the dev page's
-  `?related=`, later the entry contract #279) adds rows; their `/metadata` loads after the first image.
+- **Series list:** the page's series list (see Entry contract) gives the rows; a Related Series'
+  `/metadata` loads only when it is dropped onto the view, from its own study.
   Rows are draggable; while dragging, the big view shows two drop zones (`chrome/drop-zones.ts`).
 - **Top half = fuse** into every view: `fuseBlocker` (same `FrameOfReferenceUID`, both reconstructable,
   not shown yet, not reduced 3D, base fits full-resolution 3D) then `overlayBudget` (texture limit + budget,
@@ -274,10 +274,25 @@ Rules:
 - The host page must set the `csrftoken` cookie (`ensure_csrf_cookie`, or any `{% csrf_token %}`):
   the viewer's POSTs send it as `X-CSRFToken`.
 
+## Entry contract (#279, decided in #184)
+
+The viewer page `/projects/<project>/participants/<participant>/viewer/?series=<uid>&series=…`
+(`viewer_url()` builds it; pseudonymized UIDs, so no PHI in the URL) is standalone, opens in a new tab
+and is titled with the participant's alias. It 404s on anything the user can't see. Each load writes one
+`viewer_open` audit entry under a Viewer Session id the page makes and hands over as `viewer-session`.
+
+- `series-list`: id of the page's `<script type="application/json">` (`json_script`) with one entry per
+  series (`SeriesEntry`: `study`, `series`, `modality`, `description`, `instances`,
+  `frame_of_reference`, `open`). Opened series come first, in URL order: the first is the base, the rest
+  are fused onto it at open (refusals say why, as on a drop). The rest are the participant's Related
+  Series, from every study; Annotation/Segmentation series are never listed (the results tree shows
+  them). Tests set `entries` directly.
+- `participant`, `user` (drafts), `can-annotate`, `viewer-session`.
+
 ## Dev page
 
-`/viewer/dev/?study=<StudyInstanceUID>&series=<SeriesInstanceUID>` (pseudonymized UIDs, as in `/metadata`).
-Login required, 404 unless DEBUG. Temporary until the viewer page of #279.
+`/viewer/dev/?series=<uid>&related=<uid>,…` (pseudonymized UIDs, any participant): the same series list,
+built by `dev_viewer_open`, for the browser harness. Login required, 404 unless DEBUG, no `viewer_open`.
 
 ## Browser tests (local only, not in CI)
 

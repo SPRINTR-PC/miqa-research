@@ -38,26 +38,11 @@ async function openCt(viewerPage: ViewerPage) {
   await expect(viewerPage.page.locator("mires-viewer .ser")).toHaveCount(4);
 }
 
-/** HTML5 drag with the real mouse: the drop zones appear once the drag has started. */
-async function dragSeries(viewerPage: ViewerPage, seriesUid: string, zone: "fuse" | "replace") {
-  const { page } = viewerPage;
-  const row = (await page.locator(`mires-viewer .ser[data-series-uid="${seriesUid}"]`).boundingBox())!;
-  await page.mouse.move(row.x + row.width / 2, row.y + row.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(row.x + row.width / 2 + 30, row.y + row.height / 2 + 10, { steps: 5 });
-  const target = page.locator(`mires-viewer .drop-zone[data-zone="${zone}"]`);
-  await expect(target).toBeVisible();
-  const box = (await target.boundingBox())!;
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 10 });
-  await page.mouse.up();
-  await expect(target).toHaveCount(0);
-}
-
 test("a PET dropped on the CT's top half fuses into three views, in SUV", async ({ viewerPage }) => {
   await openCt(viewerPage);
   const { pet, ct } = seed();
 
-  await dragSeries(viewerPage, pet.seriesUid, "fuse");
+  await viewerPage.dragSeries(pet.seriesUid, "fuse");
 
   await expect.poll(async () => (await volumeState(viewerPage))?.layers.map((l) => l.seriesUid)).toEqual([ct.seriesUid, pet.seriesUid]);
   await expect.poll(async () => (await volumeState(viewerPage))!.selectedLayer).toBe(pet.seriesUid);
@@ -80,7 +65,7 @@ test("a PET dropped on the CT's top half fuses into three views, in SUV", async 
 test("a series on another Frame of Reference is refused with the reason", async ({ viewerPage }) => {
   await openCt(viewerPage);
 
-  await dragSeries(viewerPage, seed().mrOtherFor.seriesUid, "fuse");
+  await viewerPage.dragSeries(seed().mrOtherFor.seriesUid, "fuse");
 
   await expect(viewerPage.page.locator("mires-viewer .refusal")).toContainText("different Frame of Reference");
   expect(await volumeState(viewerPage)).toBeUndefined();
@@ -88,7 +73,7 @@ test("a series on another Frame of Reference is refused with the reason", async 
 
 test("right-drag windows the selected overlay only", async ({ viewerPage }) => {
   await openCt(viewerPage);
-  await dragSeries(viewerPage, seed().pet.seriesUid, "fuse");
+  await viewerPage.dragSeries(seed().pet.seriesUid, "fuse");
   await expect.poll(async () => (await volumeState(viewerPage))?.selectedLayer).toBe(seed().pet.seriesUid);
   const before = (await volumeState(viewerPage))!.layers;
 
@@ -107,7 +92,7 @@ test("a PET without PatientWeight is flagged as Bq/ml, not SUV", async ({ viewer
   await openCt(viewerPage);
   const { petNoWeight } = seed();
 
-  await dragSeries(viewerPage, petNoWeight.seriesUid, "fuse");
+  await viewerPage.dragSeries(petNoWeight.seriesUid, "fuse");
 
   await expect(viewerPage.page.locator(`mires-viewer .suv-warning[data-series-uid="${petNoWeight.seriesUid}"]`)).toContainText(
     "missing PatientWeight",

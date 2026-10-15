@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { StubAdapter } from "./adapter/stub.ts";
 import { MiresViewer } from "./mires-viewer.ts";
+import { seriesEntries } from "./test-fixtures.ts";
 
 const SERIES_METADATA = [1, 2, 3].map((n) => ({
   "00080018": { vr: "UI", Value: [`2.25.${n}`] },
@@ -16,8 +17,7 @@ async function mount(adapter: StubAdapter): Promise<MiresViewer> {
   const el = document.createElement("mires-viewer") as MiresViewer;
   el.adapterFactory = async () => adapter;
   el.setAttribute("wado-root", "/api/v1/dicom");
-  el.setAttribute("study-uid", "2.25.100");
-  el.setAttribute("series-uid", "2.25.200");
+  el.entries = seriesEntries(["2.25.200"], [], "2.25.100");
   document.body.append(el);
   await vi.waitFor(() => expect(el.getAttribute("state")).toMatch(/ready|error/));
   await el.updateComplete;

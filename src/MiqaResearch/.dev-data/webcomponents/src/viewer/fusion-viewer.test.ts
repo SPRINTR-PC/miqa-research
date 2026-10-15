@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { StubAdapter } from "./adapter/stub.ts";
 import { MiresViewer } from "./mires-viewer.ts";
 import type { DicomJsonInstance } from "./series.ts";
-import { petInstance, volumeInstances } from "./test-fixtures.ts";
+import { petInstance, volumeInstances, seriesEntries } from "./test-fixtures.ts";
 
 const CT = volumeInstances(8, { description: "Chest CT" });
 const PET = volumeInstances(8, { modality: "PT", description: "PET AC", extra: petInstance() });
@@ -27,9 +27,7 @@ async function mount({ related = "pet petnw mr", budget, max3d = 2048 }: { relat
   adapter.gpu = { max3dTextureSize: max3d, maxTextureSize: 16384 };
   const el = document.createElement("mires-viewer") as MiresViewer;
   el.adapterFactory = async () => adapter;
-  el.setAttribute("study-uid", "2.25.1");
-  el.setAttribute("series-uid", "ct");
-  el.setAttribute("related-series", related);
+  el.entries = seriesEntries(["ct"], related.split(" ").filter(Boolean), "2.25.1");
   el.canAnnotate = true;
   if (budget) (el.budget as unknown as { budget: number }).budget = budget;
   document.body.append(el);

@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { StubAdapter } from "./adapter/stub.ts";
 import { MiresViewer } from "./mires-viewer.ts";
 import { GIB, MIB } from "./size-guard.ts";
+import { seriesEntries } from "./test-fixtures.ts";
 
 const ct = (n: number, size = 64) =>
   Array.from({ length: n }, (_, i) => ({
@@ -26,8 +27,7 @@ async function mount({ metadata = ct(8), max3d = 2048, maxTexture = 16384, canAn
   adapter.gpu = { max3dTextureSize: max3d, maxTextureSize: maxTexture };
   const el = document.createElement("mires-viewer") as MiresViewer;
   el.adapterFactory = async () => adapter;
-  el.setAttribute("study-uid", "2.25.100");
-  el.setAttribute("series-uid", "2.25.200");
+  el.entries = seriesEntries(["2.25.200"], [], "2.25.100");
   el.canAnnotate = canAnnotate;
   document.body.append(el);
   await vi.waitFor(() => expect(el.getAttribute("state")).toMatch(/ready|error/));

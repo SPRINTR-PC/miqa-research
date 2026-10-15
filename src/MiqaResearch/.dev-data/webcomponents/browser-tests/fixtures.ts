@@ -20,6 +20,8 @@ export interface Seed {
   pet: SeriesRef & { imageCount: number };
   petNoWeight: SeriesRef & { imageCount: number };
   mrOtherFor: SeriesRef & { imageCount: number };
+  /** #279: an MR in a later study of the CT's participant (Related Series across studies). */
+  followUp: SeriesRef & { imageCount: number };
   /** #290 Blinded Annotation project: a 2D image with one hidden (ingested) SR; the PI may reveal it. */
   blinded: SeriesRef & { participant: string };
 }
@@ -62,10 +64,30 @@ export class ViewerPage {
   }
 
   /** Open the dev page; `related` series are offered in the series list (#284). */
-  async open(series: { studyUid: string; seriesUid: string }, related: SeriesRef[] = []): Promise<void> {
-    const extra = related.map((r) => `&related=${r.seriesUid}`).join("");
-    await this.page.goto(`/viewer/dev/?study=${series.studyUid}&series=${series.seriesUid}${extra}`);
+  async open(series: SeriesRef, related: SeriesRef[] = []): Promise<void> {
+    await this.openList([series], related);
+  }
+
+  /** Open the dev page on several series (#279: first = base, the rest fused onto it), plus `related`. */
+  async openList(opened: SeriesRef[], related: SeriesRef[] = []): Promise<void> {
+    const query = [...opened.map((s) => `series=${s.seriesUid}`), ...related.map((r) => `related=${r.seriesUid}`)];
+    await this.page.goto(`/viewer/dev/?${query.join("&")}`);
     await expect(this.viewer).toHaveAttribute("state", /ready|error/);
+  }
+
+  /** Drag a series row onto a drop zone with the real mouse (HTML5 drag: the zones appear once it starts). */
+  async dragSeries(seriesUid: string, zone: "fuse" | "replace"): Promise<void> {
+    const { page } = this;
+    const row = (await page.locator(`mires-viewer .ser[data-series-uid="${seriesUid}"]`).boundingBox())!;
+    await page.mouse.move(row.x + row.width / 2, row.y + row.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(row.x + row.width / 2 + 30, row.y + row.height / 2 + 10, { steps: 5 });
+    const target = page.locator(`mires-viewer .drop-zone[data-zone="${zone}"]`);
+    await expect(target).toBeVisible();
+    const box = (await target.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 10 });
+    await page.mouse.up();
+    await expect(target).toHaveCount(0);
   }
 
   /** Drag across the viewport centre with a mouse button. */

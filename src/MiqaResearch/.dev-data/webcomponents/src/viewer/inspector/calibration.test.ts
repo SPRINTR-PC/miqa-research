@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { StubAdapter, type StubStackView } from "../adapter/stub.ts";
 import { MiresViewer } from "../mires-viewer.ts";
+import { seriesEntries } from "../test-fixtures.ts";
 
 const CT = "1.2.840.10008.5.1.4.1.1.2";
 const CR = "1.2.840.10008.5.1.4.1.1.1";
@@ -24,8 +25,7 @@ async function mount(metadata: unknown, { canAnnotate = false } = {}): Promise<{
   const adapter = new StubAdapter();
   const el = document.createElement("mires-viewer") as MiresViewer;
   el.adapterFactory = async () => adapter;
-  el.setAttribute("study-uid", "2.25.100");
-  el.setAttribute("series-uid", "2.25.200");
+  el.entries = seriesEntries(["2.25.200"], [], "2.25.100");
   if (canAnnotate) el.setAttribute("can-annotate", "");
   document.body.append(el);
   await vi.waitFor(() => expect(el.getAttribute("state")).toBe("ready"));

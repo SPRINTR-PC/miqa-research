@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { StubAdapter } from "./adapter/stub.ts";
 import { MiresViewer } from "./mires-viewer.ts";
+import { seriesEntries } from "./test-fixtures.ts";
 
 const BASE = "2.25.200";
 const OTHER = "2.25.300";
@@ -139,10 +140,8 @@ async function mount({ canAnnotate = true, related = [OTHER, PET], ...initial }:
   const adapter = new StubAdapter();
   const el = document.createElement("mires-viewer") as MiresViewer;
   el.adapterFactory = async () => adapter;
-  el.setAttribute("study-uid", "2.25.100");
-  el.setAttribute("series-uid", BASE);
+  el.entries = seriesEntries([BASE], related, "2.25.100", { [BASE]: { modality: "CT" }, [PET]: { modality: "PT" } });
   el.setAttribute("participant", "p1");
-  el.setAttribute("related-series", related.join(" "));
   el.canAnnotate = canAnnotate;
   document.body.append(el);
   await vi.waitFor(() => expect(el.getAttribute("state")).toBe("ready"));
@@ -462,8 +461,7 @@ describe("without a participant", () => {
     const server = stubServer({ chains: [chain("a1")] });
     const el = document.createElement("mires-viewer") as MiresViewer;
     el.adapterFactory = async () => new StubAdapter();
-    el.setAttribute("study-uid", "2.25.100");
-    el.setAttribute("series-uid", BASE);
+    el.entries = seriesEntries([BASE], [], "2.25.100");
     document.body.append(el);
     await vi.waitFor(() => expect(el.getAttribute("state")).toBe("ready"));
     await el.updateComplete;

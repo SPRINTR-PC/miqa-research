@@ -49,7 +49,8 @@ test("a series the user can't see shows an error instead of an image", async ({ 
   await viewerPage.open({ studyUid: "2.25.1", seriesUid: "2.25.2" });
 
   await expect(viewerPage.viewer).toHaveAttribute("state", "error");
-  await expect(viewerPage.page.locator("mires-viewer [role=alert]")).toContainText("404");
+  // The dev page leaves out series the user can't see (#279), so there is nothing to open.
+  await expect(viewerPage.page.locator("mires-viewer [role=alert]")).toContainText("No series to open");
 });
 
 test("static server serves the codec WASM as application/wasm", async ({ request }) => {
