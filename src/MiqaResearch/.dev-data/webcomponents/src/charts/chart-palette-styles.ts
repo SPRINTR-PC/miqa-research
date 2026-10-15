@@ -1,7 +1,7 @@
 import { css } from "lit";
 
 /**
- * Chart Palette (CONTEXT.md, ADR 0022): the color system every chart component
+ * Chart Palette (GLOSSARY.md, ADR 0022): the color system every chart component
  * resolves via `getComputedStyle` at render time. Categorical colors are the
  * `dataviz` skill's own validated 8-hue default, fixed and NOT derived from
  * `--mires-color-primary-parts`/`--mires-color-secondary-parts` — a brand-anchored

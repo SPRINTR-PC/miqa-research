@@ -6,7 +6,7 @@ import type { PlotlyTrace } from "./chart-types.js";
  * scatter, bubble, and filled area, which are all plotly.js's `scatter`
  * trace type distinguished only by `mode` and `fill`. No `color` field —
  * colors always come from the Chart Palette's categorical colorway in series
- * order, never an API-supplied hex (see CONTEXT.md ADR 0022).
+ * order, never an API-supplied hex (see GLOSSARY.md ADR 0022).
  */
 export interface XYSeries {
   name: string;

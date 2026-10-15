@@ -242,7 +242,7 @@ New management command, `evaluate_prom_ocr` (same style as `import_prom_form_tem
 
 ## 10. OCR Pipeline Mode & GPU Acceleration (wayfinder map #60, unshipped)
 
-Two opt-in, deployment-level settings layered on top of the shipped Hybrid Mode pipeline (§1–§9), for installations with capable-enough hardware. Neither is implemented yet; this section is the buildable spec, mirroring how §1–§9 handed off #10's original design. Domain terms (**Classic Path**, **VLM Fallback / Escalation**, **OCR Pipeline Mode**, **GPU Acceleration (OCR)**) are in `CONTEXT.md`.
+Two opt-in, deployment-level settings layered on top of the shipped Hybrid Mode pipeline (§1–§9), for installations with capable-enough hardware. Neither is implemented yet; this section is the buildable spec, mirroring how §1–§9 handed off #10's original design. Domain terms (**Classic Path**, **VLM Fallback / Escalation**, **OCR Pipeline Mode**, **GPU Acceleration (OCR)**) are in `GLOSSARY.md`.
 
 ### 10.1 Why
 

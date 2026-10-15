@@ -10,7 +10,7 @@ function snakeToCamelKey(key: string): string {
  * Recursively converts snake_case object keys to camelCase, leaving arrays,
  * primitives, and already-camelCase keys untouched. Chart API endpoints
  * render plain snake_case JSON like every other endpoint in this codebase
- * (CONTEXT.md, ADR 0020's amendment) — this is applied once per fetched
+ * (GLOSSARY.md, ADR 0020's amendment) — this is applied once per fetched
  * response, before it's treated as a `ChartResponse`.
  */
 export function snakeToCamelDeep<T = unknown>(value: unknown): T {
