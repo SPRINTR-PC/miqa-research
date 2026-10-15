@@ -32,8 +32,8 @@ _EVENT_CODES = {
 _MAX_DEPTH = 16
 
 
-def extract(ds: Dataset, research_project) -> dict:
-    result = generic_extract(ds, research_project)
+def extract(ds: Dataset, research_project, participant_alias: str) -> dict:
+    result = generic_extract(ds, research_project, participant_alias)
     report = {"totals": {}, "irradiation_events": []}
     _walk(ds, report, event=None, depth=0)
     result["metadata"]["dose_report"] = report

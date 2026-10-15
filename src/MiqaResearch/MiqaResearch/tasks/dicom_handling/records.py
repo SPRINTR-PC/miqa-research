@@ -2,13 +2,14 @@
 
 Study/Series fields are fill-blank-only: values populate on first creation and
 only fill still-blank fields on later matches — a disagreeing later file never
-overwrites an earlier value. The series' `file_size_in_mb` aggregate always
-accumulates. Matching is by the pseudonymized UID values, never the raw source
+overwrites an earlier value. Two series aggregates are exceptions, always
+resynced from the files: `file_size_in_mb` accumulates, and
+`frame_of_reference_uid` is the value all files share, else null (#197). Matching is by the pseudonymized UID values, never the raw source
 ones (#115).
 """
 from uuid import uuid7
 
-from django.db.models import F, Sum
+from django.db.models import Count, F, Max, Q, Sum
 from django.db.models.functions import Coalesce
 
 from MiqaResearch.data.models import DicomFile, DicomSeries, DicomStudy, StudyParticipant
@@ -75,6 +76,23 @@ def set_series_file_size(series: DicomSeries) -> None:
     DicomSeries.objects.filter(pk=series.pk).update(file_size_in_mb=total or 0.0)
 
 
+def set_series_frame_of_reference(series: DicomSeries) -> None:
+    """Resync the series' Frame of Reference to the one all its files share (#197)."""
+    DicomSeries.objects.filter(pk=series.pk).update(
+        frame_of_reference_uid=_shared_frame_of_reference(DicomFile.objects.filter(series=series))
+    )
+
+
+def _shared_frame_of_reference(files) -> str | None:
+    """The files' single Frame of Reference, or None if any file lacks one or they disagree."""
+    stats = files.aggregate(
+        distinct=Count("frame_of_reference_uid", distinct=True),
+        missing=Count("pk", filter=Q(frame_of_reference_uid__isnull=True) | Q(frame_of_reference_uid="")),
+        value=Max("frame_of_reference_uid"),
+    )
+    return stats["value"] if stats["distinct"] == 1 and stats["missing"] == 0 else None
+
+
 def fill_study_series_blanks(series: DicomSeries, extracted: dict) -> None:
     """Fill still-blank Study/Series fields from `extracted` (never overwrite)."""
     _fill_blanks(
@@ -107,6 +125,7 @@ def update_file_in_place(dcm_file: DicomFile, extracted: dict, file_size_in_mb: 
     dcm_file.content_sha256 = content_sha256
     dcm_file.save()
     set_series_file_size(dcm_file.series)
+    set_series_frame_of_reference(dcm_file.series)
 
 
 def _upsert_study(study_participant: StudyParticipant, study_uid: str, fields: dict) -> DicomStudy:

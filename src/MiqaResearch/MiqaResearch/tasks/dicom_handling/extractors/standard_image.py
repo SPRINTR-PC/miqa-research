@@ -33,7 +33,7 @@ STANDARD_IMAGE_SOP_CLASSES: frozenset[str] = frozenset({
 })
 
 
-def extract(ds: Dataset, research_project) -> dict:
-    result = generic_extract(ds, research_project)
+def extract(ds: Dataset, research_project, participant_alias: str) -> dict:
+    result = generic_extract(ds, research_project, participant_alias)
     result.update(image_geometry(ds, research_project))
     return result

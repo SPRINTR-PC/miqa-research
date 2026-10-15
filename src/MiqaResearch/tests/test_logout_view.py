@@ -55,3 +55,13 @@ def test_post_logs_the_user_out(client, user):
 
     assert response.status_code == 302
     assert "_auth_user_id" not in client.session
+
+
+@pytest.mark.django_db
+def test_logout_clears_the_browser_cache(client, user):
+    """Cached WADO frames/metadata must not outlive the session (#276)."""
+    client.force_login(user)
+
+    response = client.post("/accounts/logout/")
+
+    assert response["Clear-Site-Data"] == '"cache"'

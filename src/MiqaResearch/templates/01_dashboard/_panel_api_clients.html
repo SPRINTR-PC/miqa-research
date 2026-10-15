@@ -1,0 +1,73 @@
+{% get_current_language as LANGUAGE_CODE %}
+<div id="api-clients-panel" class="container space-y-4">
+  <p class="text-sm text-muted-foreground">{% translate "Machine clients read this project's images over WADO with the OAuth2 client-credentials grant. Each client is bound to this project, optionally narrowed to one Site, and keeps working when the person who issued it leaves the project." %}</p>
+  {% if manage_error %}<p class="etl-form-error">{{ manage_error }}</p>{% endif %}
+
+  {% if issued %}
+  <div class="rounded-lg border bg-card text-card-foreground shadow-sm p-6 space-y-2" role="status">
+    <p class="font-medium">{% blocktranslate with name=issued.binding.application.name %}Credentials for {{ name }}{% endblocktranslate %}</p>
+    <p class="text-sm text-muted-foreground">{% translate "Copy the secret now. It is stored hashed and will not be shown again; rotate it if it is lost." %}</p>
+    <label class="etl-field"><span>{% translate "Client ID" %}</span><input type="text" readonly value="{{ issued.binding.application.client_id }}"></label>
+    <label class="etl-field"><span>{% translate "Client secret" %}</span><input type="text" readonly value="{{ issued.client_secret }}" data-client-secret="{{ issued.client_secret }}"></label>
+    <p class="text-sm text-muted-foreground">{% if issued.binding.dicom_raw %}{% translate "Request the token with scope \"read dicom:raw\" to use the raw endpoints." %}{% else %}{% translate "Request the token with scope \"read\"." %}{% endif %}</p>
+  </div>
+  {% endif %}
+
+  <details{% if issue_form.is_bound %} open{% endif %}>
+    <summary class="btn" style="display:inline-flex;width:fit-content;cursor:pointer;">{% include 'components/icon.html' with icon_name='plus' icon_classes='h-4 w-4' %}{% translate "New API client" %}</summary>
+    <form style="margin-top:.75rem;" method="post" hx-post="{% url 'dashboard_tab_api_client_issue' project.id %}" hx-target="#dashboard-tab-panel" hx-swap="innerHTML">
+      {% csrf_token %}
+      {% for field in issue_form %}
+        <label class="etl-field"><span>{{ field.label }}</span>{{ field }}
+          {% if field.help_text %}<p class="text-sm text-muted-foreground">{{ field.help_text }}</p>{% endif %}
+          {% for error in field.errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
+        </label>
+      {% endfor %}
+      <button class="btn" type="submit">{% translate "Issue client" %}</button>
+    </form>
+  </details>
+
+  <div class="rounded-lg border bg-card text-card-foreground shadow-sm">
+    {% if client_bindings %}
+      <ul class="etl-list">
+        {% for binding in client_bindings %}
+          <li>
+            <div>
+              <p class="font-medium">{{ binding.application.name }}</p>
+              <p class="text-sm text-muted-foreground">{% translate "Client ID" %}: {{ binding.application.client_id }}</p>
+              <p class="text-sm text-muted-foreground">{% translate "Site" %}: {% if binding.clinic %}{{ binding.clinic.clinic_name }}{% else %}{% translate "All sites" %}{% endif %}</p>
+              <p class="text-sm text-muted-foreground">{% translate "Scopes" %}: read{% if binding.dicom_raw %} dicom:raw{% endif %}</p>
+            </div>
+            <div class="etl-manage-actions">
+              <details>
+                <summary class="btn">{% translate "Edit" %}</summary>
+                <form method="post" hx-post="{% url 'dashboard_tab_api_client_update' project.id binding.id %}" hx-target="#dashboard-tab-panel" hx-swap="innerHTML">
+                  {% csrf_token %}
+                  {% for field in binding.update_form %}
+                    <label class="etl-field"><span>{{ field.label }}</span>{{ field }}</label>
+                  {% endfor %}
+                  <button class="btn" type="submit">{% translate "Save" %}</button>
+                </form>
+              </details>
+              <form method="post" hx-post="{% url 'dashboard_tab_api_client_rotate' project.id binding.id %}" hx-target="#dashboard-tab-panel" hx-swap="innerHTML"
+                hx-confirm="{% translate 'Rotate the secret? The current secret and its tokens stop working at once.' %}">
+                {% csrf_token %}
+                <button class="btn" type="submit">{% translate "Rotate secret" %}</button>
+              </form>
+              <form method="post" hx-post="{% url 'dashboard_tab_api_client_revoke' project.id binding.id %}" hx-target="#dashboard-tab-panel" hx-swap="innerHTML"
+                hx-confirm="{% translate 'Revoke this client? It is deleted and its tokens stop working at once.' %}">
+                {% csrf_token %}
+                <button class="btn" type="submit">{% translate "Revoke" %}</button>
+              </form>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div class="p-6 py-16 text-center text-muted-foreground space-y-2">
+        {% include "components/icon.html" with icon_name="shield-check" %}
+        <p class="font-medium">{% translate "No API clients yet" %}</p>
+      </div>
+    {% endif %}
+  </div>
+</div>

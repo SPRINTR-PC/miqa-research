@@ -32,6 +32,17 @@ class DicomFile(models.Model):
     content_sha256 = models.CharField(
         max_length=64, blank=True, null=False, default="",
         help_text="SHA-256 hex of the stored original file bytes; detects duplicate files whose content differs from what's stored")
+    transfer_syntax_uid = models.CharField(
+        max_length=64, blank=True, null=True,
+        help_text="Transfer Syntax UID of the stored file; WADO-RS /frames serves frames in this syntax, never transcoded")
+    frame_index = models.JSONField(
+        blank=True, null=True,
+        help_text="Frame offset index: [offset, length] per frame in the stored file (tasks/dicom_handling/frame_index.py); "
+                  "null = not built yet, [] = no servable frames")
+    uids_pseudonymized = models.BooleanField(
+        default=False,
+        help_text="The stored bytes already carry pseudonymized UIDs (viewer-saved Annotations/Segmentations, #287); "
+                  "serve-time de-identification must not hash them again (uids_already_pseudonymized=True)")
 
     class Meta:
         db_table = "mires_dicom_file"

@@ -1,10 +1,16 @@
-from django.http import HttpResponse, FileResponse
+from django.http import FileResponse, HttpResponse
 from django.shortcuts import get_object_or_404
 from ninja import Router
-from MiqaResearch.data.models.dicom_file import DicomFile
-import pydicom
+
+from .access import audit_access, audited_files, machine_only, readable_dicom_files
+from .frames import router as frames_router
+from .metadata import router as metadata_router
 
 router = Router()
+# Retrieve Frames (#274) and Retrieve Metadata (#275) live in their own modules; same URL prefix.
+router.add_router("", frames_router)
+router.add_router("", metadata_router)
+
 
 # Helper for multipart/related response
 def multipart_related_response(items, boundary="boundary", content_type_item="application/dicom"):
@@ -12,7 +18,7 @@ def multipart_related_response(items, boundary="boundary", content_type_item="ap
     items: a list of either Django File objects or bytes.
     """
     content_type = f'multipart/related; type="{content_type_item}"; boundary={boundary}'
-    
+
     def file_iterator():
         for item in items:
             yield f"--{boundary}\r\n".encode()
@@ -30,147 +36,51 @@ def multipart_related_response(items, boundary="boundary", content_type_item="ap
 
 # WADO-URI
 @router.get("/wado")
+@machine_only
 def wado_uri(request, requestType: str, studyUID: str, seriesUID: str, objectUID: str, contentType: str = "application/dicom"):
     if requestType != "WADO":
         return HttpResponse("Invalid requestType", status=400)
-    
+
     dicom_file = get_object_or_404(
-        DicomFile,
+        readable_dicom_files(request),
         sop_instance_uid=objectUID,
         series__series_instance_uid=seriesUID,
         series__study__study_instance_uid=studyUID
     )
-    
+    audit_access(request, [dicom_file])
     return FileResponse(dicom_file.file.open('rb'), content_type="application/dicom")
 
 # WADO-RS Retrieve Study
 @router.get("/studies/{study_instance_uid}")
+@machine_only
 def retrieve_study(request, study_instance_uid: str):
-    dicom_files = DicomFile.objects.filter(series__study__study_instance_uid=study_instance_uid)
-    if not dicom_files.exists():
+    dicom_files = audited_files(
+        request, readable_dicom_files(request).filter(series__study__study_instance_uid=study_instance_uid))
+    if not dicom_files:
         return HttpResponse(status=404)
-    
     return multipart_related_response([df.file for df in dicom_files])
 
 # WADO-RS Retrieve Series
 @router.get("/studies/{study_instance_uid}/series/{series_instance_uid}")
+@machine_only
 def retrieve_series(request, study_instance_uid: str, series_instance_uid: str):
-    dicom_files = DicomFile.objects.filter(
+    dicom_files = audited_files(request, readable_dicom_files(request).filter(
         series__series_instance_uid=series_instance_uid,
         series__study__study_instance_uid=study_instance_uid
-    )
-    if not dicom_files.exists():
+    ))
+    if not dicom_files:
         return HttpResponse(status=404)
-    
     return multipart_related_response([df.file for df in dicom_files])
 
 # WADO-RS Retrieve Instance
 @router.get("/studies/{study_instance_uid}/series/{series_instance_uid}/instances/{sop_instance_uid}")
+@machine_only
 def retrieve_instance(request, study_instance_uid: str, series_instance_uid: str, sop_instance_uid: str):
     dicom_file = get_object_or_404(
-        DicomFile,
+        readable_dicom_files(request),
         sop_instance_uid=sop_instance_uid,
         series__series_instance_uid=series_instance_uid,
         series__study__study_instance_uid=study_instance_uid
     )
-    
+    audit_access(request, [dicom_file])
     return multipart_related_response([dicom_file.file])
-
-# WADO-RS Retrieve Metadata
-@router.get("/studies/{study_instance_uid}/metadata")
-def retrieve_study_metadata(request, study_instance_uid: str):
-    # Returns a JSON array of DICOM tags for all instances in the study using pydicom.
-    dicom_files = DicomFile.objects.filter(series__study__study_instance_uid=study_instance_uid)
-    
-    metadata = []
-    for df in dicom_files:
-        with df.file.open('rb') as f:
-            ds = pydicom.dcmread(f, stop_before_pixels=True)
-            metadata.append(ds.to_json_dict())
-    
-    return metadata
-
-@router.get("/studies/{study_instance_uid}/series/{series_instance_uid}/metadata")
-def retrieve_series_metadata(request, study_instance_uid: str, series_instance_uid: str):
-    dicom_files = DicomFile.objects.filter(
-        series__series_instance_uid=series_instance_uid,
-        series__study__study_instance_uid=study_instance_uid
-    )
-    
-    metadata = []
-    for df in dicom_files:
-        with df.file.open('rb') as f:
-            ds = pydicom.dcmread(f, stop_before_pixels=True)
-            metadata.append(ds.to_json_dict())
-    
-    return metadata
-
-@router.get("/studies/{study_instance_uid}/series/{series_instance_uid}/instances/{sop_instance_uid}/metadata")
-def retrieve_instance_metadata(request, study_instance_uid: str, series_instance_uid: str, sop_instance_uid: str):
-    df = get_object_or_404(
-        DicomFile,
-        sop_instance_uid=sop_instance_uid,
-        series__series_instance_uid=series_instance_uid,
-        series__study__study_instance_uid=study_instance_uid
-    )
-    
-    with df.file.open('rb') as f:
-        ds = pydicom.dcmread(f, stop_before_pixels=True)
-        return [ds.to_json_dict()]
-
-# WADO-RS Retrieve Frames
-@router.get("/studies/{study_instance_uid}/series/{series_instance_uid}/instances/{sop_instance_uid}/frames/{frame_list}")
-def retrieve_frames(request, study_instance_uid: str, series_instance_uid: str, sop_instance_uid: str, frame_list: str):
-    df = get_object_or_404(
-        DicomFile,
-        sop_instance_uid=sop_instance_uid,
-        series__series_instance_uid=series_instance_uid,
-        series__study__study_instance_uid=study_instance_uid
-    )
-    
-    # Parse frame list (it can be a single number or a comma-separated list like "1,2,3")
-    try:
-        requested_frames = [int(f) for f in frame_list.split(",")]
-    except ValueError:
-        return HttpResponse("Invalid frame list", status=400)
-    
-    frames = []
-    with df.file.open('rb') as f:
-        # Use dcmread with pixel data, but we'll access frames lazily if possible
-        ds = pydicom.dcmread(f)
-        
-        # Ensure we have PixelData
-        if 'PixelData' not in ds:
-            return HttpResponse("No pixel data in DICOM file", status=404)
-        
-        # Check if it's multi-frame
-        num_frames = getattr(ds, 'NumberOfFrames', 1)
-        
-        for frame_number in requested_frames:
-            if frame_number < 1 or frame_number > num_frames:
-                return HttpResponse(f"Frame number {frame_number} out of range", status=404)
-            
-            # pydicom frame index is 0-based, WADO-RS is 1-based
-            frame_index = frame_number - 1
-            
-            # Accessing ds.pixel_array for multi-frame might be expensive if it decodes everything.
-            # However, for pathology DICOMs (encapsulated), pydicom's get_frame(index) is better.
-            try:
-                # If encapsulated (common for pathology J2K/JPEG)
-                if ds.is_pixel_data_encapsulated:
-                    from pydicom.encaps.utils import get_frame
-                    frame_data = get_frame(ds.PixelData, frame_index)
-                else:
-                    # For native/uncompressed, we might need to calculate offsets or use pixel_array
-                    # But pathology is almost always encapsulated.
-                    # Simplest fallback for now:
-                    frame_data = ds.pixel_array[frame_index].tobytes() if num_frames > 1 else ds.PixelData
-                
-                frames.append(frame_data)
-            except Exception as e:
-                return HttpResponse(f"Error extracting frame {frame_number}: {str(e)}", status=500)
-
-    # WADO-RS Frames response usually uses multipart/related with a specific media type for frames.
-    # Often it's application/octet-stream or image/jpeg depending on the transfer syntax.
-    # Defaulting to application/octet-stream for general compatibility.
-    return multipart_related_response(frames, content_type_item="application/octet-stream")

@@ -35,7 +35,7 @@ EXTRACTOR_REGISTRY.update({
 DEFAULT_EXTRACTOR = generic.extract
 
 
-def extract(ds: Dataset, research_project) -> dict:
+def extract(ds: Dataset, research_project, participant_alias: str) -> dict:
     """Extract file-level data for one parsed instance.
 
     Returns a dict with the common keys from common.common_extraction
@@ -50,4 +50,4 @@ def extract(ds: Dataset, research_project) -> dict:
     """
     sop_class_uid = str(ds.get("SOPClassUID") or "").strip()
     handler = EXTRACTOR_REGISTRY.get(sop_class_uid, DEFAULT_EXTRACTOR)
-    return handler(ds, research_project)
+    return handler(ds, research_project, participant_alias)

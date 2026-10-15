@@ -8,6 +8,11 @@ from MiqaResearch.interfaces.http.views import (
     administration_index,
     dashboard_index,
     dashboard_project,
+    dashboard_tab_api_client_issue,
+    dashboard_tab_api_client_revoke,
+    dashboard_tab_api_client_rotate,
+    dashboard_tab_api_client_update,
+    dashboard_tab_api_clients,
     dashboard_tab_consent_statistics,
     dashboard_tab_consent_statistics_content,
     dashboard_tab_etl_binding_config_fields,
@@ -38,6 +43,8 @@ from MiqaResearch.interfaces.http.views.accounts.eid import (
 )
 from MiqaResearch.interfaces.http.views.accounts.login import LoginView
 from MiqaResearch.interfaces.http.views.accounts.logout import LogoutView
+from MiqaResearch.interfaces.http.views.viewer.dev import dev as viewer_dev
+from MiqaResearch.interfaces.http.views.viewer.page import viewer_page
 
 urlpatterns = [
     path('', landing_page_index, name='home'),
@@ -68,11 +75,18 @@ urlpatterns = [
             path('tabs/etl-pipelines/sources/<uuid:location_id>/delete/', dashboard_tab_etl_source_location_delete, name='dashboard_tab_etl_source_location_delete'),
             path('tabs/etl-pipelines/grants/', dashboard_tab_etl_location_grants_create, name='dashboard_tab_etl_location_grants_create'),
             path('tabs/etl-pipelines/grants/<uuid:grant_id>/delete/', dashboard_tab_etl_location_grant_delete, name='dashboard_tab_etl_location_grant_delete'),
+            path('tabs/api-clients/', dashboard_tab_api_clients, name='dashboard_tab_api_clients'),
+            path('tabs/api-clients/issue/', dashboard_tab_api_client_issue, name='dashboard_tab_api_client_issue'),
+            path('tabs/api-clients/<uuid:binding_id>/update/', dashboard_tab_api_client_update, name='dashboard_tab_api_client_update'),
+            path('tabs/api-clients/<uuid:binding_id>/rotate/', dashboard_tab_api_client_rotate, name='dashboard_tab_api_client_rotate'),
+            path('tabs/api-clients/<uuid:binding_id>/revoke/', dashboard_tab_api_client_revoke, name='dashboard_tab_api_client_revoke'),
         ])),
     ])),
     path(settings.ADMIN_URL, admin.site.urls),
     path('manuals/', include('documentation.urls')),
     path('monitor/', monitor_index, name='monitor'),
+    path('projects/<uuid:project_id>/participants/<uuid:participant_id>/viewer/', viewer_page, name='viewer_page'),
+    path('viewer/dev/', viewer_dev, name='viewer_dev'),  # DEBUG-only, for the browser harness (#278, #279)
     path('accounts/bankid/login/', bankid_login_redirect, name='bankid_login'),
     path('accounts/eid/callback/', eid_callback, name='eid_callback'),
     path('accounts/login/', LoginView.as_view(), name='account_login'),

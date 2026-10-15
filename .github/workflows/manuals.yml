@@ -21,6 +21,7 @@ jobs:
         working-directory: src/MiqaResearch
     env:
       MIRES_SECRET_KEY: manuals-ci
+      UV_PYTHON: "3.14"
 
     steps:
     - uses: actions/checkout@v5

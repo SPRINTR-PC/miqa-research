@@ -30,7 +30,7 @@ class ResearchProjectRoleAdmin(ModelAdmin):
 
 @admin.register(ResearchProjectUserRoleMap)
 class ResearchProjectUserRoleMapAdmin(ModelAdmin):
-    list_display = ("user", "project", "role",)
+    list_display = ("user", "project", "role", "clinic",)
     list_display_links = ("user", "project", "role",)
     list_filter = ("project", "role")
     search_fields = ("user", "project",)

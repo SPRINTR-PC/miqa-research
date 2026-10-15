@@ -123,7 +123,9 @@ def test_standard_image_geometry_populated_from_file_tags(research_project, tmp_
     assert dcm_file.contains_burned_in_annotations is False
 
 
-def test_metadata_captures_other_tags_with_phi_removed_first(research_project, tmp_path, settings):
+def test_metadata_is_sanitized_by_the_deidentification_profile(research_project, tmp_path, settings):
+    import json
+
     settings.MEDIA_ROOT = tmp_path / "media"
     src = write_dicom(build_ct_image(), tmp_path / "ct1.dcm")
 
@@ -134,17 +136,16 @@ def test_metadata_captures_other_tags_with_phi_removed_first(research_project, t
     # Non-PHI tags survive (DS values are read back as numbers by pydicom)
     assert metadata["KVP"] == 120.0
     assert metadata["BodyPartExamined"] == "HEAD"
-    assert metadata["InstitutionName"] == "FAKE MEDICAL CENTER"
-    # The defined PHI-bearing tags are gone
-    for phi_keyword in (
-        "PatientName",
-        "PatientID",
-        "PatientBirthDate",
-        "ReferringPhysicianName",
-        "OtherPatientIDs",
-        "PatientMotherBirthName",
-    ):
-        assert phi_keyword not in metadata, f"PHI tag {phi_keyword} leaked into metadata"
+    assert metadata["InstitutionName"] == "FAKE MEDICAL CENTER"  # Retain Institution Identity
+    # Patient identity is the Study Participant pseudonym
+    alias = StudyParticipant.objects.get().alias1
+    assert metadata["PatientName"] == alias
+    assert metadata["PatientID"] == alias
+    assert metadata["PatientIdentityRemoved"] == "YES"
+    # PHI values are gone (removed, or emptied where the profile says Z)
+    dump = json.dumps(metadata)
+    for phi_value in ("DOE^JANE", "P-1001", "19750131", "SMITH^ARTHUR", "OLD-ID-99"):
+        assert phi_value not in dump, f"PHI value {phi_value} leaked into metadata"
 
 
 def test_metadata_uid_tags_are_pseudonymized(research_project, tmp_path, settings):
@@ -212,18 +213,18 @@ def test_phi_inside_sequences_is_stripped_from_metadata(research_project, tmp_pa
     settings.MEDIA_ROOT = tmp_path / "media"
     ds = build_ct_image()
     item = Item()
-    item.PhysicianOfRecord = "EVA^LEVY"  # PHI tag nested in a sequence
-    item.RequestedProcedureDescription = "CT HEAD"
-    ds.add_new(0x00400275, "SQ", [item])  # RequestAttributesSequence
+    item.PhysiciansOfRecord = "EVA^LEVY"  # PHI tag nested in a kept sequence
+    item.PhysicalDeltaX = 0.01
+    ds.SequenceOfUltrasoundRegions = [item]
     src = write_dicom(ds, tmp_path / "ct_sq.dcm")
 
     report = run_ingestion(research_project, src)
 
     assert report.counts["ingested"] == 1
     metadata = DicomFile.objects.get().metadata
-    attrs = metadata["RequestAttributesSequence"][0]
-    assert attrs["RequestedProcedureDescription"] == "CT HEAD"
-    assert "PhysicianOfRecord" not in attrs
+    region = metadata["SequenceOfUltrasoundRegions"][0]
+    assert region["PhysicalDeltaX"] == 0.01
+    assert "PhysiciansOfRecord" not in region
     assert "EVA^LEVY" not in json.dumps(metadata)
 
 
@@ -307,20 +308,11 @@ def test_file_stored_locally_and_retrievable_via_wado_rs(research_project, tmp_p
         assert stored.read() == raw_bytes
 
     # Retrievable over the existing WADO-RS instance endpoint using only the
-    # pseudonymized UIDs visible in the database
-    from datetime import timedelta
+    # pseudonymized UIDs visible in the database, by a client bound to the project and
+    # granted raw access (#277: raw bytes need `dicom:raw`)
+    from tests.client_binding_helpers import bound_client
 
-    from django.utils import timezone
-    from oauth2_provider.models import AccessToken, Application
-
-    application = Application.objects.create(
-        name="wado-test", user=None, client_type=Application.CLIENT_CONFIDENTIAL,
-        authorization_grant_type=Application.GRANT_CLIENT_CREDENTIALS,
-    )
-    AccessToken.objects.create(
-        token="test-token-123", application=application, user=None, scope="read",
-        expires=timezone.now() + timedelta(hours=1),
-    )
+    bound_client(research_project, dicom_raw=True, scope="read dicom:raw", token="test-token-123")
     url = (
         f"/api/v1/dicom/studies/{dcm_file.series.study.study_instance_uid}"
         f"/series/{dcm_file.series.series_instance_uid}/instances/{dcm_file.sop_instance_uid}"
@@ -455,3 +447,33 @@ def test_truncated_dicom_file_is_per_file_error(research_project, tmp_path, sett
 
     assert report.counts == {"ingested": 0, "skipped_duplicate": 0, "duplicate_conflict": 0, "error": 1}
     assert DicomFile.objects.count() == 0
+
+
+def test_series_carries_its_files_pseudonymized_frame_of_reference(research_project, tmp_path, settings):
+    settings.MEDIA_ROOT = tmp_path / "media"
+    src = write_dicom(build_ct_image(frame_of_reference_uid="1.2.9999.42.1.1004"), tmp_path / "ct.dcm")
+
+    run_ingestion(research_project, src)
+
+    series = DicomSeries.objects.get()
+    dcm_file = DicomFile.objects.get()
+    assert series.frame_of_reference_uid == dcm_file.frame_of_reference_uid
+    assert series.frame_of_reference_uid not in (None, "", "1.2.9999.42.1.1004")
+
+
+def test_series_without_frame_of_reference_stays_null(research_project, tmp_path, settings):
+    settings.MEDIA_ROOT = tmp_path / "media"
+    run_ingestion(research_project, write_dicom(build_ct_image(frame_of_reference_uid=None), tmp_path / "ct.dcm"))
+
+    assert DicomSeries.objects.get().frame_of_reference_uid is None
+
+
+def test_series_whose_files_disagree_on_frame_of_reference_is_null(research_project, tmp_path, settings):
+    settings.MEDIA_ROOT = tmp_path / "media"
+    run_ingestion(research_project, write_dicom(build_ct_image(), tmp_path / "ct1.dcm"))
+    assert DicomSeries.objects.get().frame_of_reference_uid is not None
+
+    other = build_ct_image(sop_instance_uid="1.2.9999.42.1.2003", frame_of_reference_uid="1.2.9999.42.1.2004")
+    run_ingestion(research_project, write_dicom(other, tmp_path / "ct2.dcm"))
+
+    assert DicomSeries.objects.get().frame_of_reference_uid is None

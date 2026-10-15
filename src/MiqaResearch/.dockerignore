@@ -118,3 +118,11 @@ LocalOnly/
 docs/
 skills-lock.json
 .dev-data/
+# ...except the web-component sources the Dockerfile `viewer` stage builds from (spec #271)
+!.dev-data/webcomponents/
+!.dev-data/webcomponents/package-lock.json
+.dev-data/webcomponents/node_modules/
+.dev-data/webcomponents/browser-tests/
+.dev-data/webcomponents/test-results/
+# a locally built viewer bundle must not shadow the one the image builds
+static/js/viewer/

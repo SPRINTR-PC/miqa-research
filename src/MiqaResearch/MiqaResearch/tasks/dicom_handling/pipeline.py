@@ -13,6 +13,7 @@ for a run fails the run immediately (discovery.SourceError); per-file problems
 are reported per file in the run's report.
 """
 import hashlib
+import io
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -24,7 +25,7 @@ from django.db import transaction
 from helpers.dicom_uid import pseudonymize_uid
 from MiqaResearch.data.models import DicomFile, ResearchProject
 
-from . import discovery, dicom_parsing, extractors, pixel_bounds, records
+from . import derived_provenance, discovery, dicom_parsing, extractors, frame_index, pixel_bounds, records
 from . import participant as participant_stage
 from . import storage as storage_stage
 from .dicom_parsing import NotADicomError
@@ -244,22 +245,29 @@ def _ingest_file(
     sop_pseudonym = pseudonyms["sop"]
     try:
         with transaction.atomic():
-            existing = DicomFile.objects.select_related("series__study").filter(sop_instance_uid=sop_pseudonym).first()
+            existing = (
+                DicomFile.objects.select_related("series__study__study_participant")
+                .filter(sop_instance_uid=sop_pseudonym)
+                .first()
+            )
             if existing is not None:
                 outcome, stored_and_verified = _handle_duplicate(
                     existing, dataset, research_project, raw_bytes, overwrite_existing
                 )
                 return finish(outcome, sop_instance_uid=sop_pseudonym, stored_and_verified=stored_and_verified)
             participant = participant_stage.match_or_create_participant(dataset, research_project)
-            extracted = extractors.extract(dataset, research_project)
+            extracted = extractors.extract(dataset, research_project, participant.alias1)
             file_size_in_mb = len(raw_bytes) / (1024 * 1024)
             dcm_file = records.build_hierarchy(
                 participant, research_project, pseudonyms, extracted, file_size_in_mb
             )
             dcm_file.content_sha256 = _content_hash(raw_bytes)
+            _set_frame_index(dcm_file, raw_bytes)
             storage_stage.store_file_bytes(dcm_file, raw_bytes)
             dcm_file.save()
             records.add_file_size_to_series(dcm_file.series, file_size_in_mb)
+            records.set_series_frame_of_reference(dcm_file.series)
+            derived_provenance.record_ingested_provenance(dcm_file, dataset, research_project)
             stored_and_verified = _verify_stored(dcm_file, dcm_file.content_sha256, source_path)
     except ValueError:
         # match_or_create_participant: the file has no usable patient identifier
@@ -314,15 +322,29 @@ def _handle_duplicate(
         return OUTCOME_SKIPPED_DUPLICATE, False
     update = overwrite_existing if overwrite_existing is not None else research_project.dicom_duplicate_handling == "update"
     if update:
-        extracted = extractors.extract(dataset, research_project)
+        participant_alias = existing.series.study.study_participant.alias1
+        extracted = extractors.extract(dataset, research_project, participant_alias)
         file_size_in_mb = len(raw_bytes) / (1024 * 1024)
         superseded = storage_stage.replace_file_bytes(existing, raw_bytes)
+        _set_frame_index(existing, raw_bytes)
         records.update_file_in_place(existing, extracted, file_size_in_mb, new_hash)
         records.fill_study_series_blanks(existing.series, extracted)
         transaction.on_commit(lambda: storage_stage.discard_file(existing, superseded))
         stored_and_verified = _verify_stored(existing, new_hash, existing.file.name)
         return OUTCOME_DUPLICATE_CONFLICT, stored_and_verified
     return OUTCOME_DUPLICATE_CONFLICT, False
+
+
+def _set_frame_index(dcm_file: DicomFile, raw_bytes: bytes) -> None:
+    """Record the stored file's transfer syntax and frame offset index (#274) for WADO-RS /frames."""
+    try:
+        index = frame_index.build_frame_index(io.BytesIO(raw_bytes))
+    except Exception:
+        # Never fail ingestion over the index: a null index is rebuilt on first /frames request or by the backfill.
+        logger.exception("Could not build the frame offset index for %s", dcm_file.sop_instance_uid)
+        return
+    dcm_file.transfer_syntax_uid = index.transfer_syntax_uid or None
+    dcm_file.frame_index = index.frames
 
 
 def _content_hash(data: bytes) -> str:

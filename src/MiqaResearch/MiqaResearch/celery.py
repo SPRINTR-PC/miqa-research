@@ -45,6 +45,11 @@ app.conf.task_annotations = {
         "time_limit": DICOM_INGESTION_TASK_TIME_LIMIT,
         "soft_time_limit": DICOM_INGESTION_TASK_SOFT_TIME_LIMIT,
     },
+    # One-off re-sanitizing of every stored dump (#273) re-reads each file's header
+    "MiqaResearch.tasks.dicom_handling.metadata_backfill.resanitize_dicom_metadata": {
+        "time_limit": DICOM_INGESTION_TASK_TIME_LIMIT,
+        "soft_time_limit": DICOM_INGESTION_TASK_SOFT_TIME_LIMIT,
+    },
 }
 # ETL orchestrator (#162): fan_out_etl_polls is the one Celery-beat-scheduled entry point in the
 # codebase so far -- there's no existing django_celery_beat.PeriodicTask precedent to follow, so

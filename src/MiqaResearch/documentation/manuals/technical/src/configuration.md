@@ -56,6 +56,7 @@ is skipped entirely. Only enable it in local development.
 | `MIRES_SESSION_COOKIE_AGE` | `28800` (8 hours) | Absolute maximum lifetime of a session, in seconds, measured from login. |
 | `MIRES_SESSION_IDLE_TIMEOUT` | `1800` (30 minutes) | Sliding idle timeout, in seconds. A session is logged out if no activity is seen within this window. |
 | `MIRES_AUDIT_LOG_RETENTION_DAYS` | `90` | Number of days audit log entries are retained before becoming eligible for cleanup. |
+| `MIRES_DATA_ACCESS_AUDIT_RETENTION_DAYS` | `3650` (10 years) | Retention for data-access audit events (ADR 0024): `dicom:raw` grants and revocations, and WADO fetches by API clients. `purge_old_audit_logs` applies each retention to its own group. |
 
 Both the absolute and idle timeouts are enforced together, so a long-lived but idle
 session is logged out even if it has not yet reached its absolute maximum lifetime.
@@ -127,6 +128,7 @@ When using the default database-backed cache, the cache table must be created wi
 | `MIRES_EMAIL_USE_TLS` | `True` | Whether to use TLS when connecting to the SMTP server. |
 | `MIRES_EMAIL_NOREPLY_SENDER` | `noreply@miqaresearch.se` | Sender address used for outgoing system emails. |
 
+(heading-configuration-logging)=
 ## Logging
 
 | Variable | Default | Description |
@@ -138,13 +140,17 @@ When using the default database-backed cache, the cache table must be created wi
 Log output is written both to the console and to a rotating log file
 (`miqa_research.log` inside `MIRES_LOGGING_DIR`, capped at 5 MB with 5 backups kept).
 
-The following variables configure export of logs to an OpenTelemetry (OTLP) collector:
+The following variables configure export of logs to an OpenTelemetry (OTLP) collector.
+When enabled, every log record goes to the collector as well, with its `extra` fields as
+attributes (for example the viewer's [first-render timings](#heading-deployment-first-render)).
+Only OTLP over HTTP (protobuf) is supported.
 
 | Variable | Default | Description |
 |---|---|---|
+| `MIRES_OTLP_ENABLED` | `False` | Export logs to the OTLP collector at `MIRES_OTLP_ENDPOINT`. |
 | `MIRES_OTLP_ENDPOINT` | `http://localhost:4318/v1/logs` | OTLP collector endpoint that logs are exported to. |
-| `MIRES_OTLP_PROTOCOL` | `http` | OTLP transport protocol. |
-| `MIRES_OTLP_INSECURE` | `False` | Whether to allow an insecure (non-TLS) connection to the collector. |
+| `MIRES_OTLP_PROTOCOL` | `http` | Reserved. Only `http` is supported. |
+| `MIRES_OTLP_INSECURE` | `False` | Reserved. Over HTTP the endpoint's scheme (`http`/`https`) decides. |
 | `MIRES_OTLP_SERVICE_NAME` | `miqa-research` | Service name reported to the collector. |
 
 (heading-configuration-secrets)=
