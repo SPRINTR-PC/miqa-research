@@ -235,4 +235,23 @@ public sealed class UploadPageViewModelTests
         CollectionAssert.AreEqual(new[] { "z" }, page.Files.Select(f => f.Path).ToArray());
         Assert.AreEqual(1, page.Succeeded);
     }
+
+    [TestMethod]
+    public void A_blocked_page_cannot_start_a_Run_until_it_is_unblocked()
+    {
+        var page = NewPage();
+        Assert.IsTrue(Can(page.StartCommand));
+
+        page.BlockedReason = "The Data Directory '/srv/mires' is not writable by account 'alice'.";
+
+        Assert.IsTrue(page.IsBlocked);
+        Assert.IsFalse(Can(page.StartCommand));
+        Assert.IsFalse(Can(page.DryRunCommand));
+        Assert.IsFalse(Can(page.ScanCommand));
+
+        page.BlockedReason = "";
+
+        Assert.IsFalse(page.IsBlocked);
+        Assert.IsTrue(Can(page.StartCommand));
+    }
 }

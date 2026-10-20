@@ -67,7 +67,7 @@ public sealed class SettingFieldViewModel : ViewModelBase
     }
 
     public bool IsChanged => _value != Original;
-    public bool IsEditable => !IsLocked && (!NeedsUnlock || _unlocked);
+    public bool IsEditable => !IsLocked && (!NeedsUnlock || _unlocked || Original.Length == 0);
     public bool IsText => Kind is FieldKind.Text or FieldKind.Number or FieldKind.Path;
     public bool IsToggle => Kind == FieldKind.Toggle;
     public bool IsChoice => Kind == FieldKind.Choice;

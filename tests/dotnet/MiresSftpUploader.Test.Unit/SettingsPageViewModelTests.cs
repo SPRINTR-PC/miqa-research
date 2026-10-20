@@ -331,6 +331,17 @@ public sealed class SettingsPageViewModelTests : ConfigurationTestBase
     }
 
     [TestMethod]
+    public void A_Host_Key_Fingerprint_that_is_not_pinned_yet_is_editable_without_confirmation()
+    {
+        var machine = ValidMachine();
+        machine["Sftp"]!.AsObject().Remove("HostKeyFingerprint");
+
+        var page = NewPage(Create(machine.ToJsonString()));
+
+        Assert.IsTrue(page.Field("Sftp:HostKeyFingerprint").IsEditable);
+    }
+
+    [TestMethod]
     public async Task A_locked_Host_Key_Fingerprint_stays_locked_after_confirming()
     {
         var cfg = Create(ValidMachine().ToJsonString(), env: new() { ["MIRES_Sftp__HostKeyFingerprint"] = "envprint" });

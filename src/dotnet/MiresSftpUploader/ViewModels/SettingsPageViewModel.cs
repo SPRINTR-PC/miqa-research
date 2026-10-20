@@ -100,6 +100,9 @@ public sealed class SettingsPageViewModel : ViewModelBase
         Reload();
     }
 
+    /// <summary>Raised after a successful Save, so the rest of the window can read the configuration again.</summary>
+    public event Action? Saved;
+
     public ObservableCollection<SettingFieldViewModel> Fields { get; } = [];
     public ObservableCollection<SourceEditorViewModel> Sources { get; } = [];
 
@@ -454,5 +457,6 @@ public sealed class SettingsPageViewModel : ViewModelBase
 
         Reload();
         SaveMessage = "Saved to your User Overrides.";
+        Saved?.Invoke();
     }
 }

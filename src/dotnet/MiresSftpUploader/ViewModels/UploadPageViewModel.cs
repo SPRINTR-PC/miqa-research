@@ -43,12 +43,12 @@ public sealed class UploadPageViewModel : ViewModelBase
         _runtime = runtime;
         _post = post;
 
-        var idle = this.WhenAnyValue(x => x.IsRunning, running => !running);
+        var idle = this.WhenAnyValue(x => x.IsRunning, x => x.IsBlocked, (running, blocked) => !running && !blocked);
         StartCommand = ReactiveCommand.CreateFromTask(() => RunAsync(dryRun: false, retry: false), idle);
         DryRunCommand = ReactiveCommand.CreateFromTask(() => RunAsync(dryRun: true, retry: false), idle);
         ScanCommand = ReactiveCommand.CreateFromTask(() => RunAsync(dryRun: true, retry: false, scan: true), idle);
         CancelCommand = ReactiveCommand.Create(() => { _cancellation?.Cancel(); }, this.WhenAnyValue(x => x.IsRunning));
-        RetryFailedCommand = ReactiveCommand.CreateFromTask(() => RunAsync(dryRun: false, retry: true), this.WhenAnyValue(x => x.CanRetry));
+        RetryFailedCommand = ReactiveCommand.CreateFromTask(() => RunAsync(dryRun: false, retry: true), this.WhenAnyValue(x => x.CanRetry, x => x.IsBlocked, (retry, blocked) => retry && !blocked));
 
         Refresh();
     }
@@ -82,6 +82,21 @@ public sealed class UploadPageViewModel : ViewModelBase
     }
 
     public bool IsIdle => !IsRunning;
+
+    private string _blockedReason = "";
+
+    /// <summary>Why no Run can start (the Data Directory is not usable); empty when Runs may start. Shown as a banner.</summary>
+    public string BlockedReason
+    {
+        get => _blockedReason;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _blockedReason, value);
+            this.RaisePropertyChanged(nameof(IsBlocked));
+        }
+    }
+
+    public bool IsBlocked => _blockedReason.Length > 0;
 
     public bool CanRetry
     {
