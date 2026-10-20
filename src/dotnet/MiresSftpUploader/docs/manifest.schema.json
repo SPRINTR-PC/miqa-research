@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mires.example/schemas/manifest-1.json",
+  "title": "MIRES SFTP Uploader Manifest, schemaVersion 1",
+  "description": "The delivery record of one Source. Changes within schemaVersion 1 are additive only, so consumers must ignore properties they do not know. 'complete' is true only when no file failed and none was deferred (Too Recent); 'members' lists every object physically on the server (plain files and Archives) and equals the lines of the optional manifest.sha256, apart from the Manifest line itself.",
+  "type": "object",
+  "required": ["schemaVersion", "hashAlgorithm", "generatedAt", "complete", "source", "run", "failures", "root", "members"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "hashAlgorithm": { "const": "sha256" },
+    "generatedAt": { "type": "string", "format": "date-time", "description": "UTC; when the Run finished. With run-stamped Manifests, consumers take the latest." },
+    "complete": { "type": "boolean" },
+    "source": { "type": "string", "minLength": 1 },
+    "run": {
+      "type": "object",
+      "required": ["runId", "startedAt", "completedAt", "mode", "toolVersion", "machineName"],
+      "properties": {
+        "runId": { "type": "string", "format": "uuid" },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "completedAt": { "type": "string", "format": "date-time" },
+        "mode": { "enum": ["Run", "Retry"] },
+        "toolVersion": { "type": "string", "minLength": 1 },
+        "machineName": { "type": "string" },
+        "supersedes": { "type": "array", "items": { "type": "string" }, "description": "Names of earlier Manifests this one replaces." }
+      }
+    },
+    "failures": {
+      "type": "array",
+      "description": "Files whose newest version is not on the server. A file that was delivered earlier is still in 'members' with its earlier hash.",
+      "items": { "$ref": "#/$defs/problem" }
+    },
+    "deferred": {
+      "type": "array",
+      "description": "Files held back as Too Recent; a later Run delivers them.",
+      "items": { "$ref": "#/$defs/problem" }
+    },
+    "root": { "$ref": "#/$defs/directory" },
+    "members": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "type", "size", "sha256"],
+        "properties": {
+          "path": { "$ref": "#/$defs/path" },
+          "type": { "enum": ["file", "archive"] },
+          "size": { "type": "integer", "minimum": 0 },
+          "sha256": { "$ref": "#/$defs/sha256" },
+          "missingAtSource": { "const": true }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "path": { "type": "string", "minLength": 1, "description": "Relative to the Source, forward slashes." },
+    "problem": {
+      "type": "object",
+      "required": ["path", "reason"],
+      "properties": { "path": { "$ref": "#/$defs/path" }, "reason": { "type": "string" } }
+    },
+    "directory": {
+      "type": "object",
+      "required": ["type", "name", "children"],
+      "properties": {
+        "type": { "const": "directory" },
+        "name": { "type": "string" },
+        "children": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "$ref": "#/$defs/directory" },
+              { "$ref": "#/$defs/file" },
+              { "$ref": "#/$defs/archive" }
+            ]
+          }
+        }
+      }
+    },
+    "file": {
+      "type": "object",
+      "required": ["type", "name", "size", "sha256"],
+      "properties": {
+        "type": { "const": "file" },
+        "name": { "type": "string", "minLength": 1 },
+        "size": { "type": "integer", "minimum": 0 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "missingAtSource": { "const": true }
+      }
+    },
+    "archive": {
+      "type": "object",
+      "required": ["type", "name", "size", "sha256", "members"],
+      "properties": {
+        "type": { "const": "archive" },
+        "name": { "type": "string", "minLength": 1 },
+        "size": { "type": "integer", "minimum": 0 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "missingAtSource": { "const": true },
+        "members": {
+          "type": "array",
+          "description": "The original files packed into the Archive, with their own hashes.",
+          "items": {
+            "type": "object",
+            "required": ["path", "size", "sha256", "modified"],
+            "properties": {
+              "path": { "$ref": "#/$defs/path" },
+              "size": { "type": "integer", "minimum": 0 },
+              "sha256": { "$ref": "#/$defs/sha256" },
+              "modified": { "type": "string", "format": "date-time" }
+            }
+          }
+        }
+      }
+    }
+  }
+}
