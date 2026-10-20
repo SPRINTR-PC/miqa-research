@@ -55,6 +55,10 @@ public sealed record VerificationSettings
 public sealed record EngineSettings
 {
     public VerificationSettings Verification { get; init; } = new();
+    /// <summary>What the account can do on the server. <c>Auto</c> probes at the start of a Run; <c>WriteOnly</c> is Write-only Access.</summary>
+    public RemoteAccess RemoteAccess { get; init; } = RemoteAccess.Auto;
+    /// <summary>How a file reaches its final name: through a <c>.part</c> and a rename, or written straight to it.</summary>
+    public UploadStrategy UploadStrategy { get; init; } = UploadStrategy.PartThenRename;
     /// <summary>Remote directory under which each Source gets its own directory unless it sets a Remote Path.</summary>
     public string RemoteRoot { get; init; } = "/";
     /// <summary>host:port of the SFTP server; part of the Upload State key, so a different server counts as new.</summary>
