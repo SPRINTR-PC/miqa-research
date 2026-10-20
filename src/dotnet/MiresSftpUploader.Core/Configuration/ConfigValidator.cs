@@ -33,6 +33,9 @@ internal sealed partial class ConfigValidator
         Range("Scan:MinFileAgeSeconds", _config.Scan.MinFileAgeSeconds, 0, int.MaxValue);
         Manifest();
         Range("Upload:MaxParallelUploads", _config.Upload.MaxParallelUploads, 1, 16);
+        Range("Upload:VerifyTimeoutSeconds", _config.Upload.VerifyTimeoutSeconds, 1, 7 * 24 * 3600);
+        if (!VerifyCommand.IsValidTemplate(_config.Upload.VerifyCommand))
+            Error("Upload:VerifyCommand", "must contain the {path} placeholder.");
         if (_config.Sftp.RemoteAccess == RemoteAccess.WriteOnly)
         {
             if (_config.Upload.VerifyAfterUpload != VerificationLevel.Off)

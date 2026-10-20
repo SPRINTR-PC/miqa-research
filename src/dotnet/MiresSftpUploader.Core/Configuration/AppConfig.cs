@@ -140,6 +140,14 @@ public sealed record UploadConfig
     public VerificationLevel VerifyAfterUpload { get; init; } = VerificationLevel.Off;
     public bool RehashAll { get; init; }
     public VerificationLevel VerifyRemote { get; init; } = VerificationLevel.Off;
+    public const string DefaultVerifyCommand = "sha256sum -- {path}";
+    /// <summary>
+    /// Command the Hash level runs on the server; <c>{path}</c> is replaced by the shell-quoted remote path. Machine Config or
+    /// environment only: User Overrides and the UI cannot set it, so a user cannot make a scheduled Run execute a command of their choice.
+    /// </summary>
+    public string VerifyCommand { get; init; } = DefaultVerifyCommand;
+    /// <summary>Longest a single file's Verification may take.</summary>
+    public int VerifyTimeoutSeconds { get; init; } = 3600;
     public bool MoveFailuresAreErrors { get; init; }
 }
 
