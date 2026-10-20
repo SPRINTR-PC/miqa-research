@@ -1,7 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             x:Class="MiresSftpUploader.Prototype.MiresLogo">
-    <!-- PROTOTYPE: generated from src/MiqaResearch/static/icons/miqa-research-logo.svg (Avalonia.Svg.Skia 11.3 crashes on Avalonia 12). -->
+             x:Class="MiresSftpUploader.Views.MiresLogo">
+    <!-- Generated from src/MiqaResearch/static/icons/miqa-research-logo.svg (Avalonia.Svg.Skia 11.3 crashes on Avalonia 12). -->
     <Viewbox Stretch="Uniform">
         <Canvas Width="400" Height="340">
             <Path Data="m50.006 94.136v-26.758q0-13.379 8.8687-13.379h68.732q8.8687 0 13.303 11.706l8.8687 21.741h-99.773z" Fill="#525252"/>

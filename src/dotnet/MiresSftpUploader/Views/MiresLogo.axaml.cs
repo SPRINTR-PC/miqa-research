@@ -1,6 +1,6 @@
 using Avalonia.Controls;
 
-namespace MiresSftpUploader.Prototype;
+namespace MiresSftpUploader.Views;
 
 public partial class MiresLogo : UserControl
 {
