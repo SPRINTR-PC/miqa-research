@@ -63,6 +63,9 @@ public sealed class Engine
         if (options.DryRun || _settings.State.Path is not { Length: > 0 } databasePath)
             return await ExecuteCoreAsync(options, run, ct);
 
+        var access = EnsureDataDirectory(databasePath, run);
+        if (access.Problem is not null) return (ExitCodes.ConfigurationError, access.Problem);
+
         using var runLock = RunLock.TryAcquire(databasePath + ".lock", options.StartedBy, _time.GetUtcNow(), out var holder);
         if (runLock is null) return (ExitCodes.LockHeld, $"Another Run holds the lock ({holder})");
 
@@ -102,6 +105,27 @@ public sealed class Engine
             await store.FlushAsync();
             return outcome;
         }
+    }
+
+    /// <summary>
+    /// Checks the Data Directory holding the Upload State and reports the result. A missing directory is set up first when
+    /// this account has the rights; otherwise the problem (path, account, fix command) is returned. Never falls back to another directory.
+    /// </summary>
+    private DataDirectoryAccess EnsureDataDirectory(string databasePath, RunState run)
+    {
+        var directory = Path.GetDirectoryName(Path.GetFullPath(databasePath))!;
+        if (!Directory.Exists(directory))
+        {
+            var init = DataDirectory.Initialize(directory, _settings.State.AccessGroup, DataDirectory.CurrentPlatform);
+            foreach (var action in init.Actions) _logger.LogInformation("Data Directory: {Action}", action);
+            if (!init.Ok) _logger.LogWarning("Data Directory could not be set up: {Error}", init.Error);
+        }
+
+        var access = DataDirectory.Check(directory);
+        run.Report(new DataDirectoryChecked(access));
+        if (access.OnNetworkShare)
+            run.Report(new RunWarning($"The Data Directory '{directory}' looks like a network share. SQLite locking is unreliable there; use a local directory."));
+        return access;
     }
 
     /// <summary>Marks Runs with a stale heartbeat Abandoned and removes the .part files the state recorded for them.</summary>
@@ -347,6 +371,8 @@ public sealed class Engine
         public Guid RunId { get; } = runId;
         public DateTimeOffset StartedAt { get; } = startedAt;
         public UploadStateStore? Store { get; set; }
+
+        internal void Report(RunEvent runEvent) => progress.Report(runEvent);
 
         internal void Set(FileWork item, FileOutcome outcome, string? reason) =>
             Update(item, e => { e.Outcome = outcome; e.Reason = reason; });

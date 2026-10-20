@@ -16,7 +16,28 @@ public static partial class DataDirectory
         | UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute;
 
     /// <summary>Mode of every file the app creates in the Data Directory. SQLite gives -wal and -shm the database file's mode.</summary>
-    internal const UnixFileMode FileMode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.GroupWrite;
+    internal const UnixFileMode GroupWritableFileMode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.GroupWrite;
+
+    /// <summary>
+    /// Makes a file the app has just created group-writable (0660) regardless of the account's umask, so other accounts in the
+    /// access group can use it. Creates an empty file when <paramref name="createIfMissing"/>. A no-op on Windows (ACLs inherit from the directory).
+    /// Not being the owner is fine: the owner already set the mode.
+    /// </summary>
+    internal static void EnsureGroupWritable(string file, bool createIfMissing = false)
+    {
+        if (OperatingSystem.IsWindows()) return;
+        if (createIfMissing && !File.Exists(file))
+        {
+            try { new FileStream(file, FileMode.CreateNew, FileAccess.Write, System.IO.FileShare.ReadWrite).Dispose(); }
+            catch (IOException) when (File.Exists(file)) { /* another account created it first */ }
+        }
+
+        try
+        {
+            if (File.Exists(file) && File.GetUnixFileMode(file) != GroupWritableFileMode) File.SetUnixFileMode(file, GroupWritableFileMode);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+    }
 
     /// <summary>The group that is granted access unless <c>State:AccessGroup</c> says otherwise. Windows uses BUILTIN\Users instead.</summary>
     public static string DefaultGroup(DataDirectoryPlatform platform) =>
@@ -69,7 +90,7 @@ public static partial class DataDirectory
         {
             Repair(path, group, DirectoryMode, actions);
             foreach (var entry in Directory.EnumerateFileSystemEntries(path, "*", SearchOption.AllDirectories))
-                Repair(entry, group, Directory.Exists(entry) ? DirectoryMode : FileMode, actions);
+                Repair(entry, group, Directory.Exists(entry) ? DirectoryMode : GroupWritableFileMode, actions);
         }
         catch
         {

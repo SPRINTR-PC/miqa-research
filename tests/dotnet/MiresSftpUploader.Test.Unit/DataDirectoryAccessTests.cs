@@ -30,7 +30,7 @@ public sealed class DataDirectoryAccessTests
         Assert.AreEqual(_root, access.Path);
         Assert.AreEqual(Environment.UserName, access.Account);
         Assert.AreEqual(4096, access.DatabaseSizeBytes);
-        Assert.IsTrue(access.FreeSpaceBytes > 0);
+        Assert.IsGreaterThan(0, access.FreeSpaceBytes);
     }
 
     [TestMethod]
@@ -38,7 +38,7 @@ public sealed class DataDirectoryAccessTests
     {
         DataDirectory.Check(_root);
 
-        Assert.AreEqual(0, Directory.GetFileSystemEntries(_root).Length);
+        Assert.IsEmpty(Directory.GetFileSystemEntries(_root));
     }
 
     [TestMethod]

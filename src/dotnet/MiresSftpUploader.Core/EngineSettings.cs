@@ -12,6 +12,11 @@ public sealed record StateSettings
 {
     /// <summary>Path of the Upload State database; the lock file lives beside it. Null means no Upload State (every Run uploads everything).</summary>
     public string? Path { get; init; }
+    /// <summary>
+    /// Group granted access to the Data Directory on Linux and macOS (default mires-uploader / staff). Machine Config or
+    /// environment only; never editable in the UI. Windows always uses BUILTIN\Users.
+    /// </summary>
+    public string? AccessGroup { get; init; }
     /// <summary>How long per-Run file outcomes are kept.</summary>
     public TimeSpan RunFilesRetention { get; init; } = TimeSpan.FromDays(180);
     /// <summary>How long a Missing file's record is kept.</summary>

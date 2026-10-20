@@ -108,6 +108,8 @@ internal sealed class UploadStateStore : IAsyncDisposable
         var directory = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(path));
         if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
 
+        // SQLite gives -wal and -shm the mode of the database file, so it must be group-writable before SQLite creates it.
+        DataDirectory.EnsureGroupWritable(path, createIfMissing: true);
         var connection = OpenConnection(path);
         try
         {
@@ -165,6 +167,7 @@ internal sealed class UploadStateStore : IAsyncDisposable
         command.CommandText = "VACUUM INTO $target";
         command.Parameters.AddWithValue("$target", backup);
         command.ExecuteNonQuery();
+        DataDirectory.EnsureGroupWritable(backup);
     }
 
     // ---- Writes (queued) ----
