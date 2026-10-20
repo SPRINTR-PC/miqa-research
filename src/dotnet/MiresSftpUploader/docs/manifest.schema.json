@@ -45,7 +45,8 @@
           "type": { "enum": ["file", "archive"] },
           "size": { "type": "integer", "minimum": 0 },
           "sha256": { "$ref": "#/$defs/sha256" },
-          "missingAtSource": { "const": true }
+          "missingAtSource": { "const": true },
+          "directUpload": { "const": true, "description": "Written straight to its final name (UploadStrategy Direct), without a .part file and a rename." }
         }
       }
     }
@@ -84,7 +85,8 @@
         "name": { "type": "string", "minLength": 1 },
         "size": { "type": "integer", "minimum": 0 },
         "sha256": { "$ref": "#/$defs/sha256" },
-        "missingAtSource": { "const": true }
+        "missingAtSource": { "const": true },
+        "directUpload": { "const": true }
       }
     },
     "archive": {
@@ -96,6 +98,7 @@
         "size": { "type": "integer", "minimum": 0 },
         "sha256": { "$ref": "#/$defs/sha256" },
         "missingAtSource": { "const": true },
+        "directUpload": { "const": true },
         "members": {
           "type": "array",
           "description": "The original files packed into the Archive, with their own hashes.",

@@ -94,6 +94,10 @@ _Avoid_: Export, log file
 The uploaded hash file for a Source: a tree in which each uploaded item has its SHA-256 and each Archive additionally lists its original member files with their own hashes. Always uploaded at the end of a Run and always truthful: it states whether the Run was complete and lists the files that failed.
 _Avoid_: Hash file, checksum file, index
 
+**Run-stamped Manifest**:
+A Manifest uploaded as `manifest.<runId>.json` (and `manifest.<runId>.sha256`) because the server refused to replace the stable name. Never overwritten, complete and cumulative, and it lists the Manifests it replaces in `supersedes`; consumers take the latest `generatedAt`.
+_Avoid_: Versioned Manifest, Manifest copy
+
 **Flat Manifest**:
 The optional companion to the Manifest in `sha256sum -c` format, listing only the objects physically present on the server (plain files and Archives).
 _Avoid_: Checksum list

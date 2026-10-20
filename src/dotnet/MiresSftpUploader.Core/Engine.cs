@@ -212,6 +212,12 @@ public sealed partial class Engine : IRunEngine
     {
         var orphans = await store.SweepAbandonedAsync(_time.GetUtcNow(), _settings.State.AbandonedAfter, _settings.Destination);
         if (orphans.Count == 0) return;
+        if (_settings.RemoteAccess == RemoteAccess.WriteOnly)
+        {
+            _logger.LogInformation("Abandoned Run: left {Count} .part files on the server; the account cannot delete", orphans.Count);
+            await store.ForgetOrphansAsync(_settings.Destination);
+            return;
+        }
 
         var connect = await _remote.ConnectAsync(ct);
         if (!connect.IsOk)
@@ -284,6 +290,61 @@ public sealed partial class Engine : IRunEngine
         return participating;
     }
 
+    /// <summary>
+    /// Settles whether this Run has Write-only Access: as configured, or for <c>Auto</c> by trying to stat and list the Remote Root
+    /// (a refusal means write-only). The result is logged. A Dry Run touches nothing, so it only honours an explicit setting.
+    /// </summary>
+    private async Task<(int ExitCode, string? Reason)?> ResolveRemoteAccessAsync(RunOptions options, RunState run, CancellationToken ct)
+    {
+        switch (_settings.RemoteAccess)
+        {
+            case RemoteAccess.WriteOnly:
+                run.WriteOnly = true;
+                run.WriteOnlyReason = "RemoteAccess is WriteOnly";
+                _logger.LogInformation("Remote access: write-only (configured); read-based checks are off");
+                return null;
+            case RemoteAccess.ReadWrite:
+                _logger.LogInformation("Remote access: read-write (configured)");
+                return null;
+        }
+        if (options.DryRun) return null;
+
+        var connect = await _remote.ConnectAsync(ct);
+        if (!connect.IsOk) return (ExitCodes.ConnectFailed, connect.Reason);
+        await using var session = connect.Value!;
+        var root = Normalize(_settings.RemoteRoot);
+        var ensure = await session.EnsureDirectoryAsync(root, ct);
+        if (!ensure.IsOk)
+        {
+            _logger.LogInformation("Remote access: read-write assumed; could not prepare {Root}: {Reason}", root, ensure.Reason);
+            return null;
+        }
+        var stat = await session.StatAsync(root, ct);
+        var list = await session.ListAsync(root, ct);
+        var denied = stat.Kind == RemoteResultKind.Denied ? stat.Reason : list.Kind == RemoteResultKind.Denied ? list.Reason : null;
+        if (denied is null)
+        {
+            _logger.LogInformation("Remote access: read-write (stat and listing of {Root} work)", root);
+            return null;
+        }
+        run.WriteOnly = true;
+        run.WriteOnlyReason = denied;
+        _logger.LogInformation("Remote access: write-only (detected: {Reason}); read-based checks are off", denied);
+        return null;
+    }
+
+    /// <summary>Verification reads from the server, which a write-only account cannot do: exit 2 rather than silently skipping it.</summary>
+    private (int ExitCode, string? Reason)? WriteOnlyVerificationConflict(RunState run)
+    {
+        if (!run.WriteOnly) return null;
+        var settings = _settings.Verification;
+        var (setting, level) = settings.AfterUpload != VerificationLevel.Off ? ("Upload:VerifyAfterUpload", settings.AfterUpload)
+            : settings.Remote != VerificationLevel.Off ? ("Upload:VerifyRemote", settings.Remote) : (null, VerificationLevel.Off);
+        return setting is null
+            ? null
+            : (ExitCodes.ConfigurationError, $"{setting} is {level}, which this server cannot do: the account has Write-only Access ({run.WriteOnlyReason}) and Verification reads from the server. Turn Verification off.");
+    }
+
     private async Task<(int ExitCode, string? Reason)> ExecuteCoreAsync(RunOptions options, RunState run, CancellationToken ct)
     {
         var selected = new List<ISource>();
@@ -298,6 +359,7 @@ public sealed partial class Engine : IRunEngine
             }
 
         run.BuildGate = new SemaphoreSlim(Math.Max(_settings.Archive.MaxParallelBuilds, 1));
+        if (await ResolveRemoteAccessAsync(options, run, ct) is { } accessFailure) return accessFailure;
         var work = new List<object>();
         if (options.RetryOf is { } retryOf)
         {
@@ -329,7 +391,7 @@ public sealed partial class Engine : IRunEngine
                 var item = new FileWork(source, remotePath, file, options.RehashAll ? null : known);
                 if (rules.Reason(file.RelativePath, m => run.Warn(m)) is { } ignored)
                     run.Set(item, FileOutcome.Ignored, ignored);
-                else if (reserved.Contains(file.RelativePath))
+                else if (!run.WriteOnly && reserved.Contains(file.RelativePath))
                     collisions.Add(file.RelativePath);
                 else
                     candidates.Add((item, IsTooRecent(source, file)));
@@ -366,6 +428,7 @@ public sealed partial class Engine : IRunEngine
             return (ExitCodes.Ok, null);
         }
 
+        if (WriteOnlyVerificationConflict(run) is { } conflict) return conflict;
         if (await ProbeVerificationAsync(ct) is { } unavailable) return unavailable;
 
         foreach (var item in work.OfType<FileWork>()) run.Set(item, FileOutcome.Pending, null);
@@ -420,6 +483,11 @@ public sealed partial class Engine : IRunEngine
     private async Task<List<string>> PlaceMarkersAsync(IReadOnlyList<ISource> sources, RunState run, CancellationToken ct)
     {
         var placed = new List<string>();
+        if (run.WriteOnly)
+        {
+            _logger.LogInformation("No In-progress Markers: the account has Write-only Access and cannot remove them");
+            return placed;
+        }
         var connect = await _remote.ConnectAsync(ct);
         if (!connect.IsOk)
         {
@@ -507,8 +575,8 @@ public sealed partial class Engine : IRunEngine
             if (attemptResult.Sha256 is not null)
             {
                 if (attemptResult.Verified) run.CountVerified();
-                run.Succeed(item, attemptResult.Sha256, _time.GetElapsedTime(started));
-                store?.RecordSucceeded(run.RunId, key, item.File.Size, mtime, attemptResult.Sha256, _time.GetUtcNow(), _time.GetElapsedTime(started));
+                run.Succeed(item, attemptResult.Sha256, _time.GetElapsedTime(started), IsDirect);
+                store?.RecordSucceeded(run.RunId, key, item.File.Size, mtime, attemptResult.Sha256, _time.GetUtcNow(), _time.GetElapsedTime(started), IsDirect);
                 return;
             }
 
@@ -525,6 +593,11 @@ public sealed partial class Engine : IRunEngine
     }
 
     private const string UnchangedReason = "unchanged";
+
+    private bool IsDirect => _settings.UploadStrategy == UploadStrategy.Direct;
+
+    /// <summary>Where the bytes of <paramref name="finalPath"/> are written first: <c>name.part</c>, or the final name itself for Direct.</summary>
+    private string UploadTarget(string finalPath) => IsDirect ? finalPath : finalPath + ".part";
 
     /// <summary>The size and mtime fast path: the Upload State has this file Succeeded with the same size and mtime.</summary>
     private static bool IsUnchanged(FileWork item, out PriorFile prior)
@@ -546,7 +619,8 @@ public sealed partial class Engine : IRunEngine
     private async Task<UploadAttempt> TryUploadAsync(IRemoteSession session, FileWork item, RunState run, CancellationToken ct)
     {
         var finalPath = Join(item.RemotePath, item.File.RelativePath);
-        var partPath = finalPath + ".part";
+        // The object the bytes are written to: a .part that is renamed afterwards, or the final name itself (Direct).
+        var partPath = UploadTarget(finalPath);
         try
         {
             var ensure = await session.EnsureDirectoryAsync(ParentOf(finalPath), ct);
@@ -588,8 +662,11 @@ public sealed partial class Engine : IRunEngine
                 }
             }
 
-            var rename = await session.RenameAsync(partPath, finalPath, overwrite: true, ct);
-            if (!rename.IsOk) return UploadAttempt.From(rename);
+            if (!IsDirect)
+            {
+                var rename = await session.RenameAsync(partPath, finalPath, overwrite: true, ct);
+                if (!rename.IsOk) return UploadAttempt.From(rename);
+            }
             return new UploadAttempt(sha256, null, false, Verified: level != VerificationLevel.Off);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -616,7 +693,6 @@ public sealed partial class Engine : IRunEngine
     private async Task<RemoteResult> UploadManifestAsync(IRemoteSession session, ISource source, RunState run, RunOptions options, CancellationToken ct)
     {
         var remotePath = RemotePathOf(source);
-        var finalPath = Join(remotePath, _settings.ManifestName);
 
         var ensure = await session.EnsureDirectoryAsync(remotePath, ct);
         if (!ensure.IsOk) return ensure;
@@ -625,19 +701,60 @@ public sealed partial class Engine : IRunEngine
         var deferred = run.SourceEntries(source.Name)
             .Where(e => !e.Carried && e.Outcome == FileOutcome.Skipped && e.Reason == TooRecentReason)
             .Select(e => new ManifestFailure(e.Path, e.Reason!)).ToList();
-        var header = new ManifestHeader(source.Name, failures.Count == 0 && deferred.Count == 0, run.RunId, run.StartedAt, _time.GetUtcNow(),
-            ModeOf(options), _settings.ToolVersion, _settings.MachineName);
+        var complete = failures.Count == 0 && deferred.Count == 0;
+        var completedAt = _time.GetUtcNow();
+        var store = run.Store;
 
-        await using var json = TemporaryFile();
-        ManifestWriter.Write(json, header, failures, deferred, nodes);
-        json.Position = 0;
-        var (result, jsonSha256) = await UploadViaPartAsync(session, json, finalPath, ct);
-        if (!result.IsOk || !_settings.WriteFlatManifest) return result;
+        async Task<RemoteResult> UploadAsync(string jsonName, string flatName, IReadOnlyList<string> supersedes)
+        {
+            var header = new ManifestHeader(source.Name, complete, run.RunId, run.StartedAt, completedAt,
+                ModeOf(options), _settings.ToolVersion, _settings.MachineName) { Supersedes = supersedes };
+            await using var json = TemporaryFile();
+            ManifestWriter.Write(json, header, failures, deferred, nodes);
+            json.Position = 0;
+            var (result, jsonSha256) = await UploadFinalAsync(session, json, Join(remotePath, jsonName), ct);
+            if (!result.IsOk || !_settings.WriteFlatManifest) return result;
 
-        await using var flat = TemporaryFile();
-        ManifestWriter.WriteFlat(flat, nodes(), _settings.ManifestName, jsonSha256!);
-        flat.Position = 0;
-        return (await UploadViaPartAsync(session, flat, Join(remotePath, _settings.FlatManifestName), ct)).Result;
+            await using var flat = TemporaryFile();
+            ManifestWriter.WriteFlat(flat, nodes(), jsonName, jsonSha256!);
+            flat.Position = 0;
+            return (await UploadFinalAsync(session, flat, Join(remotePath, flatName), ct)).Result;
+        }
+
+        async Task Remember(string jsonName)
+        {
+            if (store is not null) await store.RecordManifestAsync(_settings.Destination, remotePath, source.Name, jsonName, run.RunId, _time.GetUtcNow());
+        }
+
+        // The stable names come first; a server that refuses to replace them is remembered per Destination, and from then on
+        // every Run uploads Manifest files of its own, which are never overwritten.
+        var earlier = store?.LoadManifestNames(_settings.Destination, remotePath, source.Name) ?? [];
+        var refused = store?.IsManifestOverwriteRefused(_settings.Destination) == true;
+        if (!refused)
+        {
+            var stable = await UploadAsync(_settings.ManifestName, _settings.FlatManifestName, earlier.Where(n => n != _settings.ManifestName).ToList());
+            if (stable.IsOk)
+            {
+                await Remember(_settings.ManifestName);
+                return stable;
+            }
+            if (stable.Kind != RemoteResultKind.Denied) return stable;
+            _logger.LogInformation("The server refused to replace {Manifest} ({Reason}); this Destination now gets a Manifest per Run", _settings.ManifestName, stable.Reason);
+            if (store is not null) await store.RememberManifestOverwriteRefusedAsync(_settings.Destination);
+            if (!earlier.Contains(_settings.ManifestName)) earlier = [.. earlier, _settings.ManifestName];
+        }
+
+        var stampedJson = RunStamped(_settings.ManifestName, run.RunId);
+        var uploaded = await UploadAsync(stampedJson, RunStamped(_settings.FlatManifestName, run.RunId), earlier);
+        if (uploaded.IsOk) await Remember(stampedJson);
+        return uploaded;
+    }
+
+    /// <summary><c>manifest.json</c> becomes <c>manifest.&lt;runId&gt;.json</c>.</summary>
+    internal static string RunStamped(string name, Guid runId)
+    {
+        var extension = Path.GetExtension(name);
+        return $"{name[..^extension.Length]}.{runId}{extension}";
     }
 
     /// <summary>
@@ -658,10 +775,10 @@ public sealed partial class Engine : IRunEngine
         var archives = run.SourceArchives(source.Name);
         IEnumerable<ManifestNode> Nodes() =>
             entries.Where(e => e.ArchivePath is null && e.Sha256 is not null && e.Outcome is FileOutcome.Succeeded or FileOutcome.Skipped)
-                .Select(e => (ManifestNode)new ManifestFile(e.Path, e.Size, e.Sha256!))
+                .Select(e => (ManifestNode)new ManifestFile(e.Path, e.Size, e.Sha256!) { DirectUpload = e.DirectUpload })
                 .Concat(archives.Select(a => (ManifestNode)new ManifestArchive(a.Path, a.Size, a.Sha256!,
                     a.Members.Select(m => byPath[m]).OrderBy(m => m.Path, StringComparer.Ordinal)
-                        .Select(m => new ManifestArchiveMember(m.Path, m.Size, m.Sha256!, m.Modified)).ToList())))
+                        .Select(m => new ManifestArchiveMember(m.Path, m.Size, m.Sha256!, m.Modified)).ToList()) { DirectUpload = a.DirectUpload }))
                 .OrderBy(n => n.Path, StringComparer.Ordinal);
         return (Nodes, entries.Where(e => e.Outcome == FileOutcome.Failed).Select(e => new ManifestFailure(e.Path, e.Reason ?? "Failed")).ToList());
     }
@@ -670,18 +787,22 @@ public sealed partial class Engine : IRunEngine
         new(Path.Combine(Path.GetTempPath(), "mires-manifest-" + Guid.NewGuid().ToString("N")), FileMode.CreateNew, FileAccess.ReadWrite,
             FileShare.None, 81920, FileOptions.DeleteOnClose);
 
-    /// <summary>Uploads the stream to <c>name.part</c> and renames it into place; returns the SHA-256 of what was sent.</summary>
-    private static async Task<(RemoteResult Result, string? Sha256)> UploadViaPartAsync(IRemoteSession session, Stream content, string finalPath, CancellationToken ct)
+    /// <summary>
+    /// Uploads the stream to its final name the way <c>UploadStrategy</c> says: through <c>name.part</c> and a rename, or straight
+    /// to the name. Returns the SHA-256 of what was sent.
+    /// </summary>
+    private async Task<(RemoteResult Result, string? Sha256)> UploadFinalAsync(IRemoteSession session, Stream content, string finalPath, CancellationToken ct)
     {
-        var partPath = finalPath + ".part";
+        var target = UploadTarget(finalPath);
         string sha256;
         await using (var hashing = new HashingReadStream(content))
         {
-            var upload = await session.UploadAsync(hashing, partPath, ct);
+            var upload = await session.UploadAsync(hashing, target, ct);
             if (!upload.IsOk) return (upload, null);
             sha256 = hashing.FinishHash();
         }
-        var rename = await session.RenameAsync(partPath, finalPath, overwrite: true, ct);
+        if (IsDirect) return (RemoteResult.Ok, sha256);
+        var rename = await session.RenameAsync(target, finalPath, overwrite: true, ct);
         return (rename, rename.IsOk ? sha256 : null);
     }
 
@@ -768,6 +889,9 @@ public sealed partial class Engine : IRunEngine
         public Guid RunId { get; } = runId;
         public DateTimeOffset StartedAt { get; } = startedAt;
         public UploadStateStore? Store { get; set; }
+        /// <summary>The account has Write-only Access: the Run trusts the Upload State instead of the server.</summary>
+        public bool WriteOnly { get; set; }
+        public string WriteOnlyReason { get; set; } = "";
 
         private int _verified;
         private int _verificationFailures;
@@ -791,8 +915,8 @@ public sealed partial class Engine : IRunEngine
         internal void Set(FileWork item, FileOutcome outcome, string? reason) =>
             Update(item, e => { e.Outcome = outcome; e.Reason = reason; });
 
-        internal void Succeed(FileWork item, string sha256, TimeSpan duration) =>
-            Update(item, e => { e.Outcome = FileOutcome.Succeeded; e.Reason = null; e.Sha256 = sha256; e.Bytes = e.Size; e.DurationMs = (long)duration.TotalMilliseconds; });
+        internal void Succeed(FileWork item, string sha256, TimeSpan duration, bool directUpload = false) =>
+            Update(item, e => { e.Outcome = FileOutcome.Succeeded; e.Reason = null; e.Sha256 = sha256; e.Bytes = e.Size; e.DurationMs = (long)duration.TotalMilliseconds; e.DirectUpload = directUpload; });
 
         internal void Skip(FileWork item, string sha256, string reason) =>
             Update(item, e => { e.Outcome = FileOutcome.Skipped; e.Reason = reason; e.Sha256 = sha256; });
@@ -870,7 +994,8 @@ public sealed partial class Engine : IRunEngine
         public FileOutcome Outcome { get; set; }
         public string? Reason { get; set; }
         public string? Sha256 { get; set; }
+        public bool DirectUpload { get; set; }
 
-        public FileEntry Clone() => new(Source, Path, Size) { Outcome = Outcome, Reason = Reason, Sha256 = Sha256, Bytes = Bytes, DurationMs = DurationMs, Carried = Carried, Modified = Modified, ArchivePath = ArchivePath, EntryName = EntryName, ChangeToken = ChangeToken, Moved = Moved };
+        public FileEntry Clone() => new(Source, Path, Size) { DirectUpload = DirectUpload, Outcome = Outcome, Reason = Reason, Sha256 = Sha256, Bytes = Bytes, DurationMs = DurationMs, Carried = Carried, Modified = Modified, ArchivePath = ArchivePath, EntryName = EntryName, ChangeToken = ChangeToken, Moved = Moved };
     }
 }

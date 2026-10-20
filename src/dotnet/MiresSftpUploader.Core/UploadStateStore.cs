@@ -37,7 +37,7 @@ internal sealed record OrphanPart(string Destination, string PartPath);
 /// </summary>
 internal sealed class UploadStateStore : IAsyncDisposable
 {
-    internal const int SchemaVersion = 2;
+    internal const int SchemaVersion = 3;
 
     private static readonly string[] Migrations =
     [
@@ -95,6 +95,24 @@ internal sealed class UploadStateStore : IAsyncDisposable
         """,
         // 2: the real modification time of an Archive member (Mtime holds a change token, which is a digest for S3 Sources)
         "ALTER TABLE ArchiveMembers ADD COLUMN Modified INTEGER NULL;",
+        // 3: Write-only Access. DirectUpload marks files written straight to their final name; Destinations remembers what a
+        // server refuses (Manifest overwrite); Manifests lists the Manifest names a Source has on the server, for `supersedes`.
+        """
+        ALTER TABLE Files ADD COLUMN DirectUpload INTEGER NOT NULL DEFAULT 0;
+        CREATE TABLE Destinations (
+            Destination              TEXT PRIMARY KEY,
+            ManifestOverwriteRefused INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE Manifests (
+            Destination TEXT NOT NULL,
+            RemotePath  TEXT NOT NULL,
+            Source      TEXT NOT NULL,
+            Name        TEXT NOT NULL,
+            RunId       TEXT NOT NULL,
+            UploadedAt  INTEGER NOT NULL,
+            PRIMARY KEY (Destination, RemotePath, Source, Name)
+        );
+        """,
     ];
 
     private const int BatchSize = 200;
@@ -208,10 +226,10 @@ internal sealed class UploadStateStore : IAsyncDisposable
     public Task MarkUploadingAsync(FileKey key, long size, long mtimeTicks, string partPath) =>
         Enqueue(c => Upsert(c, key, "Uploading", size, mtimeTicks, sha256: null, error: null, partPath, success: null));
 
-    public void RecordSucceeded(Guid runId, FileKey key, long size, long mtimeTicks, string sha256, DateTimeOffset now, TimeSpan duration) =>
+    public void RecordSucceeded(Guid runId, FileKey key, long size, long mtimeTicks, string sha256, DateTimeOffset now, TimeSpan duration, bool directUpload = false) =>
         _ = Enqueue(c =>
         {
-            Upsert(c, key, "Succeeded", size, mtimeTicks, sha256, error: null, partPath: null, success: now.UtcTicks);
+            Upsert(c, key, "Succeeded", size, mtimeTicks, sha256, error: null, partPath: null, success: now.UtcTicks, directUpload);
             InsertRunFile(c, runId, key, "Succeeded", size, duration, null, now);
         });
 
@@ -246,10 +264,11 @@ internal sealed class UploadStateStore : IAsyncDisposable
     /// Records an Archive delivered (or confirmed unchanged) with its zip hash and members; the member rows are replaced as a set.
     /// </summary>
     public void RecordArchiveSucceeded(Guid runId, FileKey key, long zipSize, string zipSha256,
-        IReadOnlyList<ArchiveMemberRecord> members, bool uploaded, DateTimeOffset now, TimeSpan duration) =>
+        IReadOnlyList<ArchiveMemberRecord> members, bool uploaded, DateTimeOffset now, TimeSpan duration, bool directUpload = false) =>
         _ = Enqueue(c =>
         {
-            Upsert(c, key, "Succeeded", zipSize, 0, zipSha256, error: null, partPath: null, success: now.UtcTicks);
+            // An unchanged Archive keeps how it was delivered.
+            Upsert(c, key, "Succeeded", zipSize, 0, zipSha256, error: null, partPath: null, success: now.UtcTicks, uploaded ? directUpload : null);
             Exec(c, """
                 DELETE FROM ArchiveMembers WHERE ArchiveFileId IN
                     (SELECT Id FROM Files WHERE Destination=$d AND RemotePath=$r AND Source=$s AND RelativePath=$p)
@@ -427,7 +446,7 @@ internal sealed class UploadStateStore : IAsyncDisposable
         using var connection = OpenConnection(_path, readOnly: true);
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT f.RelativePath, f.Size, f.Sha256, f.Status, m.MemberPath, m.Size, m.Modified, m.Sha256
+            SELECT f.RelativePath, f.Size, f.Sha256, f.Status, m.MemberPath, m.Size, m.Modified, m.Sha256, f.DirectUpload
             FROM Files f LEFT JOIN ArchiveMembers m ON m.ArchiveFileId = f.Id
             WHERE f.Destination=$d AND f.RemotePath=$r AND f.Source=$s AND f.Sha256 IS NOT NULL
             ORDER BY f.RelativePath COLLATE BINARY, m.MemberPath COLLATE BINARY
@@ -441,30 +460,68 @@ internal sealed class UploadStateStore : IAsyncDisposable
         long size = 0;
         string sha = "";
         var missing = false;
+        var direct = false;
         List<ManifestArchiveMember>? members = null;
         while (rows.Read())
         {
             var current = rows.GetString(0);
             if (current != path)
             {
-                if (path is not null) yield return Node(path, size, sha, missing, members);
+                if (path is not null) yield return Node(path, size, sha, missing, direct, members);
                 path = current;
                 size = rows.GetInt64(1);
                 sha = rows.GetString(2);
                 missing = rows.GetString(3) == "Missing";
+                direct = rows.GetInt64(8) != 0;
                 members = null;
             }
             if (!rows.IsDBNull(4))
                 (members ??= []).Add(new ManifestArchiveMember(rows.GetString(4), rows.GetInt64(5),
                     rows.GetString(7), rows.IsDBNull(6) ? null : new DateTimeOffset(rows.GetInt64(6), TimeSpan.Zero)));
         }
-        if (path is not null) yield return Node(path, size, sha, missing, members);
+        if (path is not null) yield return Node(path, size, sha, missing, direct, members);
 
-        static ManifestNode Node(string path, long size, string sha, bool missing, List<ManifestArchiveMember>? members) =>
+        static ManifestNode Node(string path, long size, string sha, bool missing, bool direct, List<ManifestArchiveMember>? members) =>
             members is null
-                ? new ManifestFile(path, size, sha) { MissingAtSource = missing }
-                : new ManifestArchive(path, size, sha, members) { MissingAtSource = missing };
+                ? new ManifestFile(path, size, sha) { MissingAtSource = missing, DirectUpload = direct }
+                : new ManifestArchive(path, size, sha, members) { MissingAtSource = missing, DirectUpload = direct };
     }
+
+    /// <summary>True when an earlier Run learned that this server refuses to replace the Manifest.</summary>
+    public bool IsManifestOverwriteRefused(string destination)
+    {
+        using var connection = OpenConnection(_path, readOnly: true);
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT ManifestOverwriteRefused FROM Destinations WHERE Destination=$d";
+        command.Parameters.AddWithValue("$d", destination);
+        return command.ExecuteScalar() is long refused && refused != 0;
+    }
+
+    public Task RememberManifestOverwriteRefusedAsync(string destination) =>
+        Enqueue(c => Exec(c, """
+            INSERT INTO Destinations (Destination, ManifestOverwriteRefused) VALUES ($d, 1)
+            ON CONFLICT (Destination) DO UPDATE SET ManifestOverwriteRefused = 1
+            """, ("$d", destination)));
+
+    /// <summary>The Manifest names this Source has on the server, oldest first.</summary>
+    public List<string> LoadManifestNames(string destination, string remotePath, string source)
+    {
+        using var connection = OpenConnection(_path, readOnly: true);
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT Name FROM Manifests WHERE Destination=$d AND RemotePath=$r AND Source=$s ORDER BY UploadedAt, Name";
+        command.Parameters.AddWithValue("$d", destination);
+        command.Parameters.AddWithValue("$r", remotePath);
+        command.Parameters.AddWithValue("$s", source);
+        var names = new List<string>();
+        using var rows = command.ExecuteReader();
+        while (rows.Read()) names.Add(rows.GetString(0));
+        return names;
+    }
+
+    public Task RecordManifestAsync(string destination, string remotePath, string source, string name, Guid runId, DateTimeOffset now) =>
+        Enqueue(c => Exec(c, """
+            INSERT OR REPLACE INTO Manifests (Destination, RemotePath, Source, Name, RunId, UploadedAt) VALUES ($d, $r, $s, $n, $run, $at)
+            """, ("$d", destination), ("$r", remotePath), ("$s", source), ("$n", name), ("$run", runId.ToString()), ("$at", now.UtcTicks)));
 
     /// <summary>The Source's files whose newest version is not on the server, with the reason of the last attempt.</summary>
     public List<ManifestFailure> LoadFailures(string destination, string remotePath, string source)
@@ -583,21 +640,22 @@ internal sealed class UploadStateStore : IAsyncDisposable
 
     // ---- SQL helpers ----
 
-    private static void Upsert(SqliteConnection c, FileKey key, string status, long size, long mtime, string? sha256, string? error, string? partPath, long? success) =>
+    private static void Upsert(SqliteConnection c, FileKey key, string status, long size, long mtime, string? sha256, string? error, string? partPath, long? success, bool? directUpload = null) =>
         Exec(c, """
-            INSERT INTO Files (Destination, RemotePath, Source, RelativePath, Sha256, Size, Mtime, Status, LastSuccessAt, LastError, PartPath)
-            VALUES ($d, $r, $s, $p, $sha, $size, $mtime, $status, $success, $error, $part)
+            INSERT INTO Files (Destination, RemotePath, Source, RelativePath, Sha256, Size, Mtime, Status, LastSuccessAt, LastError, PartPath, DirectUpload)
+            VALUES ($d, $r, $s, $p, $sha, $size, $mtime, $status, $success, $error, $part, COALESCE($direct, 0))
             ON CONFLICT (Destination, RemotePath, Source, RelativePath) DO UPDATE SET
                 Sha256 = COALESCE($sha, Sha256),
                 -- A failed or running re-upload leaves the earlier delivery (hash and size) on the server.
                 Size = CASE WHEN $status IN ('Failed', 'Uploading') AND Sha256 IS NOT NULL THEN Size ELSE $size END,
                 Mtime = $mtime, Status = $status,
                 LastSuccessAt = COALESCE($success, LastSuccessAt),
-                LastError = $error, PartPath = $part, MissingSince = NULL
+                LastError = $error, PartPath = $part, MissingSince = NULL,
+                DirectUpload = COALESCE($direct, DirectUpload)
             """,
             ("$d", key.Destination), ("$r", key.RemotePath), ("$s", key.Source), ("$p", key.RelativePath),
             ("$sha", sha256), ("$size", size), ("$mtime", mtime), ("$status", status),
-            ("$success", success), ("$error", error), ("$part", partPath));
+            ("$success", success), ("$error", error), ("$part", partPath), ("$direct", directUpload is null ? null : directUpload.Value ? 1 : 0));
 
     private static void InsertRunFile(SqliteConnection c, Guid runId, FileKey key, string outcome, long bytes, TimeSpan duration, string? error, DateTimeOffset now) =>
         Exec(c, """

@@ -60,6 +60,39 @@ public sealed class CompositionSettingsTests
     }
 
     [TestMethod]
+    public void Engine_settings_carry_the_remaining_Manifest_Verification_Archive_and_access_settings()
+    {
+        var config = Config with
+        {
+            Sftp = Config.Sftp with { RemoteAccess = RemoteAccess.WriteOnly, UploadStrategy = UploadStrategy.Direct },
+            Manifest = new ManifestConfig { JsonName = "m.json", FlatName = "m.sha256", WriteFlat = true, InProgressSuffix = ".busy" },
+            Upload = new UploadConfig
+            {
+                VerifyAfterUpload = VerificationLevel.Size,
+                VerifyRemote = VerificationLevel.ReadBack,
+                VerifyCommand = "shasum -a 256 {path}",
+                VerifyTimeoutSeconds = 90,
+            },
+            Archive = new ArchiveConfig { StagingPath = "/stage", MaxParallelBuilds = 2, MinFreeSpaceBytes = 5, WarnAboveBytes = 7 },
+        };
+
+        var settings = UploaderComposition.ToEngineSettings(config);
+
+        Assert.AreEqual(RemoteAccess.WriteOnly, settings.RemoteAccess);
+        Assert.AreEqual(UploadStrategy.Direct, settings.UploadStrategy);
+        Assert.IsTrue(settings.WriteFlatManifest);
+        Assert.AreEqual(".busy", settings.InProgressSuffix);
+        Assert.AreEqual(VerificationLevel.Size, settings.Verification.AfterUpload);
+        Assert.AreEqual(VerificationLevel.ReadBack, settings.Verification.Remote);
+        Assert.AreEqual("shasum -a 256 {path}", settings.Verification.Command);
+        Assert.AreEqual(TimeSpan.FromSeconds(90), settings.Verification.Timeout);
+        Assert.AreEqual("/stage", settings.Archive.StagingPath);
+        Assert.AreEqual(2, settings.Archive.MaxParallelBuilds);
+        Assert.AreEqual(5, settings.Archive.MinFreeSpaceBytes);
+        Assert.AreEqual(7, settings.Archive.WarnAboveBytes);
+    }
+
+    [TestMethod]
     public void Engine_settings_hold_the_Upload_State_settings_with_seconds_and_days_as_time_spans()
     {
         var state = UploaderComposition.ToEngineSettings(Config).State;

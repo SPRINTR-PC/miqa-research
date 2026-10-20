@@ -19,6 +19,9 @@ public interface IRemoteSession : IAsyncDisposable
 
     Task<RemoteResult> DeleteAsync(string path, CancellationToken cancellationToken);
 
+    /// <summary>The names (not paths) of the entries directly inside the directory. Denied when the account may not list it.</summary>
+    Task<RemoteResult<IReadOnlyList<string>>> ListAsync(string directory, CancellationToken cancellationToken);
+
     /// <summary>Ok with the info when the object exists, Failed("not found") otherwise.</summary>
     Task<RemoteResult<RemoteFileInfo>> StatAsync(string path, CancellationToken cancellationToken);
 
