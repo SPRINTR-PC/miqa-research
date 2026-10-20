@@ -17,6 +17,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="..\..\..\src\dotnet\MiresSftpUploader\appsettings.json" Link="shipped\appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\MiresSftpUploader.Test.Support\MiresSftpUploader.Test.Support.csproj" />
     <ProjectReference Include="..\..\..\src\dotnet\MiresSftpUploader.Core\MiresSftpUploader.Core.csproj" />
   </ItemGroup>
