@@ -267,6 +267,8 @@ public sealed class RunHistoryTests
             yield return new SourceFile("a.txt", 5, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
         }
 
+        public Task<SourceFile?> StatAsync(string relativePath, CancellationToken cancellationToken) => throw new NotSupportedException();
+
         public async Task<Stream> OpenReadAsync(string relativePath, CancellationToken cancellationToken)
         {
             Opened.TrySetResult();
@@ -286,6 +288,8 @@ public sealed class RunHistoryTests
             await Task.Yield();
             yield return new SourceFile(file, 5, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
         }
+
+        public Task<SourceFile?> StatAsync(string relativePath, CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task<Stream> OpenReadAsync(string relativePath, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("simulated crash");

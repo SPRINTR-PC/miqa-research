@@ -195,8 +195,15 @@ internal sealed class UploadStateStore : IAsyncDisposable
             InsertRunFile(c, runId, key, "Succeeded", size, duration, null, now);
         });
 
-    public void RecordSkipped(Guid runId, FileKey key, DateTimeOffset now) =>
-        _ = Enqueue(c => InsertRunFile(c, runId, key, "Skipped", 0, TimeSpan.Zero, "unchanged", now));
+    public void RecordSkipped(Guid runId, FileKey key, DateTimeOffset now, string reason = "unchanged") =>
+        _ = Enqueue(c => InsertRunFile(c, runId, key, "Skipped", 0, TimeSpan.Zero, reason, now));
+
+    /// <summary>The file is no longer in its Source. The server copy is left alone.</summary>
+    public Task MarkMissingFileAsync(FileKey key, DateTimeOffset now) =>
+        Enqueue(c => Exec(c, """
+            UPDATE Files SET Status='Missing', MissingSince=$now, PartPath=NULL
+            WHERE Destination=$d AND RemotePath=$r AND Source=$s AND RelativePath=$p
+            """, ("$now", now.UtcTicks), ("$d", key.Destination), ("$r", key.RemotePath), ("$s", key.Source), ("$p", key.RelativePath)));
 
     public void RecordFailed(Guid runId, FileKey key, long size, long mtimeTicks, string error, DateTimeOffset now, TimeSpan duration) =>
         _ = Enqueue(c =>
@@ -293,6 +300,32 @@ internal sealed class UploadStateStore : IAsyncDisposable
         });
 
     // ---- Reads ----
+
+    public bool RunExists(Guid runId)
+    {
+        using var connection = OpenConnection(_path, readOnly: true);
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT 1 FROM Runs WHERE Id = $id";
+        command.Parameters.AddWithValue("$id", runId.ToString());
+        return command.ExecuteScalar() is not null;
+    }
+
+    /// <summary>Files that failed in the given Run and are still Failed, for a retry.</summary>
+    public List<(string RemotePath, string Source, string RelativePath)> LoadFailedOf(Guid runId, string destination)
+    {
+        using var connection = OpenConnection(_path, readOnly: true);
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT f.RemotePath, f.Source, f.RelativePath FROM RunFiles r JOIN Files f ON f.Id = r.FileId
+            WHERE r.RunId = $id AND r.Outcome = 'Failed' AND f.Status = 'Failed' AND f.Destination = $d
+            """;
+        command.Parameters.AddWithValue("$id", runId.ToString());
+        command.Parameters.AddWithValue("$d", destination);
+        var result = new List<(string, string, string)>();
+        using var rows = command.ExecuteReader();
+        while (rows.Read()) result.Add((rows.GetString(0), rows.GetString(1), rows.GetString(2)));
+        return result;
+    }
 
     public Dictionary<string, PriorFile> LoadSource(string destination, string remotePath, string source)
     {

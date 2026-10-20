@@ -100,6 +100,9 @@ public sealed class Engine
         var unknown = options.SourceNames.Concat(options.ResetSources).FirstOrDefault(n => _sources.All(s => s.Name != n));
         if (unknown is not null) return (ExitCodes.ConfigurationError, $"Unknown Source '{unknown}'");
 
+        if (options.RetryOf is not null && (options.DryRun || _settings.State.Path is not { Length: > 0 }))
+            return (ExitCodes.ConfigurationError, "Retrying a Run needs the Upload State");
+
         if (options.DryRun || _settings.State.Path is not { Length: > 0 } databasePath)
             return await ExecuteCoreAsync(options, run, ct);
 
@@ -119,6 +122,8 @@ public sealed class Engine
         await using (store)
         {
             run.Store = store;
+            if (options.RetryOf is { } retryOf && !store.RunExists(retryOf))
+                return (ExitCodes.ConfigurationError, $"Unknown Run {retryOf}");
             await CleanUpAbandonedRunsAsync(store, ct);
             await store.BeginRunAsync(run.RunId, run.StartedAt, ModeOf(options), options.Trigger.ToString(), options.StartedBy);
             using var cancelRequested = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -183,6 +188,46 @@ public sealed class Engine
         await store.ForgetOrphansAsync(_settings.Destination);
     }
 
+    /// <summary>
+    /// Plans a retry without scanning: only the files that failed in the given Run and are still Failed in the Upload State.
+    /// A vanished file becomes Missing. Everything else the Upload State knows as delivered is carried into the Manifest.
+    /// Returns the Sources that take part.
+    /// </summary>
+    private async Task<List<ISource>> PlanRetryAsync(Guid retryOf, List<ISource> candidates, List<FileWork> work, RunState run, CancellationToken ct)
+    {
+        var store = run.Store!;
+        var failedInRun = store.LoadFailedOf(retryOf, _settings.Destination);
+        var participating = new List<ISource>();
+        foreach (var source in candidates)
+        {
+            var remotePath = RemotePathOf(source);
+            var failedPaths = failedInRun.Where(f => f.Source == source.Name && f.RemotePath == remotePath).Select(f => f.RelativePath).ToHashSet(StringComparer.Ordinal);
+            if (failedPaths.Count == 0) continue;
+            participating.Add(source);
+
+            var prior = store.LoadSource(_settings.Destination, remotePath, source.Name);
+            foreach (var (path, known) in prior.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+            {
+                if (known.Status == "Succeeded" && known.Sha256 is not null)
+                    run.Carry(source.Name, path, known.Size, known.Sha256);
+                if (known.Status != "Failed" || !failedPaths.Contains(path)) continue;
+
+                var stat = await source.StatAsync(path, ct);
+                if (stat is null)
+                {
+                    var key = new FileKey(_settings.Destination, remotePath, source.Name, path);
+                    var vanished = new FileWork(source, remotePath, new SourceFile(path, known.Size, new DateTimeOffset(known.MtimeTicks, TimeSpan.Zero)));
+                    run.Set(vanished, FileOutcome.Skipped, "Missing");
+                    store.RecordSkipped(run.RunId, key, _time.GetUtcNow(), "Missing");
+                    await store.MarkMissingFileAsync(key, _time.GetUtcNow());
+                    continue;
+                }
+                work.Add(new FileWork(source, remotePath, stat));
+            }
+        }
+        return participating;
+    }
+
     private async Task<(int ExitCode, string? Reason)> ExecuteCoreAsync(RunOptions options, RunState run, CancellationToken ct)
     {
         var selected = new List<ISource>();
@@ -197,6 +242,11 @@ public sealed class Engine
             }
 
         var work = new List<FileWork>();
+        if (options.RetryOf is { } retryOf)
+        {
+            selected = await PlanRetryAsync(retryOf, selected, work, run, ct);
+        }
+        else
         foreach (var source in selected)
         {
             var remotePath = RemotePathOf(source);
@@ -407,6 +457,13 @@ public sealed class Engine
         public DateTimeOffset StartedAt { get; } = startedAt;
         public UploadStateStore? Store { get; set; }
 
+        /// <summary>A file delivered by an earlier Run, listed in the Manifest but not an outcome of this Run.</summary>
+        internal void Carry(string source, string path, long size, string sha256)
+        {
+            lock (_gate)
+                _entries[(source, path)] = new FileEntry(source, path, size) { Outcome = FileOutcome.Skipped, Reason = "delivered earlier", Sha256 = sha256, Carried = true };
+        }
+
         internal void Set(FileWork item, FileOutcome outcome, string? reason) =>
             Update(item, e => { e.Outcome = outcome; e.Reason = reason; });
 
@@ -434,19 +491,19 @@ public sealed class Engine
 
         public int Count(FileOutcome outcome)
         {
-            lock (_gate) return _entries.Values.Count(e => e.Outcome == outcome);
+            lock (_gate) return _entries.Values.Count(e => !e.Carried && e.Outcome == outcome);
         }
 
         public IReadOnlyDictionary<FileOutcome, int> SnapshotCounts()
         {
             lock (_gate)
-                return _entries.Values.GroupBy(e => e.Outcome).ToDictionary(g => g.Key, g => g.Count());
+                return _entries.Values.Where(e => !e.Carried).GroupBy(e => e.Outcome).ToDictionary(g => g.Key, g => g.Count());
         }
 
         public IReadOnlyList<FileEntry> SnapshotFiles()
         {
             lock (_gate)
-                return _entries.Values.Select(e => e.Clone())
+                return _entries.Values.Where(e => !e.Carried).Select(e => e.Clone())
                     .OrderBy(e => e.Source, StringComparer.Ordinal).ThenBy(e => e.Path, StringComparer.Ordinal).ToList();
         }
 
@@ -463,6 +520,7 @@ public sealed class Engine
     internal sealed class FileEntry(string source, string path, long size)
     {
         public string Source { get; } = source;
+        public bool Carried { get; set; }
         public long Bytes { get; set; }
         public long DurationMs { get; set; }
         public string Path { get; } = path;
@@ -471,6 +529,6 @@ public sealed class Engine
         public string? Reason { get; set; }
         public string? Sha256 { get; set; }
 
-        public FileEntry Clone() => new(Source, Path, Size) { Outcome = Outcome, Reason = Reason, Sha256 = Sha256, Bytes = Bytes, DurationMs = DurationMs };
+        public FileEntry Clone() => new(Source, Path, Size) { Outcome = Outcome, Reason = Reason, Sha256 = Sha256, Bytes = Bytes, DurationMs = DurationMs, Carried = Carried };
     }
 }
