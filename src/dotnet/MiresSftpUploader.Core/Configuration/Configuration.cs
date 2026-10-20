@@ -40,6 +40,35 @@ public sealed record LoadResult
 
     public bool Succeeded => Errors.Count == 0;
 
+    /// <summary>The effective text of a scalar key (the documented default when no layer sets it); null for a list, an unknown key, or a key with no default.</summary>
+    public string? Value(string key) => Values.TryGetValue(key, out var set) ? set : Configuration.DefaultText(key);
+
+    /// <summary>The effective elements of a list of plain values such as <c>Ignore:Files</c>, in order; empty when no layer defines it.</summary>
+    public IReadOnlyList<string> List(string key) =>
+        Values
+            .Select(kv => (Key: kv.Key, Value: kv.Value))
+            .Where(kv => kv.Key.StartsWith(key + ":", StringComparison.OrdinalIgnoreCase) && int.TryParse(kv.Key[(key.Length + 1)..], out _))
+            .OrderBy(kv => int.Parse(kv.Key[(key.Length + 1)..]))
+            .Select(kv => kv.Value)
+            .ToList();
+
+    /// <summary>
+    /// The effective settings of each Source as flat keys relative to the Source (<c>Name</c>, <c>Ignore:Files:0</c>,
+    /// <c>AfterUpload:OnSuccess:Path</c>), in list order. Lets the Settings screen rewrite the list without losing the keys it does not edit.
+    /// </summary>
+    public IReadOnlyList<IReadOnlyDictionary<string, string>> SourceEntries()
+    {
+        var entries = new SortedDictionary<int, Dictionary<string, string>>();
+        foreach (var (key, value) in Values)
+        {
+            var segments = key.Split(':');
+            if (segments.Length < 3 || !segments[0].Equals("Sources", StringComparison.OrdinalIgnoreCase) || !int.TryParse(segments[1], out var index)) continue;
+            if (!entries.TryGetValue(index, out var entry)) entries[index] = entry = new(StringComparer.OrdinalIgnoreCase);
+            entry[string.Join(':', segments[2..])] = value;
+        }
+        return entries.Values.Select(e => (IReadOnlyDictionary<string, string>)e).ToList();
+    }
+
     /// <summary>
     /// The layer and writability of a key such as <c>Sftp:Host</c> or <c>Sources</c> (an array reports the layer that defines it).
     /// A key no layer sets is a Default and editable.
@@ -258,7 +287,7 @@ public sealed class Configuration(ConfigurationLocations locations)
     }
 
     /// <summary>The documented default of a scalar key, as text; null for lists, unknown keys and keys without a default.</summary>
-    private static string? DefaultText(string key)
+    internal static string? DefaultText(string key)
     {
         object? node = new AppConfig();
         foreach (var segment in key.Split(':'))
