@@ -52,6 +52,14 @@
 
         <!-- Main area -->
         <DockPanel x:Name="UploadPage" Grid.Column="1" Margin="20" IsVisible="{Binding IsUploadPage}">
+            <Border x:Name="BlockedBanner" DockPanel.Dock="Top" Classes="card" Margin="0,0,0,14" BorderBrush="{DynamicResource MDestructive}"
+                    IsVisible="{Binding Upload.IsBlocked}">
+                <StackPanel Spacing="4">
+                    <TextBlock Classes="h" Text="Uploading is disabled"/>
+                    <TextBlock TextWrapping="Wrap" Text="{Binding Upload.BlockedReason}"/>
+                    <TextBlock Classes="muted" Text="Settings shows the access check and the command that fixes it."/>
+                </StackPanel>
+            </Border>
             <Border DockPanel.Dock="Top" Classes="card" Margin="0,0,0,14" BorderBrush="{DynamicResource MDestructive}"
                     IsVisible="{Binding Upload.HasProblems}">
                 <StackPanel Spacing="4">
@@ -117,11 +125,9 @@
             <v:HistoryPageView DataContext="{Binding History}"/>
         </Border>
 
-        <!-- Settings: placeholder until its page arrives -->
-        <StackPanel x:Name="SettingsPage" Grid.Column="1" Margin="20" Spacing="8" IsVisible="{Binding IsSettingsPage}">
-            <TextBlock Classes="h" Text="Settings"/>
-            <TextBlock Classes="muted" TextWrapping="Wrap" Text="The Settings page is not built yet. Until then, edit appsettings.json next to the executable (Machine Config) or set MIRES_* environment variables."/>
-        </StackPanel>
+        <Border x:Name="SettingsPage" Grid.Column="1" Margin="20" IsVisible="{Binding IsSettingsPage}">
+            <v:SettingsView DataContext="{Binding Settings}"/>
+        </Border>
         <Border x:Name="HelpPage" Grid.Column="1" Margin="20" IsVisible="{Binding IsHelpPage}">
             <v:HelpView/>
         </Border>

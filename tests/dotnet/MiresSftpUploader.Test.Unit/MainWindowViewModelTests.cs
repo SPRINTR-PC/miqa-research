@@ -142,4 +142,59 @@ public sealed class MainWindowViewModelTests
             new[] { LogLevel.Debug, LogLevel.Information, LogLevel.Warning, LogLevel.Error },
             LogPaneViewModel.SelectableLevels.ToArray());
     }
+
+    [TestMethod]
+    public void A_Data_Directory_that_is_not_writable_blocks_the_Upload_page_and_re_checking_unblocks_it()
+    {
+        var writable = false;
+        var cfg = SettingsFixture.Create(out var dir);
+        var settings = new SettingsPageViewModel(cfg, path => new DataDirectoryAccess(path, true, writable, "alice", null, 0, 0, false, "fix it", writable ? null : "not writable"), _ => long.MaxValue);
+        var upload = new UploadPageViewModel(new FakeUploaderRuntime(new AppConfig(), new FakeRunEngine()), a => a());
+
+        var window = new MainWindowViewModel(upload, null, UiTheme.Dark, _ => null, settings: settings);
+
+        Assert.IsTrue(window.Upload.IsBlocked);
+        StringAssert.Contains(window.Upload.BlockedReason, "not writable");
+
+        writable = true;
+        settings.RecheckDataDirectoryCommand.Execute().Subscribe();
+
+        Assert.IsFalse(window.Upload.IsBlocked);
+        Directory.Delete(dir, true);
+    }
+
+    [TestMethod]
+    public void Saving_Settings_refreshes_the_Upload_page_and_applies_the_theme()
+    {
+        var cfg = SettingsFixture.Create(out var dir);
+        var settings = new SettingsPageViewModel(cfg, path => new DataDirectoryAccess(path, true, true, "alice", null, 0, 0, false, "", null), _ => long.MaxValue);
+        var runtime = new FakeUploaderRuntime(new AppConfig(), new FakeRunEngine());
+        var upload = new UploadPageViewModel(runtime, a => a());
+        var window = new MainWindowViewModel(upload, null, UiTheme.Dark, _ => null, settings: settings);
+        var prepared = runtime.PrepareCount;
+
+        settings.Field("Ui:Theme").Value = "Light";
+        settings.Field("Sftp:Host").Value = "sftp.example.org";
+        settings.Field("Sftp:Username").Value = "u";
+        settings.Field("Sftp:HostKeyFingerprint").Value = "abc";
+        settings.AddSourceCommand.Execute().Subscribe();
+        settings.Sources[0].Name = "alpha";
+        settings.Sources[0].Path = dir;
+        settings.SaveCommand.Execute().Subscribe();
+
+        Assert.AreEqual(UiTheme.Light, window.Theme, settings.SaveMessage + string.Join("|", settings.OtherErrors));
+        Assert.IsGreaterThan(prepared, runtime.PrepareCount);
+        Directory.Delete(dir, true);
+    }
+}
+
+internal static class SettingsFixture
+{
+    public static Configuration Create(out string dir)
+    {
+        dir = Path.Combine(Path.GetTempPath(), "mires-settings-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(dir, "install"));
+        File.WriteAllText(Path.Combine(dir, "install", "appsettings.json"), "{}");
+        return new Configuration(new ConfigurationLocations(Path.Combine(dir, "install", "appsettings.json"), Path.Combine(dir, "user", "appsettings.user.json"), new Dictionary<string, string?>()));
+    }
 }

@@ -26,7 +26,8 @@ public sealed class AppHost(Configuration configuration, IUploaderRuntime runtim
             : new RunHistory(UploaderComposition.ToStateSettings(config), TimeProvider.System, UploaderComposition.ToEngineSettings(config).Report);
         MainWindowViewModel? window = null;
         var history = new HistoryPageViewModel(runHistory, Environment.UserName, post, id => window!.RetryFromHistoryAsync(id));
-        window = new MainWindowViewModel(upload, log, ui.Theme, theme => UserSettings.SaveTheme(configuration, theme), history);
+        var settings = new SettingsPageViewModel(configuration);
+        window = new MainWindowViewModel(upload, log, ui.Theme, theme => UserSettings.SaveTheme(configuration, theme), history, settings);
         return window;
     }
 

@@ -23,9 +23,18 @@ public sealed class MainWindowViewModel : ViewModelBase
     /// <param name="log">Null when there is no log target (the configuration could not be loaded).</param>
     /// <param name="saveTheme">Saves the theme to User Overrides; returns null, or why it could not be saved.</param>
     /// <param name="history">Null when there is no Run History to show.</param>
+    /// <param name="settings">Null only in tests that do not need the Settings page.</param>
     public MainWindowViewModel(UploadPageViewModel upload, LogPaneViewModel? log, UiTheme theme, Func<UiTheme, string?> saveTheme,
-        HistoryPageViewModel? history = null)
+        HistoryPageViewModel? history = null, SettingsPageViewModel? settings = null)
     {
+        Settings = settings;
+        settings?.WhenAnyValue(x => x.DataDirectoryProblem).Subscribe(problem => upload.BlockedReason = problem);
+        if (settings is not null)
+            settings.Saved += () =>
+            {
+                upload.Refresh();
+                if (Enum.TryParse<UiTheme>(settings.Field("Ui:Theme").Value, out var saved)) Theme = saved;
+            };
         Upload = upload;
         History = history;
         Log = log;
@@ -46,6 +55,9 @@ public sealed class MainWindowViewModel : ViewModelBase
     public UploadPageViewModel Upload { get; }
     public HistoryPageViewModel? History { get; }
     public LogPaneViewModel? Log { get; }
+
+    /// <summary>The Settings page; null only in tests that do not need it.</summary>
+    public SettingsPageViewModel? Settings { get; }
     public bool HasLog => Log is not null;
 
     public ReactiveCommand<Unit, Unit> ToggleThemeCommand { get; }
