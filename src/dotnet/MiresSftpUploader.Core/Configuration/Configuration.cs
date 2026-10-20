@@ -24,6 +24,19 @@ public sealed record LoadResult
     public SecretStatus Secrets { get; init; } = SecretStatus.None;
     public bool MachineConfigWritable { get; init; }
     internal IReadOnlyDictionary<string, SettingInfo> Keys { get; init; } = new Dictionary<string, SettingInfo>();
+    internal IReadOnlyDictionary<string, string> Values { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>
+    /// The effective flat keys under a top-level section the program does not bind itself (such as <c>NLog</c>), with the
+    /// section name stripped: <c>variables:MinLevel</c>, <c>rules:10_file:writeTo</c>. Empty when there is no such section.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> Section(string name)
+    {
+        var prefix = name + ":";
+        return Values
+            .Where(kv => kv.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            .ToDictionary(kv => kv.Key[prefix.Length..], kv => kv.Value, StringComparer.OrdinalIgnoreCase);
+    }
 
     public bool Succeeded => Errors.Count == 0;
 
@@ -40,6 +53,9 @@ public sealed record LoadResult
         return new SettingInfo(ConfigLayer.Default, false);
     }
 }
+
+/// <summary>The resolved Data Directory path and access group, or the errors that stopped the lookup.</summary>
+public sealed record DataDirectorySettings(string Path, string? AccessGroup, IReadOnlyList<ConfigError> Errors);
 
 public sealed record SaveResult(IReadOnlyList<ConfigError> Errors)
 {
@@ -95,6 +111,27 @@ public sealed class Configuration(ConfigurationLocations locations)
         return Evaluate(layers, headless, machineWritable);
     }
 
+    /// <summary>
+    /// Where the Data Directory is and which group may use it, without validating the rest of the configuration (an
+    /// administrator runs <c>--init-data-dir</c> before the Sources and the server are set up). The path comes from
+    /// <c>State:Path</c> in any layer (<c>MIRES_DATA_DIR</c> and <c>--data-dir</c> set it); <c>State:AccessGroup</c> is read
+    /// from Machine Config and the environment only.
+    /// </summary>
+    public DataDirectorySettings ResolveDataDirectory(CliOptions? cli = null)
+    {
+        var layers = ReadLayers(cli ?? new CliOptions(), out var errors, machineRequired: false);
+        if (layers is null) return new DataDirectorySettings("", null, errors);
+
+        var path = Merge(layers).Values.GetValueOrDefault("State:Path");
+        var group = layers.Environment.Values.GetValueOrDefault(GroupKey) ?? layers.Machine.Values.GetValueOrDefault(GroupKey);
+        return new DataDirectorySettings(
+            DataDirectory.Resolve(path, null, DataDirectory.CurrentPlatform, System.Environment.GetFolderPath(System.Environment.SpecialFolder.CommonApplicationData)),
+            string.IsNullOrWhiteSpace(group) ? null : group,
+            []);
+    }
+
+    private const string GroupKey = "State:AccessGroup";
+
     private LoadResult Evaluate(Layers layers, bool headless, bool machineWritable)
     {
         var errors = new List<ConfigError>();
@@ -109,6 +146,8 @@ public sealed class Configuration(ConfigurationLocations locations)
         foreach (var (layer, file) in new[] { ("Machine Config", layers.Machine), ("User Overrides", layers.User) })
             foreach (var key in file.Values.Keys.Where(k => SecretLikeKey.IsMatch(k)))
                 warnings.Add(new(key, $"{layer} must not hold a Secret; the value is ignored. Set it in an environment variable."));
+        if (layers.User.Values.ContainsKey(GroupKey))
+            warnings.Add(new(GroupKey, "is ignored in User Overrides. Set it in Machine Config or the environment."));
         if (config is not null)
             ConfigValidator.Validate(config, headless, errors, warnings);
 
@@ -119,6 +158,7 @@ public sealed class Configuration(ConfigurationLocations locations)
             Warnings = warnings,
             MachineConfigWritable = machineWritable,
             Keys = keys,
+            Values = merged.Values,
             Secrets = LoadSecrets().Status(config?.Sources ?? []),
         };
     }
@@ -148,6 +188,8 @@ public sealed class Configuration(ConfigurationLocations locations)
         {
             if (SecretLikeKey.IsMatch(key))
                 errors.Add(new(key, "is a Secret and is never saved; set it in an environment variable."));
+            else if (key.Equals(GroupKey, StringComparison.OrdinalIgnoreCase))
+                errors.Add(new(key, "can only be set in Machine Config or the environment."));
             else if (IsLocked(LayerOf(current, key), machineWritable))
                 errors.Add(new(key, "is a locked setting (set by the environment, a CLI flag or a read-only Machine Config)."));
         }
@@ -245,10 +287,10 @@ public sealed class Configuration(ConfigurationLocations locations)
 
     internal sealed record Layers(FlatSettings Machine, FlatSettings User, FlatSettings Environment, FlatSettings Cli);
 
-    internal Layers? ReadLayers(CliOptions cli, out List<ConfigError> errors)
+    internal Layers? ReadLayers(CliOptions cli, out List<ConfigError> errors, bool machineRequired = true)
     {
         errors = [];
-        var machine = ReadFile(locations.MachineConfigPath, "Machine Config", required: true, errors);
+        var machine = ReadFile(locations.MachineConfigPath, "Machine Config", required: machineRequired, errors);
         var user = ReadFile(locations.UserOverridesPath, "User Overrides", required: false, errors);
         if (errors.Count > 0) return null;
 

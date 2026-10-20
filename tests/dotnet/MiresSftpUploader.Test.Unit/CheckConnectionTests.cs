@@ -16,7 +16,7 @@ public sealed class CheckConnectionTests : ConfigurationTestBase
         var stderr = new StringWriter();
         SftpConnection? used = null;
         Cli.TryRun(["--validate-config", "--check-connection", .. extraArgs], "1.2.3", stdout, stderr, out var exitCode, locations,
-            connection => { used = connection; return remote; });
+            remoteFactory: connection => { used = connection; return remote; });
         return (exitCode, stdout.ToString(), stderr.ToString(), used);
     }
 
@@ -86,7 +86,7 @@ public sealed class CheckConnectionTests : ConfigurationTestBase
         var stderr = new StringWriter();
 
         Cli.TryRun(["--validate-config", "--check-connection"], "1.2.3", new StringWriter(), stderr, out var exitCode,
-            new ConfigurationLocations(MachinePath, UserPath, new Dictionary<string, string?>()), _ => remote);
+            new ConfigurationLocations(MachinePath, UserPath, new Dictionary<string, string?>()), remoteFactory: _ => remote);
 
         Assert.AreEqual(2, exitCode);
         Assert.AreEqual(0, remote.ConnectCount);
@@ -99,7 +99,7 @@ public sealed class CheckConnectionTests : ConfigurationTestBase
         File.WriteAllText(MachinePath, ValidMachine().ToJsonString());
 
         Cli.TryRun(["--validate-config"], "1.2.3", new StringWriter(), new StringWriter(), out var exitCode,
-            new ConfigurationLocations(MachinePath, UserPath, new Dictionary<string, string?>()), _ => remote);
+            new ConfigurationLocations(MachinePath, UserPath, new Dictionary<string, string?>()), remoteFactory: _ => remote);
 
         Assert.AreEqual(0, exitCode);
         Assert.AreEqual(0, remote.ConnectCount);
@@ -116,7 +116,7 @@ public sealed class CheckConnectionTests : ConfigurationTestBase
 
         Cli.TryRun(["--validate-config", "--check-connection"], "1.2.3", new StringWriter(), new StringWriter(), out var exitCode,
             new ConfigurationLocations(MachinePath, UserPath, new Dictionary<string, string?> { ["MIRES_SFTP_KEY_PASSPHRASE"] = "pass" }),
-            c => { used = c; return new FakeRemote(); });
+            remoteFactory: c => { used = c; return new FakeRemote(); });
 
         Assert.AreEqual(0, exitCode);
         Assert.AreEqual(AuthMethod.PrivateKey, used!.AuthMethod);

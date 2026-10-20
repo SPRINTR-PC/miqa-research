@@ -3,6 +3,7 @@
   <Folder Name="/tests/dotnet/">
     <Project Path="tests/dotnet/Miqa.Test.Integration/Miqa.Test.Integration.csproj" />
     <Project Path="tests/dotnet/Miqa.Test.Unit/Miqa.Test.Unit.csproj" />
+    <Project Path="tests/dotnet/MiresSftpUploader.Test.ContainerProbe/MiresSftpUploader.Test.ContainerProbe.csproj" />
     <Project Path="tests/dotnet/MiresSftpUploader.Test.Integration/MiresSftpUploader.Test.Integration.csproj" />
     <Project Path="tests/dotnet/MiresSftpUploader.Test.Support/MiresSftpUploader.Test.Support.csproj" />
     <Project Path="tests/dotnet/MiresSftpUploader.Test.Ui/MiresSftpUploader.Test.Ui.csproj" />

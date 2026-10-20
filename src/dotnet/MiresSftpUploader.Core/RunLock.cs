@@ -31,6 +31,7 @@ internal sealed class RunLock : IDisposable
             return null;
         }
 
+        DataDirectory.EnsureGroupWritable(path);
         stream.SetLength(0);
         stream.Write(Encoding.UTF8.GetBytes($"pid={Environment.ProcessId} user={startedBy} since={now:O}"));
         stream.Flush();

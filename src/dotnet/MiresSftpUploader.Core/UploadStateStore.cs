@@ -108,6 +108,8 @@ internal sealed class UploadStateStore : IAsyncDisposable
         var directory = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(path));
         if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
 
+        // SQLite gives -wal and -shm the mode of the database file, so it must be group-writable before SQLite creates it.
+        DataDirectory.EnsureGroupWritable(path, createIfMissing: true);
         var connection = OpenConnection(path);
         try
         {
@@ -165,6 +167,7 @@ internal sealed class UploadStateStore : IAsyncDisposable
         command.CommandText = "VACUUM INTO $target";
         command.Parameters.AddWithValue("$target", backup);
         command.ExecuteNonQuery();
+        DataDirectory.EnsureGroupWritable(backup);
     }
 
     // ---- Writes (queued) ----
@@ -195,8 +198,15 @@ internal sealed class UploadStateStore : IAsyncDisposable
             InsertRunFile(c, runId, key, "Succeeded", size, duration, null, now);
         });
 
-    public void RecordSkipped(Guid runId, FileKey key, DateTimeOffset now) =>
-        _ = Enqueue(c => InsertRunFile(c, runId, key, "Skipped", 0, TimeSpan.Zero, "unchanged", now));
+    public void RecordSkipped(Guid runId, FileKey key, DateTimeOffset now, string reason = "unchanged") =>
+        _ = Enqueue(c => InsertRunFile(c, runId, key, "Skipped", 0, TimeSpan.Zero, reason, now));
+
+    /// <summary>The file is no longer in its Source. The server copy is left alone.</summary>
+    public Task MarkMissingFileAsync(FileKey key, DateTimeOffset now) =>
+        Enqueue(c => Exec(c, """
+            UPDATE Files SET Status='Missing', MissingSince=$now, PartPath=NULL
+            WHERE Destination=$d AND RemotePath=$r AND Source=$s AND RelativePath=$p
+            """, ("$now", now.UtcTicks), ("$d", key.Destination), ("$r", key.RemotePath), ("$s", key.Source), ("$p", key.RelativePath)));
 
     public void RecordFailed(Guid runId, FileKey key, long size, long mtimeTicks, string error, DateTimeOffset now, TimeSpan duration) =>
         _ = Enqueue(c =>
@@ -238,21 +248,46 @@ internal sealed class UploadStateStore : IAsyncDisposable
         var orphans = new List<OrphanPart>();
         await Enqueue(c =>
         {
-            var stale = now.UtcTicks - staleAfter.Ticks;
-            var abandoned = Exec(c, """
-                UPDATE Runs SET Status='Abandoned', EndedAt=Heartbeat WHERE Status='Running' AND Heartbeat < $stale
-                """, ("$stale", stale));
-            if (abandoned == 0) return;
-            using (var read = c.CreateCommand())
-            {
-                read.CommandText = "SELECT Destination, PartPath FROM Files WHERE Status='Uploading' AND PartPath IS NOT NULL AND Destination=$d";
-                read.Parameters.AddWithValue("$d", destination);
-                using var rows = read.ExecuteReader();
-                while (rows.Read()) orphans.Add(new OrphanPart(rows.GetString(0), rows.GetString(1)));
-            }
-            Exec(c, "UPDATE Files SET Status='Failed', LastError='Abandoned Run', PartPath=NULL WHERE Status='Uploading'");
+            AbandonStale(c, now, staleAfter);
+            using var read = c.CreateCommand();
+            read.CommandText = "SELECT Destination, PartPath FROM Files WHERE Status='Failed' AND PartPath IS NOT NULL AND Destination=$d";
+            read.Parameters.AddWithValue("$d", destination);
+            using var rows = read.ExecuteReader();
+            while (rows.Read()) orphans.Add(new OrphanPart(rows.GetString(0), rows.GetString(1)));
         });
         return orphans;
+    }
+
+    /// <summary>The recorded server objects of these orphans are gone (or were never there); forget them.</summary>
+    public Task ForgetOrphansAsync(string destination) =>
+        Enqueue(c => Exec(c, "UPDATE Files SET PartPath=NULL WHERE Status='Failed' AND Destination=$d", ("$d", destination)));
+
+    /// <summary>
+    /// Marks Runs with a stale heartbeat Abandoned. When no Run is live any more, the files they left Uploading become Failed
+    /// but keep their recorded .part path, so the next Run (which holds the connection) can still clean the server up.
+    /// Returns how many Runs were marked.
+    /// </summary>
+    internal static int AbandonStale(SqliteConnection c, DateTimeOffset now, TimeSpan staleAfter)
+    {
+        var abandoned = Exec(c, """
+            UPDATE Runs SET Status='Abandoned', EndedAt=Heartbeat WHERE Status='Running' AND Heartbeat < $stale
+            """, ("$stale", now.UtcTicks - staleAfter.Ticks));
+        // The single-instance lock allows one live Run, so Uploading files with no live Run belong to Abandoned ones.
+        Exec(c, """
+            UPDATE Files SET Status='Failed', LastError='Abandoned Run'
+            WHERE Status='Uploading' AND NOT EXISTS (SELECT 1 FROM Runs WHERE Status='Running')
+            """);
+        return abandoned;
+    }
+
+    /// <summary>True when another account asked for this Run to stop.</summary>
+    public bool IsCancelRequested(Guid runId)
+    {
+        using var connection = OpenConnection(_path, readOnly: true);
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT CancelRequested FROM Runs WHERE Id = $id";
+        command.Parameters.AddWithValue("$id", runId.ToString());
+        return Convert.ToInt64(command.ExecuteScalar() ?? 0L, CultureInfo.InvariantCulture) != 0;
     }
 
     /// <summary>Deletes expired per-Run file outcomes and long-Missing files, in chunks to keep the WAL small.</summary>
@@ -269,9 +304,40 @@ internal sealed class UploadStateStore : IAsyncDisposable
 
     // ---- Reads ----
 
+    public bool RunExists(Guid runId)
+    {
+        using var connection = OpenConnection(_path, readOnly: true);
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT 1 FROM Runs WHERE Id = $id";
+        command.Parameters.AddWithValue("$id", runId.ToString());
+        return command.ExecuteScalar() is not null;
+    }
+
+    /// <summary>Files that failed in the given Run and are still Failed, for a retry.</summary>
+    public List<(string RemotePath, string Source, string RelativePath)> LoadFailedOf(Guid runId, string destination)
+    {
+        using var connection = OpenConnection(_path, readOnly: true);
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT f.RemotePath, f.Source, f.RelativePath FROM RunFiles r JOIN Files f ON f.Id = r.FileId
+            WHERE r.RunId = $id AND r.Outcome = 'Failed' AND f.Status = 'Failed' AND f.Destination = $d
+            """;
+        command.Parameters.AddWithValue("$id", runId.ToString());
+        command.Parameters.AddWithValue("$d", destination);
+        var result = new List<(string, string, string)>();
+        using var rows = command.ExecuteReader();
+        while (rows.Read()) result.Add((rows.GetString(0), rows.GetString(1), rows.GetString(2)));
+        return result;
+    }
+
     public Dictionary<string, PriorFile> LoadSource(string destination, string remotePath, string source)
     {
         using var connection = OpenConnection(_path, readOnly: true);
+        return LoadSource(connection, destination, remotePath, source);
+    }
+
+    private static Dictionary<string, PriorFile> LoadSource(SqliteConnection connection, string destination, string remotePath, string source)
+    {
         using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT RelativePath, Status, Size, Mtime, Sha256 FROM Files WHERE Destination=$d AND RemotePath=$r AND Source=$s
@@ -284,6 +350,30 @@ internal sealed class UploadStateStore : IAsyncDisposable
         while (rows.Read())
             result[rows.GetString(0)] = new PriorFile(rows.GetString(1), rows.GetInt64(2), rows.GetInt64(3), rows.IsDBNull(4) ? null : rows.GetString(4));
         return result;
+    }
+
+    /// <summary>
+    /// What a Dry Run knows about a Source: reads the database without opening a store, creating, migrating or
+    /// writing anything. A missing, empty or newer database yields no prior files.
+    /// </summary>
+    public static Dictionary<string, PriorFile> ReadPriorFiles(string path, string destination, string remotePath, string source)
+    {
+        var none = new Dictionary<string, PriorFile>(StringComparer.Ordinal);
+        if (!File.Exists(path)) return none;
+        try
+        {
+            // immutable=1: no locks and no -wal/-shm files are created, so the directory is left exactly as found.
+            // Changes still in the write-ahead log of a Run in progress are not seen, which is fine for a preview.
+            var uri = new Uri(System.IO.Path.GetFullPath(path)).AbsoluteUri + "?mode=ro&immutable=1";
+            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = uri, Pooling = false }.ToString());
+            connection.Open();
+            if (Convert.ToInt32(Scalar(connection, "PRAGMA user_version"), CultureInfo.InvariantCulture) != SchemaVersion) return none;
+            return LoadSource(connection, destination, remotePath, source);
+        }
+        catch (SqliteException)
+        {
+            return none;
+        }
     }
 
     // ---- Writer ----
@@ -362,7 +452,7 @@ internal sealed class UploadStateStore : IAsyncDisposable
             ("$error", error), ("$now", now.UtcTicks),
             ("$d", key.Destination), ("$r", key.RemotePath), ("$s", key.Source), ("$p", key.RelativePath));
 
-    private static int Exec(SqliteConnection c, string sql, params (string Name, object? Value)[] parameters)
+    internal static int Exec(SqliteConnection c, string sql, params (string Name, object? Value)[] parameters)
     {
         using var command = c.CreateCommand();
         command.CommandText = sql;
