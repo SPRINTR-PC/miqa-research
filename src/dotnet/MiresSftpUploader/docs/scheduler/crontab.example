@@ -1,0 +1,7 @@
+# Sample crontab line for a Headless Run of the MIRES SFTP Uploader. Install as the service account: crontab -e
+# No Secrets here. The wrapper reads them from a file at mode 0600 (see run-from-env-file.sh).
+# Fields: minute hour day-of-month month day-of-week. This runs every day at 02:00.
+# flock -n skips a start while the previous Run is still going (the tool would also exit 4 on its own).
+# cron does not catch up on missed runs (the machine was off); on systemd distributions prefer the timer.
+# The path assumes the package was unpacked to /opt/mires-sftp-uploader.
+0 2 * * * flock -n "$HOME/.mires-sftp-uploader.cron.lock" /opt/mires-sftp-uploader/scheduler/run-from-env-file.sh >/dev/null 2>>"$HOME/mires-sftp-uploader.cron.log"

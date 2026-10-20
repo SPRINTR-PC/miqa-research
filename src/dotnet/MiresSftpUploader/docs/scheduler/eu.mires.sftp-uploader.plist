@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Sample launchd job for a Headless Run of the MIRES SFTP Uploader.
+  Install as the service account (a LaunchAgent in its user session, which can read its login Keychain):
+    cp eu.mires.sftp-uploader.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/eu.mires.sftp-uploader.plist
+  The wrapper reads the Secrets from the Keychain; no Secrets are in this file.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>eu.mires.sftp-uploader</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/mires-sftp-uploader/scheduler/run-with-keychain.sh</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/usr/local/mires-sftp-uploader</string>
+  <!-- Every day at 02:00. launchd runs a start missed during sleep when the Mac wakes; it does not if the Mac was off. -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>2</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>StandardErrorPath</key>
+  <string>/tmp/mires-sftp-uploader.err.log</string>
+  <key>StandardOutPath</key>
+  <string>/tmp/mires-sftp-uploader.out.log</string>
+</dict>
+</plist>
