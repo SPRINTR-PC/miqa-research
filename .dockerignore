@@ -71,3 +71,11 @@ docker-compose*.yml
 *.bak
 *.tmp
 *.temp
+
+# Agent tooling
+.agents/
+.claude/
+.skills/
+.superpowers/
+AGENTS.md
+skills-lock.json
