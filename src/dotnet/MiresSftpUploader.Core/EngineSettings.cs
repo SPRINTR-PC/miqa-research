@@ -12,8 +12,8 @@ public sealed record ReportSettings
 {
     /// <summary>Where the Report of each Run is written; null means <c>reports</c> beside the Upload State database.</summary>
     public string? Directory { get; init; }
-    /// <summary>Report file name. Tokens: <c>{runId}</c>, <c>{date}</c> (yyyyMMdd, UTC), <c>{time}</c> (HHmmss, UTC), <c>{ext}</c>.</summary>
-    public string FileNamePattern { get; init; } = "run-{date}-{time}-{runId}.{ext}";
+    /// <summary>Report file name. Tokens: <c>{runId}</c>, <c>{date}</c> (yyyyMMdd, UTC), <c>{time}</c> (HHmmss, UTC), <c>{format}</c> (json or csv).</summary>
+    public string FileNamePattern { get; init; } = "run-{runId}.{format}";
     public ReportFormat Format { get; init; } = ReportFormat.Json;
 }
 

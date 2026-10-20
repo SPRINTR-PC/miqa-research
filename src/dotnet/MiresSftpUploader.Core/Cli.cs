@@ -2,105 +2,78 @@ using System.Globalization;
 
 namespace MiresSftpUploader.Core;
 
-/// <summary>The <c>--report</c> and <c>--report-format</c> flags: where a Run writes its Report, and in which format.</summary>
-public sealed record ReportOptions(string? Path, ReportFormat? Format);
-
 /// <summary>
-/// The command-line surface that needs no window: <c>--version</c>, <c>--help</c>, <c>--list-runs</c>, <c>--export-run</c>,
-/// and unknown-flag rejection. stdout carries only the result; diagnostics go to stderr.
+/// The command-line surface that needs no window. Answers <c>--version</c>, <c>--help</c>, <c>--validate-config</c>,
+/// <c>--list-runs</c>, <c>--export-run</c>, unknown flags and unknown <c>--source</c> names, and rejects an invalid
+/// configuration for a Headless Run.
+/// stdout carries only the final result; diagnostics go to stderr.
 /// </summary>
 public static class Cli
 {
-    private static readonly string[] KnownFlags =
-        ["--headless", "--version", "--help", "--list-runs", "--limit", "--export-run", "--report", "--report-format"];
-
     /// <summary>
     /// Handles the arguments when they ask for something that does not need the window.
-    /// Returns false when the caller should go on to start the UI (or a Headless Run).
-    /// <paramref name="state"/> locates the Upload State for the Run History commands.
+    /// Returns false when the caller should go on (start the UI, or run the Headless Run).
+    /// <paramref name="state"/> locates the Upload State for <c>--list-runs</c> and <c>--export-run</c>.
     /// </summary>
-    public static bool TryRun(string[] args, string version, TextWriter stdout, TextWriter stderr, out int exitCode, StateSettings? state = null)
+    public static bool TryRun(string[] args, string version, TextWriter stdout, TextWriter stderr, out int exitCode,
+        ConfigurationLocations? locations = null, StateSettings? state = null)
     {
         exitCode = ExitCodes.Ok;
         if (args.Length == 0) return false;
 
-        var unknown = args.FirstOrDefault(a => a.StartsWith("--", StringComparison.Ordinal) && !KnownFlags.Contains(a));
-        if (unknown is not null)
+        var parsed = CliOptions.Parse(args);
+        if (parsed.Options is not { } options)
         {
-            stderr.WriteLine($"Unknown option '{unknown}'. Use --help to list the options.");
+            stderr.WriteLine(parsed.Error);
             exitCode = ExitCodes.ConfigurationError;
             return true;
         }
 
-        if (args.Contains("--version"))
+        if (options.Version)
         {
             stdout.WriteLine(version);
             return true;
         }
 
-        if (args.Contains("--help"))
+        if (options.Help)
         {
             stdout.Write(HelpText);
             return true;
         }
 
-        if (args.Contains("--list-runs"))
+        if (options.ListRuns || options.ExportRunId is not null)
         {
-            exitCode = ListRuns(args, stdout, stderr, state);
+            exitCode = options.ListRuns ? ListRuns(options, stdout, stderr, state) : ExportRun(options, stdout, stderr, state, locations);
             return true;
         }
 
-        if (args.Contains("--export-run"))
+        if (!options.Headless && !options.ValidateConfig) return false;
+
+        var result = new Configuration(locations ?? ConfigurationLocations.Default()).Load(options, headless: true);
+        var errors = result.Errors.Select(e => e.ToString()).ToList();
+        if (result.Config is { } config)
+            foreach (var name in options.Sources.Where(n => !config.Sources.Any(s => string.Equals(s.Name, n, StringComparison.OrdinalIgnoreCase))))
+                errors.Add($"--source: unknown Source '{name}'. Configured Sources: {string.Join(", ", config.Sources.Select(s => s.Name))}.");
+
+        foreach (var warning in result.Warnings)
+            stderr.WriteLine($"warning: {warning}");
+        if (errors.Count > 0)
         {
-            exitCode = ExportRun(args, stdout, stderr, state);
+            stderr.WriteLine($"Configuration has {errors.Count} error(s):");
+            foreach (var e in errors) stderr.WriteLine($"  {e}");
+            exitCode = ExitCodes.ConfigurationError;
             return true;
         }
 
-        return false;
-    }
-
-    /// <summary>Reads <c>--report</c> and <c>--report-format</c>; false with a message when the format is not <c>json</c> or <c>csv</c> or a value is missing.</summary>
-    public static bool TryParseReportOptions(string[] args, out ReportOptions options, out string? error)
-    {
-        options = new ReportOptions(null, null);
-        error = null;
-        string? path = null;
-        ReportFormat? format = null;
-
-        if (args.Contains("--report"))
-        {
-            path = ValueOf(args, "--report");
-            if (path is null) { error = "--report needs a path."; return false; }
-        }
-        if (args.Contains("--report-format"))
-        {
-            var value = ValueOf(args, "--report-format");
-            if (value is null || !Enum.TryParse<ReportFormat>(value, ignoreCase: true, out var parsed) || !Enum.IsDefined(parsed))
-            {
-                error = "--report-format must be json or csv.";
-                return false;
-            }
-            format = parsed;
-        }
-        options = new ReportOptions(path, format);
+        if (!options.ValidateConfig) return false;
+        stdout.WriteLine("Configuration is valid.");
         return true;
     }
 
-    private static int ListRuns(string[] args, TextWriter stdout, TextWriter stderr, StateSettings? state)
+    private static int ListRuns(CliOptions options, TextWriter stdout, TextWriter stderr, StateSettings? state)
     {
-        int? limit = null;
-        if (args.Contains("--limit"))
-        {
-            if (!int.TryParse(ValueOf(args, "--limit"), NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) || parsed < 1)
-            {
-                stderr.WriteLine("--limit must be a positive whole number.");
-                return ExitCodes.ConfigurationError;
-            }
-            limit = parsed;
-        }
         if (!HasState(state, stderr)) return ExitCodes.ConfigurationError;
-
-        foreach (var run in new RunHistory(state!, TimeProvider.System).ListRuns(new RunFilter { Limit = limit }))
+        foreach (var run in new RunHistory(state!, TimeProvider.System).ListRuns(new RunFilter { Limit = options.Limit }))
         {
             var counts = string.Join(' ', run.Counts.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => $"{kv.Key}={kv.Value}"));
             stdout.WriteLine(string.Join('\t', run.RunId, run.Status, run.ExitCode?.ToString(CultureInfo.InvariantCulture) ?? "-",
@@ -109,21 +82,30 @@ public static class Cli
         return ExitCodes.Ok;
     }
 
-    private static int ExportRun(string[] args, TextWriter stdout, TextWriter stderr, StateSettings? state)
+    /// <summary>Prints the Report of a recorded Run, or writes it to <c>--report</c> and prints that path.</summary>
+    private static int ExportRun(CliOptions options, TextWriter stdout, TextWriter stderr, StateSettings? state, ConfigurationLocations? locations)
     {
-        if (!Guid.TryParse(ValueOf(args, "--export-run"), out var runId))
+        if (!Guid.TryParse(options.ExportRunId, out var runId))
         {
-            stderr.WriteLine("--export-run needs a Run id.");
+            stderr.WriteLine($"--export-run needs a Run id, not '{options.ExportRunId}'.");
             return ExitCodes.ConfigurationError;
         }
-        if (!TryParseReportOptions(args, out var report, out var error))
-        {
-            stderr.WriteLine(error);
-            return ExitCodes.ConfigurationError;
-        }
-        if (!HasState(state, stderr)) return ExitCodes.ConfigurationError;
 
-        var format = report.Format ?? ReportFormat.Json;
+        ReportFormat format;
+        if (options.ConfigOverrides.TryGetValue("Report:Format", out var requested))
+        {
+            if (!Enum.TryParse(requested, ignoreCase: true, out format) || !Enum.IsDefined(format))
+            {
+                stderr.WriteLine($"--report-format must be json or csv, not '{requested}'.");
+                return ExitCodes.ConfigurationError;
+            }
+        }
+        else
+        {
+            format = new Configuration(locations ?? ConfigurationLocations.Default()).Load(options, headless: true).Config?.Report.Format ?? ReportFormat.Json;
+        }
+
+        if (!HasState(state, stderr)) return ExitCodes.ConfigurationError;
         var text = new RunHistory(state!, TimeProvider.System).Export(runId, format);
         if (text is null)
         {
@@ -131,21 +113,21 @@ public static class Cli
             return ExitCodes.ConfigurationError;
         }
 
-        if (report.Path is null)
+        if (options.ReportPath is null)
         {
             stdout.Write(text);
             return ExitCodes.Ok;
         }
         try
         {
-            ReportWriter.WriteFile(report.Path, text);
+            ReportWriter.WriteFile(options.ReportPath, text);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            stderr.WriteLine($"Could not write the Report to {report.Path}: {ex.Message}");
+            stderr.WriteLine($"Could not write the Report to {options.ReportPath}: {ex.Message}");
             return ExitCodes.ConfigurationError;
         }
-        stdout.WriteLine(report.Path);
+        stdout.WriteLine(options.ReportPath);
         return ExitCodes.Ok;
     }
 
@@ -156,28 +138,35 @@ public static class Cli
         return false;
     }
 
-    /// <summary>The value after <paramref name="flag"/>, or null when there is none (the next token is another flag).</summary>
-    private static string? ValueOf(string[] args, string flag)
-    {
-        var index = Array.IndexOf(args, flag);
-        return index >= 0 && index + 1 < args.Length && !args[index + 1].StartsWith("--", StringComparison.Ordinal) ? args[index + 1] : null;
-    }
-
     public static string HelpText { get; } = """
         MIRES SFTP Uploader
 
         Usage: MiresSftpUploader [options]
 
         Options:
-          --headless                Run once without opening a window.
-          --list-runs [--limit N]   List the Runs in the Run History, newest first, then exit.
-          --export-run <id>         Print the Report of a Run (or write it to --report), then exit.
-          --report <path>           Write the Report of this Run (or of --export-run) to <path>:
-                                    a file, or an existing directory to get the configured file name.
-                                    Without it a Run writes its Report to the configured directory.
-          --report-format json|csv  Format of the Report. Default: json.
-          --version                 Print the version and exit.
-          --help                    Print this help and exit.
+          --headless              Run once without opening a window.
+          --source <name>         Run only this Source; repeat for more. Default: every enabled Source.
+          --dry-run               Plan only: upload, archive and record nothing.
+          --rehash-all            Hash every file again instead of trusting the Upload State.
+          --report <path>         Write a Report of the Run to this file.
+          --report-format <f>     json (default) or csv.
+          --export-run <id>       Export the Report of a recorded Run and exit.
+          --list-runs             List recorded Runs and exit.
+          --limit <n>             With --list-runs: show at most n Runs.
+          --validate-config       Report every configuration error and exit; runs nothing.
+          --check-connection      With --validate-config: also test the server and its host key.
+          --init-data-dir         Create the shared Data Directory and exit.
+          --log-level <level>     Trace, Debug, Info (default), Warn, Error or Fatal.
+          --data-dir <path>       Use this Data Directory (also MIRES_DATA_DIR).
+          --version               Print the version and exit.
+          --help                  Print this help and exit.
+
+        Settings come from, highest first: command-line flags, MIRES_* environment variables
+        (MIRES_Sftp__Host, MIRES_Sources__0__Path), appsettings.user.json in the per-user
+        application data folder, and appsettings.json next to the executable. A list is replaced
+        whole by the highest layer that sets it. Secrets are read only from the environment:
+        MIRES_SFTP_PASSWORD, MIRES_SFTP_KEY_PASSPHRASE, MIRES_S3_<SOURCE>_ACCESS_KEY and _SECRET_KEY.
+        --list-runs, --export-run, --validate-config, --init-data-dir and --version imply --headless.
 
         Exit codes:
           0    OK, or every file skipped as unchanged

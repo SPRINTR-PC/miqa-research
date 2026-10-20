@@ -19,7 +19,7 @@ public sealed class CliTests
     {
         var stdout = new StringWriter();
         var stderr = new StringWriter();
-        var handled = Cli.TryRun(args, "1.2.3", stdout, stderr, out var exitCode, new StateSettings { Path = databasePath });
+        var handled = Cli.TryRun(args, "1.2.3", stdout, stderr, out var exitCode, state: new StateSettings { Path = databasePath });
         return (handled, exitCode, stdout.ToString(), stderr.ToString());
     }
 
@@ -108,21 +108,6 @@ public sealed class CliTests
         Assert.AreEqual(2, InvokeWithState(db, "--export-run", "nonsense").ExitCode);
         Assert.AreEqual(2, InvokeWithState(db, "--export-run", failing.ToString(), "--report-format", "xml").ExitCode);
         Assert.AreEqual(2, InvokeWithState(db, "--export-run").ExitCode);
-    }
-
-    [TestMethod]
-    public void Report_options_are_parsed_for_a_headless_run_and_validated()
-    {
-        Assert.IsTrue(Cli.TryParseReportOptions(["--headless", "--report", "/r/x.csv", "--report-format", "csv"], out var options, out _));
-        Assert.AreEqual("/r/x.csv", options.Path);
-        Assert.AreEqual(ReportFormat.Csv, options.Format);
-
-        Assert.IsTrue(Cli.TryParseReportOptions(["--headless"], out var none, out _));
-        Assert.IsNull(none.Path);
-        Assert.IsNull(none.Format);
-
-        Assert.IsFalse(Cli.TryParseReportOptions(["--report-format", "pdf"], out _, out var error));
-        StringAssert.Contains(error, "json");
     }
 
     [TestMethod]

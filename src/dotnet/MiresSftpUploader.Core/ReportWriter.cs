@@ -4,8 +4,6 @@ using System.Text.Json;
 
 namespace MiresSftpUploader.Core;
 
-public enum ReportFormat { Json, Csv }
-
 /// <summary>Renders a Report: the summary of one Run plus the outcome of every file, as JSON or CSV.</summary>
 internal static class ReportWriter
 {
@@ -18,6 +16,7 @@ internal static class ReportWriter
             .Replace("{runId}", runId.ToString(), StringComparison.Ordinal)
             .Replace("{date}", startedAt.UtcDateTime.ToString("yyyyMMdd", CultureInfo.InvariantCulture), StringComparison.Ordinal)
             .Replace("{time}", startedAt.UtcDateTime.ToString("HHmmss", CultureInfo.InvariantCulture), StringComparison.Ordinal)
+            .Replace("{format}", Extension(format), StringComparison.Ordinal)
             .Replace("{ext}", Extension(format), StringComparison.Ordinal);
         return string.Concat(name.Select(c => Array.IndexOf(Path.GetInvalidFileNameChars(), c) >= 0 ? '_' : c));
     }
