@@ -685,7 +685,6 @@ public sealed partial class Engine : IRunEngine
     private async Task<RemoteResult> UploadManifestAsync(IRemoteSession session, ISource source, RunState run, RunOptions options, CancellationToken ct)
     {
         var remotePath = RemotePathOf(source);
-        var finalPath = Join(remotePath, _settings.ManifestName);
 
         var ensure = await session.EnsureDirectoryAsync(remotePath, ct);
         if (!ensure.IsOk) return ensure;
@@ -694,19 +693,60 @@ public sealed partial class Engine : IRunEngine
         var deferred = run.SourceEntries(source.Name)
             .Where(e => !e.Carried && e.Outcome == FileOutcome.Skipped && e.Reason == TooRecentReason)
             .Select(e => new ManifestFailure(e.Path, e.Reason!)).ToList();
-        var header = new ManifestHeader(source.Name, failures.Count == 0 && deferred.Count == 0, run.RunId, run.StartedAt, _time.GetUtcNow(),
-            ModeOf(options), _settings.ToolVersion, _settings.MachineName);
+        var complete = failures.Count == 0 && deferred.Count == 0;
+        var completedAt = _time.GetUtcNow();
+        var store = run.Store;
 
-        await using var json = TemporaryFile();
-        ManifestWriter.Write(json, header, failures, deferred, nodes);
-        json.Position = 0;
-        var (result, jsonSha256) = await UploadViaPartAsync(session, json, finalPath, ct);
-        if (!result.IsOk || !_settings.WriteFlatManifest) return result;
+        async Task<RemoteResult> UploadAsync(string jsonName, string flatName, IReadOnlyList<string> supersedes)
+        {
+            var header = new ManifestHeader(source.Name, complete, run.RunId, run.StartedAt, completedAt,
+                ModeOf(options), _settings.ToolVersion, _settings.MachineName) { Supersedes = supersedes };
+            await using var json = TemporaryFile();
+            ManifestWriter.Write(json, header, failures, deferred, nodes);
+            json.Position = 0;
+            var (result, jsonSha256) = await UploadFinalAsync(session, json, Join(remotePath, jsonName), ct);
+            if (!result.IsOk || !_settings.WriteFlatManifest) return result;
 
-        await using var flat = TemporaryFile();
-        ManifestWriter.WriteFlat(flat, nodes(), _settings.ManifestName, jsonSha256!);
-        flat.Position = 0;
-        return (await UploadViaPartAsync(session, flat, Join(remotePath, _settings.FlatManifestName), ct)).Result;
+            await using var flat = TemporaryFile();
+            ManifestWriter.WriteFlat(flat, nodes(), jsonName, jsonSha256!);
+            flat.Position = 0;
+            return (await UploadFinalAsync(session, flat, Join(remotePath, flatName), ct)).Result;
+        }
+
+        async Task Remember(string jsonName)
+        {
+            if (store is not null) await store.RecordManifestAsync(_settings.Destination, remotePath, source.Name, jsonName, run.RunId, _time.GetUtcNow());
+        }
+
+        // The stable names come first; a server that refuses to replace them is remembered per Destination, and from then on
+        // every Run uploads Manifest files of its own, which are never overwritten.
+        var earlier = store?.LoadManifestNames(_settings.Destination, remotePath, source.Name) ?? [];
+        var refused = store?.IsManifestOverwriteRefused(_settings.Destination) == true;
+        if (!refused)
+        {
+            var stable = await UploadAsync(_settings.ManifestName, _settings.FlatManifestName, earlier.Where(n => n != _settings.ManifestName).ToList());
+            if (stable.IsOk)
+            {
+                await Remember(_settings.ManifestName);
+                return stable;
+            }
+            if (stable.Kind != RemoteResultKind.Denied) return stable;
+            _logger.LogInformation("The server refused to replace {Manifest} ({Reason}); this Destination now gets a Manifest per Run", _settings.ManifestName, stable.Reason);
+            if (store is not null) await store.RememberManifestOverwriteRefusedAsync(_settings.Destination);
+            if (!earlier.Contains(_settings.ManifestName)) earlier = [.. earlier, _settings.ManifestName];
+        }
+
+        var stampedJson = RunStamped(_settings.ManifestName, run.RunId);
+        var uploaded = await UploadAsync(stampedJson, RunStamped(_settings.FlatManifestName, run.RunId), earlier);
+        if (uploaded.IsOk) await Remember(stampedJson);
+        return uploaded;
+    }
+
+    /// <summary><c>manifest.json</c> becomes <c>manifest.&lt;runId&gt;.json</c>.</summary>
+    internal static string RunStamped(string name, Guid runId)
+    {
+        var extension = Path.GetExtension(name);
+        return $"{name[..^extension.Length]}.{runId}{extension}";
     }
 
     /// <summary>
@@ -739,18 +779,22 @@ public sealed partial class Engine : IRunEngine
         new(Path.Combine(Path.GetTempPath(), "mires-manifest-" + Guid.NewGuid().ToString("N")), FileMode.CreateNew, FileAccess.ReadWrite,
             FileShare.None, 81920, FileOptions.DeleteOnClose);
 
-    /// <summary>Uploads the stream to <c>name.part</c> and renames it into place; returns the SHA-256 of what was sent.</summary>
-    private static async Task<(RemoteResult Result, string? Sha256)> UploadViaPartAsync(IRemoteSession session, Stream content, string finalPath, CancellationToken ct)
+    /// <summary>
+    /// Uploads the stream to its final name the way <c>UploadStrategy</c> says: through <c>name.part</c> and a rename, or straight
+    /// to the name. Returns the SHA-256 of what was sent.
+    /// </summary>
+    private async Task<(RemoteResult Result, string? Sha256)> UploadFinalAsync(IRemoteSession session, Stream content, string finalPath, CancellationToken ct)
     {
-        var partPath = finalPath + ".part";
+        var target = UploadTarget(finalPath);
         string sha256;
         await using (var hashing = new HashingReadStream(content))
         {
-            var upload = await session.UploadAsync(hashing, partPath, ct);
+            var upload = await session.UploadAsync(hashing, target, ct);
             if (!upload.IsOk) return (upload, null);
             sha256 = hashing.FinishHash();
         }
-        var rename = await session.RenameAsync(partPath, finalPath, overwrite: true, ct);
+        if (IsDirect) return (RemoteResult.Ok, sha256);
+        var rename = await session.RenameAsync(target, finalPath, overwrite: true, ct);
         return (rename, rename.IsOk ? sha256 : null);
     }
 
