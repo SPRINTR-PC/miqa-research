@@ -80,8 +80,8 @@ public sealed class UploadStateTests
         using var before = System.Text.Json.JsonDocument.Parse(first);
         using var after = System.Text.Json.JsonDocument.Parse(remote.ReadText("/upload/scans/manifest.json"));
         Assert.AreEqual(
-            before.RootElement.GetProperty("files")[0].GetProperty("sha256").GetString(),
-            after.RootElement.GetProperty("files")[0].GetProperty("sha256").GetString());
+            before.RootElement.GetProperty("members")[0].GetProperty("sha256").GetString(),
+            after.RootElement.GetProperty("members")[0].GetProperty("sha256").GetString());
     }
 
     [TestMethod]

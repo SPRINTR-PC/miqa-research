@@ -34,7 +34,7 @@ public sealed class DirectoryToFakeRemoteTests
             var local = Convert.ToHexStringLower(SHA256.HashData(data));
             var uploaded = Convert.ToHexStringLower(SHA256.HashData(remote.Files["/upload/scans/file.bin"]));
             using var manifest = JsonDocument.Parse(remote.ReadText("/upload/scans/manifest.json"));
-            var inManifest = manifest.RootElement.GetProperty("files").EnumerateArray().Single().GetProperty("sha256").GetString();
+            var inManifest = manifest.RootElement.GetProperty("members").EnumerateArray().Single().GetProperty("sha256").GetString();
             Assert.AreEqual(local, uploaded);
             Assert.AreEqual(local, inManifest);
         }
@@ -81,7 +81,7 @@ public sealed class DirectoryToFakeRemoteTests
             Assert.AreEqual(0, result.ExitCode);
             var zip = remote.Files["/upload/scans/slide/tiles.zip"];
             using var manifest = JsonDocument.Parse(remote.ReadText("/upload/scans/manifest.json"));
-            var archive = manifest.RootElement.GetProperty("archives").EnumerateArray().Single();
+            var archive = MiresSftpUploader.Test.Support.ManifestTree.Archives(manifest.RootElement).Values.Single();
             Assert.AreEqual(Convert.ToHexStringLower(SHA256.HashData(zip)), archive.GetProperty("sha256").GetString());
             var listed = archive.GetProperty("members").EnumerateArray().ToDictionary(
                 m => m.GetProperty("path").GetString()!, m => m.GetProperty("sha256").GetString());

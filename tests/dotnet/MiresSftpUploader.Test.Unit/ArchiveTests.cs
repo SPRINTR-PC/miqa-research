@@ -144,15 +144,14 @@ public sealed class ArchiveTests
 
         using var manifest = Manifest(remote);
         var zipBytes = remote.Files["/upload/scans/d/tiles-d.zip"];
-        var archive = manifest.RootElement.GetProperty("archives").EnumerateArray().Single();
-        Assert.AreEqual("d/tiles-d.zip", archive.GetProperty("path").GetString());
+        var (archivePath, archive) = ManifestTree.Archives(manifest.RootElement).Single();
+        Assert.AreEqual("d/tiles-d.zip", archivePath);
         Assert.AreEqual(Sha256(zipBytes), archive.GetProperty("sha256").GetString(), "Manifest hash equals the hash of the uploaded Archive");
         var members = archive.GetProperty("members").EnumerateArray().ToDictionary(m => m.GetProperty("path").GetString()!);
         Assert.AreEqual(Sha256(Bytes("alpha")), members["d/a.jpg"].GetProperty("sha256").GetString());
-        Assert.AreEqual("a.jpg", members["d/a.jpg"].GetProperty("entry").GetString());
         Assert.AreEqual(modified, members["d/b.jpg"].GetProperty("modified").GetDateTimeOffset());
-        var plainFiles = manifest.RootElement.GetProperty("files").EnumerateArray().Select(f => f.GetProperty("path").GetString()).ToArray();
-        CollectionAssert.AreEqual(new[] { "d/c.txt" }, plainFiles, "members are not listed as plain files");
+        CollectionAssert.AreEqual(new[] { "d/c.txt" }, ManifestTree.Members(manifest.RootElement).Keys.ToArray(), "members are not listed as plain files");
+        CollectionAssert.AreEqual(new[] { "d/tiles-d.zip" }, ManifestTree.Members(manifest.RootElement, "archive").Keys.ToArray());
     }
 
     [TestMethod]
@@ -296,7 +295,7 @@ public sealed class ArchiveTests
         Assert.AreEqual("beta, finished", System.Text.Encoding.UTF8.GetString(ZipEntries(remote.Files["/upload/scans/d/tiles-d.zip"])["b.jpg"]));
         using var manifest = Manifest(remote);
         Assert.IsTrue(manifest.RootElement.GetProperty("complete").GetBoolean());
-        var archives = manifest.RootElement.GetProperty("archives").EnumerateArray().ToDictionary(a => a.GetProperty("path").GetString()!);
+        var archives = ManifestTree.Archives(manifest.RootElement);
         CollectionAssert.AreEquivalent(new[] { "d/tiles-d.zip", "e/tiles-e.zip" }, archives.Keys.ToArray());
         Assert.AreEqual(1, archives["e/tiles-e.zip"].GetProperty("members").GetArrayLength(), "the archive delivered earlier keeps its members");
         Assert.AreEqual(Sha256(Bytes("gamma")), archives["e/tiles-e.zip"].GetProperty("members")[0].GetProperty("sha256").GetString());
