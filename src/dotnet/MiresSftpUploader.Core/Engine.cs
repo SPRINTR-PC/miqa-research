@@ -124,7 +124,7 @@ public sealed class Engine
         var access = DataDirectory.Check(directory);
         run.Report(new DataDirectoryChecked(access));
         if (access.OnNetworkShare)
-            run.Report(new RunWarning($"The Data Directory '{directory}' looks like a network share. SQLite locking is unreliable there; use a local directory."));
+            run.Warn($"The Data Directory '{directory}' looks like a network share. SQLite locking is unreliable there; use a local directory.");
         return access;
     }
 
@@ -169,13 +169,22 @@ public sealed class Engine
             if (store is not null && options.ResetSources.Contains(source.Name))
                 await store.ResetSourceAsync(_settings.Destination, remotePath, source.Name);
             var prior = store?.LoadSource(_settings.Destination, remotePath, source.Name);
+            if (options.DryRun && _settings.State.Path is { Length: > 0 } dryRunDatabase)
+                prior = UploadStateStore.ReadPriorFiles(dryRunDatabase, _settings.Destination, remotePath, source.Name);
             var listed = new HashSet<string>(StringComparer.Ordinal);
+            var rules = IgnoreRulesOf(source);
             await foreach (var file in source.ListAsync(ct))
             {
                 listed.Add(file.RelativePath);
                 PriorFile? known = null;
                 prior?.TryGetValue(file.RelativePath, out known);
-                work.Add(new FileWork(source, remotePath, file, options.RehashAll ? null : known));
+                var item = new FileWork(source, remotePath, file, options.RehashAll ? null : known);
+                if (rules.Reason(file.RelativePath, m => run.Warn(m)) is { } ignored)
+                    run.Set(item, FileOutcome.Ignored, ignored);
+                else if (IsTooRecent(source, file))
+                    run.Set(item, FileOutcome.Skipped, TooRecentReason);
+                else
+                    work.Add(item);
             }
             if (store is not null)
                 await store.MarkMissingAsync(_settings.Destination, remotePath, source.Name, listed, _time.GetUtcNow());
@@ -183,7 +192,11 @@ public sealed class Engine
 
         if (options.DryRun)
         {
-            foreach (var item in work) run.Set(item, FileOutcome.Pending, null);
+            foreach (var item in work)
+            {
+                if (IsUnchanged(item, out var prior)) run.Skip(item, prior.Sha256!, UnchangedReason);
+                else run.Set(item, FileOutcome.Pending, null);
+            }
             return (ExitCodes.Ok, null);
         }
 
@@ -245,10 +258,9 @@ public sealed class Engine
         var store = run.Store;
         var key = item.Key(_settings.Destination);
         var mtime = item.File.Modified.UtcTicks;
-        if (item.Prior is { Status: "Succeeded", Sha256: not null } prior
-            && prior.Size == item.File.Size && prior.MtimeTicks == mtime)
+        if (IsUnchanged(item, out var prior))
         {
-            run.Skip(item, prior.Sha256, "unchanged");
+            run.Skip(item, prior.Sha256!, UnchangedReason);
             store?.RecordSkipped(run.RunId, key, _time.GetUtcNow());
             return;
         }
@@ -276,6 +288,16 @@ public sealed class Engine
 
         run.Fail(item, failure);
         store?.RecordFailed(run.RunId, key, item.File.Size, mtime, failure, _time.GetUtcNow(), _time.GetElapsedTime(started));
+    }
+
+    private const string UnchangedReason = "unchanged";
+
+    /// <summary>The size and mtime fast path: the Upload State has this file Succeeded with the same size and mtime.</summary>
+    private static bool IsUnchanged(FileWork item, out PriorFile prior)
+    {
+        prior = item.Prior!;
+        return item.Prior is { Status: "Succeeded", Sha256: not null } known
+            && known.Size == item.File.Size && known.MtimeTicks == item.File.Modified.UtcTicks;
     }
 
     private TimeSpan BackoffDelay(int attempt)
@@ -335,6 +357,39 @@ public sealed class Engine
         return await session.RenameAsync(finalPath + ".part", finalPath, overwrite: true, ct);
     }
 
+    internal const string TooRecentReason = "TooRecent";
+
+    /// <summary>Too Recent: modified less than the minimum age ago, or at or after the cutoff. A Source's own setting replaces the global one.</summary>
+    private bool IsTooRecent(ISource source, SourceFile file)
+    {
+        var own = _settings.SourceConfigs
+            .FirstOrDefault(c => string.Equals(c.Name, source.Name, StringComparison.OrdinalIgnoreCase))?.Scan;
+        var minAge = own?.MinFileAgeSeconds ?? _settings.Scan.MinFileAgeSeconds;
+        var cutoff = own?.ModifiedBefore ?? _settings.Scan.ModifiedBefore;
+        if (minAge > 0 && file.Modified > _time.GetUtcNow() - TimeSpan.FromSeconds(minAge)) return true;
+        return cutoff is { } limit && file.Modified >= limit;
+    }
+
+    private IgnoreRules IgnoreRulesOf(ISource source)
+    {
+        var own = _settings.SourceConfigs
+            .FirstOrDefault(c => string.Equals(c.Name, source.Name, StringComparison.OrdinalIgnoreCase))?.Ignore;
+        return new IgnoreRules(
+            _settings.Ignore.UseDefaults,
+            _settings.Ignore.Files.Concat(own?.Files ?? []),
+            _settings.Ignore.Patterns.Concat(own?.Patterns ?? []),
+            alwaysPaths: [_settings.ManifestName, _settings.ManifestName + ".part", _settings.FlatManifestName, _settings.FlatManifestName + ".part"],
+            alwaysNames: UploadStateFileNames());
+    }
+
+    /// <summary>The Upload State database and the files SQLite keeps beside it, plus the Run lock.</summary>
+    private IEnumerable<string> UploadStateFileNames()
+    {
+        if (_settings.State.Path is not { Length: > 0 } path) return [];
+        var name = Path.GetFileName(path);
+        return [name, name + "-wal", name + "-shm", name + "-journal", name + ".lock"];
+    }
+
     private string RemotePathOf(ISource source) =>
         Normalize(source.RemotePath ?? Join(_settings.RemoteRoot, source.Name));
 
@@ -373,6 +428,7 @@ public sealed class Engine
         public UploadStateStore? Store { get; set; }
 
         internal void Report(RunEvent runEvent) => progress.Report(runEvent);
+        internal void Warn(string message) => progress.Report(new RunWarning(message));
 
         internal void Set(FileWork item, FileOutcome outcome, string? reason) =>
             Update(item, e => { e.Outcome = outcome; e.Reason = reason; });

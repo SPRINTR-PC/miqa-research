@@ -28,15 +28,6 @@ public static partial class DataDirectory
         };
     }
 
-    /// <summary>Resolves for this machine from the process arguments and environment.</summary>
-    public static string ResolveForThisMachine(string[] args)
-    {
-        var index = Array.IndexOf(args, "--data-dir");
-        var flag = index >= 0 && index + 1 < args.Length ? args[index + 1] : null;
-        return Resolve(flag, Environment.GetEnvironmentVariable(EnvironmentVariable), CurrentPlatform,
-            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData));
-    }
-
     /// <summary>The Upload State database inside a Data Directory; the lock file lives beside it.</summary>
     public static string DatabasePath(string dataDirectory) => Path.Combine(dataDirectory, DatabaseFileName);
 }

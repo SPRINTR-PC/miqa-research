@@ -36,4 +36,12 @@ public sealed record EngineSettings
     public int MaxParallelUploads { get; init; } = 3;
     public RetrySettings Retry { get; init; } = new();
     public string ManifestName { get; init; } = "manifest.json";
+    /// <summary>Name of the Flat Manifest; always Ignored when it turns up in a Source, like the Manifest.</summary>
+    public string FlatManifestName { get; init; } = "manifest.sha256";
+    /// <summary>Global Ignore Rules; each Source's own <see cref="SourceConfig.Ignore"/> adds to them.</summary>
+    public IgnoreConfig Ignore { get; init; } = new();
+    /// <summary>Global Too Recent limits; a Source's own <see cref="SourceConfig.Scan"/> overrides them.</summary>
+    public ScanConfig Scan { get; init; } = new();
+    /// <summary>Per-Source additions, matched to a Source by name (case-insensitive).</summary>
+    public IReadOnlyList<SourceConfig> SourceConfigs { get; init; } = [];
 }

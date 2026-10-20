@@ -3,6 +3,8 @@
         <OutputType>WinExe</OutputType>
         <TargetFramework>net10.0</TargetFramework>
         <Nullable>enable</Nullable>
+        <!-- Single source of the version: feeds AssemblyInformationalVersion, the version flag and the Manifest's toolVersion.
+             Release builds override it: the publish scripts take a version option and pass it as the Version property. -->
         <Version>0.1.0</Version>
         <ApplicationManifest>app.manifest</ApplicationManifest>
         <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
@@ -12,6 +14,26 @@
         <Folder Include="Models\" />
         <AvaloniaResource Include="Assets\**" />
     </ItemGroup>
+
+    <ItemGroup>
+        <Content Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+
+    <!-- Files shipped next to the executable in artifacts/publish/<rid>/ (appsettings.json is above). Missing optional
+         files are reported by the MiresReleaseFiles target; the publish scripts treat README.md as required. -->
+    <ItemGroup>
+        <ReleaseFile Include="README.md" TargetPath="README.md" />
+        <ReleaseFile Include="docs/manifest.schema.json" TargetPath="manifest.schema.json" Condition="Exists('docs/manifest.schema.json')" />
+        <ReleaseFile Include="docs/scheduler/**" TargetPath="scheduler/%(RecursiveDir)%(Filename)%(Extension)" />
+    </ItemGroup>
+
+    <Import Project="Signing.targets" />
+
+    <Target Name="MiresReleaseFiles" AfterTargets="Publish">
+        <Copy SourceFiles="@(ReleaseFile)" DestinationFiles="@(ReleaseFile->'$(PublishDir)%(TargetPath)')" />
+        <Warning Condition="!Exists('docs/manifest.schema.json')" Text="docs/manifest.schema.json not found; the Manifest JSON Schema is not in the publish output." />
+        <Warning Condition="!Exists('docs/scheduler')" Text="docs/scheduler not found; no scheduler samples in the publish output." />
+    </Target>
 
     <ItemGroup>
         <ProjectReference Include="..\MiresSftpUploader.Core\MiresSftpUploader.Core.csproj" />

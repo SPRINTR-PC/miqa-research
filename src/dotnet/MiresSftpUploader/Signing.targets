@@ -1,0 +1,47 @@
+<Project>
+    <!--
+        Signing hooks, DISABLED by default. Read at publish time only, from MSBuild properties (-p:Name=value)
+        or environment variables of the same name; never from appsettings. See docs/signing.md.
+
+          SignWindows=true  needs WindowsSignCertThumbprint and WindowsSignTimestampUrl   (win-* RIDs, signtool)
+          SignMac=true      needs MacSignIdentity, MacEntitlements and MacNotarizeProfile (osx-* RIDs, codesign + notarytool)
+
+        There is no Linux signing. The inputs are required only for the RID being published, so one set of
+        variables can drive publish.sh / publish.ps1 across all four targets.
+    -->
+    <PropertyGroup>
+        <SignWindows Condition="'$(SignWindows)' == ''">false</SignWindows>
+        <SignMac Condition="'$(SignMac)' == ''">false</SignMac>
+    </PropertyGroup>
+
+    <!-- The RuntimeIdentifier comes from the publish profile, which is imported after this file, so the
+         "active" flags are computed inside the targets rather than at evaluation time. -->
+    <Target Name="MiresGuardSigning" BeforeTargets="PrepareForPublish">
+        <PropertyGroup>
+            <MiresSignWindowsActive Condition="'$(SignWindows)' == 'true' And $(RuntimeIdentifier.StartsWith('win-'))">true</MiresSignWindowsActive>
+            <MiresSignMacActive Condition="'$(SignMac)' == 'true' And $(RuntimeIdentifier.StartsWith('osx-'))">true</MiresSignMacActive>
+        </PropertyGroup>
+        <Error Condition="'$(MiresSignWindowsActive)' == 'true' And '$(WindowsSignCertThumbprint)' == ''"
+               Text="SignWindows=true but WindowsSignCertThumbprint is not set. See docs/signing.md." />
+        <Error Condition="'$(MiresSignWindowsActive)' == 'true' And '$(WindowsSignTimestampUrl)' == ''"
+               Text="SignWindows=true but WindowsSignTimestampUrl is not set. See docs/signing.md." />
+        <Error Condition="'$(MiresSignMacActive)' == 'true' And '$(MacSignIdentity)' == ''"
+               Text="SignMac=true but MacSignIdentity is not set. See docs/signing.md." />
+        <Error Condition="'$(MiresSignMacActive)' == 'true' And '$(MacEntitlements)' == ''"
+               Text="SignMac=true but MacEntitlements is not set (use macOS.entitlements). See docs/signing.md." />
+        <Error Condition="'$(MiresSignMacActive)' == 'true' And '$(MacEntitlements)' != '' And !Exists('$(MacEntitlements)')"
+               Text="SignMac=true but MacEntitlements file '$(MacEntitlements)' does not exist." />
+        <Error Condition="'$(MiresSignMacActive)' == 'true' And '$(MacNotarizeProfile)' == ''"
+               Text="SignMac=true but MacNotarizeProfile is not set. See docs/signing.md." />
+    </Target>
+
+    <Target Name="MiresSignWindows" AfterTargets="Publish" Condition="'$(MiresSignWindowsActive)' == 'true'">
+        <Exec Command="signtool sign /sha1 &quot;$(WindowsSignCertThumbprint)&quot; /fd SHA256 /tr &quot;$(WindowsSignTimestampUrl)&quot; /td SHA256 &quot;$(PublishDir)$(AssemblyName).exe&quot;" />
+    </Target>
+
+    <Target Name="MiresSignMac" AfterTargets="Publish" Condition="'$(MiresSignMacActive)' == 'true'">
+        <Exec Command="codesign --force --timestamp --options runtime --entitlements &quot;$(MacEntitlements)&quot; --sign &quot;$(MacSignIdentity)&quot; &quot;$(PublishDir)$(AssemblyName)&quot;" />
+        <Exec Command="ditto -c -k --keepParent &quot;$(PublishDir)$(AssemblyName)&quot; &quot;$(IntermediateOutputPath)notarize.zip&quot;" />
+        <Exec Command="xcrun notarytool submit &quot;$(IntermediateOutputPath)notarize.zip&quot; --keychain-profile &quot;$(MacNotarizeProfile)&quot; --wait" />
+    </Target>
+</Project>
