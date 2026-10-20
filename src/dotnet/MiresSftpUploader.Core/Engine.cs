@@ -145,6 +145,8 @@ public sealed class Engine
             if (store is not null && options.ResetSources.Contains(source.Name))
                 await store.ResetSourceAsync(_settings.Destination, remotePath, source.Name);
             var prior = store?.LoadSource(_settings.Destination, remotePath, source.Name);
+            if (options.DryRun && _settings.State.Path is { Length: > 0 } dryRunDatabase)
+                prior = UploadStateStore.ReadPriorFiles(dryRunDatabase, _settings.Destination, remotePath, source.Name);
             var listed = new HashSet<string>(StringComparer.Ordinal);
             var rules = IgnoreRulesOf(source);
             await foreach (var file in source.ListAsync(ct))
@@ -166,7 +168,11 @@ public sealed class Engine
 
         if (options.DryRun)
         {
-            foreach (var item in work) run.Set(item, FileOutcome.Pending, null);
+            foreach (var item in work)
+            {
+                if (IsUnchanged(item, out var prior)) run.Skip(item, prior.Sha256!, UnchangedReason);
+                else run.Set(item, FileOutcome.Pending, null);
+            }
             return (ExitCodes.Ok, null);
         }
 
@@ -228,10 +234,9 @@ public sealed class Engine
         var store = run.Store;
         var key = item.Key(_settings.Destination);
         var mtime = item.File.Modified.UtcTicks;
-        if (item.Prior is { Status: "Succeeded", Sha256: not null } prior
-            && prior.Size == item.File.Size && prior.MtimeTicks == mtime)
+        if (IsUnchanged(item, out var prior))
         {
-            run.Skip(item, prior.Sha256, "unchanged");
+            run.Skip(item, prior.Sha256!, UnchangedReason);
             store?.RecordSkipped(run.RunId, key, _time.GetUtcNow());
             return;
         }
@@ -259,6 +264,16 @@ public sealed class Engine
 
         run.Fail(item, failure);
         store?.RecordFailed(run.RunId, key, item.File.Size, mtime, failure, _time.GetUtcNow(), _time.GetElapsedTime(started));
+    }
+
+    private const string UnchangedReason = "unchanged";
+
+    /// <summary>The size and mtime fast path: the Upload State has this file Succeeded with the same size and mtime.</summary>
+    private static bool IsUnchanged(FileWork item, out PriorFile prior)
+    {
+        prior = item.Prior!;
+        return item.Prior is { Status: "Succeeded", Sha256: not null } known
+            && known.Size == item.File.Size && known.MtimeTicks == item.File.Modified.UtcTicks;
     }
 
     private TimeSpan BackoffDelay(int attempt)
