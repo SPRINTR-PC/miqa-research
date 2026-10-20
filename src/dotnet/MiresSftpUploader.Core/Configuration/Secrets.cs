@@ -49,6 +49,10 @@ public sealed class Secrets
     internal static bool IsSecretName(string variable) =>
         variable is SftpPasswordVariable or SftpKeyPassphraseVariable || S3VariablePattern.IsMatch(variable);
 
+    /// <summary>Every Secret value in the snapshot. For the <see cref="Redactor"/> only.</summary>
+    internal IEnumerable<string> Values() =>
+        _environment.Where(kv => IsSecretName(kv.Key) && !string.IsNullOrEmpty(kv.Value)).Select(kv => kv.Value!);
+
     internal SecretStatus Status(IEnumerable<SourceConfig> sources)
     {
         var s3 = new Dictionary<string, S3KeyStatus>(StringComparer.OrdinalIgnoreCase);

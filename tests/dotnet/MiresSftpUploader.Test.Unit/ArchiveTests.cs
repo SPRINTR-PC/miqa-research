@@ -276,6 +276,33 @@ public sealed class ArchiveTests
     }
 
     [TestMethod]
+    public async Task Retrying_a_run_rebuilds_its_failed_archives_and_keeps_delivered_ones_in_the_manifest()
+    {
+        var remote = new FakeRemote();
+        var source = new FakeSource("scans").Add("d/a.jpg", "alpha").Add("d/b.jpg", "beta").Add("e/c.jpg", "gamma");
+        source.AfterOpen = path =>
+        {
+            if (path == "d/b.jpg") source.Add("d/b.jpg", "beta, finished", new DateTimeOffset(2026, 7, 7, 0, 0, 0, TimeSpan.Zero));
+        };
+        var settings = Settings(Rules(Rule("tiles", @"\.jpg$")), withState: true);
+        var first = await RunAsync(settings, remote, sources: source);
+        Assert.AreEqual(1, first.ExitCode);
+        source.AfterOpen = null;
+
+        var retry = await RunAsync(settings, remote, new RunOptions { RetryOf = first.RunId }, sources: source);
+
+        Assert.AreEqual(0, retry.ExitCode);
+        Assert.AreEqual(2, retry.Count(FileOutcome.Succeeded));
+        Assert.AreEqual("beta, finished", System.Text.Encoding.UTF8.GetString(ZipEntries(remote.Files["/upload/scans/d/tiles-d.zip"])["b.jpg"]));
+        using var manifest = Manifest(remote);
+        Assert.IsTrue(manifest.RootElement.GetProperty("complete").GetBoolean());
+        var archives = manifest.RootElement.GetProperty("archives").EnumerateArray().ToDictionary(a => a.GetProperty("path").GetString()!);
+        CollectionAssert.AreEquivalent(new[] { "d/tiles-d.zip", "e/tiles-e.zip" }, archives.Keys.ToArray());
+        Assert.AreEqual(1, archives["e/tiles-e.zip"].GetProperty("members").GetArrayLength(), "the archive delivered earlier keeps its members");
+        Assert.AreEqual(Sha256(Bytes("gamma")), archives["e/tiles-e.zip"].GetProperty("members")[0].GetProperty("sha256").GetString());
+    }
+
+    [TestMethod]
     public async Task A_member_that_changes_between_scan_and_build_fails_the_archive()
     {
         var remote = new FakeRemote();

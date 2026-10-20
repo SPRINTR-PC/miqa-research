@@ -6,11 +6,14 @@ namespace MiresSftpUploader.Test.Support;
 [TestClass]
 public abstract class RemoteContract
 {
-    /// <summary>Creates a remote whose root directory is empty and writable.</summary>
+    /// <summary>Creates a remote that can write below <see cref="RootDirectory"/>.</summary>
     protected abstract IRemote CreateRemote();
 
+    /// <summary>The writable directory the contract works in; "" for a server whose root is writable.</summary>
+    protected virtual string RootDirectory => "";
+
     /// <summary>A directory name that is unique per call, so adapters sharing a server do not collide.</summary>
-    protected static string UniqueDirectory() => "/contract-" + Guid.NewGuid().ToString("N");
+    protected string UniqueDirectory() => RootDirectory + "/contract-" + Guid.NewGuid().ToString("N");
 
     private static async Task<IRemoteSession> Connect(IRemote remote)
     {

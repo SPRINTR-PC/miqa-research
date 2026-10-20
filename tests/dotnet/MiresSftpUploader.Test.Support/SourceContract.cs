@@ -45,15 +45,18 @@ public abstract class SourceContract
     }
 
     [TestMethod]
-    public async Task Stat_reports_the_listed_size_and_time_and_null_for_a_missing_file()
+    public async Task Stat_describes_one_file_without_listing_the_source_and_is_null_for_a_vanished_one()
     {
-        var source = CreateSource(new Dictionary<string, byte[]> { ["dir/a.bin"] = [5, 6, 7] });
-        var listed = (await ListAll(source)).Single();
+        var source = CreateSource(new Dictionary<string, byte[]> { ["dir/a.bin"] = [5, 6, 7], ["b.bin"] = [] });
+        var listed = (await ListAll(source)).Single(f => f.RelativePath == "dir/a.bin");
 
         var stat = await source.StatAsync("dir/a.bin", CancellationToken.None);
 
-        Assert.AreEqual(listed, stat);
-        Assert.IsNull(await source.StatAsync("dir/missing.bin", CancellationToken.None));
+        Assert.IsNotNull(stat);
+        Assert.AreEqual("dir/a.bin", stat.RelativePath);
+        Assert.AreEqual(3, stat.Size);
+        Assert.AreEqual(listed.Modified, stat.Modified);
+        Assert.IsNull(await source.StatAsync("dir/gone.bin", CancellationToken.None));
     }
 
     [TestMethod]

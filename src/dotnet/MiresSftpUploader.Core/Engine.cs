@@ -33,7 +33,7 @@ public sealed partial class Engine
 
     public async Task<RunResult> RunAsync(RunOptions options, IProgress<RunEvent> progress, CancellationToken cancellationToken)
     {
-        var run = new RunState(Guid.NewGuid(), _time.GetUtcNow(), progress);
+        var run = new RunState(Guid.NewGuid(), _time.GetUtcNow(), progress, _logger);
         progress.Report(new RunStarted(run.RunId, run.StartedAt));
         _logger.LogInformation("Run {RunId} started by {User}", run.RunId, options.StartedBy);
 
@@ -54,9 +54,50 @@ public sealed partial class Engine
         }
 
         var result = new RunResult(run.RunId, run.SnapshotCounts(), exitCode, reason);
-        _logger.LogInformation("Run {RunId} finished with exit code {ExitCode}", run.RunId, exitCode);
+        WriteReport(options, run, result);
+        _logger.LogInformation("Run {RunId} finished: Succeeded {Succeeded}, Skipped {Skipped}, Failed {Failed}, exit code {ExitCode}",
+            run.RunId, result.Count(FileOutcome.Succeeded), result.Count(FileOutcome.Skipped), result.Count(FileOutcome.Failed), exitCode);
         progress.Report(new RunFinished(result));
         return result;
+    }
+
+    private static string ModeOf(RunOptions options) =>
+        options.DryRun ? "DryRun" : options.RetryOf is not null ? "Retry" : "Run";
+
+    /// <summary>Writes the Report of the Run, whatever its exit code. A Report that cannot be written is logged, never a Run failure.</summary>
+    private void WriteReport(RunOptions options, RunState run, RunResult result)
+    {
+        var format = options.ReportFormat ?? _settings.Report.Format;
+        var now = _time.GetUtcNow();
+        var path = ReportPathFor(options, run, format);
+        if (path is null) return;
+
+        var counts = result.Counts.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value);
+        var summary = new RunSummary(run.RunId, "Finished", result.ExitCode, options.StartedBy, ModeOf(options),
+            options.Trigger.ToString(), run.StartedAt, now, now, false, counts);
+        var files = run.SnapshotFiles().Select(e => new RunFileOutcome(e.Source, e.Path, e.Outcome.ToString(), e.Bytes, e.DurationMs, e.Reason)).ToList();
+        try
+        {
+            ReportWriter.WriteFile(path, ReportWriter.Render(new RunDetail(summary, files), format));
+            _logger.LogInformation("Report written to {Path}", path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning("Could not write the Report to {Path}: {Reason}", path, ex.Message);
+        }
+    }
+
+    private string? ReportPathFor(RunOptions options, RunState run, ReportFormat format)
+    {
+        var name = ReportWriter.FileName(_settings.Report.FileNamePattern, run.RunId, run.StartedAt, format);
+        if (options.ReportPath is { Length: > 0 } explicitPath)
+            return Directory.Exists(explicitPath) || explicitPath.EndsWith('/') || explicitPath.EndsWith('\\')
+                ? Path.Combine(explicitPath, name)
+                : explicitPath;
+        if (options.DryRun) return null;
+        var directory = _settings.Report.Directory
+            ?? (_settings.State.Path is { Length: > 0 } db ? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(db))!, "reports") : null);
+        return directory is null ? null : Path.Combine(directory, name);
     }
 
     private async Task<(int ExitCode, string? Reason)> ExecuteAsync(RunOptions options, RunState run, CancellationToken ct)
@@ -64,8 +105,14 @@ public sealed partial class Engine
         var unknown = options.SourceNames.Concat(options.ResetSources).FirstOrDefault(n => _sources.All(s => s.Name != n));
         if (unknown is not null) return (ExitCodes.ConfigurationError, $"Unknown Source '{unknown}'");
 
+        if (options.RetryOf is not null && (options.DryRun || _settings.State.Path is not { Length: > 0 }))
+            return (ExitCodes.ConfigurationError, "Retrying a Run needs the Upload State");
+
         if (options.DryRun || _settings.State.Path is not { Length: > 0 } databasePath)
             return await ExecuteCoreAsync(options, run, ct);
+
+        var access = EnsureDataDirectory(databasePath, run);
+        if (access.Problem is not null) return (ExitCodes.ConfigurationError, access.Problem);
 
         using var runLock = RunLock.TryAcquire(databasePath + ".lock", options.StartedBy, _time.GetUtcNow(), out var holder);
         if (runLock is null) return (ExitCodes.LockHeld, $"Another Run holds the lock ({holder})");
@@ -84,28 +131,69 @@ public sealed partial class Engine
         {
             run.Store = store;
             RemoveStaleStagingAreas(run);
+            if (options.RetryOf is { } retryOf && !store.RunExists(retryOf))
+                return (ExitCodes.ConfigurationError, $"Unknown Run {retryOf}");
             await CleanUpAbandonedRunsAsync(store, ct);
-            await store.BeginRunAsync(run.RunId, run.StartedAt, "Run", "Headless", options.StartedBy);
+            await store.BeginRunAsync(run.RunId, run.StartedAt, ModeOf(options), options.Trigger.ToString(), options.StartedBy);
+            using var cancelRequested = CancellationTokenSource.CreateLinkedTokenSource(ct);
             using var heartbeat = _time.CreateTimer(
                 _ => _ = store.HeartbeatAsync(run.RunId, _time.GetUtcNow()),
                 null, _settings.State.HeartbeatInterval, _settings.State.HeartbeatInterval);
+            // Another account (or process) can ask this Run to stop through the Upload State.
+            using var cancelPoll = _time.CreateTimer(
+                _ => PollCancelRequest(store, run.RunId, cancelRequested),
+                null, _settings.State.CancelPollInterval, _settings.State.CancelPollInterval);
 
             (int ExitCode, string? Reason) outcome;
             try
             {
-                outcome = await ExecuteCoreAsync(options, run, ct);
+                outcome = await ExecuteCoreAsync(options, run, cancelRequested.Token);
             }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            catch (OperationCanceledException) when (cancelRequested.IsCancellationRequested)
             {
                 outcome = (ExitCodes.Cancelled, "Cancelled");
             }
 
+            await cancelPoll.DisposeAsync();
             await heartbeat.DisposeAsync();
             var now = _time.GetUtcNow();
             await store.FinishRunAsync(run.RunId, now, outcome.ExitCode, run.SnapshotCounts());
             await store.PruneAsync(now, _settings.State.RunFilesRetention, _settings.State.MissingRetention);
             await store.FlushAsync();
             return outcome;
+        }
+    }
+
+    /// <summary>
+    /// Checks the Data Directory holding the Upload State and reports the result. A missing directory is set up first when
+    /// this account has the rights; otherwise the problem (path, account, fix command) is returned. Never falls back to another directory.
+    /// </summary>
+    private DataDirectoryAccess EnsureDataDirectory(string databasePath, RunState run)
+    {
+        var directory = Path.GetDirectoryName(Path.GetFullPath(databasePath))!;
+        if (!Directory.Exists(directory))
+        {
+            var init = DataDirectory.Initialize(directory, _settings.State.AccessGroup, DataDirectory.CurrentPlatform);
+            foreach (var action in init.Actions) _logger.LogInformation("Data Directory: {Action}", action);
+            if (!init.Ok) _logger.LogWarning("Data Directory could not be set up: {Error}", init.Error);
+        }
+
+        var access = DataDirectory.Check(directory);
+        run.Report(new DataDirectoryChecked(access));
+        if (access.OnNetworkShare)
+            run.Warn($"The Data Directory '{directory}' looks like a network share. SQLite locking is unreliable there; use a local directory.");
+        return access;
+    }
+
+    private void PollCancelRequest(UploadStateStore store, Guid runId, CancellationTokenSource cancel)
+    {
+        try
+        {
+            if (store.IsCancelRequested(runId)) cancel.Cancel();
+        }
+        catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException or ObjectDisposedException)
+        {
+            _logger.LogWarning("Could not read the cancel request of Run {RunId}: {Reason}", runId, ex.Message);
         }
     }
 
@@ -127,6 +215,63 @@ public sealed partial class Engine
             var deleted = await session.DeleteAsync(orphan.PartPath, ct);
             _logger.LogInformation("Abandoned Run: removed {Path}: {Result}", orphan.PartPath, deleted.IsOk ? "ok" : deleted.Reason);
         }
+        await store.ForgetOrphansAsync(_settings.Destination);
+    }
+
+    /// <summary>
+    /// Plans a retry without scanning: only the files that failed in the given Run and are still Failed in the Upload State.
+    /// A vanished file becomes Missing. Everything else the Upload State knows as delivered is carried into the Manifest.
+    /// Returns the Sources that take part.
+    /// </summary>
+    private async Task<List<ISource>> PlanRetryAsync(Guid retryOf, List<ISource> candidates, List<object> work, RunState run, CancellationToken ct)
+    {
+        var store = run.Store!;
+        var failedInRun = store.LoadFailedOf(retryOf, _settings.Destination);
+        var participating = new List<ISource>();
+        foreach (var source in candidates)
+        {
+            var remotePath = RemotePathOf(source);
+            var failedPaths = failedInRun.Where(f => f.Source == source.Name && f.RemotePath == remotePath).Select(f => f.RelativePath).ToHashSet(StringComparer.Ordinal);
+            if (failedPaths.Count == 0) continue;
+            participating.Add(source);
+
+            var prior = store.LoadSource(_settings.Destination, remotePath, source.Name);
+            var priorArchives = store.LoadArchives(_settings.Destination, remotePath, source.Name);
+            var maybeArchives = new List<(string Path, PriorFile Known)>();
+            foreach (var (path, known) in prior.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+            {
+                if (known.Status == "Succeeded" && known.Sha256 is not null)
+                {
+                    if (priorArchives.TryGetValue(path, out var delivered)) run.CarryArchive(source.Name, path, known.Size, known.Sha256, delivered.Members);
+                    else run.Carry(source.Name, path, known.Size, known.Sha256);
+                }
+                if (known.Status != "Failed" || !failedPaths.Contains(path)) continue;
+
+                var stat = await source.StatAsync(path, ct);
+                if (stat is null) maybeArchives.Add((path, known));
+                else work.Add(new FileWork(source, remotePath, stat));
+            }
+
+            // A failed path that is not a file of the Source may be an Archive: plan the Source to find out.
+            var rebuilt = new HashSet<string>(StringComparer.Ordinal);
+            if (maybeArchives.Count > 0 && ArchiveRulesOf(source).Count > 0)
+                foreach (var archive in await PlanArchivesAsync(source, remotePath, run, ct))
+                {
+                    if (!maybeArchives.Any(m => m.Path == archive.RelativePath)) continue;
+                    rebuilt.Add(archive.RelativePath);
+                    var archiveWork = new ArchiveWork(source, remotePath, archive, Prior: null);
+                    if (PlanArchive(archiveWork, run, dryRun: false)) work.Add(archiveWork);
+                }
+            foreach (var (path, known) in maybeArchives.Where(m => !rebuilt.Contains(m.Path)))
+            {
+                var key = new FileKey(_settings.Destination, remotePath, source.Name, path);
+                var vanished = new FileWork(source, remotePath, new SourceFile(path, known.Size, new DateTimeOffset(known.MtimeTicks, TimeSpan.Zero)));
+                run.Set(vanished, FileOutcome.Skipped, "Missing");
+                store.RecordSkipped(run.RunId, key, _time.GetUtcNow(), "Missing");
+                await store.MarkMissingFileAsync(key, _time.GetUtcNow());
+            }
+        }
+        return participating;
     }
 
     private async Task<(int ExitCode, string? Reason)> ExecuteCoreAsync(RunOptions options, RunState run, CancellationToken ct)
@@ -144,6 +289,11 @@ public sealed partial class Engine
 
         run.BuildGate = new SemaphoreSlim(Math.Max(_settings.Archive.MaxParallelBuilds, 1));
         var work = new List<object>();
+        if (options.RetryOf is { } retryOf)
+        {
+            selected = await PlanRetryAsync(retryOf, selected, work, run, ct);
+        }
+        else
         foreach (var source in selected)
         {
             var remotePath = RemotePathOf(source);
@@ -274,7 +424,7 @@ public sealed partial class Engine
             var attemptResult = await TryUploadAsync(session, item, run, ct);
             if (attemptResult.Sha256 is not null)
             {
-                run.Succeed(item, attemptResult.Sha256);
+                run.Succeed(item, attemptResult.Sha256, _time.GetElapsedTime(started));
                 store?.RecordSucceeded(run.RunId, key, item.File.Size, mtime, attemptResult.Sha256, _time.GetUtcNow(), _time.GetElapsedTime(started));
                 return;
             }
@@ -286,7 +436,7 @@ public sealed partial class Engine
             if (attempt < max) await Task.Delay(BackoffDelay(attempt), _time, ct);
         }
 
-        run.Fail(item, failure);
+        run.Fail(item, failure, _time.GetElapsedTime(started));
         store?.RecordFailed(run.RunId, key, item.File.Size, mtime, failure, _time.GetUtcNow(), _time.GetElapsedTime(started));
     }
 
@@ -322,6 +472,7 @@ public sealed partial class Engine
                 await store.MarkUploadingAsync(item.Key(_settings.Destination), item.File.Size, item.File.Modified.UtcTicks, partPath);
 
             string sha256;
+            long bytesRead;
             await using (var raw = await item.Source.OpenReadAsync(item.File.RelativePath, ct))
             await using (var hashing = new HashingReadStream(raw))
             {
@@ -329,6 +480,15 @@ public sealed partial class Engine
                 var upload = await session.UploadAsync(hashing, partPath, ct);
                 if (!upload.IsOk) return UploadAttempt.From(upload);
                 sha256 = hashing.FinishHash();
+                bytesRead = hashing.BytesRead;
+            }
+
+            // A file that changed while it was read has a hash that matches no version of it: never rename it into place.
+            var changed = await ChangedSinceListingAsync(item, bytesRead, ct);
+            if (changed is not null)
+            {
+                await session.DeleteAsync(partPath, ct);
+                return new UploadAttempt(null, "ChangedDuringUpload: " + changed, true);
             }
 
             var rename = await session.RenameAsync(partPath, finalPath, overwrite: true, ct);
@@ -339,6 +499,18 @@ public sealed partial class Engine
         {
             return new UploadAttempt(null, ex.Message, false);
         }
+    }
+
+    /// <summary>Why the file no longer matches its listing, or null when it is unchanged.</summary>
+    private static async Task<string?> ChangedSinceListingAsync(FileWork item, long bytesRead, CancellationToken ct)
+    {
+        var listed = item.File;
+        if (bytesRead != listed.Size) return $"read {bytesRead} bytes, listed {listed.Size}";
+        var now = await item.Source.StatAsync(listed.RelativePath, ct);
+        if (now is null) return null;
+        if (now.Size != listed.Size) return $"size is now {now.Size}, listed {listed.Size}";
+        if (now.Modified.UtcTicks != listed.Modified.UtcTicks) return $"modified at {now.Modified:O}, listed {listed.Modified:O}";
+        return null;
     }
 
     private async Task<RemoteResult> UploadManifestAsync(IRemoteSession session, ISource source, RunState run, CancellationToken ct)
@@ -418,7 +590,7 @@ public sealed partial class Engine
     }
 
     /// <summary>Mutable state of one Run: outcome per file, hashes and failures for the Manifest.</summary>
-    internal sealed partial class RunState(Guid runId, DateTimeOffset startedAt, IProgress<RunEvent> progress)
+    internal sealed partial class RunState(Guid runId, DateTimeOffset startedAt, IProgress<RunEvent> progress, ILogger logger)
     {
         private readonly object _gate = new();
         private readonly Dictionary<(string Source, string Path), FileEntry> _entries = new();
@@ -427,21 +599,27 @@ public sealed partial class Engine
         public DateTimeOffset StartedAt { get; } = startedAt;
         public UploadStateStore? Store { get; set; }
 
-        internal void Warn(string message) => progress.Report(new RunWarning(message));
+        internal void Report(RunEvent runEvent) => progress.Report(runEvent);
+        /// <summary>A file delivered by an earlier Run, listed in the Manifest but not an outcome of this Run.</summary>
+        internal void Carry(string source, string path, long size, string sha256)
+        {
+            lock (_gate)
+                _entries[(source, path)] = new FileEntry(source, path, size) { Outcome = FileOutcome.Skipped, Reason = "delivered earlier", Sha256 = sha256, Carried = true };
+        }
 
-        internal void Report(RunEvent e) => progress.Report(e);
+        internal void Warn(string message) => progress.Report(new RunWarning(message));
 
         internal void Set(FileWork item, FileOutcome outcome, string? reason) =>
             Update(item, e => { e.Outcome = outcome; e.Reason = reason; });
 
-        internal void Succeed(FileWork item, string sha256) =>
-            Update(item, e => { e.Outcome = FileOutcome.Succeeded; e.Reason = null; e.Sha256 = sha256; });
+        internal void Succeed(FileWork item, string sha256, TimeSpan duration) =>
+            Update(item, e => { e.Outcome = FileOutcome.Succeeded; e.Reason = null; e.Sha256 = sha256; e.Bytes = e.Size; e.DurationMs = (long)duration.TotalMilliseconds; });
 
         internal void Skip(FileWork item, string sha256, string reason) =>
             Update(item, e => { e.Outcome = FileOutcome.Skipped; e.Reason = reason; e.Sha256 = sha256; });
 
-        internal void Fail(FileWork item, string reason) =>
-            Update(item, e => { e.Outcome = FileOutcome.Failed; e.Reason = reason; });
+        internal void Fail(FileWork item, string reason, TimeSpan duration) =>
+            Update(item, e => { e.Outcome = FileOutcome.Failed; e.Reason = reason; e.DurationMs = (long)duration.TotalMilliseconds; });
 
         private void Update(FileWork item, Action<FileEntry> change)
         {
@@ -450,21 +628,46 @@ public sealed partial class Engine
             {
                 var key = (item.Source.Name, item.File.RelativePath);
                 if (!_entries.TryGetValue(key, out entry!))
-                    _entries[key] = entry = new FileEntry(item.File.RelativePath, item.File.Size) { Modified = item.File.Modified };
+                    _entries[key] = entry = new FileEntry(item.Source.Name, item.File.RelativePath, item.File.Size) { Modified = item.File.Modified };
                 change(entry);
             }
+            LogFinalOutcome(item, entry);
             progress.Report(new FileOutcomeChanged(item.Source.Name, item.File.RelativePath, entry.Outcome, entry.Reason));
+        }
+
+        /// <summary>Info for a file that ended Succeeded or Skipped, Error for one that Failed. Intermediate outcomes are not logged.</summary>
+        private void LogFinalOutcome(FileWork item, FileEntry entry)
+        {
+            switch (entry.Outcome)
+            {
+                case FileOutcome.Succeeded:
+                    logger.LogInformation("{Source}/{Path}: Succeeded", item.Source.Name, item.File.RelativePath);
+                    break;
+                case FileOutcome.Skipped:
+                    logger.LogInformation("{Source}/{Path}: Skipped ({Reason})", item.Source.Name, item.File.RelativePath, entry.Reason);
+                    break;
+                case FileOutcome.Failed:
+                    logger.LogError("{Source}/{Path}: Failed ({Reason})", item.Source.Name, item.File.RelativePath, entry.Reason);
+                    break;
+            }
         }
 
         public int Count(FileOutcome outcome)
         {
-            lock (_gate) return _entries.Values.Count(e => e.Outcome == outcome);
+            lock (_gate) return _entries.Values.Count(e => !e.Carried && e.Outcome == outcome);
         }
 
         public IReadOnlyDictionary<FileOutcome, int> SnapshotCounts()
         {
             lock (_gate)
-                return _entries.Values.GroupBy(e => e.Outcome).ToDictionary(g => g.Key, g => g.Count());
+                return _entries.Values.Where(e => !e.Carried).GroupBy(e => e.Outcome).ToDictionary(g => g.Key, g => g.Count());
+        }
+
+        public IReadOnlyList<FileEntry> SnapshotFiles()
+        {
+            lock (_gate)
+                return _entries.Values.Where(e => !e.Carried).Select(e => e.Clone())
+                    .OrderBy(e => e.Source, StringComparer.Ordinal).ThenBy(e => e.Path, StringComparer.Ordinal).ToList();
         }
 
         public IReadOnlyList<FileEntry> SourceEntries(string source)
@@ -477,14 +680,18 @@ public sealed partial class Engine
         }
     }
 
-    internal sealed partial class FileEntry(string path, long size)
+    internal sealed partial class FileEntry(string source, string path, long size)
     {
+        public string Source { get; } = source;
+        public bool Carried { get; set; }
+        public long Bytes { get; set; }
+        public long DurationMs { get; set; }
         public string Path { get; } = path;
         public long Size { get; } = size;
         public FileOutcome Outcome { get; set; }
         public string? Reason { get; set; }
         public string? Sha256 { get; set; }
 
-        public FileEntry Clone() => new(Path, Size) { Outcome = Outcome, Reason = Reason, Sha256 = Sha256, Modified = Modified, ArchivePath = ArchivePath, EntryName = EntryName };
+        public FileEntry Clone() => new(Source, Path, Size) { Outcome = Outcome, Reason = Reason, Sha256 = Sha256, Bytes = Bytes, DurationMs = DurationMs, Carried = Carried, Modified = Modified, ArchivePath = ArchivePath, EntryName = EntryName };
     }
 }

@@ -21,6 +21,17 @@ public sealed partial class Engine
         return [.. own, .. _settings.Archive.Rules];
     }
 
+    /// <summary>Scans a Source and returns the Archives its rules call for, without recording anything.</summary>
+    private async Task<IReadOnlyList<PlannedArchive>> PlanArchivesAsync(ISource source, string remotePath, RunState run, CancellationToken ct)
+    {
+        var rules = IgnoreRulesOf(source);
+        var candidates = new List<(FileWork Item, bool TooRecent)>();
+        await foreach (var file in source.ListAsync(ct))
+            if (rules.Reason(file.RelativePath) is null)
+                candidates.Add((new FileWork(source, remotePath, file), IsTooRecent(source, file)));
+        return ArchivePlanner.Plan(ArchiveRulesOf(source), candidates, source.Name, run.StartedAt).Archives;
+    }
+
     /// <summary>
     /// Decides what a planned Archive means for this Run and records the outcomes that need no work: a name collision
     /// fails its members, a Too Recent member defers the whole Archive. In a Dry Run it also reports the plan.
@@ -153,7 +164,7 @@ public sealed partial class Engine
                 var result = await TryUploadStagedAsync(session, store, staged, finalPath, key, build.ZipSize, ct);
                 if (result.Sha256 is not null)
                 {
-                    foreach (var m in plan.Members) run.Succeed(m.Item, memberHashes[m.Item.File.RelativePath].Sha256);
+                    foreach (var m in plan.Members) run.Succeed(m.Item, memberHashes[m.Item.File.RelativePath].Sha256, _time.GetElapsedTime(started));
                     run.CompleteArchive(work.Source.Name, plan.RelativePath, build.ZipSize, build.ZipSha256!, memberHashes);
                     store?.RecordArchiveSucceeded(run.RunId, key, build.ZipSize, build.ZipSha256!, members, uploaded: true, _time.GetUtcNow(), _time.GetElapsedTime(started));
                     return;
@@ -204,7 +215,7 @@ public sealed partial class Engine
     private void FailArchive(ArchiveWork work, RunState run, string reason, long started)
     {
         _logger.LogWarning("Archive {Source}/{Path} failed: {Reason}", work.Source.Name, work.Plan.RelativePath, reason);
-        foreach (var m in work.Plan.Members) run.Fail(m.Item, reason);
+        foreach (var m in work.Plan.Members) run.Fail(m.Item, reason, _time.GetElapsedTime(started));
         run.Store?.RecordFailed(run.RunId, work.Key(_settings.Destination), 0, 0, reason, _time.GetUtcNow(), _time.GetElapsedTime(started));
     }
 
@@ -312,6 +323,23 @@ public sealed partial class Engine
                 entry.Sha256 = sha256;
                 foreach (var (memberPath, member) in members)
                     if (_entries.TryGetValue((source, memberPath), out var e)) e.Sha256 ??= member.Sha256;
+            }
+        }
+
+        /// <summary>An Archive delivered by an earlier Run: listed in the Manifest with its members, not an outcome of this Run.</summary>
+        internal void CarryArchive(string source, string path, long size, string sha256, IReadOnlyDictionary<string, PriorMember> members)
+        {
+            var directory = path.Contains('/') ? path[..path.LastIndexOf('/')] + "/" : "";
+            lock (_gate)
+            {
+                _archives[(source, path)] = new ArchiveEntry(path, "", members.Keys.ToList()) { Size = size, Sha256 = sha256 };
+                foreach (var (memberPath, member) in members)
+                    _entries[(source, memberPath)] = new FileEntry(source, memberPath, member.Size)
+                    {
+                        Outcome = FileOutcome.Skipped, Reason = "delivered earlier", Sha256 = member.Sha256, Carried = true,
+                        Modified = new DateTimeOffset(member.MtimeTicks, TimeSpan.Zero), ArchivePath = path,
+                        EntryName = directory.Length > 0 && memberPath.StartsWith(directory, StringComparison.Ordinal) ? memberPath[directory.Length..] : memberPath,
+                    };
             }
         }
 

@@ -13,6 +13,9 @@ public sealed record FileOutcomeChanged(string Source, string RelativePath, File
 public sealed record ArchivePlanned(
     string Source, string Name, string Rule, int MemberCount, long TotalSize, long StagingEstimate, string Status) : RunEvent;
 
+/// <summary>The Data Directory access check, reported at each Run start (also when it failed).</summary>
+public sealed record DataDirectoryChecked(DataDirectoryAccess Access) : RunEvent;
+
 public sealed record RunWarning(string Message) : RunEvent;
 
 public sealed record RunFinished(RunResult Result) : RunEvent;

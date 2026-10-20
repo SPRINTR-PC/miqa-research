@@ -30,19 +30,19 @@ public sealed class DirectorySource(string name, string path, string? remotePath
         }
     }
 
+    public Task<SourceFile?> StatAsync(string relativePath, CancellationToken cancellationToken)
+    {
+        var file = new FileInfo(Path.Combine(path, relativePath.Replace('/', Path.DirectorySeparatorChar)));
+        return Task.FromResult<SourceFile?>(file.Exists && !IsLink(file)
+            ? new SourceFile(relativePath, file.Length, new DateTimeOffset(file.LastWriteTimeUtc, TimeSpan.Zero))
+            : null);
+    }
+
     public Task<Stream> OpenReadAsync(string relativePath, CancellationToken cancellationToken)
     {
         var full = Path.Combine(path, relativePath.Replace('/', Path.DirectorySeparatorChar));
         Stream stream = new FileStream(full, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan);
         return Task.FromResult(stream);
-    }
-
-    public Task<SourceFile?> StatAsync(string relativePath, CancellationToken cancellationToken)
-    {
-        var info = new FileInfo(Path.Combine(path, relativePath.Replace('/', Path.DirectorySeparatorChar)));
-        return Task.FromResult<SourceFile?>(info.Exists
-            ? new SourceFile(relativePath, info.Length, new DateTimeOffset(info.LastWriteTimeUtc, TimeSpan.Zero))
-            : null);
     }
 
     private static bool IsLink(FileSystemInfo entry) =>

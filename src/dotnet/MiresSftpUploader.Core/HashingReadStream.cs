@@ -10,12 +10,16 @@ internal sealed class HashingReadStream(Stream inner) : Stream
 {
     private readonly IncrementalHash _hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
 
+    /// <summary>How many bytes have been read, and so hashed.</summary>
+    public long BytesRead { get; private set; }
+
     public string FinishHash() => Convert.ToHexStringLower(_hash.GetHashAndReset());
 
     public override int Read(byte[] buffer, int offset, int count)
     {
         var n = inner.Read(buffer, offset, count);
         _hash.AppendData(buffer, offset, n);
+        BytesRead += n;
         return n;
     }
 
@@ -23,6 +27,7 @@ internal sealed class HashingReadStream(Stream inner) : Stream
     {
         var n = inner.Read(buffer);
         _hash.AppendData(buffer[..n]);
+        BytesRead += n;
         return n;
     }
 
@@ -30,6 +35,7 @@ internal sealed class HashingReadStream(Stream inner) : Stream
     {
         var n = await inner.ReadAsync(buffer, cancellationToken);
         _hash.AppendData(buffer.Span[..n]);
+        BytesRead += n;
         return n;
     }
 

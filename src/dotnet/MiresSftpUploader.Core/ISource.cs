@@ -14,16 +14,9 @@ public interface ISource
     /// <summary>Lists every file recursively. Symlinks are not followed.</summary>
     IAsyncEnumerable<SourceFile> ListAsync(CancellationToken cancellationToken);
 
-    Task<Stream> OpenReadAsync(string relativePath, CancellationToken cancellationToken);
+    /// <summary>Describes one file without listing the Source; null when it is no longer there. Used to retry failed files,
+    /// and by the Engine to notice a file that changed while it was uploaded.</summary>
+    Task<SourceFile?> StatAsync(string relativePath, CancellationToken cancellationToken);
 
-    /// <summary>
-    /// The file's current size and modification time, or null when it no longer exists. Used to detect a file that
-    /// changed while an Archive was being built. The default lists the Source; adapters should override it.
-    /// </summary>
-    async Task<SourceFile?> StatAsync(string relativePath, CancellationToken cancellationToken)
-    {
-        await foreach (var file in ListAsync(cancellationToken))
-            if (file.RelativePath == relativePath) return file;
-        return null;
-    }
+    Task<Stream> OpenReadAsync(string relativePath, CancellationToken cancellationToken);
 }

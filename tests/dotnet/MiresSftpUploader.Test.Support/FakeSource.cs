@@ -39,8 +39,14 @@ public sealed class FakeSource(string name, string? remotePath = null) : ISource
 
     public FakeSource Add(string relativePath, string text) => Add(relativePath, System.Text.Encoding.UTF8.GetBytes(text));
 
+    private int _listCount;
+
+    /// <summary>How many times the Source has been listed (scanned).</summary>
+    public int ListCount => Volatile.Read(ref _listCount);
+
     public async IAsyncEnumerable<SourceFile> ListAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        Interlocked.Increment(ref _listCount);
         foreach (var (path, entry) in _files.OrderBy(f => f.Key, StringComparer.Ordinal))
         {
             await Task.Yield();
