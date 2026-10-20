@@ -57,6 +57,75 @@ public sealed class Engine
 
     private async Task<(int ExitCode, string? Reason)> ExecuteAsync(RunOptions options, RunState run, CancellationToken ct)
     {
+        var unknown = options.SourceNames.Concat(options.ResetSources).FirstOrDefault(n => _sources.All(s => s.Name != n));
+        if (unknown is not null) return (ExitCodes.ConfigurationError, $"Unknown Source '{unknown}'");
+
+        if (options.DryRun || _settings.State.Path is not { Length: > 0 } databasePath)
+            return await ExecuteCoreAsync(options, run, ct);
+
+        using var runLock = RunLock.TryAcquire(databasePath + ".lock", options.StartedBy, _time.GetUtcNow(), out var holder);
+        if (runLock is null) return (ExitCodes.LockHeld, $"Another Run holds the lock ({holder})");
+
+        UploadStateStore store;
+        try
+        {
+            store = UploadStateStore.Open(databasePath, _time);
+        }
+        catch (UploadStateTooNewException ex)
+        {
+            return (ExitCodes.ConfigurationError, ex.Message);
+        }
+
+        await using (store)
+        {
+            run.Store = store;
+            await CleanUpAbandonedRunsAsync(store, ct);
+            await store.BeginRunAsync(run.RunId, run.StartedAt, "Run", "Headless", options.StartedBy);
+            using var heartbeat = _time.CreateTimer(
+                _ => _ = store.HeartbeatAsync(run.RunId, _time.GetUtcNow()),
+                null, _settings.State.HeartbeatInterval, _settings.State.HeartbeatInterval);
+
+            (int ExitCode, string? Reason) outcome;
+            try
+            {
+                outcome = await ExecuteCoreAsync(options, run, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                outcome = (ExitCodes.Cancelled, "Cancelled");
+            }
+
+            await heartbeat.DisposeAsync();
+            var now = _time.GetUtcNow();
+            await store.FinishRunAsync(run.RunId, now, outcome.ExitCode, run.SnapshotCounts());
+            await store.PruneAsync(now, _settings.State.RunFilesRetention, _settings.State.MissingRetention);
+            await store.FlushAsync();
+            return outcome;
+        }
+    }
+
+    /// <summary>Marks Runs with a stale heartbeat Abandoned and removes the .part files the state recorded for them.</summary>
+    private async Task CleanUpAbandonedRunsAsync(UploadStateStore store, CancellationToken ct)
+    {
+        var orphans = await store.SweepAbandonedAsync(_time.GetUtcNow(), _settings.State.AbandonedAfter, _settings.Destination);
+        if (orphans.Count == 0) return;
+
+        var connect = await _remote.ConnectAsync(ct);
+        if (!connect.IsOk)
+        {
+            _logger.LogWarning("Could not connect to clean up {Count} orphan .part files: {Reason}", orphans.Count, connect.Reason);
+            return;
+        }
+        await using var session = connect.Value!;
+        foreach (var orphan in orphans)
+        {
+            var deleted = await session.DeleteAsync(orphan.PartPath, ct);
+            _logger.LogInformation("Abandoned Run: removed {Path}: {Result}", orphan.PartPath, deleted.IsOk ? "ok" : deleted.Reason);
+        }
+    }
+
+    private async Task<(int ExitCode, string? Reason)> ExecuteCoreAsync(RunOptions options, RunState run, CancellationToken ct)
+    {
         var selected = new List<ISource>();
         if (options.SourceNames.Count == 0)
             selected.AddRange(_sources);
@@ -72,8 +141,20 @@ public sealed class Engine
         foreach (var source in selected)
         {
             var remotePath = RemotePathOf(source);
+            var store = run.Store;
+            if (store is not null && options.ResetSources.Contains(source.Name))
+                await store.ResetSourceAsync(_settings.Destination, remotePath, source.Name);
+            var prior = store?.LoadSource(_settings.Destination, remotePath, source.Name);
+            var listed = new HashSet<string>(StringComparer.Ordinal);
             await foreach (var file in source.ListAsync(ct))
-                work.Add(new FileWork(source, remotePath, file));
+            {
+                listed.Add(file.RelativePath);
+                PriorFile? known = null;
+                prior?.TryGetValue(file.RelativePath, out known);
+                work.Add(new FileWork(source, remotePath, file, options.RehashAll ? null : known));
+            }
+            if (store is not null)
+                await store.MarkMissingAsync(_settings.Destination, remotePath, source.Name, listed, _time.GetUtcNow());
         }
 
         if (options.DryRun)
@@ -137,6 +218,18 @@ public sealed class Engine
 
     private async Task ProcessAsync(IRemoteSession session, FileWork item, RunState run, CancellationToken ct)
     {
+        var store = run.Store;
+        var key = item.Key(_settings.Destination);
+        var mtime = item.File.Modified.UtcTicks;
+        if (item.Prior is { Status: "Succeeded", Sha256: not null } prior
+            && prior.Size == item.File.Size && prior.MtimeTicks == mtime)
+        {
+            run.Skip(item, prior.Sha256, "unchanged");
+            store?.RecordSkipped(run.RunId, key, _time.GetUtcNow());
+            return;
+        }
+
+        var started = _time.GetTimestamp();
         var max = Math.Max(_settings.Retry.MaxAttempts, 1);
         string failure = "";
         for (var attempt = 1; attempt <= max; attempt++)
@@ -146,6 +239,7 @@ public sealed class Engine
             if (attemptResult.Sha256 is not null)
             {
                 run.Succeed(item, attemptResult.Sha256);
+                store?.RecordSucceeded(run.RunId, key, item.File.Size, mtime, attemptResult.Sha256, _time.GetUtcNow(), _time.GetElapsedTime(started));
                 return;
             }
 
@@ -157,6 +251,7 @@ public sealed class Engine
         }
 
         run.Fail(item, failure);
+        store?.RecordFailed(run.RunId, key, item.File.Size, mtime, failure, _time.GetUtcNow(), _time.GetElapsedTime(started));
     }
 
     private TimeSpan BackoffDelay(int attempt)
@@ -176,6 +271,9 @@ public sealed class Engine
         {
             var ensure = await session.EnsureDirectoryAsync(ParentOf(finalPath), ct);
             if (!ensure.IsOk) return UploadAttempt.From(ensure);
+
+            if (run.Store is { } store)
+                await store.MarkUploadingAsync(item.Key(_settings.Destination), item.File.Size, item.File.Modified.UtcTicks, partPath);
 
             string sha256;
             await using (var raw = await item.Source.OpenReadAsync(item.File.RelativePath, ct))
@@ -227,7 +325,10 @@ public sealed class Engine
 
     private static string ParentOf(string path) => path[..path.LastIndexOf('/')] is { Length: > 0 } p ? p : "/";
 
-    internal sealed record FileWork(ISource Source, string RemotePath, SourceFile File);
+    internal sealed record FileWork(ISource Source, string RemotePath, SourceFile File, PriorFile? Prior = null)
+    {
+        public FileKey Key(string destination) => new(destination, RemotePath, Source.Name, File.RelativePath);
+    }
 
     private sealed record UploadAttempt(string? Sha256, string? Reason, bool Permanent)
     {
@@ -245,12 +346,16 @@ public sealed class Engine
 
         public Guid RunId { get; } = runId;
         public DateTimeOffset StartedAt { get; } = startedAt;
+        public UploadStateStore? Store { get; set; }
 
         internal void Set(FileWork item, FileOutcome outcome, string? reason) =>
             Update(item, e => { e.Outcome = outcome; e.Reason = reason; });
 
         internal void Succeed(FileWork item, string sha256) =>
             Update(item, e => { e.Outcome = FileOutcome.Succeeded; e.Reason = null; e.Sha256 = sha256; });
+
+        internal void Skip(FileWork item, string sha256, string reason) =>
+            Update(item, e => { e.Outcome = FileOutcome.Skipped; e.Reason = reason; e.Sha256 = sha256; });
 
         internal void Fail(FileWork item, string reason) =>
             Update(item, e => { e.Outcome = FileOutcome.Failed; e.Reason = reason; });

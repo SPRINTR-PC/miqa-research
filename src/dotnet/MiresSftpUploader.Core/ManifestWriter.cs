@@ -26,7 +26,7 @@ internal static class ManifestWriter
             json.WriteBoolean("complete", failures.Count == 0);
 
             json.WriteStartArray("files");
-            foreach (var e in entries.Where(e => e.Outcome == FileOutcome.Succeeded))
+            foreach (var e in entries.Where(e => e.Sha256 is not null && e.Outcome is FileOutcome.Succeeded or FileOutcome.Skipped))
             {
                 json.WriteStartObject();
                 json.WriteString("path", e.Path);

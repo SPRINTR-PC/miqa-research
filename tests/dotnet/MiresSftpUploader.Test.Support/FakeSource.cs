@@ -10,6 +10,18 @@ public sealed class FakeSource(string name, string? remotePath = null) : ISource
     public string Name { get; } = name;
     public string? RemotePath { get; } = remotePath;
 
+    private int _openCount;
+
+    /// <summary>How many times a file has been opened for reading.</summary>
+    public int OpenCount => Volatile.Read(ref _openCount);
+
+    /// <summary>Removes a file, as if it vanished from the Source.</summary>
+    public FakeSource Remove(string relativePath)
+    {
+        _files.Remove(relativePath);
+        return this;
+    }
+
     public FakeSource Add(string relativePath, byte[] data, DateTimeOffset? modified = null)
     {
         _files[relativePath] = (data, modified ?? new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
@@ -28,5 +40,11 @@ public sealed class FakeSource(string name, string? remotePath = null) : ISource
     }
 
     public Task<Stream> OpenReadAsync(string relativePath, CancellationToken cancellationToken) =>
-        Task.FromResult<Stream>(new MemoryStream(_files[relativePath].Data, writable: false));
+        Task.FromResult<Stream>(Opened(_files[relativePath].Data));
+
+    private MemoryStream Opened(byte[] data)
+    {
+        Interlocked.Increment(ref _openCount);
+        return new MemoryStream(data, writable: false);
+    }
 }
