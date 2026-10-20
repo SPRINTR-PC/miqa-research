@@ -146,12 +146,17 @@ public sealed class Engine
                 await store.ResetSourceAsync(_settings.Destination, remotePath, source.Name);
             var prior = store?.LoadSource(_settings.Destination, remotePath, source.Name);
             var listed = new HashSet<string>(StringComparer.Ordinal);
+            var rules = IgnoreRulesOf(source);
             await foreach (var file in source.ListAsync(ct))
             {
                 listed.Add(file.RelativePath);
                 PriorFile? known = null;
                 prior?.TryGetValue(file.RelativePath, out known);
-                work.Add(new FileWork(source, remotePath, file, options.RehashAll ? null : known));
+                var item = new FileWork(source, remotePath, file, options.RehashAll ? null : known);
+                if (rules.Reason(file.RelativePath, m => run.Warn(m)) is { } ignored)
+                    run.Set(item, FileOutcome.Ignored, ignored);
+                else
+                    work.Add(item);
             }
             if (store is not null)
                 await store.MarkMissingAsync(_settings.Destination, remotePath, source.Name, listed, _time.GetUtcNow());
@@ -311,6 +316,16 @@ public sealed class Engine
         return await session.RenameAsync(finalPath + ".part", finalPath, overwrite: true, ct);
     }
 
+    private IgnoreRules IgnoreRulesOf(ISource source)
+    {
+        var own = _settings.SourceConfigs
+            .FirstOrDefault(c => string.Equals(c.Name, source.Name, StringComparison.OrdinalIgnoreCase))?.Ignore;
+        return new IgnoreRules(
+            _settings.Ignore.UseDefaults,
+            _settings.Ignore.Files.Concat(own?.Files ?? []),
+            _settings.Ignore.Patterns.Concat(own?.Patterns ?? []));
+    }
+
     private string RemotePathOf(ISource source) =>
         Normalize(source.RemotePath ?? Join(_settings.RemoteRoot, source.Name));
 
@@ -347,6 +362,8 @@ public sealed class Engine
         public Guid RunId { get; } = runId;
         public DateTimeOffset StartedAt { get; } = startedAt;
         public UploadStateStore? Store { get; set; }
+
+        internal void Warn(string message) => progress.Report(new RunWarning(message));
 
         internal void Set(FileWork item, FileOutcome outcome, string? reason) =>
             Update(item, e => { e.Outcome = outcome; e.Reason = reason; });
