@@ -19,6 +19,22 @@ public sealed record SftpConnection
     /// <summary>Zero turns keep-alive off.</summary>
     public TimeSpan KeepAlive { get; init; } = TimeSpan.FromSeconds(30);
 
+    /// <summary>Joins the validated configuration with the Secrets from the environment.</summary>
+    public static SftpConnection From(SftpConfig sftp, Secrets secrets) => new()
+    {
+        Host = sftp.Host!,
+        Port = sftp.Port,
+        Username = sftp.Username!,
+        AuthMethod = sftp.AuthMethod,
+        Password = secrets.SftpPassword,
+        PrivateKeyPath = sftp.PrivateKeyPath,
+        PrivateKeyPassphrase = secrets.SftpKeyPassphrase,
+        HostKeyFingerprint = sftp.HostKeyFingerprint!,
+        ConnectTimeout = TimeSpan.FromSeconds(sftp.ConnectTimeoutSeconds),
+        KeepAlive = TimeSpan.FromSeconds(sftp.KeepAliveSeconds),
+    };
+
+    // Never prints the secrets.
     public override string ToString() => $"{Username}@{Host}:{Port}";
 }
 

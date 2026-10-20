@@ -1,4 +1,5 @@
 using DotNet.Testcontainers.Builders;
+using DotNet.Testcontainers.Configurations;
 using DotNet.Testcontainers.Containers;
 using MiresSftpUploader.Core;
 
@@ -91,6 +92,12 @@ public static class SftpServer
             .WithPortBinding(22, assignRandomHostPort: true)
             .WithCommand("test:secret:::upload")
             .WithResourceMapping(new FileInfo(Path.Combine(keyDirectory, "test_ed25519.pub")), "/home/test/.ssh/keys/")
+            // The host key mismatch tests hang up before authenticating, which OpenSSH's per-source penalties
+            // answer by dropping every later connection from the same address. Switch them off for the test server,
+            // and lift MaxStartups, which an emulated (slow) sshd would otherwise hit when connections pile up.
+            .WithResourceMapping(
+                System.Text.Encoding.ASCII.GetBytes("#!/bin/sh\nprintf 'PerSourcePenalties no\\nMaxStartups 200\\n' >> /etc/ssh/sshd_config\n"),
+                "/etc/sftp.d/10-no-penalties.sh", fileMode: UnixFileModes.UserRead | UnixFileModes.UserWrite | UnixFileModes.UserExecute | UnixFileModes.GroupRead | UnixFileModes.GroupExecute | UnixFileModes.OtherRead | UnixFileModes.OtherExecute)
             .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged("Server listening on"))
             .Build();
         try

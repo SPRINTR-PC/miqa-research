@@ -11,7 +11,7 @@ public static class Cli
     /// Handles the arguments when they ask for something that does not need the window.
     /// Returns false when the caller should go on (start the UI, or run the Headless Run).
     /// </summary>
-    public static bool TryRun(string[] args, string version, TextWriter stdout, TextWriter stderr, out int exitCode, ConfigurationLocations? locations = null)
+    public static bool TryRun(string[] args, string version, TextWriter stdout, TextWriter stderr, out int exitCode, ConfigurationLocations? locations = null, Func<SftpConnection, IRemote>? remoteFactory = null)
     {
         exitCode = ExitCodes.Ok;
         if (args.Length == 0) return false;
@@ -38,7 +38,8 @@ public static class Cli
 
         if (!options.Headless && !options.ValidateConfig) return false;
 
-        var result = new Configuration(locations ?? ConfigurationLocations.Default()).Load(options, headless: true);
+        var configuration = new Configuration(locations ?? ConfigurationLocations.Default());
+        var result = configuration.Load(options, headless: true);
         var errors = result.Errors.Select(e => e.ToString()).ToList();
         if (result.Config is { } config)
             foreach (var name in options.Sources.Where(n => !config.Sources.Any(s => string.Equals(s.Name, n, StringComparison.OrdinalIgnoreCase))))
@@ -55,8 +56,37 @@ public static class Cli
         }
 
         if (!options.ValidateConfig) return false;
-        stdout.WriteLine("Configuration is valid.");
+        if (!options.CheckConnection)
+        {
+            stdout.WriteLine("Configuration is valid.");
+            return true;
+        }
+
+        exitCode = CheckConnection(result.Config!.Sftp, configuration.LoadSecrets(), remoteFactory ?? (c => new SshNetRemote(c)), stdout, stderr);
         return true;
+    }
+
+    /// <summary>Opens one session to prove the server answers, the Host Key Fingerprint matches and the credentials work.</summary>
+    private static int CheckConnection(SftpConfig sftp, Secrets secrets, Func<SftpConnection, IRemote> remoteFactory, TextWriter stdout, TextWriter stderr)
+    {
+        var missing = sftp.AuthMethod == AuthMethod.PrivateKey ? null : secrets.SftpPassword is null ? Secrets.SftpPasswordVariable : null;
+        if (missing is not null)
+        {
+            stderr.WriteLine($"{missing} is not set. Secrets are read only from environment variables.");
+            return ExitCodes.ConfigurationError;
+        }
+
+        var connection = SftpConnection.From(sftp, secrets);
+        var connect = remoteFactory(connection).ConnectAsync(CancellationToken.None).GetAwaiter().GetResult();
+        if (!connect.IsOk)
+        {
+            stderr.WriteLine($"Connection check failed for {connection}: {connect.Reason}");
+            return ExitCodes.ConnectFailed;
+        }
+
+        connect.Value!.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        stdout.WriteLine($"Configuration is valid. Connected to {connection}; the host key matches the pinned Host Key Fingerprint.");
+        return ExitCodes.Ok;
     }
 
     public static string HelpText { get; } = """

@@ -101,4 +101,45 @@ public sealed class SftpConnectionTests
 
         Assert.IsFalse(result.IsOk);
     }
+
+    private static int CheckConnection(SftpServerInfo server, string fingerprint, out string stderr)
+    {
+        var dir = Directory.CreateTempSubdirectory("mires-check-").FullName;
+        try
+        {
+            var machine = Path.Combine(dir, "appsettings.json");
+            File.WriteAllText(machine, System.Text.Json.JsonSerializer.Serialize(new
+            {
+                Sftp = new { Host = server.Host, Port = server.Port, Username = server.Username, HostKeyFingerprint = fingerprint, RemoteRoot = "/upload" },
+                Sources = new[] { new { Name = "alpha", Type = "Directory", Path = dir } },
+            }));
+            var locations = new ConfigurationLocations(machine, Path.Combine(dir, "user.json"),
+                new Dictionary<string, string?> { ["MIRES_SFTP_PASSWORD"] = server.Password });
+            var err = new StringWriter();
+            Cli.TryRun(["--validate-config", "--check-connection"], "1.0.0", new StringWriter(), err, out var exitCode, locations);
+            stderr = err.ToString();
+            return exitCode;
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public void Check_connection_with_the_right_fingerprint_exits_0()
+    {
+        var server = SftpServer.Get();
+
+        Assert.AreEqual(0, CheckConnection(server, "SHA256:" + server.Sha256Fingerprint, out var err), err);
+    }
+
+    [TestMethod]
+    public void Check_connection_with_a_wrong_fingerprint_exits_3()
+    {
+        var server = SftpServer.Get();
+
+        Assert.AreEqual(3, CheckConnection(server, "SHA256:" + new string('A', 43), out var err));
+        StringAssert.Contains(err, "Host key mismatch");
+    }
 }

@@ -108,7 +108,7 @@ public sealed class SftpFaultTests
             var result = await engine.RunAsync(new RunOptions(), new Progress<RunEvent>(), CancellationToken.None);
 
             Assert.AreEqual(0, result.ExitCode, result.Reason);
-            Assert.IsTrue(proxy.Connections >= 2, "the first connection was cut, so the retry must have reconnected");
+            Assert.IsGreaterThanOrEqualTo(2, proxy.Connections, "the first connection was cut, so the retry must have reconnected");
             Assert.AreEqual(local, await SftpServer.RemoteSha256Async(remoteRoot + "/scans/slide.bin"));
             Assert.AreEqual(local, await SftpHashProofTests.ManifestHashAsync(remoteRoot + "/scans/manifest.json", "slide.bin"));
             Assert.IsFalse((await SftpServer.RemoteFilesAsync(remoteRoot)).Any(f => f.EndsWith(".part")), "no .part may remain");
