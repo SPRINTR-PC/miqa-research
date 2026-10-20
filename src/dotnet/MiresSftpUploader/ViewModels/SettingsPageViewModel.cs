@@ -72,6 +72,11 @@ public sealed class SettingsPageViewModel : ViewModelBase
         Definitions.Where(d => d.Kind == FieldKind.Number).Select(d => d.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     private readonly Configuration _configuration;
+    private readonly Func<string, DataDirectoryAccess> _check;
+    private readonly Func<string, long> _freeSpace;
+    private readonly string _defaultDataDirectory = DataDirectory.Resolve(null, null, DataDirectory.CurrentPlatform, Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData));
+    private string? _checkedPath;
+    private string? _stagingKey;
     private readonly Dictionary<string, SettingFieldViewModel> _byKey = new(StringComparer.OrdinalIgnoreCase);
     private LoadResult _load = new();
     private bool _sourcesLocked;
@@ -83,6 +88,11 @@ public sealed class SettingsPageViewModel : ViewModelBase
     public SettingsPageViewModel(Configuration configuration, Func<string, DataDirectoryAccess>? checkDataDirectory = null, Func<string, long>? freeSpace = null)
     {
         _configuration = configuration;
+        _check = checkDataDirectory ?? (path => DataDirectory.Check(path));
+        _freeSpace = freeSpace ?? DataDirectory.FreeSpaceBytes;
+        UnlockFingerprintCommand = ReactiveCommand.CreateFromTask(UnlockFingerprint);
+        RecheckDataDirectoryCommand = ReactiveCommand.Create(() => CheckDataDirectory(force: true));
+        CopyFixCommandCommand = ReactiveCommand.CreateFromTask(() => CopyToClipboard(DataDirectoryFixCommand));
         SaveCommand = ReactiveCommand.Create(Save, this.WhenAnyValue(x => x.HasChanges, x => x.HasErrors, (changed, errors) => changed && !errors));
         RevertCommand = ReactiveCommand.Create(Reload);
         AddSourceCommand = ReactiveCommand.Create(AddSource, this.WhenAnyValue(x => x.SourcesEditable));
@@ -99,11 +109,35 @@ public sealed class SettingsPageViewModel : ViewModelBase
 
     public ReactiveCommand<Unit, Unit> SaveCommand { get; }
     public ReactiveCommand<Unit, Unit> RevertCommand { get; }
+    public ReactiveCommand<Unit, Unit> UnlockFingerprintCommand { get; }
+    public ReactiveCommand<Unit, Unit> RecheckDataDirectoryCommand { get; }
+    public ReactiveCommand<Unit, Unit> CopyFixCommandCommand { get; }
     public ReactiveCommand<Unit, Unit> AddSourceCommand { get; }
     public ReactiveCommand<SourceEditorViewModel, Unit> RemoveSourceCommand { get; }
 
     /// <summary>Opens a folder picker and returns the chosen folder, or null. The view sets it; the default picks nothing.</summary>
     public Func<Task<string?>> PickFolder { get; set; } = () => Task.FromResult<string?>(null);
+
+    /// <summary>Asks the user to confirm (title, message); the view shows a dialog. The default declines.</summary>
+    public Func<string, string, Task<bool>> Confirm { get; set; } = (_, _) => Task.FromResult(false);
+
+    /// <summary>Puts text on the clipboard. The view sets it.</summary>
+    public Func<string, Task> CopyToClipboard { get; set; } = _ => Task.CompletedTask;
+
+    // ---- Data Directory ----
+
+    public string DataDirectoryPath { get; private set; } = "";
+    public string DataDirectoryStatus { get; private set; } = "";
+    public string DataDirectoryFreeSpace { get; private set; } = "";
+    public string DataDirectoryDatabaseSize { get; private set; } = "";
+    public string DataDirectoryFixCommand { get; private set; } = "";
+    public string DataDirectoryProblem { get; private set; } = "";
+    public bool HasDataDirectoryProblem => DataDirectoryProblem.Length > 0;
+    public bool DataDirectoryOnNetworkShare { get; private set; }
+    public string SplitStateWarning { get; private set; } = "";
+    public bool HasSplitStateWarning => SplitStateWarning.Length > 0;
+    public string StagingWarning { get; private set; } = "";
+    public bool HasStagingWarning => StagingWarning.Length > 0;
 
     /// <summary>Whether the SFTP password and the key passphrase are set in the environment. Their values are never read here.</summary>
     public string SftpPasswordStatus { get; private set; } = "not set";
@@ -158,7 +192,117 @@ public sealed class SettingsPageViewModel : ViewModelBase
         this.RaisePropertyChanged(nameof(SftpKeyPassphraseStatus));
 
         SaveMessage = "";
+        _checkedPath = null;
+        _stagingKey = null;
         Revalidate();
+    }
+
+    private async Task UnlockFingerprint()
+    {
+        var field = Field(FingerprintKey);
+        if (field.IsLocked) return;
+        const string message = "The Host Key Fingerprint pins the identity of the SFTP server. Changing it makes Runs trust whatever server presents the new fingerprint, "
+            + "and a wrong value stops all uploads. Only change it when the server's key has changed and you have verified the new fingerprint with its administrator.";
+        if (await Confirm("Change the Host Key Fingerprint?", message)) field.Unlock();
+    }
+
+    private string EffectiveDataDirectory()
+    {
+        var path = Field("State:Path").Value.Trim();
+        return path.Length > 0 ? path : _defaultDataDirectory;
+    }
+
+    private void CheckDataDirectory(bool force)
+    {
+        var path = EffectiveDataDirectory();
+        var statePath = Field("State:Path").Value.Trim();
+        SplitStateWarning = statePath.Length > 0 && !SamePath(statePath, _defaultDataDirectory)
+            ? $"State:Path points to '{statePath}', not the shared Data Directory '{_defaultDataDirectory}'. The Upload State kept there is not shared with other accounts on this machine, "
+              + "so their Runs, History and cancel requests will be separate from yours."
+            : "";
+        if (!force && path == _checkedPath)
+        {
+            RaiseDataDirectory();
+            return;
+        }
+
+        _checkedPath = path;
+        var access = _check(path);
+        DataDirectoryPath = access.Path;
+        DataDirectoryStatus = access.Writable
+            ? $"Writable by {access.Account}" + (access.Group is { } group ? $" (group {group})" : "")
+            : access.Exists ? $"Not writable by {access.Account}" : "Does not exist";
+        DataDirectoryFreeSpace = $"{FormatBytes(access.FreeSpaceBytes)} free";
+        DataDirectoryDatabaseSize = FormatBytes(access.DatabaseSizeBytes);
+        DataDirectoryFixCommand = access.Problem is null ? "" : access.FixCommand;
+        DataDirectoryProblem = access.Problem ?? "";
+        DataDirectoryOnNetworkShare = access.OnNetworkShare;
+        _stagingKey = null;
+        RaiseDataDirectory();
+    }
+
+    private void RaiseDataDirectory()
+    {
+        foreach (var name in new[]
+        {
+            nameof(DataDirectoryPath), nameof(DataDirectoryStatus), nameof(DataDirectoryFreeSpace), nameof(DataDirectoryDatabaseSize),
+            nameof(DataDirectoryFixCommand), nameof(DataDirectoryProblem), nameof(HasDataDirectoryProblem), nameof(DataDirectoryOnNetworkShare),
+            nameof(SplitStateWarning), nameof(HasSplitStateWarning),
+        })
+            this.RaisePropertyChanged(name);
+    }
+
+    private void CheckStaging()
+    {
+        var configured = Field("Archive:StagingPath").Value.Trim();
+        var path = configured.Length > 0 ? configured : System.IO.Path.Combine(DataDirectoryPath, "staging");
+        var required = long.TryParse(Field("Archive:MinFreeSpaceBytes").Value, out var min) ? min : 0;
+        var key = path + "|" + required;
+        if (key == _stagingKey) return;
+        _stagingKey = key;
+
+        var free = _freeSpace(path);
+        StagingWarning = free < required
+            ? $"The Staging Area '{path}' has {FormatBytes(free)} free but {FormatBytes(required)} must stay free: Archives will fail with InsufficientStagingSpace. Free up space or choose another Staging Area."
+            : "";
+        this.RaisePropertyChanged(nameof(StagingWarning));
+        this.RaisePropertyChanged(nameof(HasStagingWarning));
+    }
+
+    private static bool SamePath(string a, string b)
+    {
+        static string Norm(string p) => System.IO.Path.GetFullPath(p).TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar);
+        return string.Equals(Norm(a), Norm(b), OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+    }
+
+    internal static string FormatBytes(long bytes)
+    {
+        string[] units = ["B", "KiB", "MiB", "GiB", "TiB"];
+        var value = (double)bytes;
+        var unit = 0;
+        while (value >= 1024 && unit < units.Length - 1)
+        {
+            value /= 1024;
+            unit++;
+        }
+        return unit == 0 ? $"{bytes} B" : string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{value:0.0} {units[unit]}");
+    }
+
+    private void UpdateNotes()
+    {
+        Field("Upload:VerifyAfterUpload").Note = Field("Upload:VerifyAfterUpload").Value switch
+        {
+            "Hash" => "Hash runs a command on the server for every uploaded file; very large files take a while. Needs a shell on the server.",
+            "ReadBack" => "ReadBack downloads every uploaded file again and hashes it: it doubles the bandwidth and the time of each upload.",
+            _ => null,
+        };
+        Field("Upload:VerifyRemote").Note = Field("Upload:VerifyRemote").Value switch
+        {
+            "Hash" or "ReadBack" => "This is expensive: every unchanged file is checked on the server on every Run"
+                + (Field("Upload:VerifyRemote").Value == "ReadBack" ? " by downloading it again" : " by hashing it there")
+                + ", which takes long when there are thousands of unchanged files. Size is cheap.",
+            _ => null,
+        };
     }
 
     private Task<string?> PickFolderAsync() => PickFolder();
@@ -237,6 +381,9 @@ public sealed class SettingsPageViewModel : ViewModelBase
             else Warnings.Add(warning.ToString());
         }
 
+        UpdateNotes();
+        CheckDataDirectory(force: false);
+        CheckStaging();
         HasErrors = Fields.Any(f => f.HasError) || Sources.Any(r => r.HasError) || OtherErrors.Count > 0;
         HasChanges = changes.Count > 0;
         SaveMessage = "";

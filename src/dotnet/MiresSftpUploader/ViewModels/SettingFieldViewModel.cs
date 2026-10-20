@@ -13,6 +13,7 @@ public sealed class SettingFieldViewModel : ViewModelBase
     private string _value;
     private string? _error;
     private bool _unlocked;
+    private string? _note;
 
     public SettingFieldViewModel(string key, string label, string group, FieldKind kind, string original, SettingInfo info,
         IReadOnlyList<string>? options = null, string? help = null, bool needsUnlock = false)
@@ -91,6 +92,19 @@ public sealed class SettingFieldViewModel : ViewModelBase
     }
 
     public bool HasError => _error is not null;
+
+    /// <summary>A hint shown under the field that depends on its value, such as the cost of a Verification level.</summary>
+    public string? Note
+    {
+        get => _note;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _note, value);
+            this.RaisePropertyChanged(nameof(HasNote));
+        }
+    }
+
+    public bool HasNote => _note is not null;
 
     private static string Describe(ConfigLayer layer) => layer switch
     {

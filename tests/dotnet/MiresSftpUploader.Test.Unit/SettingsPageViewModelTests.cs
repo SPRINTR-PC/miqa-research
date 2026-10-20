@@ -304,4 +304,149 @@ public sealed class SettingsPageViewModelTests : ConfigurationTestBase
         Assert.DoesNotContain("hunter2", everything);
         Assert.DoesNotContain("AKIAEXAMPLE", everything);
     }
+
+    // ---- Host Key Fingerprint ----
+
+    [TestMethod]
+    public async Task The_Host_Key_Fingerprint_is_editable_only_after_the_user_confirms()
+    {
+        var cfg = Create(ValidMachine().ToJsonString());
+        var page = NewPage(cfg);
+        var asked = new List<string>();
+        page.Confirm = (title, _) => { asked.Add(title); return Task.FromResult(false); };
+        var fingerprint = page.Field("Sftp:HostKeyFingerprint");
+        Assert.IsFalse(fingerprint.IsEditable);
+
+        await page.UnlockFingerprintCommand.Execute();
+        Assert.IsFalse(fingerprint.IsEditable, "declined");
+        Assert.HasCount(1, asked);
+
+        page.Confirm = (_, _) => Task.FromResult(true);
+        await page.UnlockFingerprintCommand.Execute();
+        Assert.IsTrue(fingerprint.IsEditable);
+
+        fingerprint.Value = "SHA256:newprint";
+        Save(page);
+        Assert.AreEqual("newprint", cfg.Load().Config!.Sftp.HostKeyFingerprint, "the prefix is normalised away");
+    }
+
+    [TestMethod]
+    public async Task A_locked_Host_Key_Fingerprint_stays_locked_after_confirming()
+    {
+        var cfg = Create(ValidMachine().ToJsonString(), env: new() { ["MIRES_Sftp__HostKeyFingerprint"] = "envprint" });
+        var page = NewPage(cfg);
+        page.Confirm = (_, _) => Task.FromResult(true);
+
+        await page.UnlockFingerprintCommand.Execute();
+
+        Assert.IsFalse(page.Field("Sftp:HostKeyFingerprint").IsEditable);
+    }
+
+    // ---- Verification cost note ----
+
+    [TestMethod]
+    public void A_cost_note_appears_next_to_the_expensive_Verification_levels()
+    {
+        var page = NewPage(Create(ValidMachine().ToJsonString()));
+        Assert.IsFalse(page.Field("Upload:VerifyRemote").HasNote);
+        Assert.IsFalse(page.Field("Upload:VerifyAfterUpload").HasNote);
+
+        page.Field("Upload:VerifyRemote").Value = "Size";
+        Assert.IsFalse(page.Field("Upload:VerifyRemote").HasNote, "Size is cheap");
+
+        page.Field("Upload:VerifyRemote").Value = "Hash";
+        StringAssert.Contains(page.Field("Upload:VerifyRemote").Note, "expensive");
+        StringAssert.Contains(page.Field("Upload:VerifyRemote").Note, "unchanged");
+
+        page.Field("Upload:VerifyAfterUpload").Value = "ReadBack";
+        StringAssert.Contains(page.Field("Upload:VerifyAfterUpload").Note, "doubles");
+    }
+
+    // ---- Data Directory ----
+
+    [TestMethod]
+    public void The_Data_Directory_check_shows_who_can_write_free_space_and_size()
+    {
+        var checkedPaths = new List<string>();
+        var cfg = Create(ValidMachine().ToJsonString(), env: new() { ["MIRES_DATA_DIR"] = "/srv/mires" });
+
+        var page = NewPage(cfg, path => { checkedPaths.Add(path); return Access(path); });
+
+        CollectionAssert.AreEqual(new[] { "/srv/mires" }, checkedPaths);
+        Assert.AreEqual("/srv/mires", page.DataDirectoryPath);
+        StringAssert.Contains(page.DataDirectoryStatus, "Writable by alice");
+        StringAssert.Contains(page.DataDirectoryStatus, "mires-uploader");
+        Assert.AreEqual("10.0 GiB free", page.DataDirectoryFreeSpace);
+        Assert.AreEqual("4.0 KiB", page.DataDirectoryDatabaseSize);
+        Assert.IsFalse(page.HasDataDirectoryProblem);
+    }
+
+    [TestMethod]
+    public async Task A_Data_Directory_that_is_not_writable_shows_the_fix_command_and_Re_check_looks_again()
+    {
+        var writable = false;
+        var checks = 0;
+        var cfg = Create(ValidMachine().ToJsonString(), env: new() { ["MIRES_DATA_DIR"] = "/srv/mires" });
+        var page = NewPage(cfg, path => { checks++; return Access(path, writable); });
+        var copied = new List<string>();
+        page.CopyToClipboard = text => { copied.Add(text); return Task.CompletedTask; };
+
+        Assert.IsTrue(page.HasDataDirectoryProblem);
+        StringAssert.Contains(page.DataDirectoryProblem, "not writable by account 'alice'");
+        StringAssert.Contains(page.DataDirectoryFixCommand, "--init-data-dir");
+        await page.CopyFixCommandCommand.Execute();
+        CollectionAssert.AreEqual(new[] { page.DataDirectoryFixCommand }, copied);
+
+        writable = true;
+        await page.RecheckDataDirectoryCommand.Execute();
+
+        Assert.AreEqual(2, checks);
+        Assert.IsFalse(page.HasDataDirectoryProblem);
+    }
+
+    [TestMethod]
+    public void A_State_Path_other_than_the_shared_directory_warns_about_split_state()
+    {
+        var page = NewPage(Create(ValidMachine().ToJsonString()));
+        Assert.IsFalse(page.HasSplitStateWarning);
+
+        page.Field("State:Path").Value = Path.Combine(Dir, "private-state");
+
+        Assert.IsTrue(page.HasSplitStateWarning);
+        StringAssert.Contains(page.SplitStateWarning, "other accounts");
+        StringAssert.Contains(page.SplitStateWarning, "Upload State");
+    }
+
+    [TestMethod]
+    public void Editing_State_Path_checks_the_new_directory()
+    {
+        var checkedPaths = new List<string>();
+        var page = NewPage(Create(ValidMachine().ToJsonString()), path => { checkedPaths.Add(path); return Access(path); });
+        var other = Path.Combine(Dir, "private-state");
+
+        page.Field("State:Path").Value = other;
+
+        Assert.AreEqual(other, checkedPaths[^1]);
+        Assert.AreEqual(other, page.DataDirectoryPath);
+    }
+
+    [TestMethod]
+    public void Archive_staging_with_less_free_space_than_required_warns()
+    {
+        var cfg = Create(ValidMachine().ToJsonString(), env: new() { ["MIRES_DATA_DIR"] = "/srv/mires" });
+        var free = 500L * 1024 * 1024;
+        var staged = new List<string>();
+        var page = NewPage(cfg, freeSpace: path => { staged.Add(path); return free; });
+
+        Assert.IsTrue(page.HasStagingWarning, "the default needs 1 GiB");
+        StringAssert.Contains(page.StagingWarning, "500.0 MiB");
+        StringAssert.Contains(page.StagingWarning, "1.0 GiB");
+        Assert.AreEqual(Path.Combine("/srv/mires", "staging"), staged[^1]);
+
+        page.Field("Archive:MinFreeSpaceBytes").Value = "1024";
+        Assert.IsFalse(page.HasStagingWarning);
+
+        page.Field("Archive:StagingPath").Value = Path.Combine(Dir, "stage");
+        Assert.AreEqual(Path.Combine(Dir, "stage"), staged[^1]);
+    }
 }
