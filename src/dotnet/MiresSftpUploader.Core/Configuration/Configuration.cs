@@ -64,6 +64,12 @@ public sealed record SaveResult(IReadOnlyList<ConfigError> Errors)
     public IReadOnlyList<string> WrittenKeys { get; init; } = [];
 }
 
+/// <summary>What <see cref="Configuration.Check"/> found: the errors that would stop a Save, and the warnings that would not.</summary>
+public sealed record SaveCheck(IReadOnlyList<ConfigError> Errors, IReadOnlyList<ConfigError> Warnings)
+{
+    public bool Succeeded => Errors.Count == 0;
+}
+
 public sealed record ConfigurationLocations(string MachineConfigPath, string UserOverridesPath, IReadOnlyDictionary<string, string?> Environment)
 {
     public const string MachineFileName = "appsettings.json";
@@ -177,8 +183,30 @@ public sealed class Configuration(ConfigurationLocations locations)
     /// </summary>
     public SaveResult Save(IReadOnlyDictionary<string, string?> changes, CliOptions? cli = null)
     {
+        var plan = Plan(changes, cli);
+        if (plan.Errors.Count > 0) return new SaveResult(plan.Errors);
+        if (plan.Written.Count == 0) return new SaveResult([]);
+
+        WriteAtomically(locations.UserOverridesPath, UserFile.ToJson(plan.Next!, ConfigVersion));
+        return new SaveResult([]) { WrittenKeys = plan.Written };
+    }
+
+    /// <summary>
+    /// Validates what <see cref="Save"/> would write, without writing: the same errors Save would return, plus the warnings
+    /// of the resulting configuration (a missing Directory path, for example). The Settings screen calls it on every edit.
+    /// </summary>
+    public SaveCheck Check(IReadOnlyDictionary<string, string?> changes, CliOptions? cli = null)
+    {
+        var plan = Plan(changes, cli);
+        return new SaveCheck(plan.Errors, plan.Warnings);
+    }
+
+    private sealed record SavePlan(IReadOnlyList<ConfigError> Errors, IReadOnlyList<ConfigError> Warnings, IReadOnlyList<string> Written, FlatSettings? Next);
+
+    private SavePlan Plan(IReadOnlyDictionary<string, string?> changes, CliOptions? cli)
+    {
         var layers = ReadLayers(cli ?? new CliOptions(), out var errors);
-        if (layers is null) return new SaveResult(errors);
+        if (layers is null) return new SavePlan(errors, [], [], null);
         var machineWritable = IsDirectoryWritable(Path.GetDirectoryName(Path.GetFullPath(locations.MachineConfigPath))!);
 
         var current = Merge(layers);
@@ -196,7 +224,7 @@ public sealed class Configuration(ConfigurationLocations locations)
             else if (IsLocked(LayerOf(current, key), machineWritable))
                 errors.Add(new(key, "is a locked setting (set by the environment, a CLI flag or a read-only Machine Config)."));
         }
-        if (errors.Count > 0) return new SaveResult(errors);
+        if (errors.Count > 0) return new SavePlan(errors, [], [], null);
 
         var cleared = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (key, value) in changes.Where(c => c.Value is null || c.Value == "[]"))
@@ -209,10 +237,12 @@ public sealed class Configuration(ConfigurationLocations locations)
         var written = new List<string>();
         foreach (var (key, value) in changes.Where(c => c.Value is not null && c.Value != "[]"))
         {
-            var effective = current.Values.TryGetValue(key, out var set) ? set : DefaultText(key);
-            if (string.Equals(effective, value, StringComparison.OrdinalIgnoreCase)) continue;
             var root = FlatSettings.ArrayRootOf(key);
-            if (root is not null && !cleared.Contains(root) && !next.Values.Keys.Any(k => k.StartsWith(root + ":", StringComparison.OrdinalIgnoreCase)))
+            // Under a list that this save clears the list is rewritten whole, so a value equal to the current one must still be written.
+            var rewritten = root is not null && cleared.Contains(root);
+            var effective = current.Values.TryGetValue(key, out var set) ? set : DefaultText(key);
+            if (!rewritten && string.Equals(effective, value, StringComparison.OrdinalIgnoreCase)) continue;
+            if (root is not null && !rewritten && !next.Values.Keys.Any(k => k.StartsWith(root + ":", StringComparison.OrdinalIgnoreCase)))
                 foreach (var (k, v) in current.Values.Where(kv => kv.Key.StartsWith(root + ":", StringComparison.OrdinalIgnoreCase)))
                     next.Values[k] = v;
             next.EmptyArrays.Remove(root ?? key);
@@ -221,13 +251,10 @@ public sealed class Configuration(ConfigurationLocations locations)
         }
         written.AddRange(cleared);
 
-        if (written.Count == 0) return new SaveResult([]);
+        if (written.Count == 0) return new SavePlan([], [], [], next);
 
         var candidate = Evaluate(layers with { User = next }, headless: false, machineWritable);
-        if (!candidate.Succeeded) return new SaveResult(candidate.Errors);
-
-        WriteAtomically(locations.UserOverridesPath, UserFile.ToJson(next, ConfigVersion));
-        return new SaveResult([]) { WrittenKeys = written };
+        return new SavePlan(candidate.Errors, candidate.Warnings, written, next);
     }
 
     /// <summary>The documented default of a scalar key, as text; null for lists, unknown keys and keys without a default.</summary>

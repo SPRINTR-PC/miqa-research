@@ -152,4 +152,40 @@ public sealed class ConfigurationSaveTests : ConfigurationTestBase
         Assert.IsFalse(r.Succeeded);
         Assert.IsTrue(r.Errors.Any(e => e.Key == "ConfigVersion"));
     }
+
+    [TestMethod]
+    public void Check_reports_the_errors_and_warnings_of_a_change_without_writing_anything()
+    {
+        var cfg = Create(ValidMachine().ToJsonString());
+
+        var bad = cfg.Check(new Dictionary<string, string?> { ["Sftp:Port"] = "0" });
+        var missingPath = cfg.Check(new Dictionary<string, string?> { ["Sources:0:Path"] = Path.Combine(Dir, "nope") });
+
+        Assert.IsTrue(bad.Errors.Any(e => e.Key == "Sftp:Port"));
+        Assert.IsTrue(missingPath.Succeeded, string.Join(" | ", missingPath.Errors));
+        Assert.IsTrue(missingPath.Warnings.Any(w => w.Key is not null && w.Key.StartsWith("Sources:0")), "a missing path only warns");
+        Assert.IsFalse(File.Exists(UserPath));
+    }
+
+    [TestMethod]
+    public void Replacing_the_Sources_list_keeps_entries_whose_values_did_not_change()
+    {
+        var cfg = Create(ValidMachine().ToJsonString());
+
+        var saved = cfg.Save(new Dictionary<string, string?>
+        {
+            ["Sources"] = null,
+            ["Sources:0:Name"] = "alpha",
+            ["Sources:0:Type"] = "Directory",
+            ["Sources:0:Path"] = DataDir,
+            ["Sources:1:Name"] = "beta",
+            ["Sources:1:Type"] = "Directory",
+            ["Sources:1:Path"] = DataDir,
+        });
+
+        Assert.IsTrue(saved.Succeeded, string.Join(" | ", saved.Errors));
+        var sources = cfg.Load().Config!.Sources;
+        CollectionAssert.AreEqual(new[] { "alpha", "beta" }, sources.Select(s => s.Name).ToArray());
+        Assert.AreEqual(DataDir, sources[0].Path);
+    }
 }
