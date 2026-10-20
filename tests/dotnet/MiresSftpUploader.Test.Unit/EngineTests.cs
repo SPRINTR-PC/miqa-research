@@ -51,7 +51,7 @@ public sealed class EngineTests
         var root = manifest.RootElement;
         Assert.AreEqual(1, root.GetProperty("schemaVersion").GetInt32());
         Assert.IsTrue(root.GetProperty("complete").GetBoolean());
-        var files = root.GetProperty("files").EnumerateArray().ToDictionary(
+        var files = root.GetProperty("members").EnumerateArray().ToDictionary(
             f => f.GetProperty("path").GetString()!, f => f.GetProperty("sha256").GetString()!);
         Assert.AreEqual(Sha256(remote.Files["/upload/scans/big.bin"]), files["big.bin"]);
         Assert.AreEqual(Sha256(payload), files["big.bin"]);

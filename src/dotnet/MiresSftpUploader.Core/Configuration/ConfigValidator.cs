@@ -30,6 +30,8 @@ internal sealed partial class ConfigValidator
         IgnorePatterns(_config.Ignore.Patterns, "Ignore:Patterns");
         ArchiveRules(_config.Archive.Rules, "Archive:Rules");
         Range("Archive:MaxParallelBuilds", _config.Archive.MaxParallelBuilds, 1, 16);
+        if (_config.Archive.MinFreeSpaceBytes < 0) Error("Archive:MinFreeSpaceBytes", "must not be negative.");
+        if (_config.Archive.WarnAboveBytes < 0) Error("Archive:WarnAboveBytes", "must not be negative.");
         Range("Scan:MinFileAgeSeconds", _config.Scan.MinFileAgeSeconds, 0, int.MaxValue);
         Manifest();
         Range("Upload:MaxParallelUploads", _config.Upload.MaxParallelUploads, 1, 16);

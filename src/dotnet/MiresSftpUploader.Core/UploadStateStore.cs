@@ -19,6 +19,15 @@ internal readonly record struct FileKey(string Destination, string RemotePath, s
 /// <summary>What the Upload State knows about a file from earlier Runs.</summary>
 internal sealed record PriorFile(string Status, long Size, long MtimeTicks, string? Sha256);
 
+/// <summary>One member of an Archive as last delivered: its size and mtime in the Source and its own SHA-256.</summary>
+internal sealed record PriorMember(long Size, long MtimeTicks, string Sha256);
+
+/// <summary>What the Upload State knows about an Archive from earlier Runs: its own row and its members by Source-relative path.</summary>
+internal sealed record PriorArchive(PriorFile File, IReadOnlyDictionary<string, PriorMember> Members);
+
+/// <summary>A member to record for an Archive: Source-relative path, size, mtime ticks and SHA-256.</summary>
+internal sealed record ArchiveMemberRecord(string Path, long Size, long MtimeTicks, string Sha256);
+
 /// <summary>An upload that was in flight when its Run died: the server object to remove.</summary>
 internal sealed record OrphanPart(string Destination, string PartPath);
 
@@ -215,6 +224,29 @@ internal sealed class UploadStateStore : IAsyncDisposable
             InsertRunFile(c, runId, key, "Failed", 0, duration, error, now);
         });
 
+    /// <summary>
+    /// Records an Archive delivered (or confirmed unchanged) with its zip hash and members; the member rows are replaced as a set.
+    /// </summary>
+    public void RecordArchiveSucceeded(Guid runId, FileKey key, long zipSize, string zipSha256,
+        IReadOnlyList<ArchiveMemberRecord> members, bool uploaded, DateTimeOffset now, TimeSpan duration) =>
+        _ = Enqueue(c =>
+        {
+            Upsert(c, key, "Succeeded", zipSize, 0, zipSha256, error: null, partPath: null, success: now.UtcTicks);
+            Exec(c, """
+                DELETE FROM ArchiveMembers WHERE ArchiveFileId IN
+                    (SELECT Id FROM Files WHERE Destination=$d AND RemotePath=$r AND Source=$s AND RelativePath=$p)
+                """, ("$d", key.Destination), ("$r", key.RemotePath), ("$s", key.Source), ("$p", key.RelativePath));
+            foreach (var m in members)
+                Exec(c, """
+                    INSERT INTO ArchiveMembers (ArchiveFileId, MemberPath, Size, Mtime, Sha256)
+                    SELECT Id, $m, $size, $mtime, $sha FROM Files
+                    WHERE Destination=$d AND RemotePath=$r AND Source=$s AND RelativePath=$p
+                    """, ("$m", m.Path), ("$size", m.Size), ("$mtime", m.MtimeTicks), ("$sha", m.Sha256),
+                    ("$d", key.Destination), ("$r", key.RemotePath), ("$s", key.Source), ("$p", key.RelativePath));
+            if (uploaded) InsertRunFile(c, runId, key, "Succeeded", zipSize, duration, null, now);
+            else InsertRunFile(c, runId, key, "Skipped", 0, TimeSpan.Zero, "unchanged", now);
+        });
+
     /// <summary>Marks every recorded file of the Source that is no longer listed as Missing. Remote files are never touched.</summary>
     public Task MarkMissingAsync(string destination, string remotePath, string source, IReadOnlySet<string> stillListed, DateTimeOffset now) =>
         Enqueue(c =>
@@ -336,29 +368,84 @@ internal sealed class UploadStateStore : IAsyncDisposable
         return LoadSource(connection, destination, remotePath, source);
     }
 
+    /// <summary>The Source's Archives that have member rows, for the skip decision.</summary>
+    public Dictionary<string, PriorArchive> LoadArchives(string destination, string remotePath, string source)
+    {
+        using var connection = OpenConnection(_path, readOnly: true);
+        return LoadArchives(connection, destination, remotePath, source);
+    }
+
+    private static Dictionary<string, PriorArchive> LoadArchives(SqliteConnection connection, string destination, string remotePath, string source)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT f.RelativePath, f.Status, f.Size, f.Mtime, f.Sha256, m.MemberPath, m.Size, m.Mtime, m.Sha256
+            FROM Files f JOIN ArchiveMembers m ON m.ArchiveFileId = f.Id
+            WHERE f.Destination=$d AND f.RemotePath=$r AND f.Source=$s
+            """;
+        command.Parameters.AddWithValue("$d", destination);
+        command.Parameters.AddWithValue("$r", remotePath);
+        command.Parameters.AddWithValue("$s", source);
+        var files = new Dictionary<string, PriorFile>(StringComparer.Ordinal);
+        var members = new Dictionary<string, Dictionary<string, PriorMember>>(StringComparer.Ordinal);
+        using var rows = command.ExecuteReader();
+        while (rows.Read())
+        {
+            var archive = rows.GetString(0);
+            files[archive] = new PriorFile(rows.GetString(1), rows.GetInt64(2), rows.GetInt64(3), rows.IsDBNull(4) ? null : rows.GetString(4));
+            if (!members.TryGetValue(archive, out var set)) members[archive] = set = new Dictionary<string, PriorMember>(StringComparer.Ordinal);
+            set[rows.GetString(5)] = new PriorMember(rows.GetInt64(6), rows.GetInt64(7), rows.GetString(8));
+        }
+        return files.ToDictionary(kv => kv.Key, kv => new PriorArchive(kv.Value, members[kv.Key]), StringComparer.Ordinal);
+    }
+
     /// <summary>
-    /// Every object of the Source that is on the server, sorted by ordinal path: files that are Succeeded, Missing at the
-    /// Source, or Failed or Uploading with a hash from an earlier delivery (the server still holds that version).
-    /// Reads lazily on a short-lived connection, so the Manifest is streamed rather than built in memory.
+    /// Every object of the Source that is on the server, sorted by ordinal path: files and Archives that are Succeeded, Missing
+    /// at the Source, or Failed or Uploading with a hash from an earlier delivery (the server still holds that version).
+    /// An Archive carries its members. Reads lazily on a short-lived connection, so the Manifest is streamed.
     /// </summary>
-    public IEnumerable<ManifestFile> EnumerateDelivered(string destination, string remotePath, string source)
+    public IEnumerable<ManifestNode> EnumerateDelivered(string destination, string remotePath, string source)
     {
         using var connection = OpenConnection(_path, readOnly: true);
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT RelativePath, Size, Sha256, Status FROM Files
-            WHERE Destination=$d AND RemotePath=$r AND Source=$s AND Sha256 IS NOT NULL
-            ORDER BY RelativePath COLLATE BINARY
+            SELECT f.RelativePath, f.Size, f.Sha256, f.Status, m.MemberPath, m.Size, m.Mtime, m.Sha256
+            FROM Files f LEFT JOIN ArchiveMembers m ON m.ArchiveFileId = f.Id
+            WHERE f.Destination=$d AND f.RemotePath=$r AND f.Source=$s AND f.Sha256 IS NOT NULL
+            ORDER BY f.RelativePath COLLATE BINARY, m.MemberPath COLLATE BINARY
             """;
         command.Parameters.AddWithValue("$d", destination);
         command.Parameters.AddWithValue("$r", remotePath);
         command.Parameters.AddWithValue("$s", source);
         using var rows = command.ExecuteReader();
+
+        string? path = null;
+        long size = 0;
+        string sha = "";
+        var missing = false;
+        List<ManifestArchiveMember>? members = null;
         while (rows.Read())
-            yield return new ManifestFile(rows.GetString(0), rows.GetInt64(1), rows.GetString(2))
+        {
+            var current = rows.GetString(0);
+            if (current != path)
             {
-                MissingAtSource = rows.GetString(3) == "Missing",
-            };
+                if (path is not null) yield return Node(path, size, sha, missing, members);
+                path = current;
+                size = rows.GetInt64(1);
+                sha = rows.GetString(2);
+                missing = rows.GetString(3) == "Missing";
+                members = null;
+            }
+            if (!rows.IsDBNull(4))
+                (members ??= []).Add(new ManifestArchiveMember(rows.GetString(4), rows.GetInt64(5),
+                    rows.GetString(7), new DateTimeOffset(rows.GetInt64(6), TimeSpan.Zero)));
+        }
+        if (path is not null) yield return Node(path, size, sha, missing, members);
+
+        static ManifestNode Node(string path, long size, string sha, bool missing, List<ManifestArchiveMember>? members) =>
+            members is null
+                ? new ManifestFile(path, size, sha) { MissingAtSource = missing }
+                : new ManifestArchive(path, size, sha, members) { MissingAtSource = missing };
     }
 
     /// <summary>The Source's files whose newest version is not on the server, with the reason of the last attempt.</summary>
@@ -400,9 +487,15 @@ internal sealed class UploadStateStore : IAsyncDisposable
     /// What a Dry Run knows about a Source: reads the database without opening a store, creating, migrating or
     /// writing anything. A missing, empty or newer database yields no prior files.
     /// </summary>
-    public static Dictionary<string, PriorFile> ReadPriorFiles(string path, string destination, string remotePath, string source)
+    public static Dictionary<string, PriorFile> ReadPriorFiles(string path, string destination, string remotePath, string source) =>
+        ReadImmutable(path, new Dictionary<string, PriorFile>(StringComparer.Ordinal), c => LoadSource(c, destination, remotePath, source));
+
+    /// <summary>Like <see cref="ReadPriorFiles"/>, for the Archives a Dry Run may find unchanged.</summary>
+    public static Dictionary<string, PriorArchive> ReadPriorArchives(string path, string destination, string remotePath, string source) =>
+        ReadImmutable(path, new Dictionary<string, PriorArchive>(StringComparer.Ordinal), c => LoadArchives(c, destination, remotePath, source));
+
+    private static T ReadImmutable<T>(string path, T none, Func<SqliteConnection, T> read)
     {
-        var none = new Dictionary<string, PriorFile>(StringComparer.Ordinal);
         if (!File.Exists(path)) return none;
         try
         {
@@ -412,7 +505,7 @@ internal sealed class UploadStateStore : IAsyncDisposable
             using var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = uri, Pooling = false }.ToString());
             connection.Open();
             if (Convert.ToInt32(Scalar(connection, "PRAGMA user_version"), CultureInfo.InvariantCulture) != SchemaVersion) return none;
-            return LoadSource(connection, destination, remotePath, source);
+            return read(connection);
         }
         catch (SqliteException)
         {

@@ -34,13 +34,73 @@ public sealed class DirectoryToFakeRemoteTests
             var local = Convert.ToHexStringLower(SHA256.HashData(data));
             var uploaded = Convert.ToHexStringLower(SHA256.HashData(remote.Files["/upload/scans/file.bin"]));
             using var manifest = JsonDocument.Parse(remote.ReadText("/upload/scans/manifest.json"));
-            var inManifest = manifest.RootElement.GetProperty("files").EnumerateArray().Single().GetProperty("sha256").GetString();
+            var inManifest = manifest.RootElement.GetProperty("members").EnumerateArray().Single().GetProperty("sha256").GetString();
             Assert.AreEqual(local, uploaded);
             Assert.AreEqual(local, inManifest);
         }
         finally
         {
             Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task Remote_archive_hash_equals_manifest_hash_and_each_member_hash_equals_its_original()
+    {
+        var root = Directory.CreateTempSubdirectory("mires-it-archive-").FullName;
+        var staging = Directory.CreateTempSubdirectory("mires-it-staging-").FullName;
+        try
+        {
+            var originals = new Dictionary<string, byte[]>
+            {
+                ["slide/tile-1.jpg"] = new byte[3_000_000],
+                ["slide/tile-2.jpg"] = new byte[81_921],
+                ["slide/tile-3.jpg"] = [],
+            };
+            foreach (var (path, data) in originals)
+            {
+                RandomNumberGenerator.Fill(data);
+                Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(root, path))!);
+                await File.WriteAllBytesAsync(Path.Combine(root, path), data);
+            }
+            var remote = new FakeRemote();
+            var settings = new EngineSettings
+            {
+                RemoteRoot = "/upload",
+                Archive = new ArchiveConfig
+                {
+                    StagingPath = staging,
+                    MinFreeSpaceBytes = 0,
+                    Rules = [new ArchiveRuleConfig { Name = "tiles", Pattern = @"\.jpg$", ArchiveName = "{rule}.zip" }],
+                },
+            };
+            var engine = new Engine(remote, [new DirectorySource("scans", root)], settings, NullLogger<Engine>.Instance, TimeProvider.System);
+
+            var result = await engine.RunAsync(new RunOptions(), new Progress<RunEvent>(), CancellationToken.None);
+
+            Assert.AreEqual(0, result.ExitCode);
+            var zip = remote.Files["/upload/scans/slide/tiles.zip"];
+            using var manifest = JsonDocument.Parse(remote.ReadText("/upload/scans/manifest.json"));
+            var archive = MiresSftpUploader.Test.Support.ManifestTree.Archives(manifest.RootElement).Values.Single();
+            Assert.AreEqual(Convert.ToHexStringLower(SHA256.HashData(zip)), archive.GetProperty("sha256").GetString());
+            var listed = archive.GetProperty("members").EnumerateArray().ToDictionary(
+                m => m.GetProperty("path").GetString()!, m => m.GetProperty("sha256").GetString());
+            using var opened = new System.IO.Compression.ZipArchive(new MemoryStream(zip), System.IO.Compression.ZipArchiveMode.Read);
+            foreach (var (path, data) in originals)
+            {
+                var original = Convert.ToHexStringLower(SHA256.HashData(data));
+                using var member = opened.GetEntry(path["slide/".Length..])!.Open();
+                using var copy = new MemoryStream();
+                await member.CopyToAsync(copy);
+                Assert.AreEqual(original, listed[path], $"Manifest member hash of {path}");
+                Assert.AreEqual(original, Convert.ToHexStringLower(SHA256.HashData(copy.ToArray())), $"zip entry {path}");
+            }
+            Assert.IsEmpty(Directory.GetFileSystemEntries(staging), "the Staging Area is gone after the Run");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+            Directory.Delete(staging, recursive: true);
         }
     }
 

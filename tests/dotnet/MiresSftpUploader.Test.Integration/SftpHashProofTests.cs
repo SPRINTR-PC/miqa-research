@@ -28,7 +28,7 @@ public sealed class SftpHashProofTests
     internal static async Task<string> ManifestHashAsync(string manifestPath, string file)
     {
         using var manifest = JsonDocument.Parse(await SftpServer.RemoteReadTextAsync(manifestPath));
-        return manifest.RootElement.GetProperty("files").EnumerateArray()
+        return manifest.RootElement.GetProperty("members").EnumerateArray()
             .Single(f => f.GetProperty("path").GetString() == file).GetProperty("sha256").GetString()!;
     }
 
