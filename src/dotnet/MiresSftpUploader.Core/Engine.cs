@@ -33,7 +33,7 @@ public sealed class Engine
 
     public async Task<RunResult> RunAsync(RunOptions options, IProgress<RunEvent> progress, CancellationToken cancellationToken)
     {
-        var run = new RunState(Guid.NewGuid(), _time.GetUtcNow(), progress);
+        var run = new RunState(Guid.NewGuid(), _time.GetUtcNow(), progress, _logger);
         progress.Report(new RunStarted(run.RunId, run.StartedAt));
         _logger.LogInformation("Run {RunId} started by {User}", run.RunId, options.StartedBy);
 
@@ -50,7 +50,8 @@ public sealed class Engine
         }
 
         var result = new RunResult(run.RunId, run.SnapshotCounts(), exitCode, reason);
-        _logger.LogInformation("Run {RunId} finished with exit code {ExitCode}", run.RunId, exitCode);
+        _logger.LogInformation("Run {RunId} finished: Succeeded {Succeeded}, Skipped {Skipped}, Failed {Failed}, exit code {ExitCode}",
+            run.RunId, result.Count(FileOutcome.Succeeded), result.Count(FileOutcome.Skipped), result.Count(FileOutcome.Failed), exitCode);
         progress.Report(new RunFinished(result));
         return result;
     }
@@ -339,7 +340,7 @@ public sealed class Engine
     }
 
     /// <summary>Mutable state of one Run: outcome per file, hashes and failures for the Manifest.</summary>
-    internal sealed class RunState(Guid runId, DateTimeOffset startedAt, IProgress<RunEvent> progress)
+    internal sealed class RunState(Guid runId, DateTimeOffset startedAt, IProgress<RunEvent> progress, ILogger logger)
     {
         private readonly object _gate = new();
         private readonly Dictionary<(string Source, string Path), FileEntry> _entries = new();
@@ -370,7 +371,25 @@ public sealed class Engine
                     _entries[key] = entry = new FileEntry(item.File.RelativePath, item.File.Size);
                 change(entry);
             }
+            LogFinalOutcome(item, entry);
             progress.Report(new FileOutcomeChanged(item.Source.Name, item.File.RelativePath, entry.Outcome, entry.Reason));
+        }
+
+        /// <summary>Info for a file that ended Succeeded or Skipped, Error for one that Failed. Intermediate outcomes are not logged.</summary>
+        private void LogFinalOutcome(FileWork item, FileEntry entry)
+        {
+            switch (entry.Outcome)
+            {
+                case FileOutcome.Succeeded:
+                    logger.LogInformation("{Source}/{Path}: Succeeded", item.Source.Name, item.File.RelativePath);
+                    break;
+                case FileOutcome.Skipped:
+                    logger.LogInformation("{Source}/{Path}: Skipped ({Reason})", item.Source.Name, item.File.RelativePath, entry.Reason);
+                    break;
+                case FileOutcome.Failed:
+                    logger.LogError("{Source}/{Path}: Failed ({Reason})", item.Source.Name, item.File.RelativePath, entry.Reason);
+                    break;
+            }
         }
 
         public int Count(FileOutcome outcome)
