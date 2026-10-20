@@ -118,9 +118,14 @@ public sealed class PostUploadMoveTests
     {
         var remote = new FakeRemote();
 
-        await RunAsync(Settings(onSuccess: Done), remote, NewSource());
+        var source = NewSource();
+        var settings = Settings(onSuccess: Done);
+        await RunAsync(settings, remote, source);
+        await RunAsync(settings, remote, source);
 
-        StringAssert.Contains(remote.ReadText("/upload/scans/manifest.json"), "sub/b.txt");
+        var manifest = remote.ReadText("/upload/scans/manifest.json");
+        StringAssert.Contains(manifest, "sub/b.txt");
+        Assert.DoesNotContain("missingAtSource", manifest);
     }
 
     [TestMethod]
