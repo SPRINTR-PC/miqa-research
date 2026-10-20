@@ -253,6 +253,66 @@ public sealed class ManifestTests
     }
 
     [TestMethod]
+    [DataRow("manifest.json")]
+    [DataRow("MANIFEST.JSON")]
+    [DataRow("manifest.sha256")]
+    [DataRow("manifest.json.part")]
+    [DataRow("manifest.json.inprogress")]
+    public async Task A_Source_file_named_like_a_Manifest_is_a_configuration_error_and_nothing_is_uploaded(string name)
+    {
+        var remote = new FakeRemote();
+        var source = new FakeSource("scans").Add("keep.txt", "k").Add(name, "mine");
+
+        var result = await Run(Settings(), remote, null, source);
+
+        Assert.AreEqual(ExitCodes.ConfigurationError, result.ExitCode);
+        StringAssert.Contains(result.Reason, name);
+        Assert.IsEmpty(remote.Files);
+    }
+
+    [TestMethod]
+    public async Task A_file_in_a_subdirectory_or_ignored_by_a_rule_does_not_collide()
+    {
+        var remote = new FakeRemote();
+        var source = new FakeSource("scans").Add("sub/manifest.json", "mine").Add("manifest.sha256", "old");
+        var settings = Settings() with { Ignore = new IgnoreConfig { Files = ["manifest.sha256"] } };
+
+        var result = await Run(settings, remote, null, source);
+
+        Assert.AreEqual(0, result.ExitCode);
+        Assert.AreEqual("mine", remote.ReadText("/upload/scans/sub/manifest.json"));
+    }
+
+    [TestMethod]
+    public async Task Manifest_names_are_configurable_and_both_are_uploaded_through_part_files()
+    {
+        var remote = new FakeRemote();
+        var source = new FakeSource("scans").Add("a.txt", "a");
+        var settings = Settings() with { ManifestName = "delivery.json", FlatManifestName = "delivery.sha256", WriteFlatManifest = true };
+
+        await Run(settings, remote, null, source);
+
+        CollectionAssert.AreEquivalent(
+            new[] { "/upload/scans/a.txt", "/upload/scans/delivery.json", "/upload/scans/delivery.sha256" }, remote.Files.Keys.ToArray());
+        StringAssert.Contains(System.Text.Encoding.UTF8.GetString(remote.Files["/upload/scans/delivery.sha256"]), "  delivery.json\n");
+    }
+
+    [TestMethod]
+    public async Task Manifest_that_cannot_be_renamed_into_place_leaves_the_old_one_untouched()
+    {
+        var remote = new FakeRemote();
+        var source = new FakeSource("scans").Add("a.txt", "a");
+        await Run(Settings(), remote, null, source);
+        var before = remote.ReadText("/upload/scans/manifest.json");
+        source.Add("b.txt", "b");
+        remote.Inject(RemoteOperation.Rename, RemoteResult.Failed("boom"), times: 1, pathContains: "manifest.json.part");
+
+        await Run(Settings(), remote, null, source);
+
+        Assert.AreEqual(before, remote.ReadText("/upload/scans/manifest.json"), "never a half-written Manifest under its final name");
+    }
+
+    [TestMethod]
     public async Task Dry_run_uploads_neither_a_Marker_nor_a_Manifest()
     {
         var remote = new FakeRemote();

@@ -308,6 +308,8 @@ public sealed partial class Engine
                 priorArchives = UploadStateStore.ReadPriorArchives(archiveDatabase, _settings.Destination, remotePath, source.Name);
             var listed = new HashSet<string>(StringComparer.Ordinal);
             var rules = IgnoreRulesOf(source);
+            var reserved = ReservedManifestNames();
+            var collisions = new List<string>();
             var candidates = new List<(FileWork Item, bool TooRecent)>();
             await foreach (var file in source.ListAsync(ct))
             {
@@ -317,9 +319,14 @@ public sealed partial class Engine
                 var item = new FileWork(source, remotePath, file, options.RehashAll ? null : known);
                 if (rules.Reason(file.RelativePath, m => run.Warn(m)) is { } ignored)
                     run.Set(item, FileOutcome.Ignored, ignored);
+                else if (reserved.Contains(file.RelativePath))
+                    collisions.Add(file.RelativePath);
                 else
                     candidates.Add((item, IsTooRecent(source, file)));
             }
+            if (collisions.Count > 0)
+                return (ExitCodes.ConfigurationError,
+                    $"Source '{source.Name}' holds {string.Join(", ", collisions.Select(c => $"'{c}'"))}, which the Manifest would overwrite. Rename the file, ignore it, or change the Manifest names.");
 
             var plan = ArchivePlanner.Plan(ArchiveRulesOf(source), candidates, source.Name, run.StartedAt);
             foreach (var (item, tooRecent) in plan.Individual)
@@ -654,8 +661,22 @@ public sealed partial class Engine
             _settings.Ignore.UseDefaults,
             _settings.Ignore.Files.Concat(own?.Files ?? []),
             _settings.Ignore.Patterns.Concat(own?.Patterns ?? []),
-            alwaysPaths: [_settings.ManifestName, _settings.ManifestName + ".part", _settings.FlatManifestName, _settings.FlatManifestName + ".part"],
             alwaysNames: UploadStateFileNames());
+    }
+
+    /// <summary>
+    /// Root-level names the Run itself writes into a Source's Remote Path. A Source file with one of them (not ignored by a rule)
+    /// would be overwritten by the Manifest, so the Run refuses to start (exit 2). Compared without regard to case.
+    /// </summary>
+    private HashSet<string> ReservedManifestNames()
+    {
+        var json = _settings.ManifestName;
+        var flat = _settings.FlatManifestName;
+        return new HashSet<string>(
+        [
+            json, json + ".part", json + _settings.InProgressSuffix, json + _settings.InProgressSuffix + ".probe",
+            flat, flat + ".part",
+        ], StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>The Upload State database and the files SQLite keeps beside it, plus the Run lock.</summary>

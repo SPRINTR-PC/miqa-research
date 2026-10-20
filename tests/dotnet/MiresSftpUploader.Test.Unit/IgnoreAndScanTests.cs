@@ -116,12 +116,11 @@ public sealed class IgnoreAndScanTests
     }
 
     [TestMethod]
-    public async Task Manifests_and_the_Upload_State_are_always_Ignored_even_without_defaults()
+    public async Task The_Upload_State_files_are_always_Ignored_even_without_defaults()
     {
         var remote = new FakeRemote();
         var source = new FakeSource("scans")
-            .Add("keep.txt", "k").Add("manifest.json", "old").Add("manifest.json.part", "p")
-            .Add("manifest.sha256", "old").Add("state/mires.db", "db").Add("state/mires.db-wal", "w")
+            .Add("keep.txt", "k").Add("state/mires.db", "db").Add("state/mires.db-wal", "w")
             .Add("state/mires.db.lock", "l");
         var settings = Settings() with
         {
@@ -132,8 +131,7 @@ public sealed class IgnoreAndScanTests
         var (result, _) = await RunAsync(remote, settings, null, source);
 
         Assert.AreEqual(1, result.Count(FileOutcome.Succeeded));
-        Assert.AreEqual(6, result.Count(FileOutcome.Ignored));
-        Assert.AreNotEqual("old", remote.ReadText("/upload/scans/manifest.json"));
+        Assert.AreEqual(3, result.Count(FileOutcome.Ignored));
         Directory.Delete(Path.GetDirectoryName(settings.State.Path!)!, recursive: true);
     }
 
