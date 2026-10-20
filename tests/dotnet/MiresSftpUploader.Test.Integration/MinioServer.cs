@@ -34,8 +34,8 @@ public sealed record MinioServerInfo(string Endpoint, string AccessKey, string S
         var bucket = "t" + Guid.NewGuid().ToString("N")[..16];
         using var client = AdminClient();
         await client.PutBucketAsync(bucket);
-        foreach (var (key, data) in objects)
-            await client.PutObjectAsync(new PutObjectRequest { BucketName = bucket, Key = key, InputStream = new MemoryStream(data), AutoCloseStream = true });
+        await Parallel.ForEachAsync(objects, new ParallelOptions { MaxDegreeOfParallelism = 16 }, async (entry, ct) =>
+            await client.PutObjectAsync(new PutObjectRequest { BucketName = bucket, Key = entry.Key, InputStream = new MemoryStream(entry.Value), AutoCloseStream = true }, ct));
         return bucket;
     }
 }
