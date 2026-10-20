@@ -1,11 +1,9 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
+    <Import Project="Version.props" />
     <PropertyGroup>
         <OutputType>WinExe</OutputType>
         <TargetFramework>net10.0</TargetFramework>
         <Nullable>enable</Nullable>
-        <!-- Single source of the version: feeds AssemblyInformationalVersion, the version flag and the Manifest's toolVersion.
-             Release builds override it: the publish scripts take a version option and pass it as the Version property. -->
-        <Version>0.1.0</Version>
         <ApplicationManifest>app.manifest</ApplicationManifest>
         <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     </PropertyGroup>

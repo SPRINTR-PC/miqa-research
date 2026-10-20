@@ -5,7 +5,7 @@ namespace MiresSftpUploader.Test.Support;
 /// <summary>In-memory <see cref="ISource"/> holding files by relative path.</summary>
 public sealed class FakeSource(string name, string? remotePath = null) : ISource
 {
-    private readonly Dictionary<string, (byte[] Data, DateTimeOffset Modified)> _files = new();
+    private readonly Dictionary<string, (byte[] Data, DateTimeOffset Modified, string? ETag)> _files = new();
 
     public string Name { get; } = name;
     public string? RemotePath { get; } = remotePath;
@@ -28,14 +28,14 @@ public sealed class FakeSource(string name, string? remotePath = null) : ISource
         return this;
     }
 
-    public FakeSource Add(string relativePath, byte[] data, DateTimeOffset? modified = null)
+    public FakeSource Add(string relativePath, byte[] data, DateTimeOffset? modified = null, string? etag = null)
     {
-        _files[relativePath] = (data, modified ?? new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        _files[relativePath] = (data, modified ?? new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero), etag);
         return this;
     }
 
-    public FakeSource Add(string relativePath, string text, DateTimeOffset modified) =>
-        Add(relativePath, System.Text.Encoding.UTF8.GetBytes(text), modified);
+    public FakeSource Add(string relativePath, string text, DateTimeOffset modified, string? etag = null) =>
+        Add(relativePath, System.Text.Encoding.UTF8.GetBytes(text), modified, etag);
 
     public FakeSource Add(string relativePath, string text) => Add(relativePath, System.Text.Encoding.UTF8.GetBytes(text));
 
@@ -50,14 +50,14 @@ public sealed class FakeSource(string name, string? remotePath = null) : ISource
         foreach (var (path, entry) in _files.OrderBy(f => f.Key, StringComparer.Ordinal))
         {
             await Task.Yield();
-            yield return new SourceFile(path, entry.Data.Length, entry.Modified);
+            yield return new SourceFile(path, entry.Data.Length, entry.Modified, entry.ETag);
         }
         AfterListing?.Invoke();
     }
 
     public Task<SourceFile?> StatAsync(string relativePath, CancellationToken cancellationToken) =>
         Task.FromResult<SourceFile?>(_files.TryGetValue(relativePath, out var entry)
-            ? new SourceFile(relativePath, entry.Data.Length, entry.Modified)
+            ? new SourceFile(relativePath, entry.Data.Length, entry.Modified, entry.ETag)
             : null);
 
     public Task<Stream> OpenReadAsync(string relativePath, CancellationToken cancellationToken)

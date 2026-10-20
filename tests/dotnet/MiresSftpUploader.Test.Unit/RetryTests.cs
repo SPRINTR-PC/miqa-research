@@ -75,7 +75,7 @@ public sealed class RetryTests
         using var manifest = JsonDocument.Parse(remote.ReadText("/upload/scans/manifest.json"));
         Assert.IsTrue(manifest.RootElement.GetProperty("complete").GetBoolean());
         CollectionAssert.AreEqual(new[] { "a.txt", "b.txt", "c.txt", "d.txt" },
-            manifest.RootElement.GetProperty("files").EnumerateArray().Select(f => f.GetProperty("path").GetString()).ToArray());
+            manifest.RootElement.GetProperty("members").EnumerateArray().Select(f => f.GetProperty("path").GetString()).ToArray());
         Assert.AreEqual(0, retry.Count(FileOutcome.Skipped), "carried-over files are not counted as this Run's outcomes");
     }
 

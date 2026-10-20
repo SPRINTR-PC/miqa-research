@@ -92,7 +92,7 @@ public sealed partial class Engine
         if (prior.Members.Count != members.Count || members.Any(m => !prior.Members.ContainsKey(m.Item.File.RelativePath)))
             return ArchiveStatuses.WouldBuild;
         var unchanged = members.All(m =>
-            prior.Members[m.Item.File.RelativePath] is var p && p.Size == m.Item.File.Size && p.MtimeTicks == m.Item.File.Modified.UtcTicks);
+            prior.Members[m.Item.File.RelativePath] is var p && p.Size == m.Item.File.Size && p.MtimeTicks == m.Item.File.ChangeToken);
         return unchanged ? ArchiveStatuses.WouldSkip : ArchiveStatuses.NeedsHashing;
     }
 
@@ -143,7 +143,7 @@ public sealed partial class Engine
             }
 
             var members = plan.Members
-                .Select(m => new ArchiveMemberRecord(m.Item.File.RelativePath, m.Item.File.Size, m.Item.File.Modified.UtcTicks, build.MemberHashes[m.Item.File.RelativePath]))
+                .Select(m => new ArchiveMemberRecord(m.Item.File.RelativePath, m.Item.File.Size, m.Item.File.ChangeToken, build.MemberHashes[m.Item.File.RelativePath], m.Item.File.Modified.UtcTicks))
                 .ToList();
             var memberHashes = members.ToDictionary(m => m.Path, m => new PriorMember(m.Size, m.MtimeTicks, m.Sha256), StringComparer.Ordinal);
 
