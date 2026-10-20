@@ -86,4 +86,31 @@ public abstract class RemoteContract
         Assert.IsTrue(delete.IsOk, delete.Reason);
         Assert.IsFalse((await session.StatAsync(dir + "/f", CancellationToken.None)).IsOk);
     }
+
+    [TestMethod]
+    public async Task Download_returns_the_uploaded_bytes()
+    {
+        await using var session = await Connect(CreateRemote());
+        var dir = UniqueDirectory();
+        await session.EnsureDirectoryAsync(dir, CancellationToken.None);
+        var payload = new byte[100_000];
+        new Random(7).NextBytes(payload);
+        await session.UploadAsync(new MemoryStream(payload), dir + "/f.bin", CancellationToken.None);
+
+        var received = new MemoryStream();
+        var download = await session.DownloadAsync(dir + "/f.bin", received, CancellationToken.None);
+
+        Assert.IsTrue(download.IsOk, download.Reason);
+        CollectionAssert.AreEqual(payload, received.ToArray());
+    }
+
+    [TestMethod]
+    public async Task Download_of_a_missing_object_is_not_ok()
+    {
+        await using var session = await Connect(CreateRemote());
+
+        var download = await session.DownloadAsync(UniqueDirectory() + "/missing", new MemoryStream(), CancellationToken.None);
+
+        Assert.IsFalse(download.IsOk);
+    }
 }
