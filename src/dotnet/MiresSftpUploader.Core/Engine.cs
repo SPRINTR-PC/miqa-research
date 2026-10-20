@@ -646,25 +646,17 @@ public sealed partial class Engine : IRunEngine
         }
 
         var started = _time.GetTimestamp();
-        var max = Math.Max(_settings.Retry.MaxAttempts, 1);
-        string failure = "";
-        for (var attempt = 1; attempt <= max; attempt++)
+        var (uploaded, failure) = await UploadWithRetriesAsync($"{item.Source.Name}/{item.File.RelativePath}", async attempt =>
         {
             run.Set(item, FileOutcome.Hashing, null);
-            var attemptResult = await TryUploadAsync(session, item, run, attempt, ct);
-            if (attemptResult.Sha256 is not null)
-            {
-                if (attemptResult.Verified) run.CountVerified();
-                run.Succeed(item, attemptResult.Sha256, _time.GetElapsedTime(started), IsDirect);
-                store?.RecordSucceeded(run.RunId, key, item.File.Size, mtime, attemptResult.Sha256, _time.GetUtcNow(), _time.GetElapsedTime(started), IsDirect);
-                return;
-            }
-
-            failure = attemptResult.Reason ?? "unknown";
-            _logger.LogWarning("Upload of {Source}/{Path} failed (attempt {Attempt}/{Max}): {Reason}",
-                item.Source.Name, item.File.RelativePath, attempt, max, failure);
-            if (attemptResult.Permanent) break;
-            if (attempt < max) await Task.Delay(BackoffDelay(attempt), _time, ct);
+            return await TryUploadAsync(session, item, run, attempt, ct);
+        }, ct);
+        if (uploaded is { Sha256: { } sha256 })
+        {
+            if (uploaded.Verified) run.CountVerified();
+            run.Succeed(item, sha256, _time.GetElapsedTime(started), IsDirect);
+            store?.RecordSucceeded(run.RunId, key, item.File.Size, mtime, sha256, _time.GetUtcNow(), _time.GetElapsedTime(started), IsDirect);
+            return;
         }
 
         if (failure.StartsWith(VerificationFailedReason, StringComparison.Ordinal)) run.CountVerificationFailure();
@@ -692,6 +684,27 @@ public sealed partial class Engine : IRunEngine
         prior = item.Prior!;
         return item.Prior is { Status: "Succeeded", Sha256: not null } known
             && known.Size == item.File.Size && known.MtimeTicks == item.File.ChangeToken;
+    }
+
+    /// <summary>
+    /// Runs <paramref name="tryOnce"/> (given the attempt number) until it delivers, fails permanently or the attempts of
+    /// <c>Retry</c> run out, waiting with backoff between them. Returns the successful attempt, or null and the last reason.
+    /// </summary>
+    private async Task<(UploadAttempt? Delivered, string Failure)> UploadWithRetriesAsync(string what, Func<int, Task<UploadAttempt>> tryOnce, CancellationToken ct)
+    {
+        var max = Math.Max(_settings.Retry.MaxAttempts, 1);
+        var failure = "";
+        for (var attempt = 1; attempt <= max; attempt++)
+        {
+            var result = await tryOnce(attempt);
+            if (result.Sha256 is not null) return (result, "");
+
+            failure = result.Reason ?? "unknown";
+            _logger.LogWarning("Upload of {What} failed (attempt {Attempt}/{Max}): {Reason}", what, attempt, max, failure);
+            if (result.Permanent) break;
+            if (attempt < max) await Task.Delay(BackoffDelay(attempt), _time, ct);
+        }
+        return (null, failure);
     }
 
     private TimeSpan BackoffDelay(int attempt)

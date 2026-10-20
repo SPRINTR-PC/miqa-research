@@ -251,7 +251,7 @@ public sealed class Configuration(ConfigurationLocations locations)
             else if (key.Equals(GroupKey, StringComparison.OrdinalIgnoreCase) || key.Equals(VerifyCommandKey, StringComparison.OrdinalIgnoreCase))
                 errors.Add(new(key, "can only be set in Machine Config or the environment."));
             else if (IsLocked(LayerOf(current, key), machineWritable))
-                errors.Add(new(key, "is a locked setting (set by the environment, a CLI flag or a read-only Machine Config)."));
+                errors.Add(new(key, "is a Locked Setting (supplied by the environment, a CLI flag or a Machine Config you cannot write)."));
         }
         if (errors.Count > 0) return new SavePlan(errors, [], [], null);
 

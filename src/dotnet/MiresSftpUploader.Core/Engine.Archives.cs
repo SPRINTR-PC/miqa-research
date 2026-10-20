@@ -167,26 +167,19 @@ public sealed partial class Engine
             }
 
             var finalPath = Join(work.RemotePath, plan.RelativePath);
-            var max = Math.Max(_settings.Retry.MaxAttempts, 1);
-            string failure = "";
-            for (var attempt = 1; attempt <= max; attempt++)
+            var (uploaded, failure) = await UploadWithRetriesAsync($"Archive {work.Source.Name}/{plan.RelativePath}", attempt =>
             {
                 foreach (var m in plan.Members) run.Set(m.Item, FileOutcome.Uploading, null);
-                var result = await TryUploadStagedAsync(session, run, attempt, store, staged, finalPath, key, build.ZipSize, build.ZipSha256!, work.Delivered,
+                return TryUploadStagedAsync(session, run, attempt, store, staged, finalPath, key, build.ZipSize, build.ZipSha256!, work.Delivered,
                     () => { foreach (var m in plan.Members) run.Set(m.Item, FileOutcome.Verifying, null); }, ct);
-                if (result.Sha256 is not null)
-                {
-                    if (result.Verified) run.CountVerified();
-                    foreach (var m in plan.Members) run.Succeed(m.Item, memberHashes[m.Item.File.RelativePath].Sha256, _time.GetElapsedTime(started));
-                    run.CompleteArchive(work.Source.Name, plan.RelativePath, build.ZipSize, build.ZipSha256!, memberHashes, IsDirect);
-                    store?.RecordArchiveSucceeded(run.RunId, key, build.ZipSize, build.ZipSha256!, members, uploaded: true, _time.GetUtcNow(), _time.GetElapsedTime(started), IsDirect);
-                    return;
-                }
-                failure = result.Reason ?? "unknown";
-                _logger.LogWarning("Upload of Archive {Source}/{Path} failed (attempt {Attempt}/{Max}): {Reason}",
-                    work.Source.Name, plan.RelativePath, attempt, max, failure);
-                if (result.Permanent) break;
-                if (attempt < max) await Task.Delay(BackoffDelay(attempt), _time, ct);
+            }, ct);
+            if (uploaded is not null)
+            {
+                if (uploaded.Verified) run.CountVerified();
+                foreach (var m in plan.Members) run.Succeed(m.Item, memberHashes[m.Item.File.RelativePath].Sha256, _time.GetElapsedTime(started));
+                run.CompleteArchive(work.Source.Name, plan.RelativePath, build.ZipSize, build.ZipSha256!, memberHashes, IsDirect);
+                store?.RecordArchiveSucceeded(run.RunId, key, build.ZipSize, build.ZipSha256!, members, uploaded: true, _time.GetUtcNow(), _time.GetElapsedTime(started), IsDirect);
+                return;
             }
             if (failure.StartsWith(VerificationFailedReason, StringComparison.Ordinal)) run.CountVerificationFailure();
             FailArchive(work, run, failure, started);

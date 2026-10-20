@@ -123,7 +123,9 @@ public sealed class SshNetRemote(SftpConnection connection) : IRemote
             if (_client is not { IsConnected: true })
             {
                 var reconnected = await ConnectAsync(ct);
-                if (!reconnected.IsOk) return new RemoteResult<T>(reconnected.Kind, default, reconnected.Reason);
+                // Not Denied, even for a rejected login: Denied means "this account may not do that" and is permanent for the file,
+                // while a connection that cannot be re-opened mid-Run is a failure of the connection and is retried.
+                if (!reconnected.IsOk) return RemoteResult<T>.Failed("Could not reconnect: " + reconnected.Reason);
             }
 
             try
