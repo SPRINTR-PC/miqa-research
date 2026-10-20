@@ -8,6 +8,15 @@ public sealed record RetrySettings
     public TimeSpan MaxDelay { get; init; } = TimeSpan.FromSeconds(60);
 }
 
+public sealed record ReportSettings
+{
+    /// <summary>Where the Report of each Run is written; null means <c>reports</c> beside the Upload State database.</summary>
+    public string? Directory { get; init; }
+    /// <summary>Report file name. Tokens: <c>{runId}</c>, <c>{date}</c> (yyyyMMdd, UTC), <c>{time}</c> (HHmmss, UTC), <c>{ext}</c>.</summary>
+    public string FileNamePattern { get; init; } = "run-{date}-{time}-{runId}.{ext}";
+    public ReportFormat Format { get; init; } = ReportFormat.Json;
+}
+
 public sealed record StateSettings
 {
     /// <summary>Path of the Upload State database; the lock file lives beside it. Null means no Upload State (every Run uploads everything).</summary>
@@ -34,5 +43,6 @@ public sealed record EngineSettings
     public StateSettings State { get; init; } = new();
     public int MaxParallelUploads { get; init; } = 3;
     public RetrySettings Retry { get; init; } = new();
+    public ReportSettings Report { get; init; } = new();
     public string ManifestName { get; init; } = "manifest.json";
 }

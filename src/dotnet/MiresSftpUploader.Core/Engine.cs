@@ -50,9 +50,49 @@ public sealed class Engine
         }
 
         var result = new RunResult(run.RunId, run.SnapshotCounts(), exitCode, reason);
+        WriteReport(options, run, result);
         _logger.LogInformation("Run {RunId} finished with exit code {ExitCode}", run.RunId, exitCode);
         progress.Report(new RunFinished(result));
         return result;
+    }
+
+    private static string ModeOf(RunOptions options) =>
+        options.DryRun ? "DryRun" : options.RetryOf is not null ? "Retry" : "Run";
+
+    /// <summary>Writes the Report of the Run, whatever its exit code. A Report that cannot be written is logged, never a Run failure.</summary>
+    private void WriteReport(RunOptions options, RunState run, RunResult result)
+    {
+        var format = options.ReportFormat ?? _settings.Report.Format;
+        var now = _time.GetUtcNow();
+        var path = ReportPathFor(options, run, format);
+        if (path is null) return;
+
+        var counts = result.Counts.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value);
+        var summary = new RunSummary(run.RunId, "Finished", result.ExitCode, options.StartedBy, ModeOf(options),
+            options.Trigger.ToString(), run.StartedAt, now, now, false, counts);
+        var files = run.SnapshotFiles().Select(e => new RunFileOutcome(e.Source, e.Path, e.Outcome.ToString(), e.Bytes, e.DurationMs, e.Reason)).ToList();
+        try
+        {
+            ReportWriter.WriteFile(path, ReportWriter.Render(new RunDetail(summary, files), format));
+            _logger.LogInformation("Report written to {Path}", path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning("Could not write the Report to {Path}: {Reason}", path, ex.Message);
+        }
+    }
+
+    private string? ReportPathFor(RunOptions options, RunState run, ReportFormat format)
+    {
+        var name = ReportWriter.FileName(_settings.Report.FileNamePattern, run.RunId, run.StartedAt, format);
+        if (options.ReportPath is { Length: > 0 } explicitPath)
+            return Directory.Exists(explicitPath) || explicitPath.EndsWith('/') || explicitPath.EndsWith('\\')
+                ? Path.Combine(explicitPath, name)
+                : explicitPath;
+        if (options.DryRun) return null;
+        var directory = _settings.Report.Directory
+            ?? (_settings.State.Path is { Length: > 0 } db ? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(db))!, "reports") : null);
+        return directory is null ? null : Path.Combine(directory, name);
     }
 
     private async Task<(int ExitCode, string? Reason)> ExecuteAsync(RunOptions options, RunState run, CancellationToken ct)
@@ -80,7 +120,7 @@ public sealed class Engine
         {
             run.Store = store;
             await CleanUpAbandonedRunsAsync(store, ct);
-            await store.BeginRunAsync(run.RunId, run.StartedAt, "Run", "Headless", options.StartedBy);
+            await store.BeginRunAsync(run.RunId, run.StartedAt, ModeOf(options), options.Trigger.ToString(), options.StartedBy);
             using var cancelRequested = CancellationTokenSource.CreateLinkedTokenSource(ct);
             using var heartbeat = _time.CreateTimer(
                 _ => _ = store.HeartbeatAsync(run.RunId, _time.GetUtcNow()),
@@ -257,7 +297,7 @@ public sealed class Engine
             var attemptResult = await TryUploadAsync(session, item, run, ct);
             if (attemptResult.Sha256 is not null)
             {
-                run.Succeed(item, attemptResult.Sha256);
+                run.Succeed(item, attemptResult.Sha256, _time.GetElapsedTime(started));
                 store?.RecordSucceeded(run.RunId, key, item.File.Size, mtime, attemptResult.Sha256, _time.GetUtcNow(), _time.GetElapsedTime(started));
                 return;
             }
@@ -269,7 +309,7 @@ public sealed class Engine
             if (attempt < max) await Task.Delay(BackoffDelay(attempt), _time, ct);
         }
 
-        run.Fail(item, failure);
+        run.Fail(item, failure, _time.GetElapsedTime(started));
         store?.RecordFailed(run.RunId, key, item.File.Size, mtime, failure, _time.GetUtcNow(), _time.GetElapsedTime(started));
     }
 
@@ -370,14 +410,14 @@ public sealed class Engine
         internal void Set(FileWork item, FileOutcome outcome, string? reason) =>
             Update(item, e => { e.Outcome = outcome; e.Reason = reason; });
 
-        internal void Succeed(FileWork item, string sha256) =>
-            Update(item, e => { e.Outcome = FileOutcome.Succeeded; e.Reason = null; e.Sha256 = sha256; });
+        internal void Succeed(FileWork item, string sha256, TimeSpan duration) =>
+            Update(item, e => { e.Outcome = FileOutcome.Succeeded; e.Reason = null; e.Sha256 = sha256; e.Bytes = e.Size; e.DurationMs = (long)duration.TotalMilliseconds; });
 
         internal void Skip(FileWork item, string sha256, string reason) =>
             Update(item, e => { e.Outcome = FileOutcome.Skipped; e.Reason = reason; e.Sha256 = sha256; });
 
-        internal void Fail(FileWork item, string reason) =>
-            Update(item, e => { e.Outcome = FileOutcome.Failed; e.Reason = reason; });
+        internal void Fail(FileWork item, string reason, TimeSpan duration) =>
+            Update(item, e => { e.Outcome = FileOutcome.Failed; e.Reason = reason; e.DurationMs = (long)duration.TotalMilliseconds; });
 
         private void Update(FileWork item, Action<FileEntry> change)
         {
@@ -386,7 +426,7 @@ public sealed class Engine
             {
                 var key = (item.Source.Name, item.File.RelativePath);
                 if (!_entries.TryGetValue(key, out entry!))
-                    _entries[key] = entry = new FileEntry(item.File.RelativePath, item.File.Size);
+                    _entries[key] = entry = new FileEntry(item.Source.Name, item.File.RelativePath, item.File.Size);
                 change(entry);
             }
             progress.Report(new FileOutcomeChanged(item.Source.Name, item.File.RelativePath, entry.Outcome, entry.Reason));
@@ -403,6 +443,13 @@ public sealed class Engine
                 return _entries.Values.GroupBy(e => e.Outcome).ToDictionary(g => g.Key, g => g.Count());
         }
 
+        public IReadOnlyList<FileEntry> SnapshotFiles()
+        {
+            lock (_gate)
+                return _entries.Values.Select(e => e.Clone())
+                    .OrderBy(e => e.Source, StringComparer.Ordinal).ThenBy(e => e.Path, StringComparer.Ordinal).ToList();
+        }
+
         public IReadOnlyList<FileEntry> SourceEntries(string source)
         {
             lock (_gate)
@@ -413,14 +460,17 @@ public sealed class Engine
         }
     }
 
-    internal sealed class FileEntry(string path, long size)
+    internal sealed class FileEntry(string source, string path, long size)
     {
+        public string Source { get; } = source;
+        public long Bytes { get; set; }
+        public long DurationMs { get; set; }
         public string Path { get; } = path;
         public long Size { get; } = size;
         public FileOutcome Outcome { get; set; }
         public string? Reason { get; set; }
         public string? Sha256 { get; set; }
 
-        public FileEntry Clone() => new(Path, Size) { Outcome = Outcome, Reason = Reason, Sha256 = Sha256 };
+        public FileEntry Clone() => new(Source, Path, Size) { Outcome = Outcome, Reason = Reason, Sha256 = Sha256, Bytes = Bytes, DurationMs = DurationMs };
     }
 }

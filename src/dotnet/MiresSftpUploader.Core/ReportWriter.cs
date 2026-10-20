@@ -11,6 +11,36 @@ internal static class ReportWriter
 {
     public static string Extension(ReportFormat format) => format == ReportFormat.Csv ? "csv" : "json";
 
+    /// <summary>Expands the file name pattern; characters that are not valid in a file name become underscores.</summary>
+    public static string FileName(string pattern, Guid runId, DateTimeOffset startedAt, ReportFormat format)
+    {
+        var name = pattern
+            .Replace("{runId}", runId.ToString(), StringComparison.Ordinal)
+            .Replace("{date}", startedAt.UtcDateTime.ToString("yyyyMMdd", CultureInfo.InvariantCulture), StringComparison.Ordinal)
+            .Replace("{time}", startedAt.UtcDateTime.ToString("HHmmss", CultureInfo.InvariantCulture), StringComparison.Ordinal)
+            .Replace("{ext}", Extension(format), StringComparison.Ordinal);
+        return string.Concat(name.Select(c => Array.IndexOf(Path.GetInvalidFileNameChars(), c) >= 0 ? '_' : c));
+    }
+
+    /// <summary>
+    /// Writes the Report, creating its directory. On Unix the group the Data Directory is shared with gets read and write
+    /// (directory 2770 setgid is set by <c>--init-data-dir</c>; files here are 0660); on Windows the inherited ACL applies.
+    /// </summary>
+    public static void WriteFile(string path, string content)
+    {
+        var directory = Path.GetDirectoryName(Path.GetFullPath(path));
+        if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+        {
+            if (OperatingSystem.IsWindows()) Directory.CreateDirectory(directory);
+            else Directory.CreateDirectory(directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+                | UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute);
+        }
+        File.WriteAllText(path, content, new UTF8Encoding(false));
+        // Set explicitly: the creation mode is reduced by the process umask.
+        if (!OperatingSystem.IsWindows())
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.GroupWrite);
+    }
+
     public static string Render(RunDetail run, ReportFormat format) =>
         format == ReportFormat.Csv ? Csv(run) : Json(run);
 
