@@ -53,7 +53,7 @@ public sealed partial class Engine
             DeleteStagingArea(run);
         }
 
-        var result = new RunResult(run.RunId, run.SnapshotCounts(), exitCode, reason);
+        var result = new RunResult(run.RunId, run.SnapshotCounts(), exitCode, reason, run.Verified, run.VerificationFailures);
         WriteReport(options, run, result);
         _logger.LogInformation("Run {RunId} finished: Succeeded {Succeeded}, Skipped {Skipped}, Failed {Failed}, exit code {ExitCode}",
             run.RunId, result.Count(FileOutcome.Succeeded), result.Count(FileOutcome.Skipped), result.Count(FileOutcome.Failed), exitCode);
@@ -73,6 +73,8 @@ public sealed partial class Engine
         if (path is null) return;
 
         var counts = result.Counts.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value);
+        if (result.Verified > 0) counts["Verified"] = result.Verified;
+        if (result.VerificationFailures > 0) counts["VerificationFailed"] = result.VerificationFailures;
         var summary = new RunSummary(run.RunId, "Finished", result.ExitCode, options.StartedBy, ModeOf(options),
             options.Trigger.ToString(), run.StartedAt, now, now, false, counts);
         var files = run.SnapshotFiles().Select(e => new RunFileOutcome(e.Source, e.Path, e.Outcome.ToString(), e.Bytes, e.DurationMs, e.Reason)).ToList();
@@ -349,6 +351,8 @@ public sealed partial class Engine
             return (ExitCodes.Ok, null);
         }
 
+        if (await ProbeVerificationAsync(ct) is { } unavailable) return unavailable;
+
         foreach (var item in work.OfType<FileWork>()) run.Set(item, FileOutcome.Pending, null);
 
         var channel = Channel.CreateUnbounded<object>();
@@ -410,9 +414,22 @@ public sealed partial class Engine
         var mtime = item.File.Modified.UtcTicks;
         if (IsUnchanged(item, out var prior))
         {
-            run.Skip(item, prior.Sha256!, UnchangedReason);
-            store?.RecordSkipped(run.RunId, key, _time.GetUtcNow());
-            return;
+            var remoteLevel = _settings.Verification.Remote;
+            var remoteOk = true;
+            if (remoteLevel != VerificationLevel.Off)
+            {
+                run.Set(item, FileOutcome.Verifying, null);
+                var check = await VerifyAsync(session, remoteLevel, Join(item.RemotePath, item.File.RelativePath), item.File.Size, prior.Sha256!, ct);
+                remoteOk = check.Ok;
+                if (check.Ok) run.CountVerified();
+                else _logger.LogInformation("{Source}/{Path}: unchanged, but {Reason}; uploading it again", item.Source.Name, item.File.RelativePath, check.Detail);
+            }
+            if (remoteOk)
+            {
+                run.Skip(item, prior.Sha256!, UnchangedReason);
+                store?.RecordSkipped(run.RunId, key, _time.GetUtcNow());
+                return;
+            }
         }
 
         var started = _time.GetTimestamp();
@@ -424,6 +441,7 @@ public sealed partial class Engine
             var attemptResult = await TryUploadAsync(session, item, run, ct);
             if (attemptResult.Sha256 is not null)
             {
+                if (attemptResult.Verified) run.CountVerified();
                 run.Succeed(item, attemptResult.Sha256, _time.GetElapsedTime(started));
                 store?.RecordSucceeded(run.RunId, key, item.File.Size, mtime, attemptResult.Sha256, _time.GetUtcNow(), _time.GetElapsedTime(started));
                 return;
@@ -436,6 +454,7 @@ public sealed partial class Engine
             if (attempt < max) await Task.Delay(BackoffDelay(attempt), _time, ct);
         }
 
+        if (failure.StartsWith(VerificationFailedReason, StringComparison.Ordinal)) run.CountVerificationFailure();
         run.Fail(item, failure, _time.GetElapsedTime(started));
         store?.RecordFailed(run.RunId, key, item.File.Size, mtime, failure, _time.GetUtcNow(), _time.GetElapsedTime(started));
     }
@@ -491,9 +510,22 @@ public sealed partial class Engine
                 return new UploadAttempt(null, "ChangedDuringUpload: " + changed, true);
             }
 
+            // Verification looks at the .part, so a bad file never appears under its final name.
+            var level = _settings.Verification.AfterUpload;
+            if (level != VerificationLevel.Off)
+            {
+                run.Set(item, FileOutcome.Verifying, null);
+                var check = await VerifyAsync(session, level, partPath, bytesRead, sha256, ct);
+                if (!check.Ok)
+                {
+                    await session.DeleteAsync(partPath, ct);
+                    return new UploadAttempt(null, $"{VerificationFailedReason}: {check.Detail}", false);
+                }
+            }
+
             var rename = await session.RenameAsync(partPath, finalPath, overwrite: true, ct);
             if (!rename.IsOk) return UploadAttempt.From(rename);
-            return new UploadAttempt(sha256, null, false);
+            return new UploadAttempt(sha256, null, false, Verified: level != VerificationLevel.Off);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -581,7 +613,7 @@ public sealed partial class Engine
         public FileKey Key(string destination) => new(destination, RemotePath, Source.Name, File.RelativePath);
     }
 
-    private sealed record UploadAttempt(string? Sha256, string? Reason, bool Permanent)
+    private sealed record UploadAttempt(string? Sha256, string? Reason, bool Permanent, bool Verified = false)
     {
         public static UploadAttempt From(RemoteResult failed) =>
             failed.Kind == RemoteResultKind.Denied
@@ -598,6 +630,15 @@ public sealed partial class Engine
         public Guid RunId { get; } = runId;
         public DateTimeOffset StartedAt { get; } = startedAt;
         public UploadStateStore? Store { get; set; }
+
+        private int _verified;
+        private int _verificationFailures;
+        /// <summary>Files and Archives whose Verification passed.</summary>
+        public int Verified => Volatile.Read(ref _verified);
+        /// <summary>Files and Archives that ended Failed because Verification kept failing.</summary>
+        public int VerificationFailures => Volatile.Read(ref _verificationFailures);
+        internal void CountVerified() => Interlocked.Increment(ref _verified);
+        internal void CountVerificationFailure() => Interlocked.Increment(ref _verificationFailures);
 
         internal void Report(RunEvent runEvent) => progress.Report(runEvent);
         /// <summary>A file delivered by an earlier Run, listed in the Manifest but not an outcome of this Run.</summary>

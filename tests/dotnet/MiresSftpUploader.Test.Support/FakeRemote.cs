@@ -23,10 +23,19 @@ public sealed class FakeRemote : IRemote
     /// <summary>False models an SFTP-only account: <c>RunCommandAsync</c> fails.</summary>
     public bool CommandChannel { get; set; } = true;
 
+    /// <summary>How long a hash command on a real file takes (it answers at once for <c>/dev/null</c>, which the start-of-Run probe uses).</summary>
+    public TimeSpan CommandDelay { get; set; }
+
     /// <summary>Every command <c>RunCommandAsync</c> received, in order.</summary>
     public IReadOnlyList<string> Commands
     {
         get { lock (_gate) return _commands.ToArray(); }
+    }
+
+    /// <summary>Removes an object without going through a session.</summary>
+    public void RemoveFile(string path)
+    {
+        lock (_gate) _files.Remove(path);
     }
 
     /// <summary>Puts an object on the server without going through a session (and creates its directory).</summary>
@@ -180,6 +189,7 @@ public sealed class FakeRemote : IRemote
             lock (remote._gate)
                 return Task.FromResult(remote._files.TryGetValue(path, out var data)
                     ? RemoteResult<RemoteFileInfo>.Ok(new RemoteFileInfo(data.Length))
+                    : remote._directories.Contains(path) ? RemoteResult<RemoteFileInfo>.Ok(new RemoteFileInfo(0))
                     : RemoteResult<RemoteFileInfo>.Failed($"not found: {path}"));
         }
 
@@ -197,24 +207,28 @@ public sealed class FakeRemote : IRemote
         private const string EscapedQuote = "'\\''";
 
         /// <summary>Understands exactly one command: <c>sha256sum -- '&lt;path&gt;'</c>, the default template with its quoted path.</summary>
-        public Task<RemoteResult<string>> RunCommandAsync(string command, CancellationToken ct)
+        public async Task<RemoteResult<string>> RunCommandAsync(string command, CancellationToken ct)
         {
             lock (remote._gate) remote._commands.Add(command);
             if (remote.TakeFault(RemoteOperation.RunCommand, command) is { } fault)
-                return Task.FromResult(new RemoteResult<string>(fault.Kind, default, fault.Reason));
+                return new RemoteResult<string>(fault.Kind, default, fault.Reason);
             if (!remote.CommandChannel)
-                return Task.FromResult(RemoteResult<string>.Failed("the server offers no command channel (SFTP only)"));
+                return RemoteResult<string>.Failed("the server offers no command channel (SFTP only)");
 
             const string prefix = "sha256sum -- '";
             if (!command.StartsWith(prefix, StringComparison.Ordinal) || !command.EndsWith(Quote, StringComparison.Ordinal))
-                return Task.FromResult(RemoteResult<string>.Failed("sh: command not found: " + command));
+                return RemoteResult<string>.Failed("sh: command not found: " + command);
             var path = command[prefix.Length..^1].Replace(EscapedQuote, Quote, StringComparison.Ordinal);
             byte[]? data;
             if (path == "/dev/null") data = [];
-            else lock (remote._gate) remote._files.TryGetValue(path, out data);
+            else
+            {
+                if (remote.CommandDelay > TimeSpan.Zero) await Task.Delay(remote.CommandDelay, ct);
+                lock (remote._gate) remote._files.TryGetValue(path, out data);
+            }
             if (data is null)
-                return Task.FromResult(RemoteResult<string>.Failed($"sha256sum: {path}: No such file or directory"));
-            return Task.FromResult(RemoteResult<string>.Ok(Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(data)) + "  " + path + "\n"));
+                return RemoteResult<string>.Failed($"sha256sum: {path}: No such file or directory");
+            return RemoteResult<string>.Ok(Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(data)) + "  " + path + "\n");
         }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
