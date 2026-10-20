@@ -82,7 +82,7 @@ public sealed class S3SourceTests
         Assert.AreEqual(0, result.ExitCode);
         using var manifest = JsonDocument.Parse(remote.ReadText("/upload/bucket/manifest.json"));
         Assert.AreEqual(Sha256(data), Sha256(remote.Files["/upload/bucket/file.bin"]));
-        Assert.AreEqual(Sha256(data), manifest.RootElement.GetProperty("files").EnumerateArray().Single().GetProperty("sha256").GetString());
+        Assert.AreEqual(Sha256(data), manifest.RootElement.GetProperty("members").EnumerateArray().Single().GetProperty("sha256").GetString());
     }
 
     [TestMethod]
@@ -104,7 +104,7 @@ public sealed class S3SourceTests
         Assert.AreEqual(0, result.ExitCode);
         var zip = remote.Files["/upload/bucket/slide/tiles.zip"];
         using var manifest = JsonDocument.Parse(remote.ReadText("/upload/bucket/manifest.json"));
-        var archive = manifest.RootElement.GetProperty("archives").EnumerateArray().Single();
+        var archive = MiresSftpUploader.Test.Support.ManifestTree.Archives(manifest.RootElement).Values.Single();
         Assert.AreEqual(Sha256(zip), archive.GetProperty("sha256").GetString());
         var listed = archive.GetProperty("members").EnumerateArray().ToDictionary(
             m => m.GetProperty("path").GetString()!, m => m.GetProperty("sha256").GetString());

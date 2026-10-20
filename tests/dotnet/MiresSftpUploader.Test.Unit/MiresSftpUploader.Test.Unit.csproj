@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="JsonSchema.Net" Version="9.4.1" />
     <PackageReference Include="MSTest" Version="4.0.2" />
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.0.0" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.0" />
@@ -19,6 +20,10 @@
 
   <ItemGroup>
     <None Include="..\..\..\src\dotnet\MiresSftpUploader\appsettings.json" Link="shipped\appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\src\dotnet\MiresSftpUploader\README.md" Link="shipped\README.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\src\dotnet\MiresSftpUploader\docs\scheduling.md" Link="shipped\scheduling.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\src\dotnet\MiresSftpUploader\docs\scheduler\**" Link="shipped\scheduler\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\src\dotnet\MiresSftpUploader\docs\manifest.schema.json" Link="shipped\manifest.schema.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Golden\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Sample Windows Task Scheduler definition for a Headless Run of the MIRES SFTP Uploader.
+  Import:   schtasks /Create /XML task.xml /TN "MIRES SFTP Uploader" /RU DOMAIN\svc-mires /RP *
+  Edit first: the account in <UserId>, the install path, and the start time.
+  No Secrets belong in this file. The wrapper script (run-with-dpapi.ps1) reads them from a DPAPI-protected file
+  that only the service account can decrypt; see scheduling.md.
+-->
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>Headless Run of the MIRES SFTP Uploader: uploads new and changed files from the configured Sources.</Description>
+  </RegistrationInfo>
+  <Triggers>
+    <CalendarTrigger>
+      <StartBoundary>2026-01-01T02:00:00</StartBoundary>
+      <Enabled>true</Enabled>
+      <ScheduleByDay>
+        <DaysInterval>1</DaysInterval>
+      </ScheduleByDay>
+    </CalendarTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>DOMAIN\svc-mires</UserId>
+      <LogonType>Password</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <!-- A second start while a Run holds the lock exits 4 at once; IgnoreNew skips it without starting a process. -->
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <!-- Missed runs are the scheduler's job: run as soon as possible after a missed start. The tool does not catch up. -->
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Enabled>true</Enabled>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>powershell.exe</Command>
+      <Arguments>-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "C:\Program Files\MiresSftpUploader\scheduler\run-with-dpapi.ps1"</Arguments>
+      <WorkingDirectory>C:\Program Files\MiresSftpUploader</WorkingDirectory>
+    </Exec>
+  </Actions>
+</Task>

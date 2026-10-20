@@ -38,11 +38,24 @@ public sealed record RunFileOutcome(string Source, string RelativePath, string O
 
 public sealed record RunDetail(RunSummary Summary, IReadOnlyList<RunFileOutcome> Files);
 
+/// <summary>What the History page needs from the Run History; <see cref="RunHistory"/> is the implementation, view-model tests use a fake.</summary>
+public interface IRunHistory
+{
+    IReadOnlyList<RunSummary> ListRuns(RunFilter? filter = null);
+    RunDetail? GetRun(Guid runId);
+    string? Export(Guid runId, ReportFormat format);
+    /// <summary>Writes the Report of a Run to the configured Report folder; returns its path, or null when there is no such Run.</summary>
+    string? SaveReport(Guid runId, ReportFormat format);
+    bool RequestCancel(Guid runId);
+    int SweepAbandoned();
+    IAsyncEnumerable<RunDetail> WatchRun(Guid runId, CancellationToken cancellationToken = default);
+}
+
 /// <summary>
 /// The Run History of the Upload State: list, inspect, export, cancel and watch Runs, including those started by other
 /// OS accounts. Opens short-lived connections, so it never holds up a Run that is writing.
 /// </summary>
-public sealed class RunHistory(StateSettings state, TimeProvider time)
+public sealed class RunHistory(StateSettings state, TimeProvider time, ReportSettings? report = null) : IRunHistory
 {
     public IReadOnlyList<RunSummary> ListRuns(RunFilter? filter = null)
     {
@@ -71,6 +84,17 @@ public sealed class RunHistory(StateSettings state, TimeProvider time)
     /// <summary>The Report of a Run (summary plus per-file outcomes) as text, or null when there is no such Run.</summary>
     public string? Export(Guid runId, ReportFormat format) =>
         GetRun(runId) is { } detail ? ReportWriter.Render(detail, format) : null;
+
+    public string? SaveReport(Guid runId, ReportFormat format)
+    {
+        if (GetRun(runId) is not { } detail) return null;
+        var settings = report ?? new ReportSettings();
+        var directory = settings.Directory
+            ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(state.Path!))!, "reports");
+        var path = Path.Combine(directory, ReportWriter.FileName(settings.FileNamePattern, runId, detail.Summary.StartedAt, format));
+        ReportWriter.WriteFile(path, ReportWriter.Render(detail, format));
+        return path;
+    }
 
     /// <summary>
     /// Asks a live Run, whoever started it, to stop. The Run's Engine polls the request and ends with exit code 130.

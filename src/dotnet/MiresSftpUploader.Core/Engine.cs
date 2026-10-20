@@ -318,6 +318,8 @@ public sealed partial class Engine : IRunEngine
                 priorArchives = UploadStateStore.ReadPriorArchives(archiveDatabase, _settings.Destination, remotePath, source.Name);
             var listed = new HashSet<string>(StringComparer.Ordinal);
             var rules = IgnoreRulesOf(source);
+            var reserved = ReservedManifestNames();
+            var collisions = new List<string>();
             var candidates = new List<(FileWork Item, bool TooRecent)>();
             await foreach (var file in source.ListAsync(ct))
             {
@@ -327,9 +329,14 @@ public sealed partial class Engine : IRunEngine
                 var item = new FileWork(source, remotePath, file, options.RehashAll ? null : known);
                 if (rules.Reason(file.RelativePath, m => run.Warn(m)) is { } ignored)
                     run.Set(item, FileOutcome.Ignored, ignored);
+                else if (reserved.Contains(file.RelativePath))
+                    collisions.Add(file.RelativePath);
                 else
                     candidates.Add((item, IsTooRecent(source, file)));
             }
+            if (collisions.Count > 0)
+                return (ExitCodes.ConfigurationError,
+                    $"Source '{source.Name}' holds {string.Join(", ", collisions.Select(c => $"'{c}'"))}, which the Manifest would overwrite. Rename the file, ignore it, or change the Manifest names.");
 
             var plan = ArchivePlanner.Plan(ArchiveRulesOf(source), candidates, source.Name, run.StartedAt);
             foreach (var (item, tooRecent) in plan.Individual)
@@ -363,6 +370,8 @@ public sealed partial class Engine : IRunEngine
 
         foreach (var item in work.OfType<FileWork>()) run.Set(item, FileOutcome.Pending, null);
 
+        var markers = await PlaceMarkersAsync(selected, run, ct);
+
         var channel = Channel.CreateUnbounded<object>();
         foreach (var item in work) channel.Writer.TryWrite(item);
         channel.Writer.Complete();
@@ -386,15 +395,61 @@ public sealed partial class Engine : IRunEngine
         {
             foreach (var source in selected)
             {
-                var uploaded = await UploadManifestAsync(session, source, run, ct);
+                var uploaded = await UploadManifestAsync(session, source, run, options, ct);
                 if (!uploaded.IsOk)
                     _logger.LogWarning("Manifest upload for Source {Source} failed: {Reason}", source.Name, uploaded.Reason);
+            }
+            // After the Manifests, so a consumer that sees no Marker finds the final Manifest.
+            foreach (var marker in markers)
+            {
+                var removed = await session.DeleteAsync(marker, ct);
+                if (!removed.IsOk) _logger.LogWarning("Could not remove the In-progress Marker {Path}: {Reason}", marker, removed.Reason);
             }
         }
 
         return run.Count(FileOutcome.Failed) > 0 || (_settings.MoveFailuresAreErrors && run.MoveFailures > 0)
             ? (ExitCodes.SomeFilesFailed, null)
             : (ExitCodes.Ok, null);
+    }
+
+    /// <summary>
+    /// Puts the In-progress Marker next to each Source's Manifest so consumers know the Manifest may be stale. A Marker nobody
+    /// could remove would lie forever, so one is only placed after a probe file proves the account can delete.
+    /// Returns the server paths of the Markers to remove at the end of the Run.
+    /// </summary>
+    private async Task<List<string>> PlaceMarkersAsync(IReadOnlyList<ISource> sources, RunState run, CancellationToken ct)
+    {
+        var placed = new List<string>();
+        var connect = await _remote.ConnectAsync(ct);
+        if (!connect.IsOk)
+        {
+            _logger.LogWarning("No In-progress Markers: could not connect: {Reason}", connect.Reason);
+            return placed;
+        }
+
+        await using var session = connect.Value!;
+        foreach (var source in sources)
+        {
+            var remotePath = RemotePathOf(source);
+            var marker = Join(remotePath, _settings.ManifestName + _settings.InProgressSuffix);
+            var probe = marker + ".probe";
+            var ensure = await session.EnsureDirectoryAsync(remotePath, ct);
+            if (!ensure.IsOk) continue;
+
+            using (var content = new MemoryStream())
+            {
+                if (!(await session.UploadAsync(content, probe, ct)).IsOk) continue;
+            }
+            if (!(await session.DeleteAsync(probe, ct)).IsOk)
+            {
+                _logger.LogInformation("No In-progress Marker for Source {Source}: the account cannot delete on the server", source.Name);
+                continue;
+            }
+
+            using var body = new MemoryStream(System.Text.Encoding.UTF8.GetBytes($"{{\"runId\":\"{run.RunId}\"}}\n"));
+            if ((await session.UploadAsync(body, marker, ct)).IsOk) placed.Add(marker);
+        }
+        return placed;
     }
 
     private async Task WorkerAsync(ChannelReader<object> reader, RunState run, ConcurrentQueue<string> connectFailure, CancellationToken ct)
@@ -558,20 +613,76 @@ public sealed partial class Engine : IRunEngine
         return null;
     }
 
-    private async Task<RemoteResult> UploadManifestAsync(IRemoteSession session, ISource source, RunState run, CancellationToken ct)
+    private async Task<RemoteResult> UploadManifestAsync(IRemoteSession session, ISource source, RunState run, RunOptions options, CancellationToken ct)
     {
         var remotePath = RemotePathOf(source);
         var finalPath = Join(remotePath, _settings.ManifestName);
-        var json = ManifestWriter.Write(source.Name, run, run.StartedAt, _time.GetUtcNow(), run.SourceEntries(source.Name), run.SourceArchives(source.Name));
 
         var ensure = await session.EnsureDirectoryAsync(remotePath, ct);
         if (!ensure.IsOk) return ensure;
-        using (var content = new MemoryStream(json))
+
+        var (nodes, failures) = await ManifestContentAsync(source, remotePath, run);
+        var deferred = run.SourceEntries(source.Name)
+            .Where(e => !e.Carried && e.Outcome == FileOutcome.Skipped && e.Reason == TooRecentReason)
+            .Select(e => new ManifestFailure(e.Path, e.Reason!)).ToList();
+        var header = new ManifestHeader(source.Name, failures.Count == 0 && deferred.Count == 0, run.RunId, run.StartedAt, _time.GetUtcNow(),
+            ModeOf(options), _settings.ToolVersion, _settings.MachineName);
+
+        await using var json = TemporaryFile();
+        ManifestWriter.Write(json, header, failures, deferred, nodes);
+        json.Position = 0;
+        var (result, jsonSha256) = await UploadViaPartAsync(session, json, finalPath, ct);
+        if (!result.IsOk || !_settings.WriteFlatManifest) return result;
+
+        await using var flat = TemporaryFile();
+        ManifestWriter.WriteFlat(flat, nodes(), _settings.ManifestName, jsonSha256!);
+        flat.Position = 0;
+        return (await UploadViaPartAsync(session, flat, Join(remotePath, _settings.FlatManifestName), ct)).Result;
+    }
+
+    /// <summary>
+    /// What the Manifest of the Source lists: everything the Upload State knows to be on the server (cumulative over Runs),
+    /// or this Run's own results when there is no Upload State.
+    /// </summary>
+    private async Task<(Func<IEnumerable<ManifestNode>> Nodes, List<ManifestFailure> Failures)> ManifestContentAsync(ISource source, string remotePath, RunState run)
+    {
+        if (run.Store is { } store)
         {
-            var upload = await session.UploadAsync(content, finalPath + ".part", ct);
-            if (!upload.IsOk) return upload;
+            await store.FlushAsync();
+            return (() => store.EnumerateDelivered(_settings.Destination, remotePath, source.Name),
+                store.LoadFailures(_settings.Destination, remotePath, source.Name));
         }
-        return await session.RenameAsync(finalPath + ".part", finalPath, overwrite: true, ct);
+
+        var entries = run.SourceEntries(source.Name);
+        var byPath = entries.ToDictionary(e => e.Path, StringComparer.Ordinal);
+        var archives = run.SourceArchives(source.Name);
+        IEnumerable<ManifestNode> Nodes() =>
+            entries.Where(e => e.ArchivePath is null && e.Sha256 is not null && e.Outcome is FileOutcome.Succeeded or FileOutcome.Skipped)
+                .Select(e => (ManifestNode)new ManifestFile(e.Path, e.Size, e.Sha256!))
+                .Concat(archives.Select(a => (ManifestNode)new ManifestArchive(a.Path, a.Size, a.Sha256!,
+                    a.Members.Select(m => byPath[m]).OrderBy(m => m.Path, StringComparer.Ordinal)
+                        .Select(m => new ManifestArchiveMember(m.Path, m.Size, m.Sha256!, m.Modified)).ToList())))
+                .OrderBy(n => n.Path, StringComparer.Ordinal);
+        return (Nodes, entries.Where(e => e.Outcome == FileOutcome.Failed).Select(e => new ManifestFailure(e.Path, e.Reason ?? "Failed")).ToList());
+    }
+
+    private static FileStream TemporaryFile() =>
+        new(Path.Combine(Path.GetTempPath(), "mires-manifest-" + Guid.NewGuid().ToString("N")), FileMode.CreateNew, FileAccess.ReadWrite,
+            FileShare.None, 81920, FileOptions.DeleteOnClose);
+
+    /// <summary>Uploads the stream to <c>name.part</c> and renames it into place; returns the SHA-256 of what was sent.</summary>
+    private static async Task<(RemoteResult Result, string? Sha256)> UploadViaPartAsync(IRemoteSession session, Stream content, string finalPath, CancellationToken ct)
+    {
+        var partPath = finalPath + ".part";
+        string sha256;
+        await using (var hashing = new HashingReadStream(content))
+        {
+            var upload = await session.UploadAsync(hashing, partPath, ct);
+            if (!upload.IsOk) return (upload, null);
+            sha256 = hashing.FinishHash();
+        }
+        var rename = await session.RenameAsync(partPath, finalPath, overwrite: true, ct);
+        return (rename, rename.IsOk ? sha256 : null);
     }
 
     internal const string TooRecentReason = "TooRecent";
@@ -595,8 +706,22 @@ public sealed partial class Engine : IRunEngine
             _settings.Ignore.UseDefaults,
             _settings.Ignore.Files.Concat(own?.Files ?? []),
             _settings.Ignore.Patterns.Concat(own?.Patterns ?? []),
-            alwaysPaths: [_settings.ManifestName, _settings.ManifestName + ".part", _settings.FlatManifestName, _settings.FlatManifestName + ".part"],
             alwaysNames: UploadStateFileNames());
+    }
+
+    /// <summary>
+    /// Root-level names the Run itself writes into a Source's Remote Path. A Source file with one of them (not ignored by a rule)
+    /// would be overwritten by the Manifest, so the Run refuses to start (exit 2). Compared without regard to case.
+    /// </summary>
+    private HashSet<string> ReservedManifestNames()
+    {
+        var json = _settings.ManifestName;
+        var flat = _settings.FlatManifestName;
+        return new HashSet<string>(
+        [
+            json, json + ".part", json + _settings.InProgressSuffix, json + _settings.InProgressSuffix + ".probe",
+            flat, flat + ".part",
+        ], StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>The Upload State database and the files SQLite keeps beside it, plus the Run lock.</summary>

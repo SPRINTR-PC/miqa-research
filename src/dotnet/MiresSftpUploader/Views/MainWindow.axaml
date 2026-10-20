@@ -24,6 +24,7 @@
                             <TextBlock FontSize="18" FontWeight="Bold" Foreground="{DynamicResource MPrimary}" VerticalAlignment="Center" TextWrapping="Wrap" Text="MIRES SFTP Uploader"/>
                         </StackPanel>
                         <Button x:Name="UploadButton" Classes="primary" HorizontalAlignment="Stretch" Margin="0,8,0,0" Content="Upload" Command="{Binding ShowUploadCommand}"/>
+                        <Button x:Name="HistoryButton" HorizontalAlignment="Stretch" Content="History" Command="{Binding ShowHistoryCommand}"/>
 
                         <TextBlock Classes="h" Text="Sources" Margin="0,8,0,0"/>
                         <ItemsControl ItemsSource="{Binding Upload.Sources}">
@@ -112,14 +113,17 @@
             </Border>
         </DockPanel>
 
-        <!-- Settings, Help: placeholders until their pages arrive -->
+        <Border x:Name="HistoryPage" Grid.Column="1" Margin="20" IsVisible="{Binding IsHistoryPage}">
+            <v:HistoryPageView DataContext="{Binding History}"/>
+        </Border>
+
+        <!-- Settings: placeholder until its page arrives -->
         <StackPanel x:Name="SettingsPage" Grid.Column="1" Margin="20" Spacing="8" IsVisible="{Binding IsSettingsPage}">
             <TextBlock Classes="h" Text="Settings"/>
             <TextBlock Classes="muted" TextWrapping="Wrap" Text="The Settings page is not built yet. Until then, edit appsettings.json next to the executable (Machine Config) or set MIRES_* environment variables."/>
         </StackPanel>
-        <StackPanel x:Name="HelpPage" Grid.Column="1" Margin="20" Spacing="8" IsVisible="{Binding IsHelpPage}">
-            <TextBlock Classes="h" Text="Help"/>
-            <TextBlock Classes="muted" TextWrapping="Wrap" Text="The Help page is not built yet. Run MiresSftpUploader --help for the command line."/>
-        </StackPanel>
+        <Border x:Name="HelpPage" Grid.Column="1" Margin="20" IsVisible="{Binding IsHelpPage}">
+            <v:HelpView/>
+        </Border>
     </Grid>
 </Window>

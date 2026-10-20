@@ -112,6 +112,33 @@ public sealed class RunHistoryTests
     }
 
     [TestMethod]
+    public async Task Save_report_writes_the_Report_with_the_configured_file_name_and_returns_its_path()
+    {
+        var (_, failing, _, _) = await TwoRuns();
+        var reports = Path.Combine(_dir, "out");
+        var history = new RunHistory(Settings().State, TimeProvider.System, new ReportSettings { Directory = reports, FileNamePattern = "r-{runId}.{format}" });
+
+        var json = history.SaveReport(failing.RunId, ReportFormat.Json);
+        var csv = history.SaveReport(failing.RunId, ReportFormat.Csv);
+
+        Assert.AreEqual(Path.Combine(reports, $"r-{failing.RunId}.json"), json);
+        Assert.AreEqual(Path.Combine(reports, $"r-{failing.RunId}.csv"), csv);
+        StringAssert.Contains(File.ReadAllText(json!), "disk full");
+        Assert.IsNull(history.SaveReport(Guid.NewGuid(), ReportFormat.Json));
+    }
+
+    [TestMethod]
+    public async Task Save_report_defaults_to_a_reports_folder_beside_the_Upload_State()
+    {
+        var (_, failing, _, _) = await TwoRuns();
+
+        var path = History().SaveReport(failing.RunId, ReportFormat.Json);
+
+        Assert.AreEqual(Path.Combine(_dir, "reports", $"run-{failing.RunId}.json"), path);
+        Assert.IsTrue(File.Exists(path));
+    }
+
+    [TestMethod]
     public async Task Cancel_request_for_a_run_that_is_not_live_is_refused()
     {
         var (clean, _, _, _) = await TwoRuns();

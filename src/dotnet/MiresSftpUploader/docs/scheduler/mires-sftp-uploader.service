@@ -1,0 +1,18 @@
+# Sample systemd service for a Headless Run of the MIRES SFTP Uploader.
+# Install: cp mires-sftp-uploader.service mires-sftp-uploader.timer /etc/systemd/system/ && systemctl daemon-reload
+# Secrets: /etc/mires-sftp-uploader.env, mode 0600, owned by the service account, one NAME=value per line:
+#   install -m 0600 -o svc-mires /dev/null /etc/mires-sftp-uploader.env
+[Unit]
+Description=MIRES SFTP Uploader Headless Run
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=svc-mires
+SupplementaryGroups=mires-uploader
+WorkingDirectory=/opt/mires-sftp-uploader
+EnvironmentFile=/etc/mires-sftp-uploader.env
+ExecStart=/opt/mires-sftp-uploader/MiresSftpUploader --headless
+# Exit 4 (another Run holds the lock) is a skipped start, not a failure.
+SuccessExitStatus=4
