@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Reactive;
 using MiresSftpUploader.Core;
 using ReactiveUI;
 
@@ -75,10 +76,19 @@ public sealed class SettingFieldViewModel : ViewModelBase
     public bool HasBrowse => Kind == FieldKind.Path;
     public bool HasLockReason => LockReason is not null;
 
+    /// <summary>Opens a folder picker; set only for Path settings.</summary>
+    public ReactiveCommand<Unit, Unit>? BrowseCommand { get; internal set; }
+
+    /// <summary>Asks to confirm that the setting may be changed; set only for the Host Key Fingerprint.</summary>
+    public ReactiveCommand<Unit, Unit>? UnlockCommand { get; internal set; }
+
+    public bool HasUnlockButton => NeedsUnlock && !IsLocked && !IsEditable;
+
     public void Unlock()
     {
         _unlocked = true;
         this.RaisePropertyChanged(nameof(IsEditable));
+        this.RaisePropertyChanged(nameof(HasUnlockButton));
     }
 
     public string? Error

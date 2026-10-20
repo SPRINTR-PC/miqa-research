@@ -460,4 +460,18 @@ public sealed class SettingsPageViewModelTests : ConfigurationTestBase
         page.Field("Archive:StagingPath").Value = Path.Combine(Dir, "stage");
         Assert.AreEqual(Path.Combine(Dir, "stage"), staged[^1]);
     }
+
+    [TestMethod]
+    public void Browse_on_a_path_setting_fills_it_and_the_settings_are_grouped()
+    {
+        var page = NewPage(Create(ValidMachine().ToJsonString()));
+        page.PickFolder = () => Task.FromResult<string?>("/chosen/logs");
+
+        page.Field("Logging:Directory").BrowseCommand!.Execute().Subscribe();
+
+        Assert.AreEqual("/chosen/logs", page.Field("Logging:Directory").Value);
+        Assert.IsNull(page.Field("Sftp:Host").BrowseCommand, "only paths can be browsed");
+        CollectionAssert.Contains(page.Groups.Select(g => g.Title).ToList(), "Destination");
+        Assert.IsTrue(page.Groups.Single(g => g.Title == "Reports and logs").Fields.Any(f => f.Key == "Logging:Directory"));
+    }
 }

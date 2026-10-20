@@ -18,7 +18,8 @@ public sealed class AppHost(Configuration configuration, IUploaderRuntime runtim
         var ui = runtime.Prepare(headless: false).Config?.Ui ?? new UiConfig();
         var upload = new UploadPageViewModel(runtime, post);
         var log = logging?.Ui is { } target ? new LogPaneViewModel(target, post, ToLogLevel(ui.LogLevel)) : null;
-        return new MainWindowViewModel(upload, log, ui.Theme, theme => UserSettings.SaveTheme(configuration, theme));
+        var settings = new SettingsPageViewModel(configuration);
+        return new MainWindowViewModel(upload, log, ui.Theme, theme => UserSettings.SaveTheme(configuration, theme), settings);
     }
 
     private static LogLevel ToLogLevel(LogLevelSetting level) => level switch

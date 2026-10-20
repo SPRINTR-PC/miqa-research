@@ -26,7 +26,7 @@ public sealed class SettingsPageViewModel : ViewModelBase
         ("Sftp:Port", "Port", "Destination", FieldKind.Number, null, null),
         ("Sftp:Username", "Username", "Destination", FieldKind.Text, null, null),
         ("Sftp:AuthMethod", "Authentication", "Destination", FieldKind.Choice, ["Password", "PrivateKey"], "The password or key passphrase is a Secret: set it in the environment."),
-        ("Sftp:PrivateKeyPath", "Private key file", "Destination", FieldKind.Path, null, null),
+        ("Sftp:PrivateKeyPath", "Private key file", "Destination", FieldKind.Text, null, null),
         (FingerprintKey, "Host Key Fingerprint", "Destination", FieldKind.Text, null, "The pinned identity of the server. A server presenting a different one is refused."),
         ("Sftp:RemoteRoot", "Remote root", "Destination", FieldKind.Text, null, "The server directory every Source is uploaded under, unless the Source has its own Remote Path."),
         ("Sftp:RemoteAccess", "Remote access", "Destination", FieldKind.Choice, ["Auto", "ReadWrite", "WriteOnly"], "WriteOnly: the account can upload but not read, list, delete or overwrite."),
@@ -104,7 +104,10 @@ public sealed class SettingsPageViewModel : ViewModelBase
     public event Action? Saved;
 
     public ObservableCollection<SettingFieldViewModel> Fields { get; } = [];
+    public ObservableCollection<SettingsGroupViewModel> Groups { get; } = [];
     public ObservableCollection<SourceEditorViewModel> Sources { get; } = [];
+
+    public static IReadOnlyList<string> SourceTypes { get; } = ["Directory", "S3"];
 
     /// <summary>Errors that belong to no field, one per line.</summary>
     public ObservableCollection<string> OtherErrors { get; } = [];
@@ -179,9 +182,18 @@ public sealed class SettingsPageViewModel : ViewModelBase
             var original = kind == FieldKind.Lines ? string.Join('\n', _load.List(key)) : _load.Value(key) ?? "";
             var field = new SettingFieldViewModel(key, label, group, kind, original, _load.Setting(key), options, help, needsUnlock: key == FingerprintKey);
             field.ValueChanged += Revalidate;
+            if (kind == FieldKind.Path) field.BrowseCommand = ReactiveCommand.CreateFromTask(async () =>
+            {
+                if (await PickFolder() is { } picked) field.Value = picked;
+            });
+            if (key == FingerprintKey) field.UnlockCommand = UnlockFingerprintCommand;
             Fields.Add(field);
             _byKey[key] = field;
         }
+
+        Groups.Clear();
+        foreach (var group in Fields.GroupBy(f => f.Group))
+            Groups.Add(new SettingsGroupViewModel(group.Key, group.ToList()));
 
         SourcesLocked = _load.Setting("Sources").Locked;
         Sources.Clear();
