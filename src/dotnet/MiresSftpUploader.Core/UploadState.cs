@@ -1,11 +1,10 @@
-
 namespace MiresSftpUploader.Core;
 
 /// <summary>Latest known state of one uploaded file. <see cref="Status"/> is Succeeded, Failed, Uploading or Missing.</summary>
 public sealed record FileRecord(string Source, string RelativePath, string Status, long Size, string? Sha256, string? LastError);
 
 /// <summary>One Run as recorded in the Upload State. <see cref="Status"/> is Running, Finished or Abandoned.</summary>
-public sealed record RunRecord(Guid RunId, string Status, int? ExitCode, string StartedBy, DateTimeOffset StartedAt, DateTimeOffset? EndedAt);
+public sealed record RunRecord(Guid RunId, string Status, int? ExitCode, string StartedBy, DateTimeOffset StartedAt, DateTimeOffset? EndedAt, int FileCount);
 
 /// <summary>
 /// Read-only view of the Upload State database, for the History view and for tests.
@@ -30,14 +29,15 @@ public static class UploadState
     {
         using var connection = UploadStateStore.OpenConnection(databasePath, readOnly: true);
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT Id, Status, ExitCode, StartedBy, StartedAt, EndedAt FROM Runs ORDER BY StartedAt";
+        command.CommandText = "SELECT Id, Status, ExitCode, StartedBy, StartedAt, EndedAt, (SELECT COUNT(*) FROM RunFiles WHERE RunId = Runs.Id) FROM Runs ORDER BY StartedAt";
         using var rows = command.ExecuteReader();
         var result = new List<RunRecord>();
         while (rows.Read())
             result.Add(new RunRecord(Guid.Parse(rows.GetString(0)), rows.GetString(1),
                 rows.IsDBNull(2) ? null : rows.GetInt32(2), rows.GetString(3),
                 new DateTimeOffset(rows.GetInt64(4), TimeSpan.Zero),
-                rows.IsDBNull(5) ? null : new DateTimeOffset(rows.GetInt64(5), TimeSpan.Zero)));
+                rows.IsDBNull(5) ? null : new DateTimeOffset(rows.GetInt64(5), TimeSpan.Zero),
+                rows.GetInt32(6)));
         return result;
     }
 }
