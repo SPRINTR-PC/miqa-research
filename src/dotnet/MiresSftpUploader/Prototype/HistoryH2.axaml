@@ -1,0 +1,66 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:p="using:MiresSftpUploader.Prototype"
+             x:Class="MiresSftpUploader.Prototype.HistoryH2" x:DataType="p:ProtoVm">
+    <!-- PROTOTYPE history variant H2 "Table, then drill-in": a runs table with a pinned Live strip; a click replaces the page with one Run (breadcrumb back). -->
+    <Grid ColumnDefinitions="Auto,*">
+        <p:HistoryRail/>
+        <Grid Grid.Column="1" Margin="20">
+            <DockPanel IsVisible="{Binding NoSelection}">
+                <TextBlock DockPanel.Dock="Top" FontSize="20" FontWeight="Bold" Text="History" Margin="0,0,0,10"/>
+                <ItemsControl DockPanel.Dock="Top" ItemsSource="{Binding LiveRuns}" Margin="0,0,0,10">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="p:RunVm">
+                            <Border Classes="card" BorderBrush="{DynamicResource MPrimary}" Margin="0,0,0,8">
+                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+                                    <Ellipse Classes="dot active"/>
+                                    <StackPanel Grid.Column="1" Spacing="4">
+                                        <TextBlock><Run FontWeight="SemiBold" Text="Live: "/><Run Text="{Binding Title}"/><Run Text=" · "/><Run Text="{Binding Where}"/><Run Text=" · "/><Run Text="{Binding ProgressText}"/></TextBlock>
+                                        <ProgressBar Value="{Binding Progress}" Maximum="100" Height="8"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                                        <Button Content="Open" Command="{Binding SelectCmd}"/>
+                                        <Button Classes="danger" Content="■ Cancel" Command="{Binding CancelCmd}" IsEnabled="{Binding CanCancel}"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Grid DockPanel.Dock="Top" ColumnDefinitions="26,70,110,140,120,*,90" Margin="12,0,0,4">
+                    <TextBlock Grid.Column="1" Classes="muted" Text="Run"/><TextBlock Grid.Column="2" Classes="muted" Text="Started"/><TextBlock Grid.Column="3" Classes="muted" Text="By"/>
+                    <TextBlock Grid.Column="4" Classes="muted" Text="Mode"/><TextBlock Grid.Column="5" Classes="muted" Text="Outcomes"/><TextBlock Grid.Column="6" Classes="muted" Text="Exit"/>
+                </Grid>
+                <Border Classes="card" Padding="0"><ScrollViewer><ItemsControl ItemsSource="{Binding VisibleRuns}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="p:RunVm">
+                            <Button Command="{Binding SelectCmd}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Background="Transparent" BorderThickness="0" Padding="12,8">
+                                <Grid ColumnDefinitions="26,70,110,140,120,*,90">
+                                    <Ellipse Classes="dot" Classes.ok="{Binding DotOk}" Classes.fail="{Binding DotFail}" Classes.active="{Binding DotActive}" Classes.warn="{Binding DotWarn}"/>
+                                    <TextBlock Grid.Column="1" FontWeight="SemiBold" Text="{Binding Id}"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding Started}"/>
+                                    <TextBlock Grid.Column="3" Text="{Binding StartedBy}"/>
+                                    <TextBlock Grid.Column="4" Text="{Binding Mode}"/>
+                                    <TextBlock Grid.Column="5"><Run Text="{Binding Counts}"/><Run Text="   "/><Run Text="{Binding Status}"/></TextBlock>
+                                    <TextBlock Grid.Column="6" Classes="muted" Text="{Binding ExitText}"/>
+                                </Grid>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl></ScrollViewer></Border>
+            </DockPanel>
+            <DockPanel IsVisible="{Binding HasSelection}">
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,12">
+                    <Button Content="‹ History" Command="{Binding BackToListCmd}"/>
+                    <TextBlock Classes="muted" VerticalAlignment="Center" Text="/ Run"/>
+                    <TextBlock VerticalAlignment="Center" Text="{Binding SelectedRun.Id}"/>
+                </StackPanel>
+                <ContentControl Content="{Binding SelectedRun}">
+                    <ContentControl.DataTemplates>
+                        <DataTemplate x:DataType="p:RunVm"><p:RunDetail/></DataTemplate>
+                    </ContentControl.DataTemplates>
+                </ContentControl>
+            </DockPanel>
+        </Grid>
+    </Grid>
+</UserControl>

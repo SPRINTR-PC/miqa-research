@@ -1,0 +1,23 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:p="using:MiresSftpUploader.Prototype"
+        x:Class="MiresSftpUploader.Views.MainWindow"
+        x:DataType="p:ProtoVm"
+        Width="1180" Height="760" MinWidth="900" MinHeight="600"
+        Icon="/Assets/avalonia-logo.ico"
+        Title="MIRES SFTP Uploader (PROTOTYPE)">
+    <!-- PROTOTYPE host: swaps the main-window layout variant. Switch with the bar or the left/right arrow keys,
+         or start with the variant=B argument or env MIRES_PROTO_VARIANT. -->
+    <Grid>
+        <ContentControl x:Name="Host"/>
+        <Border IsVisible="{Binding ShowSettings}" Background="#99000000"><p:SettingsView/></Border>
+        <Border HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,44" CornerRadius="20" Padding="6"
+                Background="#E6000000" BorderBrush="#CE80FF" BorderThickness="1">
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <Button x:Name="Prev" Content="◀" Background="Transparent" Foreground="White"/>
+                <TextBlock x:Name="VariantLabel" Foreground="White" VerticalAlignment="Center" MinWidth="170" TextAlignment="Center"/>
+                <Button x:Name="Next" Content="▶" Background="Transparent" Foreground="White"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

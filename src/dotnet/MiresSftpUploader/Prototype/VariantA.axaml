@@ -1,0 +1,66 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:p="using:MiresSftpUploader.Prototype"
+             x:Class="MiresSftpUploader.Prototype.VariantA" x:DataType="p:ProtoVm">
+    <!-- PROTOTYPE variant A "Table-first": toolbar on top, file table dominates, log docked below. -->
+    <DockPanel>
+        <Border DockPanel.Dock="Top" Classes="sunken" Padding="14,10" BorderBrush="{DynamicResource MBorder}" BorderThickness="0,0,0,1">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
+                    <Button Content="{Binding ThemeLabel}" Command="{Binding ThemeCmd}"/>
+                    <Button Content="⚙ Settings" Command="{Binding SettingsCmd}"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Content="Scan" Command="{Binding ScanCmd}" IsEnabled="{Binding IsIdle}"/>
+                    <Button Content="Dry run" Command="{Binding DryRunCmd}" IsEnabled="{Binding IsIdle}"/>
+                    <Button Classes="primary" Content="▶ Start upload" Command="{Binding StartCmd}" IsEnabled="{Binding IsIdle}"/>
+                    <Button Classes="danger" Content="■ Cancel" Command="{Binding CancelCmd}" IsEnabled="{Binding IsRunning}"/>
+                    <Border Width="1" Background="{DynamicResource MBorder}" Margin="6,2"/>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="wsi-archive, dicom-export" FontWeight="SemiBold"/>
+                        <TextBlock Classes="muted" FontSize="11" Text="{Binding Destination}"/>
+                    </StackPanel>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+        <Border DockPanel.Dock="Bottom" Classes="sunken" Padding="14,6" BorderBrush="{DynamicResource MBorder}" BorderThickness="0,1,0,0">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Right" Classes="muted" Text="{Binding StatusText}"/>
+                <TextBlock Text="{Binding Summary}"/>
+            </DockPanel>
+        </Border>
+        <Border DockPanel.Dock="Bottom" Height="190" BorderBrush="{DynamicResource MBorder}" BorderThickness="0,1,0,0" Padding="14,8">
+            <DockPanel>
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                    <ComboBox DockPanel.Dock="Right" ItemsSource="{Binding LevelNames}" SelectedIndex="{Binding LogLevel}" MinWidth="130"/>
+                    <TextBlock Classes="h" Text="Log"/>
+                </DockPanel>
+                <ScrollViewer><ItemsControl ItemsSource="{Binding VisibleLogs}">
+    <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="p:LogLine">
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <TextBlock Classes="mono muted" Text="{Binding Time}"/>
+                <TextBlock Classes="mono" Width="38" Text="{Binding LevelName}"/>
+                <TextBlock Classes="mono" Text="{Binding Text}"/>
+            </StackPanel>
+        </DataTemplate>
+    </ItemsControl.ItemTemplate>
+</ItemsControl></ScrollViewer>
+            </DockPanel>
+        </Border>
+        <DockPanel Margin="14,10">
+            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
+                    <ToggleButton Content="Failed only" IsChecked="{Binding FailedOnly}"/>
+                    <Button Content="↻ Retry failed" Command="{Binding RetryCmd}" IsEnabled="{Binding HasFailures}"/>
+                </StackPanel>
+                <ProgressBar Value="{Binding Overall}" Maximum="100" Height="8" Margin="0,0,16,0" VerticalAlignment="Center"/>
+            </DockPanel>
+            <Grid DockPanel.Dock="Top" ColumnDefinitions="22,*,80,100,150" Margin="0,0,0,2">
+                <TextBlock Grid.Column="1" Classes="muted" Text="File"/><TextBlock Grid.Column="2" Classes="muted" Text="Size"/>
+                <TextBlock Grid.Column="3" Classes="muted" Text="Outcome"/><TextBlock Grid.Column="4" Classes="muted" Text="Progress"/>
+            </Grid>
+            <ScrollViewer><ItemsControl ItemsSource="{Binding VisibleRows}" ItemTemplate="{StaticResource FileRowTemplate}"/></ScrollViewer>
+        </DockPanel>
+    </DockPanel>
+</UserControl>

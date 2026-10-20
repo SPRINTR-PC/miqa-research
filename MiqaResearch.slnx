@@ -7,4 +7,5 @@
   <Project Path="src/dotnet/Miqa.Core/Miqa.Core.csproj" />
   <Project Path="src/dotnet/Miqa.Infrastructure/Miqa.Infrastructure.csproj" />
   <Project Path="src/dotnet/Miqa.Service.DicomReceiver\Miqa.Service.DicomReceiver.csproj" />
+  <Project Path="src/dotnet/MiresSftpUploader/MiresSftpUploader.csproj" />
 </Solution>

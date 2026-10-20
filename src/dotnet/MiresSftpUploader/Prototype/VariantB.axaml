@@ -1,0 +1,76 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:p="using:MiresSftpUploader.Prototype"
+             x:Class="MiresSftpUploader.Prototype.VariantB" x:DataType="p:ProtoVm">
+    <!-- PROTOTYPE variant B "Sidebar dashboard": sources/controls in a left rail, stat tiles + progress on top, log folded away. -->
+    <Grid ColumnDefinitions="270,*">
+        <Border Classes="sunken" BorderBrush="{DynamicResource MBorder}" BorderThickness="0,0,1,0" Padding="16">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Bottom" Spacing="8">
+                    <Button HorizontalAlignment="Stretch" Content="{Binding ThemeLabel}" Command="{Binding ThemeCmd}"/>
+                    <Button HorizontalAlignment="Stretch" Content="⚙ Settings" Command="{Binding SettingsCmd}"/>
+                </StackPanel>
+                <StackPanel Spacing="10">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <p:MiresLogo Height="34" Width="40"/>
+                        <TextBlock FontSize="18" FontWeight="Bold" Foreground="{DynamicResource MPrimary}" VerticalAlignment="Center" Text="MIRES Uploader"/>
+                    </StackPanel>
+                    <Button Classes="primary" HorizontalAlignment="Stretch" Margin="0,8,0,0" Content="⬆  Upload" Command="{Binding UploadPageCmd}"/>
+                    <Button HorizontalAlignment="Stretch" Content="🕘  History" Command="{Binding HistoryPageCmd}"/>
+                    <TextBlock Classes="h" Text="Sources" Margin="0,8,0,0"/>
+                    <ItemsControl ItemsSource="{Binding Sources}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="p:SourceVm">
+                                <StackPanel Margin="0,0,0,6">
+                                    <CheckBox IsChecked="{Binding Enabled}" Content="{Binding Name}"/>
+                                    <TextBlock Classes="muted" FontSize="11" Margin="28,-4,0,0" Text="{Binding Summary}" TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Button Content="＋ Add / edit sources…" Command="{Binding SettingsCmd}"/>
+                    <TextBlock Classes="h" Text="Destination" Margin="0,8,0,0"/>
+                    <TextBlock Classes="muted" TextWrapping="Wrap" Text="{Binding Destination}"/>
+                    <Button Classes="primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="0,12,0,0" Content="▶ Start upload" Command="{Binding StartCmd}" IsEnabled="{Binding IsIdle}"/>
+                    <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Dry run" Command="{Binding DryRunCmd}" IsEnabled="{Binding IsIdle}"/>
+                    <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Scan" Command="{Binding ScanCmd}" IsEnabled="{Binding IsIdle}"/>
+                    <Button Classes="danger" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="■ Cancel" Command="{Binding CancelCmd}" IsEnabled="{Binding IsRunning}"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+        <DockPanel Grid.Column="1" Margin="20">
+            <Expander DockPanel.Dock="Bottom" Header="Log" Margin="0,12,0,0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                <DockPanel Height="170" HorizontalAlignment="Stretch">
+                    <ComboBox DockPanel.Dock="Top" HorizontalAlignment="Right" ItemsSource="{Binding LevelNames}" SelectedIndex="{Binding LogLevel}" MinWidth="130"/>
+                    <ScrollViewer HorizontalAlignment="Stretch"><ItemsControl ItemsSource="{Binding VisibleLogs}">
+    <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="p:LogLine">
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <TextBlock Classes="mono muted" Text="{Binding Time}"/>
+                <TextBlock Classes="mono" Width="38" Text="{Binding LevelName}"/>
+                <TextBlock Classes="mono" Text="{Binding Text}"/>
+            </StackPanel>
+        </DataTemplate>
+    </ItemsControl.ItemTemplate>
+</ItemsControl></ScrollViewer>
+                </DockPanel>
+            </Expander>
+            <Grid DockPanel.Dock="Top" ColumnDefinitions="*,*,*,*" Margin="0,0,0,14">
+                <Border Classes="card" Margin="0,0,8,0"><StackPanel><TextBlock Classes="muted" Text="Succeeded"/><TextBlock FontSize="28" FontWeight="Bold" Foreground="{DynamicResource MSuccess}" Text="{Binding Succeeded}"/></StackPanel></Border>
+                <Border Grid.Column="1" Classes="card" Margin="0,0,8,0"><StackPanel><TextBlock Classes="muted" Text="Failed"/><TextBlock FontSize="28" FontWeight="Bold" Foreground="{DynamicResource MDestructive}" Text="{Binding Failed}"/></StackPanel></Border>
+                <Border Grid.Column="2" Classes="card" Margin="0,0,8,0"><StackPanel><TextBlock Classes="muted" Text="Skipped / ignored"/><TextBlock FontSize="28" FontWeight="Bold" Text="{Binding Skipped}"/></StackPanel></Border>
+                <Border Grid.Column="3" Classes="card"><StackPanel><TextBlock Classes="muted" Text="Pending"/><TextBlock FontSize="28" FontWeight="Bold" Foreground="{DynamicResource MInfo}" Text="{Binding Pending}"/></StackPanel></Border>
+            </Grid>
+            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+                <TextBlock DockPanel.Dock="Right" Classes="muted" Text="{Binding StatusText}"/>
+                <ProgressBar Value="{Binding Overall}" Maximum="100" Height="10" Margin="0,0,16,0" VerticalAlignment="Center"/>
+            </DockPanel>
+            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                <Button DockPanel.Dock="Right" Content="↻ Retry failed" Command="{Binding RetryCmd}" IsEnabled="{Binding HasFailures}"/>
+                <ToggleButton DockPanel.Dock="Right" Margin="0,0,8,0" Content="Failed only" IsChecked="{Binding FailedOnly}"/>
+                <TextBlock Classes="h" Text="Files"/>
+            </DockPanel>
+            <Border Classes="card" Padding="12,6"><ScrollViewer><ItemsControl ItemsSource="{Binding VisibleRows}" ItemTemplate="{StaticResource FileRowTemplate}"/></ScrollViewer></Border>
+        </DockPanel>
+    </Grid>
+</UserControl>

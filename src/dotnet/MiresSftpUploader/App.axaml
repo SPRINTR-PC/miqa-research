@@ -1,0 +1,104 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="MiresSftpUploader.App"
+             xmlns:local="using:MiresSftpUploader"
+             RequestedThemeVariant="Dark">
+    <!-- Default is Dark (spec: dark first when appsettings has no Theme). Brushes below are generated from the
+         Django tokens in src/MiqaResearch/static/css/mires.css (:root = light, .dark = dark). PROTOTYPE mapping. -->
+
+    <Application.DataTemplates>
+        <local:ViewLocator/>
+    </Application.DataTemplates>
+
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceInclude Source="/Prototype/FileRowTemplate.axaml"/>
+            </ResourceDictionary.MergedDictionaries>
+            <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Dark">
+            <SolidColorBrush x:Key="MBackground">#171717</SolidColorBrush>
+            <SolidColorBrush x:Key="MForeground">#FAFAFA</SolidColorBrush>
+            <SolidColorBrush x:Key="MCard">#242424</SolidColorBrush>
+            <SolidColorBrush x:Key="MPopover">#404040</SolidColorBrush>
+            <SolidColorBrush x:Key="MPrimary">#CE80FF</SolidColorBrush>
+            <SolidColorBrush x:Key="MPrimaryFg">#022C21</SolidColorBrush>
+            <SolidColorBrush x:Key="MSecondary">#737373</SolidColorBrush>
+            <SolidColorBrush x:Key="MMuted">#737373</SolidColorBrush>
+            <SolidColorBrush x:Key="MMutedFg">#FAFAFA</SolidColorBrush>
+            <SolidColorBrush x:Key="MAccent">#49004C</SolidColorBrush>
+            <SolidColorBrush x:Key="MAccentFg">#F3ADFF</SolidColorBrush>
+            <SolidColorBrush x:Key="MDestructive">#EF4343</SolidColorBrush>
+            <SolidColorBrush x:Key="MBorder">#525252</SolidColorBrush>
+            <SolidColorBrush x:Key="MElevated">#2B2C36</SolidColorBrush>
+            <SolidColorBrush x:Key="MSunken">#16171D</SolidColorBrush>
+            <SolidColorBrush x:Key="MSuccess">#53C688</SolidColorBrush>
+            <SolidColorBrush x:Key="MWarning">#F9A91F</SolidColorBrush>
+            <SolidColorBrush x:Key="MInfo">#4799EB</SolidColorBrush>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Light">
+            <SolidColorBrush x:Key="MBackground">#F5F5F5</SolidColorBrush>
+            <SolidColorBrush x:Key="MForeground">#171717</SolidColorBrush>
+            <SolidColorBrush x:Key="MCard">#FAFAFA</SolidColorBrush>
+            <SolidColorBrush x:Key="MPopover">#E3E3E3</SolidColorBrush>
+            <SolidColorBrush x:Key="MPrimary">#CE80FF</SolidColorBrush>
+            <SolidColorBrush x:Key="MPrimaryFg">#E8FCF3</SolidColorBrush>
+            <SolidColorBrush x:Key="MSecondary">#525252</SolidColorBrush>
+            <SolidColorBrush x:Key="MMuted">#A1A1A1</SolidColorBrush>
+            <SolidColorBrush x:Key="MMutedFg">#171717</SolidColorBrush>
+            <SolidColorBrush x:Key="MAccent">#49004C</SolidColorBrush>
+            <SolidColorBrush x:Key="MAccentFg">#F3ADFF</SolidColorBrush>
+            <SolidColorBrush x:Key="MDestructive">#DB2424</SolidColorBrush>
+            <SolidColorBrush x:Key="MBorder">#D4D4D4</SolidColorBrush>
+            <SolidColorBrush x:Key="MElevated">#FFFFFF</SolidColorBrush>
+            <SolidColorBrush x:Key="MSunken">#F1F2F3</SolidColorBrush>
+            <SolidColorBrush x:Key="MSuccess">#4DB27C</SolidColorBrush>
+            <SolidColorBrush x:Key="MWarning">#F59F0A</SolidColorBrush>
+            <SolidColorBrush x:Key="MInfo">#3C8CDD</SolidColorBrush>
+        </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+
+    <Application.Styles>
+        <FluentTheme>
+            <FluentTheme.Palettes>
+                <ColorPaletteResources x:Key="Dark" Accent="#CE80FF" RegionColor="#171717"/>
+                <ColorPaletteResources x:Key="Light" Accent="#CE80FF" RegionColor="#F5F5F5"/>
+            </FluentTheme.Palettes>
+        </FluentTheme>
+
+        <Style Selector="Window, UserControl"><Setter Property="Foreground" Value="{DynamicResource MForeground}"/></Style>
+        <Style Selector="TextBlock.muted"><Setter Property="Foreground" Value="{DynamicResource MMuted}"/></Style>
+        <Style Selector="TextBlock.h"><Setter Property="FontSize" Value="15"/><Setter Property="FontWeight" Value="SemiBold"/></Style>
+        <Style Selector="TextBlock.mono"><Setter Property="FontFamily" Value="Consolas,Menlo,monospace"/><Setter Property="FontSize" Value="12"/></Style>
+        <Style Selector="Border.card">
+            <Setter Property="Background" Value="{DynamicResource MCard}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource MBorder}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="12"/>
+        </Style>
+        <Style Selector="Border.sunken"><Setter Property="Background" Value="{DynamicResource MSunken}"/></Style>
+        <Style Selector="Button.primary /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource MPrimary}"/>
+            <Setter Property="Foreground" Value="{DynamicResource MPrimaryFg}"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style Selector="Button.primary:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource MPrimary}"/><Setter Property="Opacity" Value="0.85"/>
+        </Style>
+        <Style Selector="Button.danger /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource MDestructive}"/><Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="ProgressBar">
+            <Setter Property="Foreground" Value="{DynamicResource MPrimary}"/>
+            <Setter Property="Background" Value="{DynamicResource MBorder}"/>
+        </Style>
+        <Style Selector="Ellipse.dot"><Setter Property="Width" Value="10"/><Setter Property="Height" Value="10"/><Setter Property="Fill" Value="{DynamicResource MMuted}"/></Style>
+        <Style Selector="Ellipse.dot.ok"><Setter Property="Fill" Value="{DynamicResource MSuccess}"/></Style>
+        <Style Selector="Ellipse.dot.fail"><Setter Property="Fill" Value="{DynamicResource MDestructive}"/></Style>
+        <Style Selector="Ellipse.dot.warn"><Setter Property="Fill" Value="{DynamicResource MWarning}"/></Style>
+        <Style Selector="Ellipse.dot.active"><Setter Property="Fill" Value="{DynamicResource MPrimary}"/></Style>
+    </Application.Styles>
+</Application>
