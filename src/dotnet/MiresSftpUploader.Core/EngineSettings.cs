@@ -19,6 +19,10 @@ public sealed record StateSettings
     /// <summary>A Run whose heartbeat is older than this is Abandoned.</summary>
     public TimeSpan AbandonedAfter { get; init; } = TimeSpan.FromSeconds(60);
     public TimeSpan HeartbeatInterval { get; init; } = TimeSpan.FromSeconds(10);
+    /// <summary>How often a running Engine looks for a cancel request made by another account.</summary>
+    public TimeSpan CancelPollInterval { get; init; } = TimeSpan.FromSeconds(1);
+    /// <summary>How often <c>RunHistory.WatchRun</c> polls the Upload State.</summary>
+    public TimeSpan WatchInterval { get; init; } = TimeSpan.FromSeconds(1);
 }
 
 public sealed record EngineSettings

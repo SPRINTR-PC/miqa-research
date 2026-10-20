@@ -81,26 +81,44 @@ public sealed class Engine
             run.Store = store;
             await CleanUpAbandonedRunsAsync(store, ct);
             await store.BeginRunAsync(run.RunId, run.StartedAt, "Run", "Headless", options.StartedBy);
+            using var cancelRequested = CancellationTokenSource.CreateLinkedTokenSource(ct);
             using var heartbeat = _time.CreateTimer(
                 _ => _ = store.HeartbeatAsync(run.RunId, _time.GetUtcNow()),
                 null, _settings.State.HeartbeatInterval, _settings.State.HeartbeatInterval);
+            // Another account (or process) can ask this Run to stop through the Upload State.
+            using var cancelPoll = _time.CreateTimer(
+                _ => PollCancelRequest(store, run.RunId, cancelRequested),
+                null, _settings.State.CancelPollInterval, _settings.State.CancelPollInterval);
 
             (int ExitCode, string? Reason) outcome;
             try
             {
-                outcome = await ExecuteCoreAsync(options, run, ct);
+                outcome = await ExecuteCoreAsync(options, run, cancelRequested.Token);
             }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            catch (OperationCanceledException) when (cancelRequested.IsCancellationRequested)
             {
                 outcome = (ExitCodes.Cancelled, "Cancelled");
             }
 
+            await cancelPoll.DisposeAsync();
             await heartbeat.DisposeAsync();
             var now = _time.GetUtcNow();
             await store.FinishRunAsync(run.RunId, now, outcome.ExitCode, run.SnapshotCounts());
             await store.PruneAsync(now, _settings.State.RunFilesRetention, _settings.State.MissingRetention);
             await store.FlushAsync();
             return outcome;
+        }
+    }
+
+    private void PollCancelRequest(UploadStateStore store, Guid runId, CancellationTokenSource cancel)
+    {
+        try
+        {
+            if (store.IsCancelRequested(runId)) cancel.Cancel();
+        }
+        catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException or ObjectDisposedException)
+        {
+            _logger.LogWarning("Could not read the cancel request of Run {RunId}: {Reason}", runId, ex.Message);
         }
     }
 
@@ -122,6 +140,7 @@ public sealed class Engine
             var deleted = await session.DeleteAsync(orphan.PartPath, ct);
             _logger.LogInformation("Abandoned Run: removed {Path}: {Result}", orphan.PartPath, deleted.IsOk ? "ok" : deleted.Reason);
         }
+        await store.ForgetOrphansAsync(_settings.Destination);
     }
 
     private async Task<(int ExitCode, string? Reason)> ExecuteCoreAsync(RunOptions options, RunState run, CancellationToken ct)

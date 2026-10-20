@@ -238,21 +238,46 @@ internal sealed class UploadStateStore : IAsyncDisposable
         var orphans = new List<OrphanPart>();
         await Enqueue(c =>
         {
-            var stale = now.UtcTicks - staleAfter.Ticks;
-            var abandoned = Exec(c, """
-                UPDATE Runs SET Status='Abandoned', EndedAt=Heartbeat WHERE Status='Running' AND Heartbeat < $stale
-                """, ("$stale", stale));
-            if (abandoned == 0) return;
-            using (var read = c.CreateCommand())
-            {
-                read.CommandText = "SELECT Destination, PartPath FROM Files WHERE Status='Uploading' AND PartPath IS NOT NULL AND Destination=$d";
-                read.Parameters.AddWithValue("$d", destination);
-                using var rows = read.ExecuteReader();
-                while (rows.Read()) orphans.Add(new OrphanPart(rows.GetString(0), rows.GetString(1)));
-            }
-            Exec(c, "UPDATE Files SET Status='Failed', LastError='Abandoned Run', PartPath=NULL WHERE Status='Uploading'");
+            AbandonStale(c, now, staleAfter);
+            using var read = c.CreateCommand();
+            read.CommandText = "SELECT Destination, PartPath FROM Files WHERE Status='Failed' AND PartPath IS NOT NULL AND Destination=$d";
+            read.Parameters.AddWithValue("$d", destination);
+            using var rows = read.ExecuteReader();
+            while (rows.Read()) orphans.Add(new OrphanPart(rows.GetString(0), rows.GetString(1)));
         });
         return orphans;
+    }
+
+    /// <summary>The recorded server objects of these orphans are gone (or were never there); forget them.</summary>
+    public Task ForgetOrphansAsync(string destination) =>
+        Enqueue(c => Exec(c, "UPDATE Files SET PartPath=NULL WHERE Status='Failed' AND Destination=$d", ("$d", destination)));
+
+    /// <summary>
+    /// Marks Runs with a stale heartbeat Abandoned. When no Run is live any more, the files they left Uploading become Failed
+    /// but keep their recorded .part path, so the next Run (which holds the connection) can still clean the server up.
+    /// Returns how many Runs were marked.
+    /// </summary>
+    internal static int AbandonStale(SqliteConnection c, DateTimeOffset now, TimeSpan staleAfter)
+    {
+        var abandoned = Exec(c, """
+            UPDATE Runs SET Status='Abandoned', EndedAt=Heartbeat WHERE Status='Running' AND Heartbeat < $stale
+            """, ("$stale", now.UtcTicks - staleAfter.Ticks));
+        // The single-instance lock allows one live Run, so Uploading files with no live Run belong to Abandoned ones.
+        Exec(c, """
+            UPDATE Files SET Status='Failed', LastError='Abandoned Run'
+            WHERE Status='Uploading' AND NOT EXISTS (SELECT 1 FROM Runs WHERE Status='Running')
+            """);
+        return abandoned;
+    }
+
+    /// <summary>True when another account asked for this Run to stop.</summary>
+    public bool IsCancelRequested(Guid runId)
+    {
+        using var connection = OpenConnection(_path, readOnly: true);
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT CancelRequested FROM Runs WHERE Id = $id";
+        command.Parameters.AddWithValue("$id", runId.ToString());
+        return Convert.ToInt64(command.ExecuteScalar() ?? 0L, CultureInfo.InvariantCulture) != 0;
     }
 
     /// <summary>Deletes expired per-Run file outcomes and long-Missing files, in chunks to keep the WAL small.</summary>
@@ -362,7 +387,7 @@ internal sealed class UploadStateStore : IAsyncDisposable
             ("$error", error), ("$now", now.UtcTicks),
             ("$d", key.Destination), ("$r", key.RemotePath), ("$s", key.Source), ("$p", key.RelativePath));
 
-    private static int Exec(SqliteConnection c, string sql, params (string Name, object? Value)[] parameters)
+    internal static int Exec(SqliteConnection c, string sql, params (string Name, object? Value)[] parameters)
     {
         using var command = c.CreateCommand();
         command.CommandText = sql;
