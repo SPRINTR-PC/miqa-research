@@ -16,6 +16,9 @@ public sealed record ArchivePlanned(
 /// <summary>The Data Directory access check, reported at each Run start (also when it failed).</summary>
 public sealed record DataDirectoryChecked(DataDirectoryAccess Access) : RunEvent;
 
+/// <summary>A file left its Source through a Post-upload Move.</summary>
+public sealed record FileMoved(string Source, string RelativePath) : RunEvent;
+
 public sealed record RunWarning(string Message) : RunEvent;
 
 public sealed record RunFinished(RunResult Result) : RunEvent;

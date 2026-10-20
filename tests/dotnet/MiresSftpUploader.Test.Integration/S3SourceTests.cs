@@ -161,6 +161,30 @@ public sealed class S3SourceTests
     }
 
     [TestMethod]
+    public async Task A_Post_upload_Move_copies_checks_and_deletes_the_object_and_the_next_Run_finds_nothing_new()
+    {
+        var server = MinioServer.Get();
+        var data = Random(81_921);
+        var bucket = await server.NewBucketAsync(new Dictionary<string, byte[]> { ["in/d/file.bin"] = data });
+        var target = new MoveTargetConfig { Action = MoveAction.Move, Bucket = bucket, Prefix = "done" };
+        var settings = Settings() with
+        {
+            SourceConfigs = [new SourceConfig { Name = "bucket", AfterUpload = new AfterUploadConfig { OnSuccess = target } }],
+        };
+        var remote = new FakeRemote();
+
+        var first = await Run(settings, remote, Source(server, bucket, "in"));
+        var second = await Run(settings, remote, Source(server, bucket, "in"));
+
+        Assert.AreEqual(1, first.MovedAway);
+        using var admin = server.AdminClient();
+        var keys = (await admin.ListObjectsV2Async(new ListObjectsV2Request { BucketName = bucket })).S3Objects.Select(o => o.Key).ToList();
+        CollectionAssert.AreEqual(new[] { "done/d/file.bin" }, keys);
+        Assert.AreEqual(Sha256(data), Sha256(remote.Files["/upload/bucket/d/file.bin"]));
+        Assert.AreEqual(0, second.Count(FileOutcome.Succeeded) + second.Count(FileOutcome.Skipped));
+    }
+
+    [TestMethod]
     public async Task Scan_min_age_uses_the_objects_LastModified()
     {
         var server = MinioServer.Get();

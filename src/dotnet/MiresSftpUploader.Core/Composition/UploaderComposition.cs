@@ -12,6 +12,7 @@ public static class UploaderComposition
         Destination = DestinationKey(config.Sftp),
         State = ToStateSettings(config),
         MaxParallelUploads = config.Upload.MaxParallelUploads,
+        MoveFailuresAreErrors = config.Upload.MoveFailuresAreErrors,
         Retry = new RetrySettings
         {
             MaxAttempts = config.Retry.MaxAttempts,

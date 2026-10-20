@@ -28,6 +28,16 @@ public sealed class CompositionSettingsTests
     };
 
     [TestMethod]
+    public void Engine_settings_carry_MoveFailuresAreErrors_from_the_configuration()
+    {
+        Assert.IsFalse(UploaderComposition.ToEngineSettings(Config).MoveFailuresAreErrors);
+
+        var strict = Config with { Upload = Config.Upload with { MoveFailuresAreErrors = true } };
+
+        Assert.IsTrue(UploaderComposition.ToEngineSettings(strict).MoveFailuresAreErrors);
+    }
+
+    [TestMethod]
     public void Engine_settings_carry_the_destination_retry_names_and_rules_from_the_configuration()
     {
         var settings = UploaderComposition.ToEngineSettings(Config);
