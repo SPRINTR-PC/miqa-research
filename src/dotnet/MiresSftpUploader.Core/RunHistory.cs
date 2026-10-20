@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 
@@ -67,6 +68,10 @@ public sealed class RunHistory(StateSettings state, TimeProvider time)
         return ReadDetail(connection, runId);
     }
 
+    /// <summary>The Report of a Run (summary plus per-file outcomes) as text, or null when there is no such Run.</summary>
+    public string? Export(Guid runId, ReportFormat format) =>
+        GetRun(runId) is { } detail ? ReportWriter.Render(detail, format) : null;
+
     /// <summary>
     /// Asks a live Run, whoever started it, to stop. The Run's Engine polls the request and ends with exit code 130.
     /// Returns false when there is no such live Run.
@@ -93,6 +98,32 @@ public sealed class RunHistory(StateSettings state, TimeProvider time)
         var abandoned = UploadStateStore.AbandonStale(connection, time.GetUtcNow(), state.AbandonedAfter);
         transaction.Commit();
         return abandoned;
+    }
+
+    /// <summary>
+    /// Follows a Run, typically another account's live one, by polling the Upload State (about every second).
+    /// Yields a snapshot whenever something changed and ends after the snapshot in which the Run is no longer
+    /// running. A Run whose heartbeat went stale is swept first, so it ends as Abandoned.
+    /// </summary>
+    public async IAsyncEnumerable<RunDetail> WatchRun(Guid runId, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        string? last = null;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            SweepAbandoned();
+            var detail = GetRun(runId);
+            if (detail is null) yield break;
+
+            var fingerprint = $"{detail.Summary.Status}|{detail.Summary.ExitCode}|{detail.Summary.Heartbeat.UtcTicks}|{detail.Summary.CancelRequested}|{detail.Files.Count}";
+            if (fingerprint != last)
+            {
+                last = fingerprint;
+                yield return detail;
+            }
+            if (detail.Summary.Status != "Running") yield break;
+            await Task.Delay(state.WatchInterval, time, cancellationToken);
+        }
     }
 
     private bool Exists => state.Path is { Length: > 0 } path && File.Exists(path);

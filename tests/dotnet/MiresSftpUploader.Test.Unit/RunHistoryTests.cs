@@ -25,7 +25,7 @@ public sealed class RunHistoryTests
         RemoteRoot = "/upload",
         Destination = "sftp.example:22",
         Retry = new RetrySettings { MaxAttempts = 1, BaseDelay = TimeSpan.Zero, MaxDelay = TimeSpan.Zero },
-        State = new StateSettings { Path = DbPath, CancelPollInterval = TimeSpan.FromMilliseconds(20) },
+        State = new StateSettings { Path = DbPath, CancelPollInterval = TimeSpan.FromMilliseconds(20), WatchInterval = TimeSpan.FromMilliseconds(20) },
     };
 
     private Engine NewEngine(FakeRemote remote, ISource source, TimeProvider? time = null, EngineSettings? settings = null) =>
@@ -156,6 +156,95 @@ public sealed class RunHistoryTests
         Assert.AreEqual(0, result.ExitCode);
         Assert.IsFalse(remote.Files.ContainsKey("/upload/scans/a.txt.part"));
         Assert.AreEqual("alpha", remote.ReadText("/upload/scans/a.txt"));
+    }
+
+    [TestMethod]
+    public async Task Json_export_has_a_run_summary_and_the_outcome_of_every_file()
+    {
+        var (_, failing, _, _) = await TwoRuns();
+
+        var json = History().Export(failing.RunId, ReportFormat.Json)!;
+
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+        var run = document.RootElement.GetProperty("run");
+        Assert.AreEqual(failing.RunId.ToString(), run.GetProperty("runId").GetString());
+        Assert.AreEqual("bo", run.GetProperty("startedBy").GetString());
+        Assert.AreEqual(1, run.GetProperty("exitCode").GetInt32());
+        Assert.AreEqual(1, run.GetProperty("counts").GetProperty("Failed").GetInt32());
+        var failed = document.RootElement.GetProperty("files").EnumerateArray().Single(f => f.GetProperty("outcome").GetString() == "Failed");
+        Assert.AreEqual("scans", failed.GetProperty("source").GetString());
+        Assert.AreEqual("b.txt", failed.GetProperty("path").GetString());
+        StringAssert.Contains(failed.GetProperty("reason").GetString(), "disk full");
+    }
+
+    [TestMethod]
+    public async Task Csv_export_has_one_row_per_file_with_the_run_columns_and_quotes_awkward_values()
+    {
+        var remote = new FakeRemote();
+        var source = new FakeSource("scans").Add("odd, \"name\".txt", "x");
+        remote.Inject(RemoteOperation.Upload, RemoteResult.Failed("no space, sorry"), times: 5);
+        var result = await Run(NewEngine(remote, source), new RunOptions { StartedBy = "anna" });
+
+        var csv = History().Export(result.RunId, ReportFormat.Csv)!;
+
+        var lines = csv.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+        Assert.AreEqual("RunId,StartedAt,Status,ExitCode,StartedBy,Source,Path,Outcome,Bytes,DurationMs,Reason", lines[0]);
+        Assert.HasCount(2, lines);
+        StringAssert.StartsWith(lines[1], result.RunId + ",");
+        StringAssert.Contains(lines[1], ",scans,\"odd, \"\"name\"\".txt\",Failed,");
+        StringAssert.EndsWith(lines[1], ",\"no space, sorry\"");
+    }
+
+    [TestMethod]
+    public void Export_of_an_unknown_run_is_null()
+    {
+        Assert.IsNull(History().Export(Guid.NewGuid(), ReportFormat.Json));
+    }
+
+    [TestMethod]
+    public async Task Watch_run_streams_snapshots_of_a_live_run_until_it_ends()
+    {
+        var stuck = new StuckSource("scans");
+        var running = Run(NewEngine(new FakeRemote(), stuck), new RunOptions { StartedBy = "anna" });
+        await stuck.Opened.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        var history = History();
+        var runId = history.ListRuns(new RunFilter { Kind = RunFilterKind.Live }).Single().RunId;
+
+        var snapshots = new List<RunDetail>();
+        await foreach (var snapshot in history.WatchRun(runId).WithCancellation(new CancellationTokenSource(TimeSpan.FromSeconds(10)).Token))
+        {
+            snapshots.Add(snapshot);
+            if (snapshots.Count == 1) history.RequestCancel(runId);
+        }
+        await running;
+
+        Assert.AreEqual("Running", snapshots[0].Summary.Status);
+        Assert.AreEqual("anna", snapshots[0].Summary.StartedBy);
+        Assert.AreEqual("Finished", snapshots[^1].Summary.Status);
+        Assert.AreEqual(130, snapshots[^1].Summary.ExitCode);
+    }
+
+    [TestMethod]
+    public async Task Watch_run_reports_a_dead_run_as_abandoned_and_stops()
+    {
+        var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(new DateTimeOffset(2026, 3, 1, 12, 0, 0, TimeSpan.Zero));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Run(NewEngine(new FakeRemote(), new CrashingSource("scans", "a.txt"), time)));
+        var runId = History(time).ListRuns().Single().RunId;
+        time.Advance(TimeSpan.FromSeconds(61));
+
+        var snapshots = new List<RunDetail>();
+        await foreach (var snapshot in History(time).WatchRun(runId)) snapshots.Add(snapshot);
+
+        Assert.AreEqual("Abandoned", snapshots[^1].Summary.Status);
+    }
+
+    [TestMethod]
+    public async Task Watch_run_of_an_unknown_run_ends_at_once()
+    {
+        var snapshots = new List<RunDetail>();
+        await foreach (var snapshot in History().WatchRun(Guid.NewGuid())) snapshots.Add(snapshot);
+
+        Assert.IsEmpty(snapshots);
     }
 
     [TestMethod]
