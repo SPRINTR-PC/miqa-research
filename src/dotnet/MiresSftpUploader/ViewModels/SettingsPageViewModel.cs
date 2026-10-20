@@ -74,6 +74,8 @@ public sealed class SettingsPageViewModel : ViewModelBase
     private readonly Configuration _configuration;
     private readonly Dictionary<string, SettingFieldViewModel> _byKey = new(StringComparer.OrdinalIgnoreCase);
     private LoadResult _load = new();
+    private bool _sourcesLocked;
+    private int _sourceCount;
     private bool _hasErrors;
     private bool _hasChanges;
     private string _saveMessage = "";
@@ -83,6 +85,8 @@ public sealed class SettingsPageViewModel : ViewModelBase
         _configuration = configuration;
         SaveCommand = ReactiveCommand.Create(Save, this.WhenAnyValue(x => x.HasChanges, x => x.HasErrors, (changed, errors) => changed && !errors));
         RevertCommand = ReactiveCommand.Create(Reload);
+        AddSourceCommand = ReactiveCommand.Create(AddSource, this.WhenAnyValue(x => x.SourcesEditable));
+        RemoveSourceCommand = ReactiveCommand.Create<SourceEditorViewModel>(RemoveSource, this.WhenAnyValue(x => x.SourcesEditable));
         Reload();
     }
 
@@ -95,8 +99,26 @@ public sealed class SettingsPageViewModel : ViewModelBase
 
     public ReactiveCommand<Unit, Unit> SaveCommand { get; }
     public ReactiveCommand<Unit, Unit> RevertCommand { get; }
+    public ReactiveCommand<Unit, Unit> AddSourceCommand { get; }
+    public ReactiveCommand<SourceEditorViewModel, Unit> RemoveSourceCommand { get; }
 
-    public bool SourcesLocked { get; private set; }
+    /// <summary>Opens a folder picker and returns the chosen folder, or null. The view sets it; the default picks nothing.</summary>
+    public Func<Task<string?>> PickFolder { get; set; } = () => Task.FromResult<string?>(null);
+
+    /// <summary>Whether the SFTP password and the key passphrase are set in the environment. Their values are never read here.</summary>
+    public string SftpPasswordStatus { get; private set; } = "not set";
+    public string SftpKeyPassphraseStatus { get; private set; } = "not set";
+
+    public bool SourcesLocked
+    {
+        get => _sourcesLocked;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _sourcesLocked, value);
+            this.RaisePropertyChanged(nameof(SourcesEditable));
+        }
+    }
+
     public bool SourcesEditable => !SourcesLocked;
 
     public bool HasErrors { get => _hasErrors; private set => this.RaiseAndSetIfChanged(ref _hasErrors, value); }
@@ -125,20 +147,65 @@ public sealed class SettingsPageViewModel : ViewModelBase
         }
 
         SourcesLocked = _load.Setting("Sources").Locked;
-        this.RaisePropertyChanged(nameof(SourcesLocked));
-        this.RaisePropertyChanged(nameof(SourcesEditable));
         Sources.Clear();
         foreach (var entry in _load.SourceEntries())
-            Sources.Add(new SourceEditorViewModel(entry, SourcesLocked, () => Task.FromResult<string?>(null), () => Field("Sftp:RemoteRoot").Value));
+            AttachSource(new SourceEditorViewModel(entry, SourcesLocked, PickFolderAsync, RemoteRoot));
+        _sourceCount = Sources.Count;
+
+        SftpPasswordStatus = _load.Secrets.SftpPassword ? "set" : "not set";
+        SftpKeyPassphraseStatus = _load.Secrets.SftpKeyPassphrase ? "set" : "not set";
+        this.RaisePropertyChanged(nameof(SftpPasswordStatus));
+        this.RaisePropertyChanged(nameof(SftpKeyPassphraseStatus));
 
         SaveMessage = "";
         Revalidate();
+    }
+
+    private Task<string?> PickFolderAsync() => PickFolder();
+
+    private string RemoteRoot() => Field("Sftp:RemoteRoot").Value;
+
+    private void AttachSource(SourceEditorViewModel source)
+    {
+        source.Edited += Revalidate;
+        Sources.Add(source);
+    }
+
+    private void AddSource()
+    {
+        AttachSource(SourceEditorViewModel.Blank(PickFolderAsync, RemoteRoot));
+        Revalidate();
+    }
+
+    private void RemoveSource(SourceEditorViewModel source)
+    {
+        Sources.Remove(source);
+        Revalidate();
+    }
+
+    private bool SourcesChanged => !SourcesLocked && (Sources.Count != _sourceCount || Sources.Any(s => s.IsChanged));
+
+    private string SecretStatusOf(SourceEditorViewModel source)
+    {
+        if (!source.IsS3) return "";
+        var variable = Secrets.NormaliseSourceName(source.Name);
+        var names = $"MIRES_S3_{variable}_ACCESS_KEY and MIRES_S3_{variable}_SECRET_KEY";
+        return _load.Secrets.S3.TryGetValue(source.Name, out var status)
+            ? $"Access key: {(status.AccessKeySet ? "set" : "not set")} · Secret key: {(status.SecretKeySet ? "set" : "not set")}. Supply them as {names}."
+            : $"Supply the access and secret keys as {names}; whether they are set is shown once the Source is saved.";
     }
 
     private void Revalidate()
     {
         var changes = Changes();
         foreach (var field in Fields) field.Error = null;
+        foreach (var source in Sources)
+        {
+            source.Error = "";
+            source.Warning = "";
+            source.SecretStatus = SecretStatusOf(source);
+            source.RefreshPlaceholder();
+        }
         OtherErrors.Clear();
         Warnings.Clear();
 
@@ -161,13 +228,34 @@ public sealed class SettingsPageViewModel : ViewModelBase
         foreach (var error in errors)
         {
             if (error.Key is not null && FieldFor(error.Key) is { } field) field.Error ??= error.Message;
+            else if (SourceFor(error.Key, out var row, out var rest)) row.Error = Join(row.Error, $"{rest}: {error.Message}");
             else OtherErrors.Add(error.ToString());
         }
-        foreach (var warning in warnings) Warnings.Add(warning.ToString());
+        foreach (var warning in warnings)
+        {
+            if (SourceFor(warning.Key, out var row, out var rest)) row.Warning = Join(row.Warning, $"{rest}: {warning.Message}");
+            else Warnings.Add(warning.ToString());
+        }
 
-        HasErrors = Fields.Any(f => f.HasError) || OtherErrors.Count > 0;
+        HasErrors = Fields.Any(f => f.HasError) || Sources.Any(r => r.HasError) || OtherErrors.Count > 0;
         HasChanges = changes.Count > 0;
         SaveMessage = "";
+    }
+
+    private static string Join(string existing, string next) => existing.Length == 0 ? next : existing + " " + next;
+
+    /// <summary>Maps <c>Sources:2:Path</c> to the third row and <c>Path</c>.</summary>
+    private bool SourceFor(string? key, out SourceEditorViewModel row, out string rest)
+    {
+        row = null!;
+        rest = "";
+        var parts = key?.Split(':', 3);
+        if (parts is not { Length: 3 } || !parts[0].Equals("Sources", StringComparison.OrdinalIgnoreCase)
+            || !int.TryParse(parts[1], out var index) || index < 0 || index >= Sources.Count)
+            return false;
+        row = Sources[index];
+        rest = parts[2];
+        return true;
     }
 
     private SettingFieldViewModel? FieldFor(string key)
@@ -193,6 +281,17 @@ public sealed class SettingsPageViewModel : ViewModelBase
                 }
             }
             else changes[field.Key] = field.Value.Trim().Length == 0 ? null : field.Value.Trim();
+        }
+        if (SourcesChanged)
+        {
+            if (Sources.Count == 0) changes["Sources"] = "[]";
+            else
+            {
+                changes["Sources"] = null;
+                for (var i = 0; i < Sources.Count; i++)
+                    foreach (var (key, value) in Sources[i].ToEntry())
+                        changes[$"Sources:{i}:{key}"] = value;
+            }
         }
         return changes;
     }

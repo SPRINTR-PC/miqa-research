@@ -1,5 +1,6 @@
 using System.Reactive.Linq;
 using System.Reactive.Threading.Tasks;
+using System.Linq;
 using MiresSftpUploader.Core;
 using MiresSftpUploader.ViewModels;
 
@@ -143,5 +144,164 @@ public sealed class SettingsPageViewModelTests : ConfigurationTestBase
 
         Assert.AreEqual(logs, cfg.Load().Config!.Logging.Directory);
         Assert.IsTrue(page.Field("State:Path").IsEditable);
+    }
+
+    // ---- Sources ----
+
+    [TestMethod]
+    public void Adding_an_S3_Source_saves_it_with_its_own_fields_and_no_Directory_path()
+    {
+        var cfg = Create(ValidMachine().ToJsonString());
+        var page = NewPage(cfg);
+
+        page.AddSourceCommand.Execute().Subscribe();
+        var added = page.Sources[1];
+        Assert.IsTrue(added.IsDirectory, "a new Source starts as a Directory");
+        added.TypeName = "S3";
+        Assert.IsTrue(added.IsS3);
+        Assert.IsFalse(added.IsDirectory);
+        added.Name = "wsi-bucket";
+        added.Endpoint = "https://s3.example.org";
+        added.Bucket = "slides";
+        added.Prefix = "in/";
+        added.Region = "eu-north-1";
+        added.ForcePathStyle = true;
+        added.RemotePath = "/incoming/wsi";
+        Save(page);
+
+        var saved = cfg.Load().Config!.Sources;
+        CollectionAssert.AreEqual(new[] { "alpha", "wsi-bucket" }, saved.Select(x => x.Name).ToArray());
+        var s3 = saved[1];
+        Assert.AreEqual(SourceType.S3, s3.Type);
+        Assert.AreEqual("https://s3.example.org", s3.Endpoint);
+        Assert.AreEqual("slides", s3.Bucket);
+        Assert.AreEqual("in/", s3.Prefix);
+        Assert.AreEqual("eu-north-1", s3.Region);
+        Assert.IsTrue(s3.ForcePathStyle);
+        Assert.AreEqual("/incoming/wsi", s3.RemotePath);
+        Assert.IsNull(s3.Path);
+        Assert.AreEqual(DataDir, saved[0].Path, "the existing Source is unchanged");
+    }
+
+    [TestMethod]
+    public void Removing_a_Source_saves_the_remaining_ones()
+    {
+        var machine = ValidMachine();
+        machine["Sources"]!.AsArray().Add(System.Text.Json.Nodes.JsonNode.Parse($$"""{ "Name": "beta", "Type": "Directory", "Path": {{System.Text.Json.JsonSerializer.Serialize(DataDir)}} }"""));
+        var cfg = Create(machine.ToJsonString());
+        var page = NewPage(cfg);
+        Assert.HasCount(2, page.Sources);
+
+        page.RemoveSourceCommand.Execute(page.Sources[0]).Subscribe();
+        Save(page);
+
+        CollectionAssert.AreEqual(new[] { "beta" }, cfg.Load().Config!.Sources.Select(x => x.Name).ToArray());
+    }
+
+    [TestMethod]
+    public void Editing_a_Source_keeps_the_settings_the_page_does_not_edit()
+    {
+        var machine = ValidMachine();
+        machine["Sources"]![0]!["Ignore"] = System.Text.Json.Nodes.JsonNode.Parse("""{ "Files": ["skip.txt"] }""");
+        machine["Sources"]![0]!["AfterUpload"] = System.Text.Json.Nodes.JsonNode.Parse("""{ "OnSuccess": { "Action": "Move", "Path": "/tmp/done-elsewhere" } }""");
+        var cfg = Create(machine.ToJsonString());
+        var page = NewPage(cfg);
+
+        page.Sources[0].RemotePath = "/incoming/alpha";
+        Save(page);
+
+        var source = cfg.Load().Config!.Sources[0];
+        Assert.AreEqual("/incoming/alpha", source.RemotePath);
+        CollectionAssert.AreEqual(new[] { "skip.txt" }, source.Ignore.Files.ToArray());
+        Assert.AreEqual(MoveAction.Move, source.AfterUpload.OnSuccess.Action);
+        Assert.AreEqual("/tmp/done-elsewhere", source.AfterUpload.OnSuccess.Path);
+    }
+
+    [TestMethod]
+    public void A_Source_field_error_shows_on_its_row_and_disables_Save()
+    {
+        var page = NewPage(Create(ValidMachine().ToJsonString()));
+
+        page.Sources[0].Name = "has space";
+
+        StringAssert.Contains(page.Sources[0].Error, "filename-safe");
+        Assert.IsFalse(CanSave(page));
+    }
+
+    [TestMethod]
+    public void A_Directory_path_that_does_not_exist_only_warns()
+    {
+        var page = NewPage(Create(ValidMachine().ToJsonString()));
+
+        page.Sources[0].Path = Path.Combine(Dir, "not-there-yet");
+
+        Assert.IsFalse(page.HasErrors);
+        StringAssert.Contains(page.Sources[0].Warning, "does not exist");
+        Assert.IsTrue(CanSave(page));
+    }
+
+    [TestMethod]
+    public void Browse_fills_the_Directory_path()
+    {
+        var page = NewPage(Create(ValidMachine().ToJsonString()));
+        page.PickFolder = () => Task.FromResult<string?>(Path.Combine(Dir, "picked"));
+
+        page.Sources[0].BrowseCommand.Execute().Subscribe();
+
+        Assert.AreEqual(Path.Combine(Dir, "picked"), page.Sources[0].Path);
+    }
+
+    [TestMethod]
+    public void The_Remote_Path_placeholder_shows_the_default()
+    {
+        var page = NewPage(Create(ValidMachine().ToJsonString()));
+
+        Assert.AreEqual("/incoming/alpha", page.Sources[0].RemotePathPlaceholder);
+
+        page.Field("Sftp:RemoteRoot").Value = "/drop/";
+        page.Sources[0].Name = "beta";
+
+        Assert.AreEqual("/drop/beta", page.Sources[0].RemotePathPlaceholder);
+    }
+
+    [TestMethod]
+    public void Sources_from_the_environment_are_locked()
+    {
+        var cfg = Create(ValidMachine().ToJsonString(), env: new()
+        {
+            ["MIRES_Sources__0__Name"] = "envsrc", ["MIRES_Sources__0__Type"] = "Directory", ["MIRES_Sources__0__Path"] = "/tmp",
+        });
+
+        var page = NewPage(cfg);
+
+        Assert.IsTrue(page.SourcesLocked);
+        Assert.IsFalse(page.SourcesEditable);
+        Assert.IsFalse(page.Sources[0].IsEditable);
+        Assert.IsFalse(page.AddSourceCommand.CanExecute.FirstAsync().ToTask().Result);
+    }
+
+    // ---- Secrets ----
+
+    [TestMethod]
+    public void Secrets_show_only_set_or_not_set()
+    {
+        var machine = ValidMachine();
+        machine["Sources"]!.AsArray().Add(System.Text.Json.Nodes.JsonNode.Parse("""{ "Name": "wsi", "Type": "S3", "Endpoint": "https://s3.example.org", "Bucket": "b" }"""));
+        var cfg = Create(machine.ToJsonString(), env: new()
+        {
+            ["MIRES_SFTP_PASSWORD"] = "hunter2-very-secret", ["MIRES_S3_WSI_ACCESS_KEY"] = "AKIAEXAMPLE",
+        });
+
+        var page = NewPage(cfg);
+
+        Assert.AreEqual("set", page.SftpPasswordStatus);
+        Assert.AreEqual("not set", page.SftpKeyPassphraseStatus);
+        StringAssert.Contains(page.Sources[1].SecretStatus, "Access key: set");
+        StringAssert.Contains(page.Sources[1].SecretStatus, "Secret key: not set");
+        StringAssert.Contains(page.Sources[1].SecretStatus, "MIRES_S3_WSI_SECRET_KEY");
+        Assert.IsFalse(page.TryGetField("Sftp:Password", out _));
+        var everything = string.Join("|", page.Fields.Select(f => f.Value)) + page.SftpPasswordStatus + page.Sources[1].SecretStatus;
+        Assert.DoesNotContain("hunter2", everything);
+        Assert.DoesNotContain("AKIAEXAMPLE", everything);
     }
 }
