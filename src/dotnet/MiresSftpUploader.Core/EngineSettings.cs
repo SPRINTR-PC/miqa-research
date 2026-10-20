@@ -67,6 +67,8 @@ public sealed record EngineSettings
     public int MaxParallelUploads { get; init; } = 3;
     public RetrySettings Retry { get; init; } = new();
     public ReportSettings Report { get; init; } = new();
+    /// <summary>A Post-upload Move that fails makes the exit code 1 (default: a warning only).</summary>
+    public bool MoveFailuresAreErrors { get; init; }
     public string ManifestName { get; init; } = "manifest.json";
     /// <summary>Name of the Flat Manifest; always Ignored when it turns up in a Source, like the Manifest.</summary>
     public string FlatManifestName { get; init; } = "manifest.sha256";

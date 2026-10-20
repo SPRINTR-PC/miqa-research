@@ -15,6 +15,16 @@ public sealed record SourceFile(string RelativePath, long Size, DateTimeOffset M
         : (long)(BitConverter.ToUInt64(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(ETag))) >> 1);
 }
 
+public enum MoveStatus { Moved, TargetExists, Failed }
+
+/// <summary>The result of a Post-upload Move of one file. <see cref="Detail"/> says why it did not happen.</summary>
+public sealed record MoveResult(MoveStatus Status, string? Detail = null)
+{
+    public static MoveResult Moved() => new(MoveStatus.Moved);
+    public static MoveResult TargetExists(string target) => new(MoveStatus.TargetExists, $"MoveTargetExists: {target}");
+    public static MoveResult Failed(string detail) => new(MoveStatus.Failed, detail);
+}
+
 /// <summary>The seam to where a Source's files live: a local directory or an S3-compatible bucket prefix.</summary>
 public interface ISource
 {
@@ -31,4 +41,12 @@ public interface ISource
     Task<SourceFile?> StatAsync(string relativePath, CancellationToken cancellationToken);
 
     Task<Stream> OpenReadAsync(string relativePath, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Post-upload Move: puts the file under <paramref name="target"/> (same type as the Source) keeping its relative path, then
+    /// removes it from the Source. Never overwrites (<see cref="MoveStatus.TargetExists"/>, the file stays) and never removes the
+    /// original before the copy is checked. Failures come back as <see cref="MoveStatus.Failed"/>, never as exceptions.
+    /// </summary>
+    Task<MoveResult> MoveAsync(string relativePath, MoveTargetConfig target, CancellationToken cancellationToken) =>
+        Task.FromResult(MoveResult.Failed("This Source cannot move files."));
 }

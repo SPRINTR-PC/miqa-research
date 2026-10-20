@@ -1,0 +1,208 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MiresSftpUploader.ViewModels"
+             x:Class="MiresSftpUploader.Views.SettingsView" x:DataType="vm:SettingsPageViewModel">
+    <DockPanel>
+        <!-- Save bar -->
+        <Border DockPanel.Dock="Bottom" Classes="sunken" BorderBrush="{DynamicResource MBorder}" BorderThickness="0,1,0,0" Padding="0,10,0,0" Margin="0,10,0,0">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
+                    <Button x:Name="RevertButton" Content="Revert" Command="{Binding RevertCommand}"/>
+                    <Button x:Name="SaveButton" Classes="primary" Content="Save" Command="{Binding SaveCommand}"/>
+                </StackPanel>
+                <TextBlock x:Name="SaveMessageText" Classes="muted" VerticalAlignment="Center" TextWrapping="Wrap" Text="{Binding SaveMessage}"/>
+            </DockPanel>
+        </Border>
+
+        <ScrollViewer>
+            <StackPanel Spacing="14" Margin="0,0,12,0">
+                <TextBlock Classes="h" Text="Settings"/>
+                <TextBlock Classes="muted" TextWrapping="Wrap"
+                           Text="Changes are saved to your User Overrides. Locked Settings come from an environment variable or from a Machine Config you cannot write. Secrets are never edited here."/>
+
+                <!-- Data Directory banner -->
+                <Border x:Name="DataDirectoryBanner" Classes="card" BorderBrush="{DynamicResource MDestructive}" IsVisible="{Binding HasDataDirectoryProblem}">
+                    <StackPanel Spacing="6">
+                        <TextBlock Classes="h" Text="The Data Directory cannot be used"/>
+                        <TextBlock TextWrapping="Wrap" Text="{Binding DataDirectoryProblem}"/>
+                        <TextBlock Classes="muted" Text="No Run can start until an administrator runs:"/>
+                        <TextBox Classes="mono" IsReadOnly="True" TextWrapping="Wrap" Text="{Binding DataDirectoryFixCommand, Mode=OneWay}"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Validation summary -->
+                <Border x:Name="ErrorsCard" Classes="card" BorderBrush="{DynamicResource MDestructive}" IsVisible="{Binding HasErrors}">
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="h" Text="Fix these before you can save"/>
+                        <ItemsControl ItemsSource="{Binding OtherErrors}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="x:String">
+                                    <TextBlock Classes="mono" TextWrapping="Wrap" Foreground="{DynamicResource MDestructive}" Text="{Binding}"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+                <ItemsControl ItemsSource="{Binding Warnings}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="x:String">
+                            <TextBlock Classes="mono" TextWrapping="Wrap" Foreground="{DynamicResource MWarning}" Text="{Binding}"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- Sources -->
+                <Border Classes="card">
+                    <StackPanel Spacing="10">
+                        <DockPanel>
+                            <Button x:Name="AddSourceButton" DockPanel.Dock="Right" Content="Add Source" Command="{Binding AddSourceCommand}"/>
+                            <TextBlock Classes="h" Text="Sources" VerticalAlignment="Center"/>
+                        </DockPanel>
+                        <TextBlock Classes="muted" IsVisible="{Binding SourcesLocked}" TextWrapping="Wrap"
+                                   Text="The Sources are Locked Settings here: they come from an environment variable or from a Machine Config you cannot write."/>
+                        <ItemsControl x:Name="SourcesList" ItemsSource="{Binding Sources}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SourceEditorViewModel">
+                                    <Border Classes="sunken" Padding="12" Margin="0,0,0,10" CornerRadius="6">
+                                        <StackPanel Spacing="6" IsEnabled="{Binding IsEditable}">
+                                            <Grid ColumnDefinitions="*,140,Auto,Auto" ColumnSpacing="8">
+                                                <StackPanel>
+                                                    <TextBlock Classes="muted" Text="Name"/>
+                                                    <TextBox Text="{Binding Name}"/>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="1">
+                                                    <TextBlock Classes="muted" Text="Type"/>
+                                                    <ComboBox HorizontalAlignment="Stretch" ItemsSource="{x:Static vm:SettingsPageViewModel.SourceTypes}" SelectedItem="{Binding TypeName}"/>
+                                                </StackPanel>
+                                                <CheckBox Grid.Column="2" VerticalAlignment="Bottom" Content="Enabled" IsChecked="{Binding Enabled}"/>
+                                                <Button Grid.Column="3" VerticalAlignment="Bottom" Classes="danger" Content="Remove"
+                                                        Command="{Binding $parent[ItemsControl].((vm:SettingsPageViewModel)DataContext).RemoveSourceCommand}"
+                                                        CommandParameter="{Binding}"/>
+                                            </Grid>
+
+                                            <!-- Directory -->
+                                            <StackPanel IsVisible="{Binding IsDirectory}">
+                                                <TextBlock Classes="muted" Text="Directory path"/>
+                                                <DockPanel>
+                                                    <Button DockPanel.Dock="Right" Margin="8,0,0,0" Content="Browse…" Command="{Binding BrowseCommand}"/>
+                                                    <TextBox Text="{Binding Path}"/>
+                                                </DockPanel>
+                                            </StackPanel>
+
+                                            <!-- S3 -->
+                                            <StackPanel IsVisible="{Binding IsS3}" Spacing="6">
+                                                <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                                                    <StackPanel>
+                                                        <TextBlock Classes="muted" Text="Endpoint URL"/>
+                                                        <TextBox Text="{Binding Endpoint}"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="1">
+                                                        <TextBlock Classes="muted" Text="Bucket"/>
+                                                        <TextBox Text="{Binding Bucket}"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                                <Grid ColumnDefinitions="*,*,Auto" ColumnSpacing="8">
+                                                    <StackPanel>
+                                                        <TextBlock Classes="muted" Text="Prefix"/>
+                                                        <TextBox Text="{Binding Prefix}"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="1">
+                                                        <TextBlock Classes="muted" Text="Region (optional)"/>
+                                                        <TextBox Text="{Binding Region}"/>
+                                                    </StackPanel>
+                                                    <CheckBox Grid.Column="2" VerticalAlignment="Bottom" Content="Path-style addressing" IsChecked="{Binding ForcePathStyle}"/>
+                                                </Grid>
+                                                <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap" Text="{Binding SecretStatus}"/>
+                                            </StackPanel>
+
+                                            <StackPanel>
+                                                <TextBlock Classes="muted" Text="Remote Path (optional)"/>
+                                                <TextBox Text="{Binding RemotePath}" Watermark="{Binding RemotePathPlaceholder}"/>
+                                            </StackPanel>
+                                            <TextBlock Foreground="{DynamicResource MDestructive}" TextWrapping="Wrap" IsVisible="{Binding HasError}" Text="{Binding Error}"/>
+                                            <TextBlock Foreground="{DynamicResource MWarning}" TextWrapping="Wrap" IsVisible="{Binding HasWarning}" Text="{Binding Warning}"/>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <!-- Secrets -->
+                <Border Classes="card">
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="h" Text="Secrets"/>
+                        <TextBlock Classes="muted" TextWrapping="Wrap"
+                                   Text="Secrets are supplied by environment variables only and are never stored or shown. The status below is all this screen knows."/>
+                        <Grid ColumnDefinitions="260,*">
+                            <TextBlock Classes="mono" Text="MIRES_SFTP_PASSWORD"/>
+                            <TextBlock x:Name="SftpPasswordStatusText" Grid.Column="1" Text="{Binding SftpPasswordStatus}"/>
+                        </Grid>
+                        <Grid ColumnDefinitions="260,*">
+                            <TextBlock Classes="mono" Text="MIRES_SFTP_KEY_PASSPHRASE"/>
+                            <TextBlock x:Name="SftpKeyPassphraseStatusText" Grid.Column="1" Text="{Binding SftpKeyPassphraseStatus}"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Data Directory check -->
+                <Border Classes="card">
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="h" Text="Data Directory"/>
+                        <TextBlock Classes="muted" TextWrapping="Wrap" Text="Holds the Upload State, Staging Areas, logs and Reports shared by every account on this machine."/>
+                        <TextBlock Classes="mono" TextWrapping="Wrap" Text="{Binding DataDirectoryPath}"/>
+                        <TextBlock x:Name="DataDirectoryStatusText" Text="{Binding DataDirectoryStatus}"/>
+                        <TextBlock Text="{Binding DataDirectoryFreeSpace}"/>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Classes="muted" Text="Upload State database:"/>
+                            <TextBlock Text="{Binding DataDirectoryDatabaseSize}"/>
+                        </StackPanel>
+                        <TextBlock Foreground="{DynamicResource MWarning}" TextWrapping="Wrap" IsVisible="{Binding DataDirectoryOnNetworkShare}"
+                                   Text="This looks like a network share. SQLite locking over a network share is unreliable; use a local disk if you can."/>
+                        <TextBlock x:Name="SplitStateWarningText" Foreground="{DynamicResource MWarning}" TextWrapping="Wrap" IsVisible="{Binding HasSplitStateWarning}" Text="{Binding SplitStateWarning}"/>
+                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
+                            <Button x:Name="RecheckButton" Content="Re-check" Command="{Binding RecheckDataDirectoryCommand}"/>
+                            <Button x:Name="CopyFixCommandButton" Content="Copy fix command" IsVisible="{Binding HasDataDirectoryProblem}" Command="{Binding CopyFixCommandCommand}"/>
+                        </StackPanel>
+                        <TextBlock x:Name="StagingWarningText" Foreground="{DynamicResource MWarning}" TextWrapping="Wrap" IsVisible="{Binding HasStagingWarning}" Text="{Binding StagingWarning}"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Every other setting, grouped -->
+                <ItemsControl ItemsSource="{Binding Groups}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:SettingsGroupViewModel">
+                            <Border Classes="card" Margin="0,0,0,14">
+                                <StackPanel Spacing="10">
+                                    <TextBlock Classes="h" Text="{Binding Title}"/>
+                                    <ItemsControl ItemsSource="{Binding Fields}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:SettingFieldViewModel">
+                                                <StackPanel Spacing="2" Margin="0,0,0,6">
+                                                    <TextBlock Classes="muted" Text="{Binding Label}"/>
+                                                    <TextBox IsVisible="{Binding IsText}" IsEnabled="{Binding IsEditable}" Text="{Binding Value}"/>
+                                                    <TextBox IsVisible="{Binding IsLines}" IsEnabled="{Binding IsEditable}" AcceptsReturn="True" MinHeight="64" Text="{Binding Value}"/>
+                                                    <CheckBox IsVisible="{Binding IsToggle}" IsEnabled="{Binding IsEditable}" IsChecked="{Binding BoolValue}" Content="{Binding Label}"/>
+                                                    <ComboBox IsVisible="{Binding IsChoice}" IsEnabled="{Binding IsEditable}" MinWidth="200" ItemsSource="{Binding Options}" SelectedItem="{Binding Value}"/>
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <Button Content="Browse…" IsVisible="{Binding HasBrowse}" IsEnabled="{Binding IsEditable}" Command="{Binding BrowseCommand}"/>
+                                                        <Button Content="Change…" IsVisible="{Binding HasUnlockButton}" Command="{Binding UnlockCommand}"/>
+                                                    </StackPanel>
+                                                    <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap" IsVisible="{Binding Help, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Text="{Binding Help}"/>
+                                                    <TextBlock Foreground="{DynamicResource MWarning}" FontSize="12" TextWrapping="Wrap" IsVisible="{Binding HasNote}" Text="{Binding Note}"/>
+                                                    <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap" IsVisible="{Binding HasLockReason}" Text="{Binding LockReason, StringFormat='Locked. {0}'}"/>
+                                                    <TextBlock Foreground="{DynamicResource MDestructive}" TextWrapping="Wrap" IsVisible="{Binding HasError}" Text="{Binding Error}"/>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>

@@ -67,6 +67,44 @@ public sealed class FakeSource(string name, string? remotePath = null) : ISource
         return Task.FromResult<Stream>(stream);
     }
 
+    private readonly Dictionary<string, byte[]> _moved = new(StringComparer.Ordinal);
+    private readonly object _moveGate = new();
+
+    /// <summary>Makes a move fail with this result instead of happening (receives the relative path); null lets it happen.</summary>
+    public Func<string, MoveResult?>? MoveInterceptor { get; set; }
+
+    /// <summary>The relative paths moved away, in order.</summary>
+    public List<string> MovedPaths { get; } = [];
+
+    private static string TargetKey(MoveTargetConfig target, string relativePath) =>
+        (target.Path ?? $"{target.Bucket}/{target.Prefix}").TrimEnd('/') + "/" + relativePath;
+
+    /// <summary>A file in a move target, or null.</summary>
+    public byte[]? MovedFile(MoveTargetConfig target, string relativePath)
+    {
+        lock (_moveGate) return _moved.GetValueOrDefault(TargetKey(target, relativePath));
+    }
+
+    public void PutMoved(MoveTargetConfig target, string relativePath, byte[] data)
+    {
+        lock (_moveGate) _moved[TargetKey(target, relativePath)] = data;
+    }
+
+    public Task<MoveResult> MoveAsync(string relativePath, MoveTargetConfig target, CancellationToken cancellationToken)
+    {
+        lock (_moveGate)
+        {
+            if (MoveInterceptor?.Invoke(relativePath) is { } injected) return Task.FromResult(injected);
+            if (!_files.TryGetValue(relativePath, out var entry)) return Task.FromResult(MoveResult.Failed("no such file"));
+            var key = TargetKey(target, relativePath);
+            if (_moved.ContainsKey(key)) return Task.FromResult(MoveResult.TargetExists(key));
+            _moved[key] = entry.Data;
+            _files.Remove(relativePath);
+            MovedPaths.Add(relativePath);
+            return Task.FromResult(MoveResult.Moved());
+        }
+    }
+
     private MemoryStream Opened(byte[] data)
     {
         Interlocked.Increment(ref _openCount);

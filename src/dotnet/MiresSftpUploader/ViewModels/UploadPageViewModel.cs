@@ -43,12 +43,12 @@ public sealed class UploadPageViewModel : ViewModelBase
         _runtime = runtime;
         _post = post;
 
-        var idle = this.WhenAnyValue(x => x.IsRunning, running => !running);
+        var idle = this.WhenAnyValue(x => x.IsRunning, x => x.IsBlocked, (running, blocked) => !running && !blocked);
         StartCommand = ReactiveCommand.CreateFromTask(() => RunAsync(dryRun: false, retry: false), idle);
         DryRunCommand = ReactiveCommand.CreateFromTask(() => RunAsync(dryRun: true, retry: false), idle);
         ScanCommand = ReactiveCommand.CreateFromTask(() => RunAsync(dryRun: true, retry: false, scan: true), idle);
         CancelCommand = ReactiveCommand.Create(() => { _cancellation?.Cancel(); }, this.WhenAnyValue(x => x.IsRunning));
-        RetryFailedCommand = ReactiveCommand.CreateFromTask(() => RunAsync(dryRun: false, retry: true), this.WhenAnyValue(x => x.CanRetry));
+        RetryFailedCommand = ReactiveCommand.CreateFromTask(() => RunAsync(dryRun: false, retry: true), this.WhenAnyValue(x => x.CanRetry, x => x.IsBlocked, (retry, blocked) => retry && !blocked));
 
         Refresh();
     }
@@ -82,6 +82,21 @@ public sealed class UploadPageViewModel : ViewModelBase
     }
 
     public bool IsIdle => !IsRunning;
+
+    private string _blockedReason = "";
+
+    /// <summary>Why no Run can start (the Data Directory is not usable); empty when Runs may start. Shown as a banner.</summary>
+    public string BlockedReason
+    {
+        get => _blockedReason;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _blockedReason, value);
+            this.RaisePropertyChanged(nameof(IsBlocked));
+        }
+    }
+
+    public bool IsBlocked => _blockedReason.Length > 0;
 
     public bool CanRetry
     {
@@ -158,7 +173,10 @@ public sealed class UploadPageViewModel : ViewModelBase
             Sources.Add(new SourceItemViewModel(source) { Included = !excluded.Contains(source.Name ?? "") });
     }
 
-    private async Task RunAsync(bool dryRun, bool retry, bool scan = false)
+    /// <summary>Uploads the failed files of a Run from the Run History again, as a new Run with a fresh file list. Does nothing while a Run is going.</summary>
+    public Task RetryRunAsync(Guid runId) => IsRunning ? Task.CompletedTask : RunAsync(dryRun: false, retry: true, historical: runId);
+
+    private async Task RunAsync(bool dryRun, bool retry, bool scan = false, Guid? historical = null)
     {
         var prepared = _runtime.Prepare(headless: false);
         ApplyConfiguration(prepared);
@@ -175,7 +193,8 @@ public sealed class UploadPageViewModel : ViewModelBase
             return;
         }
 
-        if (!retry) ClearFiles();
+        if (historical is not null) _retryOf = historical;
+        if (!retry || historical is not null) ClearFiles();
         var options = new RunOptions
         {
             SourceNames = included,

@@ -59,6 +59,53 @@ public abstract class SourceContract
         Assert.IsNull(await source.StatAsync("dir/gone.bin", CancellationToken.None));
     }
 
+    /// <summary>A Post-upload Move target of the adapter's own type: a new, empty location on the same endpoint.</summary>
+    protected abstract MoveTargetConfig CreateMoveTarget();
+
+    /// <summary>Reads a file from a move target independently of the adapter; null when it is not there.</summary>
+    protected abstract byte[]? ReadMoveTarget(MoveTargetConfig target, string relativePath);
+
+    /// <summary>Puts a file into a move target independently of the adapter.</summary>
+    protected abstract void PutMoveTarget(MoveTargetConfig target, string relativePath, byte[] data);
+
+    [TestMethod]
+    public async Task Move_puts_the_file_under_the_target_with_its_relative_path_and_removes_it_from_the_source()
+    {
+        var source = CreateSource(new Dictionary<string, byte[]> { ["dir/sub/a.bin"] = [5, 6, 7], ["b.bin"] = [1] });
+        var target = CreateMoveTarget();
+
+        var result = await source.MoveAsync("dir/sub/a.bin", target, CancellationToken.None);
+
+        Assert.AreEqual(MoveStatus.Moved, result.Status, result.Detail);
+        CollectionAssert.AreEqual(new byte[] { 5, 6, 7 }, ReadMoveTarget(target, "dir/sub/a.bin"));
+        Assert.IsNull(await source.StatAsync("dir/sub/a.bin", CancellationToken.None));
+        Assert.IsNotNull(await source.StatAsync("b.bin", CancellationToken.None));
+    }
+
+    [TestMethod]
+    public async Task Move_never_overwrites_an_existing_target_file()
+    {
+        var source = CreateSource(new Dictionary<string, byte[]> { ["a.bin"] = [5, 6, 7] });
+        var target = CreateMoveTarget();
+        PutMoveTarget(target, "a.bin", [9, 9]);
+
+        var result = await source.MoveAsync("a.bin", target, CancellationToken.None);
+
+        Assert.AreEqual(MoveStatus.TargetExists, result.Status);
+        CollectionAssert.AreEqual(new byte[] { 9, 9 }, ReadMoveTarget(target, "a.bin"));
+        Assert.IsNotNull(await source.StatAsync("a.bin", CancellationToken.None));
+    }
+
+    [TestMethod]
+    public async Task Move_of_a_file_that_is_not_there_fails()
+    {
+        var source = CreateSource(new Dictionary<string, byte[]> { ["a.bin"] = [1] });
+
+        var result = await source.MoveAsync("gone.bin", CreateMoveTarget(), CancellationToken.None);
+
+        Assert.AreEqual(MoveStatus.Failed, result.Status);
+    }
+
     [TestMethod]
     public async Task An_empty_source_lists_nothing()
     {
