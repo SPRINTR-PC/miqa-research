@@ -61,7 +61,47 @@ public static class SftpServer
         if (_container is not null) await _container.DisposeAsync();
     }
 
+    /// <summary>
+    /// A write-only account (spike result for release-checklist item 8): its <c>/inbox</c> has mode 0300, so it can create objects in it
+    /// but not list it, and sftp-server runs with umask 0377, so every object it creates is read-only and cannot be written again.
+    /// Not refused: rename or delete of its own objects (the directory is its own), which is why this account cannot show a refused
+    /// rename over an existing file; <see cref="StickyUser"/> does.
+    /// </summary>
+    public const string WriteOnlyUser = "drop";
+
+    /// <summary>
+    /// Like <see cref="WriteOnlyUser"/>, but its <c>/inbox</c> belongs to root with mode 1733 (sticky): the account cannot rename over
+    /// or delete an object somebody else owns, which the server answers with permission denied. Tests seed such objects with <see cref="SeedForeignFileAsync"/>.
+    /// </summary>
+    public const string StickyUser = "sticky";
+
+    /// <summary>Creates an object owned by root in the user's <c>/inbox</c>, as an earlier delivery the account cannot replace.</summary>
+    public static async Task SeedForeignFileAsync(string name, string content, string user = StickyUser) =>
+        await _container!.ExecAsync(["sh", "-c", $"printf %s '{content}' > /home/{user}/inbox/{name} && chmod 0444 /home/{user}/inbox/{name}"]);
+
+    /// <summary>The write-only account on the shared server; its only writable place is <c>/inbox</c>.</summary>
+    public static SftpConnection WriteOnlyConnection(string user = WriteOnlyUser) => Get().Connection() with { Username = user };
+
     private const string ChrootHome = "/home/test";
+
+    /// <summary>Lists the files of a write-only user's <c>/inbox</c> as the server holds them (read as root, not through SFTP).</summary>
+    public static async Task<IReadOnlyList<string>> InboxFilesAsync(string user = WriteOnlyUser)
+    {
+        var home = "/home/" + user;
+        var result = await _container!.ExecAsync(["find", home + "/inbox", "-type", "f"]);
+        return result.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(p => p[(home.Length + "/inbox/".Length)..]).Order().ToList();
+    }
+
+    public static async Task<string> InboxReadTextAsync(string name, string user = WriteOnlyUser)
+    {
+        var result = await _container!.ExecAsync(["cat", "--", "/home/" + user + "/inbox/" + name]);
+        if (result.ExitCode != 0) throw new InvalidOperationException(result.Stderr);
+        return result.Stdout;
+    }
+
+    /// <summary>Removes every object from a write-only user's <c>/inbox</c> so tests start from an empty directory.</summary>
+    public static async Task EmptyInboxAsync(string user = WriteOnlyUser) =>
+        await _container!.ExecAsync(["sh", "-c", $"rm -f /home/{user}/inbox/* /home/{user}/inbox/.[!.]*"]);
 
     /// <summary>SHA-256 of a file as the server's own file system holds it (read by <c>sha256sum</c> inside the container, not through SFTP).</summary>
     public static async Task<string> RemoteSha256Async(string sftpPath)
@@ -90,7 +130,7 @@ public static class SftpServer
         var keyDirectory = Path.Combine(AppContext.BaseDirectory, "Fixtures");
         var container = new ContainerBuilder(Image)
             .WithPortBinding(22, assignRandomHostPort: true)
-            .WithCommand("test:secret:::upload")
+            .WithCommand("test:secret:::upload", WriteOnlyUser + ":secret:::inbox", StickyUser + ":secret:::inbox")
             .WithResourceMapping(new FileInfo(Path.Combine(keyDirectory, "test_ed25519.pub")), "/home/test/.ssh/keys/")
             // The host key mismatch tests hang up before authenticating, which OpenSSH's per-source penalties
             // answer by dropping every later connection from the same address. Switch them off for the test server,
@@ -98,6 +138,11 @@ public static class SftpServer
             .WithResourceMapping(
                 System.Text.Encoding.ASCII.GetBytes("#!/bin/sh\nprintf 'PerSourcePenalties no\\nMaxStartups 200\\n' >> /etc/ssh/sshd_config\n"),
                 "/etc/sftp.d/10-no-penalties.sh", fileMode: UnixFileModes.UserRead | UnixFileModes.UserWrite | UnixFileModes.UserExecute | UnixFileModes.GroupRead | UnixFileModes.GroupExecute | UnixFileModes.OtherRead | UnixFileModes.OtherExecute)
+            // The write-only accounts: /inbox is mode 0300 and their sftp-server runs with umask 0377 (see WriteOnlyUser). Match blocks
+            // come first because sshd takes the first value it finds, and the stock ForceCommand is global.
+            .WithResourceMapping(
+                System.Text.Encoding.ASCII.GetBytes("#!/bin/sh\nset -e\nchmod 0300 /home/drop/inbox\nchown root:root /home/sticky/inbox\nchmod 1733 /home/sticky/inbox\nprintf 'Match User drop\\n  ForceCommand internal-sftp -u 0377\\nMatch User sticky\\n  ForceCommand internal-sftp -u 0377\\nMatch All\\n' | cat - /etc/ssh/sshd_config > /tmp/sshd_config.new\ncat /tmp/sshd_config.new > /etc/ssh/sshd_config\n"),
+                "/etc/sftp.d/20-write-only.sh", fileMode: UnixFileModes.UserRead | UnixFileModes.UserWrite | UnixFileModes.UserExecute | UnixFileModes.GroupRead | UnixFileModes.GroupExecute | UnixFileModes.OtherRead | UnixFileModes.OtherExecute)
             .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged("Server listening on"))
             .Build();
         try
