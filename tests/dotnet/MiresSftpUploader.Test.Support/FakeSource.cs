@@ -12,6 +12,12 @@ public sealed class FakeSource(string name, string? remotePath = null) : ISource
 
     private int _openCount;
 
+    /// <summary>Called after a file was opened for reading; lets a test change the file while it is being read.</summary>
+    public Action<string>? AfterOpen { get; set; }
+
+    /// <summary>Called when a listing has been delivered completely; lets a test change a file between scan and use.</summary>
+    public Action? AfterListing { get; set; }
+
     /// <summary>How many times a file has been opened for reading.</summary>
     public int OpenCount => Volatile.Read(ref _openCount);
 
@@ -28,6 +34,9 @@ public sealed class FakeSource(string name, string? remotePath = null) : ISource
         return this;
     }
 
+    public FakeSource Add(string relativePath, string text, DateTimeOffset modified) =>
+        Add(relativePath, System.Text.Encoding.UTF8.GetBytes(text), modified);
+
     public FakeSource Add(string relativePath, string text) => Add(relativePath, System.Text.Encoding.UTF8.GetBytes(text));
 
     private int _listCount;
@@ -43,6 +52,7 @@ public sealed class FakeSource(string name, string? remotePath = null) : ISource
             await Task.Yield();
             yield return new SourceFile(path, entry.Data.Length, entry.Modified);
         }
+        AfterListing?.Invoke();
     }
 
     public Task<SourceFile?> StatAsync(string relativePath, CancellationToken cancellationToken) =>
@@ -50,8 +60,12 @@ public sealed class FakeSource(string name, string? remotePath = null) : ISource
             ? new SourceFile(relativePath, entry.Data.Length, entry.Modified)
             : null);
 
-    public Task<Stream> OpenReadAsync(string relativePath, CancellationToken cancellationToken) =>
-        Task.FromResult<Stream>(Opened(_files[relativePath].Data));
+    public Task<Stream> OpenReadAsync(string relativePath, CancellationToken cancellationToken)
+    {
+        var stream = Opened(_files[relativePath].Data);
+        AfterOpen?.Invoke(relativePath);
+        return Task.FromResult<Stream>(stream);
+    }
 
     private MemoryStream Opened(byte[] data)
     {

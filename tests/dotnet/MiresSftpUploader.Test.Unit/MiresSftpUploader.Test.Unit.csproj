@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <None Include="..\..\..\src\dotnet\MiresSftpUploader\appsettings.json" Link="shipped\appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Golden\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
