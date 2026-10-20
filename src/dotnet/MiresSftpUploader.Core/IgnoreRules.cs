@@ -18,9 +18,17 @@ internal sealed class IgnoreRules
     private readonly HashSet<string> _files;
     private readonly List<Regex> _patterns;
 
-    public IgnoreRules(bool useDefaults, IEnumerable<string> files, IEnumerable<string> patterns)
+    private readonly HashSet<string> _alwaysPaths;
+    private readonly HashSet<string> _alwaysNames;
+
+    /// <param name="alwaysPaths">Relative paths (Source root) that are always ignored, such as the Manifests and their .part files.</param>
+    /// <param name="alwaysNames">File names ignored at any depth, such as the Upload State database and its companions.</param>
+    public IgnoreRules(bool useDefaults, IEnumerable<string> files, IEnumerable<string> patterns,
+        IEnumerable<string>? alwaysPaths = null, IEnumerable<string>? alwaysNames = null)
     {
         _useDefaults = useDefaults;
+        _alwaysPaths = new HashSet<string>(alwaysPaths ?? [], StringComparer.OrdinalIgnoreCase);
+        _alwaysNames = new HashSet<string>(alwaysNames ?? [], StringComparer.OrdinalIgnoreCase);
         _files = new HashSet<string>(files.Select(NormalizePath), StringComparer.OrdinalIgnoreCase);
         _patterns = patterns
             .Select(p => new Regex(p, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, PatternTimeout))
@@ -30,6 +38,8 @@ internal sealed class IgnoreRules
     /// <summary>Why <paramref name="relativePath"/> is ignored, or null when it is not.</summary>
     public string? Reason(string relativePath, Action<string>? warn = null)
     {
+        if (_alwaysPaths.Contains(relativePath)) return "Manifest";
+        if (_alwaysNames.Contains(relativePath[(relativePath.LastIndexOf('/') + 1)..])) return "Upload State";
         if (_useDefaults && BuiltIn.IsMatch(relativePath)) return "built-in";
         if (_files.Contains(relativePath)) return "Ignore:Files";
         foreach (var pattern in _patterns)

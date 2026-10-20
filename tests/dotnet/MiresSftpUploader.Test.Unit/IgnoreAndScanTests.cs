@@ -115,6 +115,83 @@ public sealed class IgnoreAndScanTests
         Assert.HasCount(1, warnings);
     }
 
+    [TestMethod]
+    public async Task Manifests_and_the_Upload_State_are_always_Ignored_even_without_defaults()
+    {
+        var remote = new FakeRemote();
+        var source = new FakeSource("scans")
+            .Add("keep.txt", "k").Add("manifest.json", "old").Add("manifest.json.part", "p")
+            .Add("manifest.sha256", "old").Add("state/mires.db", "db").Add("state/mires.db-wal", "w")
+            .Add("state/mires.db.lock", "l");
+        var settings = Settings() with
+        {
+            Ignore = new IgnoreConfig { UseDefaults = false },
+            State = new StateSettings { Path = Path.Combine(Path.GetTempPath(), "mires-ignore-" + Guid.NewGuid().ToString("N"), "mires.db") },
+        };
+
+        var (result, _) = await RunAsync(remote, settings, null, source);
+
+        Assert.AreEqual(1, result.Count(FileOutcome.Succeeded));
+        Assert.AreEqual(6, result.Count(FileOutcome.Ignored));
+        Assert.AreNotEqual("old", remote.ReadText("/upload/scans/manifest.json"));
+        Directory.Delete(Path.GetDirectoryName(settings.State.Path!)!, recursive: true);
+    }
+
+    [TestMethod]
+    public async Task A_file_modified_less_than_MinFileAgeSeconds_ago_is_Skipped_TooRecent_not_Failed()
+    {
+        var remote = new FakeRemote();
+        var source = new FakeSource("scans")
+            .Add("old.txt", new byte[] { 1 }, Now.AddMinutes(-10))
+            .Add("fresh.txt", new byte[] { 2 }, Now.AddSeconds(-5));
+        var settings = Settings() with { Scan = new ScanConfig { MinFileAgeSeconds = 60 } };
+
+        var (result, events) = await RunAsync(remote, settings, null, source);
+
+        Assert.AreEqual(0, result.ExitCode);
+        Assert.AreEqual(1, result.Count(FileOutcome.Succeeded));
+        Assert.AreEqual(1, result.Count(FileOutcome.Skipped));
+        Assert.AreEqual("TooRecent", ReasonOf(events, "fresh.txt", FileOutcome.Skipped));
+        Assert.IsFalse(remote.Files.ContainsKey("/upload/scans/fresh.txt"));
+        Assert.AreEqual(0, source.OpenCount - 1, "only old.txt is read");
+    }
+
+    [TestMethod]
+    public async Task ModifiedBefore_holds_back_files_modified_at_or_after_the_cutoff()
+    {
+        var remote = new FakeRemote();
+        var cutoff = Now.AddDays(-1);
+        var source = new FakeSource("scans")
+            .Add("before.txt", new byte[] { 1 }, cutoff.AddSeconds(-1))
+            .Add("at.txt", new byte[] { 2 }, cutoff)
+            .Add("after.txt", new byte[] { 3 }, cutoff.AddHours(1));
+        var settings = Settings() with { Scan = new ScanConfig { ModifiedBefore = cutoff } };
+
+        var (result, _) = await RunAsync(remote, settings, null, source);
+
+        Assert.AreEqual(1, result.Count(FileOutcome.Succeeded));
+        Assert.AreEqual(2, result.Count(FileOutcome.Skipped));
+        Assert.AreEqual(0, result.ExitCode);
+    }
+
+    [TestMethod]
+    public async Task A_Source_scan_setting_overrides_the_global_one()
+    {
+        var remote = new FakeRemote();
+        var a = new FakeSource("a").Add("f.txt", new byte[] { 1 }, Now.AddSeconds(-30));
+        var b = new FakeSource("b").Add("f.txt", new byte[] { 1 }, Now.AddSeconds(-30));
+        var settings = Settings() with
+        {
+            Scan = new ScanConfig { MinFileAgeSeconds = 60 },
+            SourceConfigs = [new SourceConfig { Name = "a", Scan = new SourceScanConfig { MinFileAgeSeconds = 0 } }],
+        };
+
+        await RunAsync(remote, settings, null, a, b);
+
+        Assert.IsTrue(remote.Files.ContainsKey("/upload/a/f.txt"));
+        Assert.IsFalse(remote.Files.ContainsKey("/upload/b/f.txt"));
+    }
+
     private sealed class WarningProgress(List<RunWarning> sink) : IProgress<RunEvent>
     {
         public void Report(RunEvent value)

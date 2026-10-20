@@ -155,6 +155,8 @@ public sealed class Engine
                 var item = new FileWork(source, remotePath, file, options.RehashAll ? null : known);
                 if (rules.Reason(file.RelativePath, m => run.Warn(m)) is { } ignored)
                     run.Set(item, FileOutcome.Ignored, ignored);
+                else if (IsTooRecent(source, file))
+                    run.Set(item, FileOutcome.Skipped, TooRecentReason);
                 else
                     work.Add(item);
             }
@@ -316,6 +318,19 @@ public sealed class Engine
         return await session.RenameAsync(finalPath + ".part", finalPath, overwrite: true, ct);
     }
 
+    internal const string TooRecentReason = "TooRecent";
+
+    /// <summary>Too Recent: modified less than the minimum age ago, or at or after the cutoff. A Source's own setting replaces the global one.</summary>
+    private bool IsTooRecent(ISource source, SourceFile file)
+    {
+        var own = _settings.SourceConfigs
+            .FirstOrDefault(c => string.Equals(c.Name, source.Name, StringComparison.OrdinalIgnoreCase))?.Scan;
+        var minAge = own?.MinFileAgeSeconds ?? _settings.Scan.MinFileAgeSeconds;
+        var cutoff = own?.ModifiedBefore ?? _settings.Scan.ModifiedBefore;
+        if (minAge > 0 && file.Modified > _time.GetUtcNow() - TimeSpan.FromSeconds(minAge)) return true;
+        return cutoff is { } limit && file.Modified >= limit;
+    }
+
     private IgnoreRules IgnoreRulesOf(ISource source)
     {
         var own = _settings.SourceConfigs
@@ -323,7 +338,17 @@ public sealed class Engine
         return new IgnoreRules(
             _settings.Ignore.UseDefaults,
             _settings.Ignore.Files.Concat(own?.Files ?? []),
-            _settings.Ignore.Patterns.Concat(own?.Patterns ?? []));
+            _settings.Ignore.Patterns.Concat(own?.Patterns ?? []),
+            alwaysPaths: [_settings.ManifestName, _settings.ManifestName + ".part", _settings.FlatManifestName, _settings.FlatManifestName + ".part"],
+            alwaysNames: UploadStateFileNames());
+    }
+
+    /// <summary>The Upload State database and the files SQLite keeps beside it, plus the Run lock.</summary>
+    private IEnumerable<string> UploadStateFileNames()
+    {
+        if (_settings.State.Path is not { Length: > 0 } path) return [];
+        var name = Path.GetFileName(path);
+        return [name, name + "-wal", name + "-shm", name + "-journal", name + ".lock"];
     }
 
     private string RemotePathOf(ISource source) =>
