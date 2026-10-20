@@ -204,6 +204,10 @@ public sealed class SshNetRemote(SftpConnection connection) : IRemote
         public Task<RemoteResult> DeleteAsync(string path, CancellationToken ct) =>
             RunAsync(client => Task.Run(() => client.DeleteFile(path), ct), ct);
 
+        public Task<RemoteResult<IReadOnlyList<string>>> ListAsync(string directory, CancellationToken ct) =>
+            RunAsync<IReadOnlyList<string>>(client => Task.Run(() =>
+                (IReadOnlyList<string>)client.ListDirectory(directory).Select(e => e.Name).Where(n => n is not ("." or "..")).ToList(), ct), ct);
+
         public Task<RemoteResult<RemoteFileInfo>> StatAsync(string path, CancellationToken ct) =>
             RunAsync(client => Task.Run(() => new RemoteFileInfo(client.GetAttributes(path).Size), ct), ct);
 

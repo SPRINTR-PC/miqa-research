@@ -113,4 +113,28 @@ public abstract class RemoteContract
 
         Assert.IsFalse(download.IsOk);
     }
+
+    [TestMethod]
+    public async Task List_names_the_entries_of_a_directory()
+    {
+        await using var session = await Connect(CreateRemote());
+        var dir = UniqueDirectory();
+        await session.EnsureDirectoryAsync(dir + "/sub", CancellationToken.None);
+        await session.UploadAsync(new MemoryStream([1]), dir + "/f.bin", CancellationToken.None);
+
+        var list = await session.ListAsync(dir, CancellationToken.None);
+
+        Assert.IsTrue(list.IsOk, list.Reason);
+        CollectionAssert.AreEquivalent(new[] { "f.bin", "sub" }, list.Value!.ToArray());
+    }
+
+    [TestMethod]
+    public async Task List_of_a_missing_directory_is_not_ok()
+    {
+        await using var session = await Connect(CreateRemote());
+
+        var list = await session.ListAsync(UniqueDirectory() + "/missing", CancellationToken.None);
+
+        Assert.IsFalse(list.IsOk);
+    }
 }

@@ -3,7 +3,7 @@ using MiresSftpUploader.Core;
 
 namespace MiresSftpUploader.Test.Support;
 
-public enum RemoteOperation { Connect, EnsureDirectory, Upload, Rename, Delete, Stat, Download, RunCommand }
+public enum RemoteOperation { Connect, EnsureDirectory, Upload, Rename, Delete, Stat, Download, RunCommand, List }
 
 /// <summary>
 /// In-memory <see cref="IRemote"/> with fault injection. Paths are forward-slash, rooted at "/".
@@ -19,6 +19,22 @@ public sealed class FakeRemote : IRemote
     private readonly List<Corruption> _corruptions = new();
 
     public int ConnectCount { get; private set; }
+
+    /// <summary>
+    /// Models a Write-only Access account: it can create new objects but cannot stat, list, read or delete anything,
+    /// and cannot replace an existing object (neither by uploading to its name nor by renaming over it). Refusals are Denied.
+    /// </summary>
+    public bool WriteOnly { get; set; }
+
+    private readonly List<(RemoteOperation Operation, string Path)> _operations = new();
+
+    /// <summary>Every operation attempted, in order, including the ones that were refused.</summary>
+    public IReadOnlyList<(RemoteOperation Operation, string Path)> Operations
+    {
+        get { lock (_gate) return _operations.ToArray(); }
+    }
+
+    private static RemoteResult Refused(string what) => RemoteResult.Denied("Permission denied: " + what);
 
     /// <summary>False models an SFTP-only account: <c>RunCommandAsync</c> fails.</summary>
     public bool CommandChannel { get; set; } = true;
@@ -97,10 +113,16 @@ public sealed class FakeRemote : IRemote
             : new RemoteResult<IRemoteSession>(fault.Kind, default, fault.Reason));
     }
 
+    private bool Exists(string path)
+    {
+        lock (_gate) return _files.ContainsKey(path);
+    }
+
     internal RemoteResult? TakeFault(RemoteOperation operation, string path)
     {
         lock (_gate)
         {
+            _operations.Add((operation, path));
             foreach (var f in _faults)
             {
                 if (f.Operation != operation || f.Remaining <= 0) continue;
@@ -140,6 +162,7 @@ public sealed class FakeRemote : IRemote
         public async Task<RemoteResult> UploadAsync(Stream content, string path, CancellationToken ct)
         {
             if (remote.TakeFault(RemoteOperation.Upload, path) is { } fault) return fault;
+            if (remote.WriteOnly && remote.Exists(path)) return Refused("cannot replace " + path);
             var buffer = new MemoryStream();
             await content.CopyToAsync(buffer, ct);
             lock (remote._gate)
@@ -163,6 +186,7 @@ public sealed class FakeRemote : IRemote
         public Task<RemoteResult> RenameAsync(string from, string to, bool overwrite, CancellationToken ct)
         {
             if (remote.TakeFault(RemoteOperation.Rename, from) is { } fault) return Task.FromResult(fault);
+            if (remote.WriteOnly && remote.Exists(to)) return Task.FromResult(Refused("cannot replace " + to));
             lock (remote._gate)
             {
                 if (!remote._files.TryGetValue(from, out var data))
@@ -178,14 +202,33 @@ public sealed class FakeRemote : IRemote
         public Task<RemoteResult> DeleteAsync(string path, CancellationToken ct)
         {
             if (remote.TakeFault(RemoteOperation.Delete, path) is { } fault) return Task.FromResult(fault);
+            if (remote.WriteOnly) return Task.FromResult(Refused("cannot delete " + path));
             lock (remote._gate)
                 return Task.FromResult(remote._files.Remove(path) ? RemoteResult.Ok : RemoteResult.Failed($"not found: {path}"));
+        }
+
+        public Task<RemoteResult<IReadOnlyList<string>>> ListAsync(string directory, CancellationToken ct)
+        {
+            if (remote.TakeFault(RemoteOperation.List, directory) is { } fault)
+                return Task.FromResult(new RemoteResult<IReadOnlyList<string>>(fault.Kind, default, fault.Reason));
+            if (remote.WriteOnly) return Task.FromResult(RemoteResult<IReadOnlyList<string>>.Denied("Permission denied: cannot list " + directory));
+            lock (remote._gate)
+            {
+                var prefix = directory.TrimEnd('/') + "/";
+                if (directory != "/" && !remote._directories.Contains(directory.TrimEnd('/')))
+                    return Task.FromResult(RemoteResult<IReadOnlyList<string>>.Failed($"not found: {directory}"));
+                var names = remote._files.Keys.Concat(remote._directories)
+                    .Where(p => p.StartsWith(prefix, StringComparison.Ordinal) && p.Length > prefix.Length && !p[prefix.Length..].Contains('/'))
+                    .Select(p => p[prefix.Length..]).Distinct().ToList();
+                return Task.FromResult(RemoteResult<IReadOnlyList<string>>.Ok(names));
+            }
         }
 
         public Task<RemoteResult<RemoteFileInfo>> StatAsync(string path, CancellationToken ct)
         {
             if (remote.TakeFault(RemoteOperation.Stat, path) is { } fault)
                 return Task.FromResult(new RemoteResult<RemoteFileInfo>(fault.Kind, default, fault.Reason));
+            if (remote.WriteOnly) return Task.FromResult(RemoteResult<RemoteFileInfo>.Denied("Permission denied: cannot stat " + path));
             lock (remote._gate)
                 return Task.FromResult(remote._files.TryGetValue(path, out var data)
                     ? RemoteResult<RemoteFileInfo>.Ok(new RemoteFileInfo(data.Length))
@@ -196,6 +239,7 @@ public sealed class FakeRemote : IRemote
         public async Task<RemoteResult> DownloadAsync(string path, Stream destination, CancellationToken ct)
         {
             if (remote.TakeFault(RemoteOperation.Download, path) is { } fault) return fault;
+            if (remote.WriteOnly) return Refused("cannot read " + path);
             byte[]? data;
             lock (remote._gate) remote._files.TryGetValue(path, out data);
             if (data is null) return RemoteResult.Failed($"not found: {path}");
