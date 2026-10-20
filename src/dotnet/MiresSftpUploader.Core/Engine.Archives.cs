@@ -8,7 +8,7 @@ public sealed partial class Engine
     internal const string ArchiveNameCollisionReason = "ArchiveNameCollision";
     internal const string InsufficientStagingSpaceReason = "InsufficientStagingSpace";
 
-    internal sealed record ArchiveWork(ISource Source, string RemotePath, PlannedArchive Plan, PriorArchive? Prior)
+    internal sealed record ArchiveWork(ISource Source, string RemotePath, PlannedArchive Plan, PriorArchive? Prior, bool Delivered = false)
     {
         public FileKey Key(string destination) => new(destination, RemotePath, Source.Name, Plan.RelativePath);
     }
@@ -172,7 +172,7 @@ public sealed partial class Engine
             for (var attempt = 1; attempt <= max; attempt++)
             {
                 foreach (var m in plan.Members) run.Set(m.Item, FileOutcome.Uploading, null);
-                var result = await TryUploadStagedAsync(session, store, staged, finalPath, key, build.ZipSize, build.ZipSha256!,
+                var result = await TryUploadStagedAsync(session, store, staged, finalPath, key, build.ZipSize, build.ZipSha256!, work.Delivered,
                     () => { foreach (var m in plan.Members) run.Set(m.Item, FileOutcome.Verifying, null); }, ct);
                 if (result.Sha256 is not null)
                 {
@@ -202,7 +202,7 @@ public sealed partial class Engine
         before.Count == now.Count && now.All(kv => before.TryGetValue(kv.Key, out var p) && p.Sha256 == kv.Value.Sha256);
 
     private async Task<UploadAttempt> TryUploadStagedAsync(
-        IRemoteSession session, UploadStateStore? store, string stagedPath, string finalPath, FileKey key, long zipSize, string zipSha256, Action markVerifying, CancellationToken ct)
+        IRemoteSession session, UploadStateStore? store, string stagedPath, string finalPath, FileKey key, long zipSize, string zipSha256, bool delivered, Action markVerifying, CancellationToken ct)
     {
         var partPath = UploadTarget(finalPath);
         try
@@ -223,7 +223,7 @@ public sealed partial class Engine
                 var check = await VerifyAsync(session, level, partPath, zipSize, zipSha256, ct);
                 if (!check.Ok)
                 {
-                    await session.DeleteAsync(partPath, ct);
+                    await DiscardBadUploadAsync(session, partPath, delivered, ct);
                     return new UploadAttempt(null, $"{VerificationFailedReason}: {check.Detail}", false);
                 }
             }

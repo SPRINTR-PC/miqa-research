@@ -268,7 +268,7 @@ public sealed partial class Engine : IRunEngine
 
                 var stat = await source.StatAsync(path, ct);
                 if (stat is null) maybeArchives.Add((path, known));
-                else work.Add(new FileWork(source, remotePath, stat));
+                else work.Add(new FileWork(source, remotePath, stat, Delivered: known.Sha256 is not null));
             }
 
             // A failed path that is not a file of the Source may be an Archive: plan the Source to find out.
@@ -278,7 +278,8 @@ public sealed partial class Engine : IRunEngine
                 {
                     if (!maybeArchives.Any(m => m.Path == archive.RelativePath)) continue;
                     rebuilt.Add(archive.RelativePath);
-                    var archiveWork = new ArchiveWork(source, remotePath, archive, Prior: null);
+                    var archiveWork = new ArchiveWork(source, remotePath, archive, Prior: null,
+                        Delivered: maybeArchives.First(m => m.Path == archive.RelativePath).Known.Sha256 is not null);
                     if (PlanArchive(archiveWork, run, dryRun: false)) work.Add(archiveWork);
                 }
             foreach (var (path, known) in maybeArchives.Where(m => !rebuilt.Contains(m.Path)))
@@ -391,7 +392,7 @@ public sealed partial class Engine : IRunEngine
                 listed.Add(file.RelativePath);
                 PriorFile? known = null;
                 prior?.TryGetValue(file.RelativePath, out known);
-                var item = new FileWork(source, remotePath, file, options.RehashAll ? null : known);
+                var item = new FileWork(source, remotePath, file, options.RehashAll ? null : known, Delivered: known?.Sha256 is not null);
                 if (rules.Reason(file.RelativePath, m => run.Warn(m)) is { } ignored)
                     run.Set(item, FileOutcome.Ignored, ignored);
                 else if (!run.WriteOnly && reserved.Contains(file.RelativePath))
@@ -414,7 +415,7 @@ public sealed partial class Engine : IRunEngine
                 listed.Add(archive.RelativePath);
                 PriorArchive? priorArchive = null;
                 priorArchives?.TryGetValue(archive.RelativePath, out priorArchive);
-                var archiveWork = new ArchiveWork(source, remotePath, archive, options.RehashAll ? null : priorArchive);
+                var archiveWork = new ArchiveWork(source, remotePath, archive, options.RehashAll ? null : priorArchive, Delivered: priorArchive?.File.Sha256 is not null);
                 if (PlanArchive(archiveWork, run, options.DryRun)) work.Add(archiveWork);
             }
             if (store is not null)
@@ -721,7 +722,7 @@ public sealed partial class Engine : IRunEngine
             var changed = await ChangedSinceListingAsync(item, bytesRead, ct);
             if (changed is not null)
             {
-                await session.DeleteAsync(partPath, ct);
+                await DiscardBadUploadAsync(session, partPath, item.Delivered, ct);
                 return new UploadAttempt(null, "ChangedDuringUpload: " + changed, true);
             }
 
@@ -733,7 +734,7 @@ public sealed partial class Engine : IRunEngine
                 var check = await VerifyAsync(session, level, partPath, bytesRead, sha256, ct);
                 if (!check.Ok)
                 {
-                    await session.DeleteAsync(partPath, ct);
+                    await DiscardBadUploadAsync(session, partPath, item.Delivered, ct);
                     return new UploadAttempt(null, $"{VerificationFailedReason}: {check.Detail}", false);
                 }
             }
@@ -749,6 +750,21 @@ public sealed partial class Engine : IRunEngine
         {
             return new UploadAttempt(null, ex.Message, false);
         }
+    }
+
+    /// <summary>
+    /// Removes the object a failed upload left. For PartThenRename that is the .part; for Direct it is the final file itself, which
+    /// is deleted only when no earlier Run delivered it: the tool never deletes a delivered version, and the Upload State and the
+    /// Manifest keep listing it (with the failure beside it) rather than pointing at a file the tool removed.
+    /// </summary>
+    private async Task DiscardBadUploadAsync(IRemoteSession session, string uploadedPath, bool previouslyDelivered, CancellationToken ct)
+    {
+        if (IsDirect && previouslyDelivered)
+        {
+            _logger.LogWarning("{Path} was delivered before and its new version failed; the file stays on the server and is listed as failed", uploadedPath);
+            return;
+        }
+        await session.DeleteAsync(uploadedPath, ct);
     }
 
     /// <summary>Why the file no longer matches its listing, or null when it is unchanged.</summary>
@@ -954,7 +970,8 @@ public sealed partial class Engine : IRunEngine
 
     private static string ParentOf(string path) => path[..path.LastIndexOf('/')] is { Length: > 0 } p ? p : "/";
 
-    internal sealed record FileWork(ISource Source, string RemotePath, SourceFile File, PriorFile? Prior = null)
+    /// <param name="Delivered">An earlier Run delivered a version of this file, so the server may hold it under the final name.</param>
+    internal sealed record FileWork(ISource Source, string RemotePath, SourceFile File, PriorFile? Prior = null, bool Delivered = false)
     {
         public FileKey Key(string destination) => new(destination, RemotePath, Source.Name, File.RelativePath);
     }

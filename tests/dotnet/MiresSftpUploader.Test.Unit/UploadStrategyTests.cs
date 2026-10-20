@@ -172,6 +172,39 @@ public sealed class UploadStrategyTests
     }
 
     [TestMethod]
+    public async Task Direct_never_deletes_a_previously_delivered_file_when_the_new_version_fails_verification()
+    {
+        var remote = new FakeRemote();
+        var settings = Settings(UploadStrategy.Direct, RemoteAccess.ReadWrite, new VerificationSettings { AfterUpload = VerificationLevel.Size });
+        await Run(settings, remote, new FakeSource("scans").Add("a.txt", "alpha"));
+        remote.CorruptNextUpload("a.txt", truncate: true, times: 2);
+
+        var result = await Run(settings, remote, new FakeSource("scans").Add("a.txt", "changed content", new DateTimeOffset(2026, 5, 5, 0, 0, 0, TimeSpan.Zero)));
+
+        Assert.AreEqual(ExitCodes.SomeFilesFailed, result.ExitCode);
+        Assert.IsTrue(remote.Files.ContainsKey("/upload/scans/a.txt"), "the file the Upload State and the Manifest list is not deleted by the tool");
+        using var doc = ManifestOf(remote);
+        Assert.IsFalse(doc.RootElement.GetProperty("complete").GetBoolean());
+        Assert.AreEqual("a.txt", doc.RootElement.GetProperty("failures")[0].GetProperty("path").GetString());
+    }
+
+    [TestMethod]
+    public async Task Direct_never_deletes_a_previously_delivered_file_that_changes_while_it_is_read()
+    {
+        var remote = new FakeRemote();
+        var settings = Settings(UploadStrategy.Direct, RemoteAccess.ReadWrite);
+        await Run(settings, remote, new FakeSource("scans").Add("a.txt", "alpha"));
+        var source = new FakeSource("scans").Add("a.txt", "second version", new DateTimeOffset(2026, 5, 5, 0, 0, 0, TimeSpan.Zero));
+        source.AfterOpen = _ => source.Add("a.txt", "third version, still being written", new DateTimeOffset(2026, 6, 6, 0, 0, 0, TimeSpan.Zero));
+
+        var result = await Run(settings, remote, source);
+
+        Assert.AreEqual(ExitCodes.SomeFilesFailed, result.ExitCode);
+        Assert.IsTrue(remote.Files.ContainsKey("/upload/scans/a.txt"));
+        StringAssert.Contains(remote.ReadText("/upload/scans/manifest.json"), "ChangedDuringUpload");
+    }
+
+    [TestMethod]
     public async Task Direct_also_applies_to_Archives()
     {
         var remote = new FakeRemote { WriteOnly = true };
