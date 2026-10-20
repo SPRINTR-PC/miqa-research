@@ -15,4 +15,15 @@ public interface ISource
     IAsyncEnumerable<SourceFile> ListAsync(CancellationToken cancellationToken);
 
     Task<Stream> OpenReadAsync(string relativePath, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The file's current size and modification time, or null when it no longer exists. Used to detect a file that
+    /// changed while an Archive was being built. The default lists the Source; adapters should override it.
+    /// </summary>
+    async Task<SourceFile?> StatAsync(string relativePath, CancellationToken cancellationToken)
+    {
+        await foreach (var file in ListAsync(cancellationToken))
+            if (file.RelativePath == relativePath) return file;
+        return null;
+    }
 }

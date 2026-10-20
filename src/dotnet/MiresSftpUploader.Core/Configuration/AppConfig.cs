@@ -108,6 +108,8 @@ public sealed record ArchiveConfig
     public IReadOnlyList<ArchiveRuleConfig> Rules { get; init; } = [];
     public int MaxParallelBuilds { get; init; } = 1;
     public long WarnAboveBytes { get; init; } = 50L * 1024 * 1024 * 1024;
+    /// <summary>Free space that must remain in the Staging Area after the members of an Archive are accounted for.</summary>
+    public long MinFreeSpaceBytes { get; init; } = 1024L * 1024 * 1024;
 }
 
 public sealed record ArchiveRuleConfig

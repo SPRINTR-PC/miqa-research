@@ -45,6 +45,18 @@ public abstract class SourceContract
     }
 
     [TestMethod]
+    public async Task Stat_reports_the_listed_size_and_time_and_null_for_a_missing_file()
+    {
+        var source = CreateSource(new Dictionary<string, byte[]> { ["dir/a.bin"] = [5, 6, 7] });
+        var listed = (await ListAll(source)).Single();
+
+        var stat = await source.StatAsync("dir/a.bin", CancellationToken.None);
+
+        Assert.AreEqual(listed, stat);
+        Assert.IsNull(await source.StatAsync("dir/missing.bin", CancellationToken.None));
+    }
+
+    [TestMethod]
     public async Task An_empty_source_lists_nothing()
     {
         var source = CreateSource(new Dictionary<string, byte[]>());

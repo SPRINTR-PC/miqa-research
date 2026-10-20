@@ -35,6 +35,8 @@ public sealed record EngineSettings
     public string FlatManifestName { get; init; } = "manifest.sha256";
     /// <summary>Global Ignore Rules; each Source's own <see cref="SourceConfig.Ignore"/> adds to them.</summary>
     public IgnoreConfig Ignore { get; init; } = new();
+    /// <summary>Global Archive Rules and Staging Area settings; each Source's own <see cref="SourceConfig.ArchiveRules"/> are tried first.</summary>
+    public ArchiveConfig Archive { get; init; } = new();
     /// <summary>Global Too Recent limits; a Source's own <see cref="SourceConfig.Scan"/> overrides them.</summary>
     public ScanConfig Scan { get; init; } = new();
     /// <summary>Per-Source additions, matched to a Source by name (case-insensitive).</summary>
