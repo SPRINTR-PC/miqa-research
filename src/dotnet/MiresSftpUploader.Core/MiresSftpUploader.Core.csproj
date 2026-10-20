@@ -9,6 +9,7 @@
 
     <ItemGroup>
         <InternalsVisibleTo Include="MiresSftpUploader.Test.Unit" />
+        <InternalsVisibleTo Include="MiresSftpUploader.Test.Integration" />
     </ItemGroup>
 
     <ItemGroup>
