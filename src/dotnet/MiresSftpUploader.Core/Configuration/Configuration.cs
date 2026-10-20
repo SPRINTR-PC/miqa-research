@@ -94,6 +94,9 @@ public sealed class Configuration(ConfigurationLocations locations)
 
         var config = Bind(merged.Values, errors);
         var warnings = new List<ConfigError>();
+        foreach (var (layer, file) in new[] { ("Machine Config", layers.Machine), ("User Overrides", layers.User) })
+            foreach (var key in file.Values.Keys.Where(k => SecretLikeKey.IsMatch(k)))
+                warnings.Add(new(key, $"{layer} must not hold a Secret; the value is ignored. Set it in an environment variable."));
         if (config is not null)
             ConfigValidator.Validate(config, headless, errors, warnings);
 
@@ -207,6 +210,8 @@ public sealed class Configuration(ConfigurationLocations locations)
         (new(@"^Ui:Theme$", RegexOptions.IgnoreCase), typeof(UiTheme)),
         (new(@"^(Ui:LogLevel|Logging:Level)$", RegexOptions.IgnoreCase), typeof(LogLevelSetting)),
     ];
+
+    private static readonly Regex SecretLikeKey = new(@"(^|:)(Password|KeyPassphrase|AccessKey|SecretKey)$", RegexOptions.IgnoreCase);
 
     private static AppConfig? Bind(Dictionary<string, string> values, List<ConfigError> errors)
     {
