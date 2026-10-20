@@ -60,6 +60,30 @@ public static class SftpServer
         if (_container is not null) await _container.DisposeAsync();
     }
 
+    private const string ChrootHome = "/home/test";
+
+    /// <summary>SHA-256 of a file as the server's own file system holds it (read by <c>sha256sum</c> inside the container, not through SFTP).</summary>
+    public static async Task<string> RemoteSha256Async(string sftpPath)
+    {
+        var result = await _container!.ExecAsync(["sha256sum", "--", ChrootHome + sftpPath]);
+        if (result.ExitCode != 0) throw new InvalidOperationException(result.Stderr);
+        return result.Stdout.Split(' ')[0];
+    }
+
+    public static async Task<string> RemoteReadTextAsync(string sftpPath)
+    {
+        var result = await _container!.ExecAsync(["cat", "--", ChrootHome + sftpPath]);
+        if (result.ExitCode != 0) throw new InvalidOperationException(result.Stderr);
+        return result.Stdout;
+    }
+
+    /// <summary>Lists the files below an SFTP directory as the server holds them, recursively.</summary>
+    public static async Task<IReadOnlyList<string>> RemoteFilesAsync(string sftpDirectory)
+    {
+        var result = await _container!.ExecAsync(["find", ChrootHome + sftpDirectory, "-type", "f"]);
+        return result.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(p => p[ChrootHome.Length..]).ToList();
+    }
+
     private static async Task<SftpServerInfo> StartAsync()
     {
         var keyDirectory = Path.Combine(AppContext.BaseDirectory, "Fixtures");
