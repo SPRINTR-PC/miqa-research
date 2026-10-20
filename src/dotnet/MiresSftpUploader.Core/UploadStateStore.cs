@@ -26,7 +26,7 @@ internal sealed record PriorMember(long Size, long MtimeTicks, string Sha256);
 internal sealed record PriorArchive(PriorFile File, IReadOnlyDictionary<string, PriorMember> Members);
 
 /// <summary>A member to record for an Archive: Source-relative path, size, mtime ticks and SHA-256.</summary>
-internal sealed record ArchiveMemberRecord(string Path, long Size, long MtimeTicks, string Sha256);
+internal sealed record ArchiveMemberRecord(string Path, long Size, long MtimeTicks, string Sha256, long? ModifiedTicks = null);
 
 /// <summary>An upload that was in flight when its Run died: the server object to remove.</summary>
 internal sealed record OrphanPart(string Destination, string PartPath);
@@ -37,7 +37,7 @@ internal sealed record OrphanPart(string Destination, string PartPath);
 /// </summary>
 internal sealed class UploadStateStore : IAsyncDisposable
 {
-    internal const int SchemaVersion = 1;
+    internal const int SchemaVersion = 2;
 
     private static readonly string[] Migrations =
     [
@@ -93,6 +93,8 @@ internal sealed class UploadStateStore : IAsyncDisposable
             PRIMARY KEY (ArchiveFileId, MemberPath)
         );
         """,
+        // 2: the real modification time of an Archive member (Mtime holds a change token, which is a digest for S3 Sources)
+        "ALTER TABLE ArchiveMembers ADD COLUMN Modified INTEGER NULL;",
     ];
 
     private const int BatchSize = 200;
@@ -238,10 +240,10 @@ internal sealed class UploadStateStore : IAsyncDisposable
                 """, ("$d", key.Destination), ("$r", key.RemotePath), ("$s", key.Source), ("$p", key.RelativePath));
             foreach (var m in members)
                 Exec(c, """
-                    INSERT INTO ArchiveMembers (ArchiveFileId, MemberPath, Size, Mtime, Sha256)
-                    SELECT Id, $m, $size, $mtime, $sha FROM Files
+                    INSERT INTO ArchiveMembers (ArchiveFileId, MemberPath, Size, Mtime, Sha256, Modified)
+                    SELECT Id, $m, $size, $mtime, $sha, $modified FROM Files
                     WHERE Destination=$d AND RemotePath=$r AND Source=$s AND RelativePath=$p
-                    """, ("$m", m.Path), ("$size", m.Size), ("$mtime", m.MtimeTicks), ("$sha", m.Sha256),
+                    """, ("$m", m.Path), ("$size", m.Size), ("$mtime", m.MtimeTicks), ("$sha", m.Sha256), ("$modified", m.ModifiedTicks),
                     ("$d", key.Destination), ("$r", key.RemotePath), ("$s", key.Source), ("$p", key.RelativePath));
             if (uploaded) InsertRunFile(c, runId, key, "Succeeded", zipSize, duration, null, now);
             else InsertRunFile(c, runId, key, "Skipped", 0, TimeSpan.Zero, "unchanged", now);
@@ -409,7 +411,7 @@ internal sealed class UploadStateStore : IAsyncDisposable
         using var connection = OpenConnection(_path, readOnly: true);
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT f.RelativePath, f.Size, f.Sha256, f.Status, m.MemberPath, m.Size, m.Mtime, m.Sha256
+            SELECT f.RelativePath, f.Size, f.Sha256, f.Status, m.MemberPath, m.Size, m.Modified, m.Sha256
             FROM Files f LEFT JOIN ArchiveMembers m ON m.ArchiveFileId = f.Id
             WHERE f.Destination=$d AND f.RemotePath=$r AND f.Source=$s AND f.Sha256 IS NOT NULL
             ORDER BY f.RelativePath COLLATE BINARY, m.MemberPath COLLATE BINARY
@@ -438,7 +440,7 @@ internal sealed class UploadStateStore : IAsyncDisposable
             }
             if (!rows.IsDBNull(4))
                 (members ??= []).Add(new ManifestArchiveMember(rows.GetString(4), rows.GetInt64(5),
-                    rows.GetString(7), new DateTimeOffset(rows.GetInt64(6), TimeSpan.Zero)));
+                    rows.GetString(7), rows.IsDBNull(6) ? null : new DateTimeOffset(rows.GetInt64(6), TimeSpan.Zero)));
         }
         if (path is not null) yield return Node(path, size, sha, missing, members);
 

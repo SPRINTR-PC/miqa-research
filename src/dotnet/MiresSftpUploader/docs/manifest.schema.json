@@ -101,7 +101,7 @@
           "description": "The original files packed into the Archive, with their own hashes.",
           "items": {
             "type": "object",
-            "required": ["path", "size", "sha256", "modified"],
+            "required": ["path", "size", "sha256"],
             "properties": {
               "path": { "$ref": "#/$defs/path" },
               "size": { "type": "integer", "minimum": 0 },

@@ -15,7 +15,7 @@ internal abstract record ManifestNode(string Path, long Size, string Sha256)
 internal sealed record ManifestFile(string Path, long Size, string Sha256) : ManifestNode(Path, Size, Sha256);
 
 /// <summary>An original file packed into an Archive, with its own hash.</summary>
-internal sealed record ManifestArchiveMember(string Path, long Size, string Sha256, DateTimeOffset Modified);
+internal sealed record ManifestArchiveMember(string Path, long Size, string Sha256, DateTimeOffset? Modified);
 
 /// <summary>An Archive and the original files it holds.</summary>
 internal sealed record ManifestArchive(string Path, long Size, string Sha256, IReadOnlyList<ManifestArchiveMember> Members)
@@ -175,7 +175,7 @@ internal static class ManifestWriter
                 json.WriteString("path", member.Path);
                 json.WriteNumber("size", member.Size);
                 json.WriteString("sha256", member.Sha256);
-                json.WriteString("modified", member.Modified.UtcDateTime);
+                if (member.Modified is { } modified) json.WriteString("modified", modified.UtcDateTime);
                 json.WriteEndObject();
             }
             json.WriteEndArray();

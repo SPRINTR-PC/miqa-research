@@ -143,7 +143,7 @@ public sealed partial class Engine
             }
 
             var members = plan.Members
-                .Select(m => new ArchiveMemberRecord(m.Item.File.RelativePath, m.Item.File.Size, m.Item.File.ChangeToken, build.MemberHashes[m.Item.File.RelativePath]))
+                .Select(m => new ArchiveMemberRecord(m.Item.File.RelativePath, m.Item.File.Size, m.Item.File.ChangeToken, build.MemberHashes[m.Item.File.RelativePath], m.Item.File.Modified.UtcTicks))
                 .ToList();
             var memberHashes = members.ToDictionary(m => m.Path, m => new PriorMember(m.Size, m.MtimeTicks, m.Sha256), StringComparer.Ordinal);
 
