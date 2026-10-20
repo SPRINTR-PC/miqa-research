@@ -206,6 +206,12 @@ public sealed partial class Engine : IRunEngine
     {
         var orphans = await store.SweepAbandonedAsync(_time.GetUtcNow(), _settings.State.AbandonedAfter, _settings.Destination);
         if (orphans.Count == 0) return;
+        if (_settings.RemoteAccess == RemoteAccess.WriteOnly)
+        {
+            _logger.LogInformation("Abandoned Run: left {Count} .part files on the server; the account cannot delete", orphans.Count);
+            await store.ForgetOrphansAsync(_settings.Destination);
+            return;
+        }
 
         var connect = await _remote.ConnectAsync(ct);
         if (!connect.IsOk)
@@ -278,6 +284,61 @@ public sealed partial class Engine : IRunEngine
         return participating;
     }
 
+    /// <summary>
+    /// Settles whether this Run has Write-only Access: as configured, or for <c>Auto</c> by trying to stat and list the Remote Root
+    /// (a refusal means write-only). The result is logged. A Dry Run touches nothing, so it only honours an explicit setting.
+    /// </summary>
+    private async Task<(int ExitCode, string? Reason)?> ResolveRemoteAccessAsync(RunOptions options, RunState run, CancellationToken ct)
+    {
+        switch (_settings.RemoteAccess)
+        {
+            case RemoteAccess.WriteOnly:
+                run.WriteOnly = true;
+                run.WriteOnlyReason = "RemoteAccess is WriteOnly";
+                _logger.LogInformation("Remote access: write-only (configured); read-based checks are off");
+                return null;
+            case RemoteAccess.ReadWrite:
+                _logger.LogInformation("Remote access: read-write (configured)");
+                return null;
+        }
+        if (options.DryRun) return null;
+
+        var connect = await _remote.ConnectAsync(ct);
+        if (!connect.IsOk) return (ExitCodes.ConnectFailed, connect.Reason);
+        await using var session = connect.Value!;
+        var root = Normalize(_settings.RemoteRoot);
+        var ensure = await session.EnsureDirectoryAsync(root, ct);
+        if (!ensure.IsOk)
+        {
+            _logger.LogInformation("Remote access: read-write assumed; could not prepare {Root}: {Reason}", root, ensure.Reason);
+            return null;
+        }
+        var stat = await session.StatAsync(root, ct);
+        var list = await session.ListAsync(root, ct);
+        var denied = stat.Kind == RemoteResultKind.Denied ? stat.Reason : list.Kind == RemoteResultKind.Denied ? list.Reason : null;
+        if (denied is null)
+        {
+            _logger.LogInformation("Remote access: read-write (stat and listing of {Root} work)", root);
+            return null;
+        }
+        run.WriteOnly = true;
+        run.WriteOnlyReason = denied;
+        _logger.LogInformation("Remote access: write-only (detected: {Reason}); read-based checks are off", denied);
+        return null;
+    }
+
+    /// <summary>Verification reads from the server, which a write-only account cannot do: exit 2 rather than silently skipping it.</summary>
+    private (int ExitCode, string? Reason)? WriteOnlyVerificationConflict(RunState run)
+    {
+        if (!run.WriteOnly) return null;
+        var settings = _settings.Verification;
+        var (setting, level) = settings.AfterUpload != VerificationLevel.Off ? ("Upload:VerifyAfterUpload", settings.AfterUpload)
+            : settings.Remote != VerificationLevel.Off ? ("Upload:VerifyRemote", settings.Remote) : (null, VerificationLevel.Off);
+        return setting is null
+            ? null
+            : (ExitCodes.ConfigurationError, $"{setting} is {level}, which this server cannot do: the account has Write-only Access ({run.WriteOnlyReason}) and Verification reads from the server. Turn Verification off.");
+    }
+
     private async Task<(int ExitCode, string? Reason)> ExecuteCoreAsync(RunOptions options, RunState run, CancellationToken ct)
     {
         var selected = new List<ISource>();
@@ -292,6 +353,7 @@ public sealed partial class Engine : IRunEngine
             }
 
         run.BuildGate = new SemaphoreSlim(Math.Max(_settings.Archive.MaxParallelBuilds, 1));
+        if (await ResolveRemoteAccessAsync(options, run, ct) is { } accessFailure) return accessFailure;
         var work = new List<object>();
         if (options.RetryOf is { } retryOf)
         {
@@ -323,7 +385,7 @@ public sealed partial class Engine : IRunEngine
                 var item = new FileWork(source, remotePath, file, options.RehashAll ? null : known);
                 if (rules.Reason(file.RelativePath, m => run.Warn(m)) is { } ignored)
                     run.Set(item, FileOutcome.Ignored, ignored);
-                else if (reserved.Contains(file.RelativePath))
+                else if (!run.WriteOnly && reserved.Contains(file.RelativePath))
                     collisions.Add(file.RelativePath);
                 else
                     candidates.Add((item, IsTooRecent(source, file)));
@@ -360,6 +422,7 @@ public sealed partial class Engine : IRunEngine
             return (ExitCodes.Ok, null);
         }
 
+        if (WriteOnlyVerificationConflict(run) is { } conflict) return conflict;
         if (await ProbeVerificationAsync(ct) is { } unavailable) return unavailable;
 
         foreach (var item in work.OfType<FileWork>()) run.Set(item, FileOutcome.Pending, null);
@@ -412,6 +475,11 @@ public sealed partial class Engine : IRunEngine
     private async Task<List<string>> PlaceMarkersAsync(IReadOnlyList<ISource> sources, RunState run, CancellationToken ct)
     {
         var placed = new List<string>();
+        if (run.WriteOnly)
+        {
+            _logger.LogInformation("No In-progress Markers: the account has Write-only Access and cannot remove them");
+            return placed;
+        }
         var connect = await _remote.ConnectAsync(ct);
         if (!connect.IsOk)
         {
@@ -760,6 +828,9 @@ public sealed partial class Engine : IRunEngine
         public Guid RunId { get; } = runId;
         public DateTimeOffset StartedAt { get; } = startedAt;
         public UploadStateStore? Store { get; set; }
+        /// <summary>The account has Write-only Access: the Run trusts the Upload State instead of the server.</summary>
+        public bool WriteOnly { get; set; }
+        public string WriteOnlyReason { get; set; } = "";
 
         private int _verified;
         private int _verificationFailures;

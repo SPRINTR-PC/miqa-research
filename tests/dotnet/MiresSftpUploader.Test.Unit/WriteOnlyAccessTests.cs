@@ -1,0 +1,130 @@
+using Microsoft.Extensions.Logging;
+using MiresSftpUploader.Core;
+using MiresSftpUploader.Test.Support;
+
+namespace MiresSftpUploader.Test.Unit;
+
+/// <summary>Write-only Access: the account can upload but not read, list, delete or overwrite.</summary>
+[TestClass]
+public sealed class WriteOnlyAccessTests
+{
+    private string _dir = "";
+
+    [TestInitialize]
+    public void Setup() => _dir = Directory.CreateTempSubdirectory("mires-writeonly-").FullName;
+
+    [TestCleanup]
+    public void Cleanup()
+    {
+        try { Directory.Delete(_dir, recursive: true); } catch (IOException) { }
+    }
+
+    private EngineSettings Settings(RemoteAccess access = RemoteAccess.Auto, UploadStrategy strategy = UploadStrategy.PartThenRename,
+        VerificationSettings? verification = null, bool withState = true) => new()
+    {
+        RemoteRoot = "/upload",
+        Destination = "sftp.example:22",
+        RemoteAccess = access,
+        UploadStrategy = strategy,
+        Verification = verification ?? new VerificationSettings(),
+        Retry = new RetrySettings { MaxAttempts = 2, BaseDelay = TimeSpan.Zero, MaxDelay = TimeSpan.Zero },
+        State = new StateSettings { Path = withState ? Path.Combine(_dir, "state.db") : null },
+    };
+
+    private static (Engine Engine, CapturingLoggerProvider Log) NewEngine(EngineSettings settings, FakeRemote remote, params ISource[] sources)
+    {
+        var log = new CapturingLoggerProvider();
+        var factory = LoggerFactory.Create(b => b.SetMinimumLevel(LogLevel.Trace).AddProvider(log));
+        return (new Engine(remote, sources, settings, new Logger<Engine>(factory), TimeProvider.System), log);
+    }
+
+    private static Task<RunResult> Run(Engine engine, RunOptions? options = null) =>
+        engine.RunAsync(options ?? new RunOptions(), new Progress<RunEvent>(), CancellationToken.None);
+
+    [TestMethod]
+    public async Task Auto_treats_a_refused_stat_and_listing_as_write_only_and_logs_it()
+    {
+        var remote = new FakeRemote { WriteOnly = true };
+        var (engine, log) = NewEngine(Settings(), remote, new FakeSource("scans").Add("a.txt", "alpha"));
+
+        var result = await Run(engine);
+
+        Assert.AreEqual(ExitCodes.Ok, result.ExitCode, result.Reason);
+        Assert.AreEqual("alpha", remote.ReadText("/upload/scans/a.txt"));
+        Assert.IsTrue(log.Entries.Any(e => e.Level == LogLevel.Information && e.Message.Contains("write-only", StringComparison.OrdinalIgnoreCase)), "the probe result is logged");
+    }
+
+    [TestMethod]
+    public async Task Auto_on_a_readable_server_logs_read_write_and_keeps_the_read_based_checks()
+    {
+        var remote = new FakeRemote();
+        var (engine, log) = NewEngine(Settings(), remote, new FakeSource("scans").Add("manifest.json", "mine"));
+
+        var result = await Run(engine);
+
+        Assert.AreEqual(ExitCodes.ConfigurationError, result.ExitCode, "a Source file named like the Manifest is still refused");
+        Assert.IsTrue(log.Entries.Any(e => e.Message.Contains("read-write", StringComparison.OrdinalIgnoreCase)), "the probe result is logged");
+    }
+
+    [TestMethod]
+    public async Task A_write_only_Run_reads_nothing_from_the_server()
+    {
+        var remote = new FakeRemote { WriteOnly = true };
+        var (engine, _) = NewEngine(Settings(RemoteAccess.WriteOnly), remote, new FakeSource("scans").Add("a.txt", "alpha").Add("b/c.txt", "gamma"));
+
+        await Run(engine);
+
+        var reads = remote.Operations.Where(o => o.Operation is RemoteOperation.Stat or RemoteOperation.List or RemoteOperation.Download
+            or RemoteOperation.RunCommand or RemoteOperation.Delete).ToList();
+        Assert.IsEmpty(reads, string.Join(", ", reads));
+    }
+
+    [TestMethod]
+    public async Task Write_only_skips_the_Manifest_name_collision_check()
+    {
+        var remote = new FakeRemote { WriteOnly = true };
+        var (engine, _) = NewEngine(Settings(RemoteAccess.WriteOnly), remote, new FakeSource("scans").Add("manifest.json", "mine"));
+
+        var result = await Run(engine);
+
+        Assert.AreEqual(ExitCodes.Ok, result.ExitCode, result.Reason);
+    }
+
+    [TestMethod]
+    public async Task Write_only_places_no_In_progress_Marker()
+    {
+        var remote = new FakeRemote { WriteOnly = true };
+        var (engine, _) = NewEngine(Settings(RemoteAccess.WriteOnly), remote, new FakeSource("scans").Add("a.txt", "alpha"));
+
+        await Run(engine);
+
+        Assert.IsFalse(remote.Files.Keys.Any(k => k.Contains(".inprogress")), string.Join(", ", remote.Files.Keys));
+    }
+
+    [TestMethod]
+    [DataRow(RemoteAccess.WriteOnly)]
+    [DataRow(RemoteAccess.Auto)]
+    public async Task Verification_with_write_only_access_exits_2_before_anything_is_uploaded(RemoteAccess access)
+    {
+        var remote = new FakeRemote { WriteOnly = true };
+        var settings = Settings(access, verification: new VerificationSettings { AfterUpload = VerificationLevel.Size });
+        var (engine, _) = NewEngine(settings, remote, new FakeSource("scans").Add("a.txt", "alpha"));
+
+        var result = await Run(engine);
+
+        Assert.AreEqual(ExitCodes.ConfigurationError, result.ExitCode);
+        StringAssert.Contains(result.Reason, "write-only", StringComparison.OrdinalIgnoreCase);
+        Assert.IsEmpty(remote.Files);
+    }
+
+    [TestMethod]
+    public async Task A_Dry_Run_does_not_touch_the_server_to_probe_access()
+    {
+        var remote = new FakeRemote { WriteOnly = true };
+        var (engine, _) = NewEngine(Settings(), remote, new FakeSource("scans").Add("a.txt", "alpha"));
+
+        await Run(engine, new RunOptions { DryRun = true });
+
+        Assert.IsEmpty(remote.Operations);
+    }
+}
