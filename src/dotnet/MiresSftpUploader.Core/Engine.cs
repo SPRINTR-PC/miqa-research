@@ -407,7 +407,7 @@ public sealed partial class Engine
     {
         var store = run.Store;
         var key = item.Key(_settings.Destination);
-        var mtime = item.File.Modified.UtcTicks;
+        var mtime = item.File.ChangeToken;
         if (IsUnchanged(item, out var prior))
         {
             run.Skip(item, prior.Sha256!, UnchangedReason);
@@ -447,7 +447,7 @@ public sealed partial class Engine
     {
         prior = item.Prior!;
         return item.Prior is { Status: "Succeeded", Sha256: not null } known
-            && known.Size == item.File.Size && known.MtimeTicks == item.File.Modified.UtcTicks;
+            && known.Size == item.File.Size && known.MtimeTicks == item.File.ChangeToken;
     }
 
     private TimeSpan BackoffDelay(int attempt)
@@ -469,7 +469,7 @@ public sealed partial class Engine
             if (!ensure.IsOk) return UploadAttempt.From(ensure);
 
             if (run.Store is { } store)
-                await store.MarkUploadingAsync(item.Key(_settings.Destination), item.File.Size, item.File.Modified.UtcTicks, partPath);
+                await store.MarkUploadingAsync(item.Key(_settings.Destination), item.File.Size, item.File.ChangeToken, partPath);
 
             string sha256;
             long bytesRead;
@@ -509,7 +509,10 @@ public sealed partial class Engine
         var now = await item.Source.StatAsync(listed.RelativePath, ct);
         if (now is null) return null;
         if (now.Size != listed.Size) return $"size is now {now.Size}, listed {listed.Size}";
-        if (now.Modified.UtcTicks != listed.Modified.UtcTicks) return $"modified at {now.Modified:O}, listed {listed.Modified:O}";
+        if (now.ChangeToken != listed.ChangeToken)
+            return listed.ETag is null
+                ? $"modified at {now.Modified:O}, listed {listed.Modified:O}"
+                : $"ETag is now {now.ETag}, listed {listed.ETag}";
         return null;
     }
 
