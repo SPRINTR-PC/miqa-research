@@ -336,6 +336,50 @@ internal sealed class UploadStateStore : IAsyncDisposable
         return LoadSource(connection, destination, remotePath, source);
     }
 
+    /// <summary>
+    /// Every object of the Source that is on the server, sorted by ordinal path: files that are Succeeded, Missing at the
+    /// Source, or Failed or Uploading with a hash from an earlier delivery (the server still holds that version).
+    /// Reads lazily on a short-lived connection, so the Manifest is streamed rather than built in memory.
+    /// </summary>
+    public IEnumerable<ManifestFile> EnumerateDelivered(string destination, string remotePath, string source)
+    {
+        using var connection = OpenConnection(_path, readOnly: true);
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT RelativePath, Size, Sha256, Status FROM Files
+            WHERE Destination=$d AND RemotePath=$r AND Source=$s AND Sha256 IS NOT NULL
+            ORDER BY RelativePath COLLATE BINARY
+            """;
+        command.Parameters.AddWithValue("$d", destination);
+        command.Parameters.AddWithValue("$r", remotePath);
+        command.Parameters.AddWithValue("$s", source);
+        using var rows = command.ExecuteReader();
+        while (rows.Read())
+            yield return new ManifestFile(rows.GetString(0), rows.GetInt64(1), rows.GetString(2))
+            {
+                MissingAtSource = rows.GetString(3) == "Missing",
+            };
+    }
+
+    /// <summary>The Source's files whose newest version is not on the server, with the reason of the last attempt.</summary>
+    public List<ManifestFailure> LoadFailures(string destination, string remotePath, string source)
+    {
+        using var connection = OpenConnection(_path, readOnly: true);
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT RelativePath, COALESCE(LastError, 'Failed') FROM Files
+            WHERE Destination=$d AND RemotePath=$r AND Source=$s AND Status='Failed'
+            ORDER BY RelativePath COLLATE BINARY
+            """;
+        command.Parameters.AddWithValue("$d", destination);
+        command.Parameters.AddWithValue("$r", remotePath);
+        command.Parameters.AddWithValue("$s", source);
+        var result = new List<ManifestFailure>();
+        using var rows = command.ExecuteReader();
+        while (rows.Read()) result.Add(new ManifestFailure(rows.GetString(0), rows.GetString(1)));
+        return result;
+    }
+
     private static Dictionary<string, PriorFile> LoadSource(SqliteConnection connection, string destination, string remotePath, string source)
     {
         using var command = connection.CreateCommand();
@@ -434,7 +478,9 @@ internal sealed class UploadStateStore : IAsyncDisposable
             VALUES ($d, $r, $s, $p, $sha, $size, $mtime, $status, $success, $error, $part)
             ON CONFLICT (Destination, RemotePath, Source, RelativePath) DO UPDATE SET
                 Sha256 = COALESCE($sha, Sha256),
-                Size = $size, Mtime = $mtime, Status = $status,
+                -- A failed or running re-upload leaves the earlier delivery (hash and size) on the server.
+                Size = CASE WHEN $status IN ('Failed', 'Uploading') AND Sha256 IS NOT NULL THEN Size ELSE $size END,
+                Mtime = $mtime, Status = $status,
                 LastSuccessAt = COALESCE($success, LastSuccessAt),
                 LastError = $error, PartPath = $part, MissingSince = NULL
             """,

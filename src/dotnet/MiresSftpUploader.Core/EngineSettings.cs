@@ -52,6 +52,12 @@ public sealed record EngineSettings
     public string ManifestName { get; init; } = "manifest.json";
     /// <summary>Name of the Flat Manifest; always Ignored when it turns up in a Source, like the Manifest.</summary>
     public string FlatManifestName { get; init; } = "manifest.sha256";
+    /// <summary>Written into every Manifest as <c>toolVersion</c>; defaults to the AssemblyInformationalVersion shared with the app.</summary>
+    public string ToolVersion { get; init; } = typeof(EngineSettings).Assembly
+        .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+        .Cast<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion ?? "0.0.0";
+    /// <summary>Written into every Manifest as <c>machineName</c>.</summary>
+    public string MachineName { get; init; } = Environment.MachineName;
     /// <summary>Global Ignore Rules; each Source's own <see cref="SourceConfig.Ignore"/> adds to them.</summary>
     public IgnoreConfig Ignore { get; init; } = new();
     /// <summary>Global Too Recent limits; a Source's own <see cref="SourceConfig.Scan"/> overrides them.</summary>
