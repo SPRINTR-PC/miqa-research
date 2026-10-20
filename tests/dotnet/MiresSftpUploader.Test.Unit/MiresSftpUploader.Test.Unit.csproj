@@ -24,6 +24,7 @@
   <ItemGroup>
     <ProjectReference Include="..\MiresSftpUploader.Test.Support\MiresSftpUploader.Test.Support.csproj" />
     <ProjectReference Include="..\..\..\src\dotnet\MiresSftpUploader.Core\MiresSftpUploader.Core.csproj" />
+    <ProjectReference Include="..\..\..\src\dotnet\MiresSftpUploader\MiresSftpUploader.csproj" />
   </ItemGroup>
 
 </Project>
