@@ -105,4 +105,17 @@ public sealed class DataDirectoryCliTests : ConfigurationTestBase
 
         Assert.AreEqual(0, exitCode, "the machine config has no Sftp or Sources section");
     }
+
+    [TestMethod]
+    public void Init_data_dir_works_before_any_Machine_Config_exists()
+    {
+        var locations = new ConfigurationLocations(MachinePath, UserPath, new Dictionary<string, string?> { ["MIRES_State__AccessGroup"] = "no-such-group-xyz" });
+        var stderr = new StringWriter();
+
+        Cli.TryRun(["--init-data-dir", "--data-dir", DataDir], "1.2.3", new StringWriter(), stderr, out var exitCode, locations);
+
+        Assert.AreEqual(2, exitCode);
+        StringAssert.Contains(stderr.ToString(), "no-such-group-xyz");
+        Assert.DoesNotContain("Machine Config not found", stderr.ToString());
+    }
 }

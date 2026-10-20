@@ -106,7 +106,7 @@ public sealed class Configuration(ConfigurationLocations locations)
     /// </summary>
     public DataDirectorySettings ResolveDataDirectory(CliOptions? cli = null)
     {
-        var layers = ReadLayers(cli ?? new CliOptions(), out var errors);
+        var layers = ReadLayers(cli ?? new CliOptions(), out var errors, machineRequired: false);
         if (layers is null) return new DataDirectorySettings("", null, errors);
 
         var path = Merge(layers).Values.GetValueOrDefault("State:Path");
@@ -273,10 +273,10 @@ public sealed class Configuration(ConfigurationLocations locations)
 
     internal sealed record Layers(FlatSettings Machine, FlatSettings User, FlatSettings Environment, FlatSettings Cli);
 
-    internal Layers? ReadLayers(CliOptions cli, out List<ConfigError> errors)
+    internal Layers? ReadLayers(CliOptions cli, out List<ConfigError> errors, bool machineRequired = true)
     {
         errors = [];
-        var machine = ReadFile(locations.MachineConfigPath, "Machine Config", required: true, errors);
+        var machine = ReadFile(locations.MachineConfigPath, "Machine Config", required: machineRequired, errors);
         var user = ReadFile(locations.UserOverridesPath, "User Overrides", required: false, errors);
         if (errors.Count > 0) return null;
 
