@@ -89,6 +89,58 @@ public sealed class S3Source : ISource, IDisposable
         return new ResponseOwningStream(response);
     }
 
+    /// <summary>The largest object a single server-side copy handles; bigger ones are not moved.</summary>
+    internal const long MaxCopyBytes = 5L * 1024 * 1024 * 1024;
+
+    /// <summary>S3 has no move: copy to the target bucket and prefix, check the size, delete the original. Never overwrites.</summary>
+    public async Task<MoveResult> MoveAsync(string relativePath, MoveTargetConfig target, CancellationToken cancellationToken)
+    {
+        var sourceKey = _prefix + relativePath;
+        var targetBucket = target.Bucket!;
+        var targetKey = NormalisePrefix(target.Prefix) + relativePath;
+        try
+        {
+            var original = await HeadAsync(_bucket, sourceKey, cancellationToken);
+            if (original is null) return MoveResult.Failed("the object is no longer in the Source");
+            if (await HeadAsync(targetBucket, targetKey, cancellationToken) is not null)
+                return MoveResult.TargetExists($"{targetBucket}/{targetKey}");
+            if (original.ContentLength > MaxCopyBytes)
+                return MoveResult.Failed($"the object has {original.ContentLength} bytes, more than the {MaxCopyBytes} a single S3 copy handles");
+
+            await _client.CopyObjectAsync(new CopyObjectRequest
+            {
+                SourceBucket = _bucket, SourceKey = sourceKey, DestinationBucket = targetBucket, DestinationKey = targetKey,
+            }, cancellationToken);
+
+            var copy = await HeadAsync(targetBucket, targetKey, cancellationToken);
+            if (copy is null || copy.ContentLength != original.ContentLength)
+            {
+                if (copy is not null)
+                    await _client.DeleteObjectAsync(new DeleteObjectRequest { BucketName = targetBucket, Key = targetKey }, cancellationToken);
+                return MoveResult.Failed($"the copy has {copy?.ContentLength.ToString() ?? "no"} bytes, expected {original.ContentLength}");
+            }
+
+            await _client.DeleteObjectAsync(new DeleteObjectRequest { BucketName = _bucket, Key = sourceKey }, cancellationToken);
+            return MoveResult.Moved();
+        }
+        catch (AmazonServiceException ex)
+        {
+            return MoveResult.Failed($"S3: {ex.Message}");
+        }
+    }
+
+    private async Task<GetObjectMetadataResponse?> HeadAsync(string bucket, string key, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _client.GetObjectMetadataAsync(new GetObjectMetadataRequest { BucketName = bucket, Key = key }, cancellationToken);
+        }
+        catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+    }
+
     public void Dispose() => _client.Dispose();
 
     /// <summary>SDK failures surface as <see cref="IOException"/>, like any other unreadable file, so one bad object fails only itself.</summary>
