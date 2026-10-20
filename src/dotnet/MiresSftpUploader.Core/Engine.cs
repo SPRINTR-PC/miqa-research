@@ -813,8 +813,7 @@ public sealed partial class Engine : IRunEngine
         if (!ensure.IsOk) return ensure;
 
         var (nodes, failures) = await ManifestContentAsync(source, remotePath, run, incomplete);
-        var deferred = run.SourceEntries(source.Name)
-            .Where(e => !e.Carried && e.Outcome == FileOutcome.Skipped && e.Reason == TooRecentReason)
+        var deferred = run.SourceEntriesWhere(source.Name, e => !e.Carried && e.Outcome == FileOutcome.Skipped && e.Reason == TooRecentReason)
             .Select(e => new ManifestFailure(e.Path, e.Reason!)).ToList();
         var complete = failures.Count == 0 && deferred.Count == 0 && incomplete is null;
         var completedAt = _time.GetUtcNow();
@@ -880,10 +879,10 @@ public sealed partial class Engine : IRunEngine
     private async Task<(Func<IEnumerable<ManifestNode>> Nodes, List<ManifestFailure> Failures)> ManifestContentAsync(
         ISource source, string remotePath, RunState run, string? incomplete)
     {
-        var entries = run.SourceEntries(source.Name);
-        var unfinished = entries
-            .Where(e => !e.Carried && e.Outcome is FileOutcome.Pending or FileOutcome.Hashing or FileOutcome.Uploading or FileOutcome.Verifying)
-            .Select(e => new ManifestFailure(e.Path, incomplete ?? "NotCompleted"));
+        var unfinished = run
+            .SourceEntriesWhere(source.Name, e => !e.Carried && e.Outcome is FileOutcome.Pending or FileOutcome.Hashing or FileOutcome.Uploading or FileOutcome.Verifying)
+            .Select(e => new ManifestFailure(e.Path, incomplete ?? "NotCompleted"))
+            .ToList();
 
         if (run.Store is { } store)
         {
@@ -896,6 +895,7 @@ public sealed partial class Engine : IRunEngine
         }
 
 
+        var entries = run.SourceEntries(source.Name);
         var byPath = entries.ToDictionary(e => e.Path, StringComparer.Ordinal);
         var archives = run.SourceArchives(source.Name);
         IEnumerable<ManifestNode> Nodes() =>
@@ -1099,6 +1099,16 @@ public sealed partial class Engine : IRunEngine
             lock (_gate)
                 return _entries.Values.Where(e => !e.Carried).Select(e => e.Clone())
                     .OrderBy(e => e.Source, StringComparer.Ordinal).ThenBy(e => e.Path, StringComparer.Ordinal).ToList();
+        }
+
+        /// <summary>The entries of one Source that satisfy <paramref name="predicate"/>, without copying the others (a Source can have millions).</summary>
+        public IReadOnlyList<FileEntry> SourceEntriesWhere(string source, Func<FileEntry, bool> predicate)
+        {
+            lock (_gate)
+                return _entries.Where(kv => kv.Key.Source == source && predicate(kv.Value))
+                    .Select(kv => kv.Value.Clone())
+                    .OrderBy(e => e.Path, StringComparer.Ordinal)
+                    .ToList();
         }
 
         public IReadOnlyList<FileEntry> SourceEntries(string source)

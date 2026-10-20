@@ -21,14 +21,14 @@ These tests run the same contract tests against the real adapters: an OpenSSH SF
 
 ## Scale category
 
-Opt-in volume tests in `tests/dotnet/MiresSftpUploader.Test.Unit/ScaleTests.cs`. They are not part of the everyday run and take a few seconds. They run one at a time, because they measure the process heap and the number of Upload State commits.
+Opt-in volume tests in `tests/dotnet/MiresSftpUploader.Test.Unit/ScaleTests.cs`. They are not part of the everyday run and take a few seconds. They drive the Engine and run one at a time, because they measure the process heap and the number of Upload State commits (the commit count is the one internal hook, `UploadStateStore.CommitCount`: no public behaviour tells how many transactions were used).
 
 | Test | Asserts |
 |---|---|
 | 20,000 tiny files, batched writes | Every file Succeeds, the Manifest lists all 20,000 and is `complete`, and the Upload State used fewer than one commit per 10 files. |
 | 20,000 tiny files, bounded memory | Live heap growth during the Run stays under 100 MB (measured about 30 MB). |
-| A million-node Manifest | `ManifestWriter` writes 366 MB of JSON for 1,000,000 nodes while the live heap grows by under 20 MB (measured under 1 MB), so the Manifest is streamed, not built in memory. |
-| Upload State load cost | `LoadSource` holds under 800 bytes per file (measured about 670). |
+| A large Manifest | A Run over 100,000 files writes and uploads a 36 MB Manifest while the live heap grows by under 20 MB (measured about 7 MB), so the Manifest is streamed, not built in memory. The test's remote swallows the Manifest and watches the heap from the Manifest connection until the Manifest is in place. |
+| Incremental Run cost | A second Run over 100,000 unchanged files skips them all and holds under 3,000 bytes per file (measured about 1,400): the Upload State dictionary, the plan and the outcomes. |
 
 The 64 MiB hash proof is in the Container category; the 4 GiB one is item 13 of the release checklist.
 

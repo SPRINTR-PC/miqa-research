@@ -6,8 +6,10 @@ using MiresSftpUploader.Test.Support;
 namespace MiresSftpUploader.Test.Unit;
 
 /// <summary>
-/// Opt-in volume tests (<c>--filter "TestCategory=Scale"</c>); excluded from the normal run. They watch memory, the number of
-/// Upload State commits and the shape of the Manifest at sizes the unit tests never reach.
+/// Opt-in volume tests (<c>--filter "TestCategory=Scale"</c>); excluded from the normal run. They drive the Engine with many
+/// files and watch memory, the number of Upload State commits and the shape of the Manifest at sizes the unit tests never reach.
+/// The commit count is the one thing they read from inside (<c>UploadStateStore.CommitCount</c>), because no public behaviour
+/// tells how many transactions the Upload State used.
 /// </summary>
 [TestClass]
 [TestCategory("Scale")]
@@ -34,47 +36,78 @@ public sealed class ScaleTests
         return source;
     }
 
-    private Engine NewEngine(FakeRemote remote, FakeSource source) => new(remote, [source],
-        new EngineSettings
+    private EngineSettings Settings() => new()
+    {
+        RemoteRoot = "/upload",
+        Destination = "sftp.example:22",
+        Retry = new RetrySettings { MaxAttempts = 1, BaseDelay = TimeSpan.Zero, MaxDelay = TimeSpan.Zero },
+        State = new StateSettings { Path = Path.Combine(_dir, "state.db") },
+        Report = new ReportSettings { Directory = Path.Combine(_dir, "reports") },
+    };
+
+    private Engine NewEngine(IRemote remote, FakeSource source) =>
+        new(remote, [source], Settings(), NullLogger<Engine>.Instance, TimeProvider.System);
+
+    /// <summary>Samples the live heap (a forced collection leaves out garbage that merely has not been collected yet) until stopped.</summary>
+    private sealed class HeapSampler : IDisposable
+    {
+        private readonly CancellationTokenSource _stop = new();
+        private readonly Task _task;
+
+        public long Baseline { get; }
+        public long Peak { get; private set; }
+
+        public HeapSampler()
         {
-            RemoteRoot = "/upload",
-            Destination = "sftp.example:22",
-            Retry = new RetrySettings { MaxAttempts = 1, BaseDelay = TimeSpan.Zero, MaxDelay = TimeSpan.Zero },
-            State = new StateSettings { Path = Path.Combine(_dir, "state.db") },
-            Report = new ReportSettings { Directory = Path.Combine(_dir, "reports") },
-        },
-        NullLogger<Engine>.Instance, TimeProvider.System);
+            Baseline = Peak = GC.GetTotalMemory(forceFullCollection: true);
+            _task = Task.Run(async () =>
+            {
+                while (!_stop.IsCancellationRequested)
+                {
+                    Peak = Math.Max(Peak, GC.GetTotalMemory(forceFullCollection: true));
+                    await Task.Delay(20);
+                }
+            });
+        }
+
+        public double GrowthMb => (Peak - Baseline) / 1024.0 / 1024.0;
+
+        /// <summary>Stops sampling; the numbers stay readable.</summary>
+        public void Stop()
+        {
+            if (_stopped) return;
+            _stopped = true;
+            _stop.Cancel();
+            _task.Wait();
+        }
+
+        private bool _stopped;
+
+        public void Dispose()
+        {
+            Stop();
+            _stop.Dispose();
+        }
+    }
 
     [TestMethod]
     public async Task Twenty_thousand_tiny_files_keep_the_managed_heap_bounded()
     {
         var remote = new FakeRemote();
-        var source = ManyTinyFiles(FileCount);
-        var engine = NewEngine(remote, source);
+        var engine = NewEngine(remote, ManyTinyFiles(FileCount));
         GC.Collect();
-        var sink = new CountingSink();
-        var baseline = GC.GetTotalMemory(forceFullCollection: true);
-        long peak = baseline;
-        using var stop = new CancellationTokenSource();
-        var sampler = Task.Run(async () =>
+        double growthMb;
+        using (var heap = new HeapSampler())
         {
-            while (!stop.IsCancellationRequested)
-            {
-                // Live bytes only: a forced collection leaves out garbage that merely has not been collected yet.
-                peak = Math.Max(peak, GC.GetTotalMemory(forceFullCollection: true));
-                await Task.Delay(20);
-            }
-        });
-
-        await engine.RunAsync(new RunOptions(), new Progress<RunEvent>(), CancellationToken.None);
-        await stop.CancelAsync();
-        await sampler;
+            await engine.RunAsync(new RunOptions(), new Progress<RunEvent>(), CancellationToken.None);
+            heap.Stop();
+            growthMb = heap.GrowthMb;
+        }
 
         GC.KeepAlive(remote);
         // Measured about 30 MB (roughly 1.5 KB per file: the Run's per-file outcomes, the plan and the Report). Linear in the number
         // of files, so the bound is generous and only trips on something per-file-sized going wrong, such as holding file content.
-        var growthMb = (peak - baseline) / 1024.0 / 1024.0;
-        Assert.IsTrue(growthMb < 100, $"live heap grew {growthMb:F1} MB for {FileCount} files");
+        Assert.IsLessThan(100, growthMb, $"live heap grew {growthMb:F1} MB for {FileCount} files");
     }
 
     [TestMethod]
@@ -94,70 +127,101 @@ public sealed class ScaleTests
 
         // Every file writes a few statements; one transaction each would be at least FileCount commits.
         var commits = UploadStateStore.CommitCount - commitsBefore;
-        Assert.IsTrue(commits < FileCount / 10, $"{commits} commits for {FileCount} files is not batched");
+        Assert.IsLessThan(FileCount / 10, commits, $"{commits} commits for {FileCount} files is not batched");
     }
 
-    [TestMethod]
-    public void A_million_node_Manifest_is_written_as_a_stream()
+    /// <summary>
+    /// Forwards to a <see cref="FakeRemote"/> but swallows the Manifest instead of keeping it, counting its bytes, and calls
+    /// <paramref name="onConnection"/> with the number of each new connection and <paramref name="onManifest"/> when a Manifest is in
+    /// place, so a test can tell when the Run was writing and uploading Manifests.
+    /// </summary>
+    private sealed class ManifestSwallowingRemote(FakeRemote inner, Action<int> onConnection, Action onManifest) : IRemote
     {
-        const int nodeCount = 1_000_000;
-        var sink = new CountingSink();
-        var baseline = GC.GetTotalMemory(forceFullCollection: true);
-        long peak = baseline;
-        IEnumerable<ManifestNode> Nodes()
+        private int _connections;
+        public long ManifestBytes;
+        internal void ManifestStored() => onManifest();
+
+        public async Task<RemoteResult<IRemoteSession>> ConnectAsync(CancellationToken ct)
         {
-            for (var i = 0; i < nodeCount; i++)
-            {
-                // Live bytes while the writer is part-way through: a buffered Manifest would show up here.
-                if (i % 100_000 == 0) peak = Math.Max(peak, GC.GetTotalMemory(forceFullCollection: true));
-                yield return new ManifestFile($"batch{i / 500:D4}/file{i:D7}.txt", 13, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
-            }
+            onConnection(Interlocked.Increment(ref _connections));
+            var connect = await inner.ConnectAsync(ct);
+            return connect.IsOk ? RemoteResult<IRemoteSession>.Ok(new Session(this, connect.Value!)) : connect;
         }
-        var header = new ManifestHeader("scans", true, Guid.NewGuid(), DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch, "Run", "1.0", "host");
-        
 
-        ManifestWriter.Write(sink, header, [], [], Nodes);
+        private sealed class Session(ManifestSwallowingRemote owner, IRemoteSession session) : IRemoteSession
+        {
+            private static bool IsManifest(string path) => path.EndsWith("manifest.json.part", StringComparison.Ordinal);
 
-        Assert.IsTrue(sink.Length > 200_000_000, $"only {sink.Length} bytes were written");
-        var growthMb = (peak - baseline) / 1024.0 / 1024.0;
-        Assert.IsTrue(growthMb < 20, $"live heap grew {growthMb:F1} MB while {sink.Length / 1048576} MB of Manifest went out");
+            public async Task<RemoteResult> UploadAsync(Stream content, string path, CancellationToken ct)
+            {
+                if (!IsManifest(path)) return await session.UploadAsync(content, path, ct);
+                var buffer = new byte[81920];
+                int read;
+                while ((read = await content.ReadAsync(buffer, ct)) > 0) owner.ManifestBytes += read;
+                return RemoteResult.Ok;
+            }
+
+            public Task<RemoteResult> RenameAsync(string from, string to, bool overwrite, CancellationToken ct) =>
+                IsManifest(from) ? Task.FromResult(Done()) : session.RenameAsync(from, to, overwrite, ct);
+
+            private RemoteResult Done()
+            {
+                owner.ManifestStored();
+                return RemoteResult.Ok;
+            }
+
+            public Task<RemoteResult> EnsureDirectoryAsync(string path, CancellationToken ct) => session.EnsureDirectoryAsync(path, ct);
+            public Task<RemoteResult> DeleteAsync(string path, CancellationToken ct) => session.DeleteAsync(path, ct);
+            public Task<RemoteResult<IReadOnlyList<string>>> ListAsync(string directory, CancellationToken ct) => session.ListAsync(directory, ct);
+            public Task<RemoteResult<RemoteFileInfo>> StatAsync(string path, CancellationToken ct) => session.StatAsync(path, ct);
+            public Task<RemoteResult> DownloadAsync(string path, Stream destination, CancellationToken ct) => session.DownloadAsync(path, destination, ct);
+            public Task<RemoteResult<string>> RunCommandAsync(string command, CancellationToken ct) => session.RunCommandAsync(command, ct);
+            public ValueTask DisposeAsync() => session.DisposeAsync();
+        }
     }
 
     [TestMethod]
-    public async Task Loading_a_Sources_Upload_State_costs_a_known_number_of_bytes_per_file()
+    public async Task The_Manifest_of_a_large_Source_is_written_as_a_stream()
     {
-        const int rows = 200_000;
-        const int budgetBytesPerRow = 800; // measured: about 670 // see docs/scale.md: a Run holds the whole Source's state as a dictionary
-        await using var store = UploadStateStore.Open(Path.Combine(_dir, "state.db"), TimeProvider.System);
-        var run = Guid.NewGuid();
-        await store.BeginRunAsync(run, DateTimeOffset.UtcNow, "Run", "Manual", "me");
-        for (var i = 0; i < rows; i++)
-            store.RecordSucceeded(run, new FileKey("sftp.example:22", "/upload/scans", "scans", $"batch{i / 500:D4}/file{i:D7}.txt"),
-                13, 638_000_000_000_000_000 + i, new string('a', 64), DateTimeOffset.UtcNow, TimeSpan.Zero);
-        await store.FlushAsync();
+        const int files = 100_000;
+        HeapSampler? heap = null;
+        // Connections of a ReadWrite Run with one worker: the Markers, the worker, then the Manifests. The Report that follows
+        // renders every file of the Run in memory, which is not what this test is about.
+        var remote = new ManifestSwallowingRemote(new FakeRemote(), connection =>
+        {
+            if (connection == 3) heap = new HeapSampler();
+        }, () => heap!.Stop());
+        var settings = Settings() with { RemoteAccess = RemoteAccess.ReadWrite, MaxParallelUploads = 1 };
 
-        var baseline = GC.GetTotalMemory(forceFullCollection: true);
-        var loaded = store.LoadSource("sftp.example:22", "/upload/scans", "scans");
-        var held = GC.GetTotalMemory(forceFullCollection: true) - baseline;
+        var result = await new Engine(remote, [ManyTinyFiles(files)], settings, NullLogger<Engine>.Instance, TimeProvider.System)
+            .RunAsync(new RunOptions(), new Progress<RunEvent>(), CancellationToken.None);
+        heap!.Dispose();
 
-        Assert.AreEqual(rows, loaded.Count);
-        var perRow = held / rows;
-        Assert.IsTrue(perRow < budgetBytesPerRow, $"{perRow} bytes per file held, about {perRow} MB per 1,000,000 files");
+        Assert.AreEqual(0, result.ExitCode, result.Reason);
+        Assert.IsGreaterThan(15_000_000, remote.ManifestBytes, $"only {remote.ManifestBytes} bytes of Manifest went out");
+        Assert.IsLessThan(20, heap.GrowthMb, $"live heap grew {heap.GrowthMb:F1} MB while {remote.ManifestBytes / 1048576} MB of Manifest was written and uploaded");
     }
 
-    private sealed class CountingSink : Stream
+    [TestMethod]
+    public async Task An_incremental_Run_over_a_large_Source_holds_a_known_number_of_bytes_per_file()
     {
-        public long Total;
-        public override bool CanRead => false;
-        public override bool CanSeek => false;
-        public override bool CanWrite => true;
-        public override long Length => Total;
-        public override long Position { get => Total; set => throw new NotSupportedException(); }
-        public override void Flush() { }
-        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
-        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-        public override void SetLength(long value) => throw new NotSupportedException();
-        public override void Write(byte[] buffer, int offset, int count) => Total += count;
-        public override void Write(ReadOnlySpan<byte> buffer) => Total += buffer.Length;
+        const int files = 100_000;
+        const int budgetBytesPerFile = 3_000; // a Run holds the Source's Upload State as a dictionary, its plan and its outcomes
+        var remote = new FakeRemote();
+        var engine = NewEngine(remote, ManyTinyFiles(files));
+        await engine.RunAsync(new RunOptions(), new Progress<RunEvent>(), CancellationToken.None);
+        remote.Inject(RemoteOperation.Upload, RemoteResult.Failed("must not upload"), times: 1_000_000, pathContains: "/batch");
+
+        RunResult result;
+        long perFile;
+        using (var heap = new HeapSampler())
+        {
+            result = await engine.RunAsync(new RunOptions(), new Progress<RunEvent>(), CancellationToken.None);
+            heap.Stop();
+            perFile = (heap.Peak - heap.Baseline) / files;
+        }
+
+        Assert.AreEqual(files, result.Count(FileOutcome.Skipped), "unchanged files are skipped, not uploaded again");
+        Assert.IsLessThan(budgetBytesPerFile, perFile, $"{perFile} bytes per file held, about {perFile} MB per 1,000,000 files");
     }
 }
