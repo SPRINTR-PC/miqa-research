@@ -21,4 +21,13 @@ public interface IRemoteSession : IAsyncDisposable
 
     /// <summary>Ok with the info when the object exists, Failed("not found") otherwise.</summary>
     Task<RemoteResult<RemoteFileInfo>> StatAsync(string path, CancellationToken cancellationToken);
+
+    /// <summary>Writes the object's bytes to <paramref name="destination"/>. Failed when the object does not exist.</summary>
+    Task<RemoteResult> DownloadAsync(string path, Stream destination, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Runs a shell command on the server and returns its standard output. Failed when the server offers no command
+    /// channel (an SFTP-only account), the command is not found or it exits non-zero; the reason then carries what the server said.
+    /// </summary>
+    Task<RemoteResult<string>> RunCommandAsync(string command, CancellationToken cancellationToken);
 }

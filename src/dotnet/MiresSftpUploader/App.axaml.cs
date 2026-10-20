@@ -1,7 +1,7 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
-using MiresSftpUploader.ViewModels;
+using Avalonia.Threading;
 using MiresSftpUploader.Views;
 
 namespace MiresSftpUploader;
@@ -15,11 +15,11 @@ public partial class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
-        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop && AppHost.Current is { } host)
         {
             desktop.MainWindow = new MainWindow
             {
-                DataContext = new MiresSftpUploader.Prototype.ProtoVm(),
+                DataContext = host.CreateMainWindowViewModel(action => Dispatcher.UIThread.Post(action)),
             };
         }
 

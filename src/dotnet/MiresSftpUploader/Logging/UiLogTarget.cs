@@ -7,7 +7,20 @@ using NLog.Targets;
 namespace MiresSftpUploader.Logging;
 
 /// <summary>One line for the log pane.</summary>
-public sealed record LogEntry(DateTimeOffset Time, LogLevel Level, string Logger, string Message);
+public sealed record LogEntry(DateTimeOffset Time, LogLevel Level, string Logger, string Message)
+{
+    public string TimeText => Time.ToLocalTime().ToString("HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
+
+    public string LevelText => Level switch
+    {
+        LogLevel.Trace => "TRACE",
+        LogLevel.Debug => "DEBUG",
+        LogLevel.Information => "INFO",
+        LogLevel.Warning => "WARN",
+        LogLevel.Error => "ERROR",
+        _ => "FATAL",
+    };
+}
 
 /// <summary>
 /// An NLog target that hands each event to subscribers instead of writing it anywhere. The log pane subscribes;

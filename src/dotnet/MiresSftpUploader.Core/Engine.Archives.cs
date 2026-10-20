@@ -92,7 +92,7 @@ public sealed partial class Engine
         if (prior.Members.Count != members.Count || members.Any(m => !prior.Members.ContainsKey(m.Item.File.RelativePath)))
             return ArchiveStatuses.WouldBuild;
         var unchanged = members.All(m =>
-            prior.Members[m.Item.File.RelativePath] is var p && p.Size == m.Item.File.Size && p.MtimeTicks == m.Item.File.Modified.UtcTicks);
+            prior.Members[m.Item.File.RelativePath] is var p && p.Size == m.Item.File.Size && p.MtimeTicks == m.Item.File.ChangeToken);
         return unchanged ? ArchiveStatuses.WouldSkip : ArchiveStatuses.NeedsHashing;
     }
 
@@ -143,11 +143,22 @@ public sealed partial class Engine
             }
 
             var members = plan.Members
-                .Select(m => new ArchiveMemberRecord(m.Item.File.RelativePath, m.Item.File.Size, m.Item.File.Modified.UtcTicks, build.MemberHashes[m.Item.File.RelativePath]))
+                .Select(m => new ArchiveMemberRecord(m.Item.File.RelativePath, m.Item.File.Size, m.Item.File.ChangeToken, build.MemberHashes[m.Item.File.RelativePath]))
                 .ToList();
             var memberHashes = members.ToDictionary(m => m.Path, m => new PriorMember(m.Size, m.MtimeTicks, m.Sha256), StringComparer.Ordinal);
 
-            if (work.Prior is { File.Status: "Succeeded" } prior && SameMembers(prior.Members, memberHashes))
+            var remoteArchiveOk = true;
+            if (work.Prior is { File.Status: "Succeeded" } unchangedPrior && SameMembers(unchangedPrior.Members, memberHashes)
+                && _settings.Verification.Remote != VerificationLevel.Off)
+            {
+                foreach (var m in plan.Members) run.Set(m.Item, FileOutcome.Verifying, null);
+                var check = await VerifyAsync(session, _settings.Verification.Remote, Join(work.RemotePath, plan.RelativePath), build.ZipSize, build.ZipSha256!, ct);
+                remoteArchiveOk = check.Ok;
+                if (check.Ok) run.CountVerified();
+                else _logger.LogInformation("{Source}/{Path}: Archive unchanged, but {Reason}; uploading it again", work.Source.Name, plan.RelativePath, check.Detail);
+            }
+
+            if (remoteArchiveOk && work.Prior is { File.Status: "Succeeded" } prior && SameMembers(prior.Members, memberHashes))
             {
                 foreach (var m in plan.Members) run.Skip(m.Item, memberHashes[m.Item.File.RelativePath].Sha256, UnchangedReason);
                 run.CompleteArchive(work.Source.Name, plan.RelativePath, build.ZipSize, build.ZipSha256!, memberHashes);
@@ -161,9 +172,11 @@ public sealed partial class Engine
             for (var attempt = 1; attempt <= max; attempt++)
             {
                 foreach (var m in plan.Members) run.Set(m.Item, FileOutcome.Uploading, null);
-                var result = await TryUploadStagedAsync(session, store, staged, finalPath, key, build.ZipSize, ct);
+                var result = await TryUploadStagedAsync(session, store, staged, finalPath, key, build.ZipSize, build.ZipSha256!,
+                    () => { foreach (var m in plan.Members) run.Set(m.Item, FileOutcome.Verifying, null); }, ct);
                 if (result.Sha256 is not null)
                 {
+                    if (result.Verified) run.CountVerified();
                     foreach (var m in plan.Members) run.Succeed(m.Item, memberHashes[m.Item.File.RelativePath].Sha256, _time.GetElapsedTime(started));
                     run.CompleteArchive(work.Source.Name, plan.RelativePath, build.ZipSize, build.ZipSha256!, memberHashes);
                     store?.RecordArchiveSucceeded(run.RunId, key, build.ZipSize, build.ZipSha256!, members, uploaded: true, _time.GetUtcNow(), _time.GetElapsedTime(started));
@@ -175,6 +188,7 @@ public sealed partial class Engine
                 if (result.Permanent) break;
                 if (attempt < max) await Task.Delay(BackoffDelay(attempt), _time, ct);
             }
+            if (failure.StartsWith(VerificationFailedReason, StringComparison.Ordinal)) run.CountVerificationFailure();
             FailArchive(work, run, failure, started);
         }
         finally
@@ -188,7 +202,7 @@ public sealed partial class Engine
         before.Count == now.Count && now.All(kv => before.TryGetValue(kv.Key, out var p) && p.Sha256 == kv.Value.Sha256);
 
     private async Task<UploadAttempt> TryUploadStagedAsync(
-        IRemoteSession session, UploadStateStore? store, string stagedPath, string finalPath, FileKey key, long zipSize, CancellationToken ct)
+        IRemoteSession session, UploadStateStore? store, string stagedPath, string finalPath, FileKey key, long zipSize, string zipSha256, Action markVerifying, CancellationToken ct)
     {
         var partPath = finalPath + ".part";
         try
@@ -202,8 +216,19 @@ public sealed partial class Engine
                 var upload = await session.UploadAsync(staged, partPath, ct);
                 if (!upload.IsOk) return UploadAttempt.From(upload);
             }
+            var level = _settings.Verification.AfterUpload;
+            if (level != VerificationLevel.Off)
+            {
+                markVerifying();
+                var check = await VerifyAsync(session, level, partPath, zipSize, zipSha256, ct);
+                if (!check.Ok)
+                {
+                    await session.DeleteAsync(partPath, ct);
+                    return new UploadAttempt(null, $"{VerificationFailedReason}: {check.Detail}", false);
+                }
+            }
             var rename = await session.RenameAsync(partPath, finalPath, overwrite: true, ct);
-            return rename.IsOk ? new UploadAttempt("uploaded", null, false) : UploadAttempt.From(rename);
+            return rename.IsOk ? new UploadAttempt("uploaded", null, false, Verified: level != VerificationLevel.Off) : UploadAttempt.From(rename);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

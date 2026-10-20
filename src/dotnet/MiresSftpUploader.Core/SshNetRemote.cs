@@ -207,8 +207,64 @@ public sealed class SshNetRemote(SftpConnection connection) : IRemote
         public Task<RemoteResult<RemoteFileInfo>> StatAsync(string path, CancellationToken ct) =>
             RunAsync(client => Task.Run(() => new RemoteFileInfo(client.GetAttributes(path).Size), ct), ct);
 
+        public Task<RemoteResult> DownloadAsync(string path, Stream destination, CancellationToken ct) =>
+            RunAsync(client => Task.Run(() => client.DownloadFile(path, destination), ct), ct);
+
+        public async Task<RemoteResult<string>> RunCommandAsync(string command, CancellationToken ct)
+        {
+            try
+            {
+                var ssh = await ShellAsync(ct);
+                if (ssh.Value is null) return new RemoteResult<string>(ssh.Kind, default, ssh.Reason);
+                return await Task.Run(() =>
+                {
+                    using var run = ssh.Value.CreateCommand(command);
+                    var output = run.Execute();
+                    return run.ExitStatus == 0
+                        ? RemoteResult<string>.Ok(output)
+                        : RemoteResult<string>.Failed($"exit status {run.ExitStatus}: {run.Error.Trim()}".TrimEnd(' ', ':'));
+                }, ct);
+            }
+            catch (Exception ex) when (ex is SshException or IOException or System.Net.Sockets.SocketException or InvalidOperationException or ObjectDisposedException)
+            {
+                // An SFTP-only account refuses the exec request (ForceCommand internal-sftp, a restricted shell, no shell at all).
+                _shell?.Dispose();
+                _shell = null;
+                return RemoteResult<string>.Failed("The server does not run commands for this account: " + ex.Message);
+            }
+        }
+
+        private SshClient? _shell;
+
+        /// <summary>A second connection of the same account for command execution; SFTP and exec channels need an <c>SshClient</c>.</summary>
+        private async Task<RemoteResult<SshClient>> ShellAsync(CancellationToken ct)
+        {
+            if (_shell is { IsConnected: true }) return RemoteResult<SshClient>.Ok(_shell);
+            _shell?.Dispose();
+            string? mismatch = null;
+            var shell = new SshClient(BuildConnectionInfo(settings)) { KeepAliveInterval = settings.KeepAlive };
+            shell.HostKeyReceived += (_, e) =>
+            {
+                e.CanTrust = HostKeyFingerprint.Matches(settings.HostKeyFingerprint, e.FingerPrintSHA256, e.FingerPrintMD5);
+                if (!e.CanTrust) mismatch = $"Host key mismatch: {settings} presented SHA256:{e.FingerPrintSHA256}, which is not the pinned Host Key Fingerprint.";
+            };
+            try
+            {
+                await shell.ConnectAsync(ct);
+            }
+            catch (Exception ex) when (ex is SshException or IOException or System.Net.Sockets.SocketException or TimeoutException)
+            {
+                shell.Dispose();
+                return RemoteResult<SshClient>.Failed(mismatch ?? $"Cannot open a command connection to {settings}: {ex.Message}");
+            }
+            _shell = shell;
+            return RemoteResult<SshClient>.Ok(shell);
+        }
+
         public ValueTask DisposeAsync()
         {
+            _shell?.Dispose();
+            _shell = null;
             _client?.Dispose();
             _client = null;
             return ValueTask.CompletedTask;

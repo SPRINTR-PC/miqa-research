@@ -131,10 +131,14 @@ public sealed class Configuration(ConfigurationLocations locations)
     }
 
     private const string GroupKey = "State:AccessGroup";
+    private const string VerifyCommandKey = "Upload:VerifyCommand";
 
     private LoadResult Evaluate(Layers layers, bool headless, bool machineWritable)
     {
         var errors = new List<ConfigError>();
+        var warnings = new List<ConfigError>();
+        if (layers.User.Values.Remove(VerifyCommandKey))
+            warnings.Add(new(VerifyCommandKey, "is ignored in User Overrides. Set it in Machine Config or the environment."));
         var merged = Merge(layers);
         var keys = merged.Layers.ToDictionary(
             kv => kv.Key,
@@ -142,7 +146,6 @@ public sealed class Configuration(ConfigurationLocations locations)
             StringComparer.OrdinalIgnoreCase);
 
         var config = Bind(merged.Values, errors);
-        var warnings = new List<ConfigError>();
         foreach (var (layer, file) in new[] { ("Machine Config", layers.Machine), ("User Overrides", layers.User) })
             foreach (var key in file.Values.Keys.Where(k => SecretLikeKey.IsMatch(k)))
                 warnings.Add(new(key, $"{layer} must not hold a Secret; the value is ignored. Set it in an environment variable."));
@@ -188,7 +191,7 @@ public sealed class Configuration(ConfigurationLocations locations)
         {
             if (SecretLikeKey.IsMatch(key))
                 errors.Add(new(key, "is a Secret and is never saved; set it in an environment variable."));
-            else if (key.Equals(GroupKey, StringComparison.OrdinalIgnoreCase))
+            else if (key.Equals(GroupKey, StringComparison.OrdinalIgnoreCase) || key.Equals(VerifyCommandKey, StringComparison.OrdinalIgnoreCase))
                 errors.Add(new(key, "can only be set in Machine Config or the environment."));
             else if (IsLocked(LayerOf(current, key), machineWritable))
                 errors.Add(new(key, "is a locked setting (set by the environment, a CLI flag or a read-only Machine Config)."));

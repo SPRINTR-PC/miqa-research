@@ -10,9 +10,11 @@
 
     <ItemGroup>
         <InternalsVisibleTo Include="MiresSftpUploader.Test.Unit" />
+        <InternalsVisibleTo Include="MiresSftpUploader.Test.Integration" />
     </ItemGroup>
 
     <ItemGroup>
+        <PackageReference Include="AWSSDK.S3" Version="4.0.104.4" />
         <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.0" />
         <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
         <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.0" />

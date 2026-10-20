@@ -15,7 +15,12 @@ public sealed record RunResult(
     Guid RunId,
     IReadOnlyDictionary<FileOutcome, int> Counts,
     int ExitCode,
-    string? Reason)
+    string? Reason,
+    int Verified = 0,
+    int VerificationFailures = 0)
 {
+    /// <summary>Where the Report of this Run was written; null when none was.</summary>
+    public string? ReportPath { get; init; }
+
     public int Count(FileOutcome outcome) => Counts.TryGetValue(outcome, out var n) ? n : 0;
 }

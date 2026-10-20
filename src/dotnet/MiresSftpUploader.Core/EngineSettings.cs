@@ -39,8 +39,22 @@ public sealed record StateSettings
     public TimeSpan WatchInterval { get; init; } = TimeSpan.FromSeconds(1);
 }
 
+/// <summary>Verification (see the glossary): which level after each upload and for unchanged files, and how the Hash level runs.</summary>
+public sealed record VerificationSettings
+{
+    /// <summary>Applied to each file just uploaded, on the .part before the rename.</summary>
+    public VerificationLevel AfterUpload { get; init; } = VerificationLevel.Off;
+    /// <summary>Applied to unchanged files the fast path would skip.</summary>
+    public VerificationLevel Remote { get; init; } = VerificationLevel.Off;
+    /// <summary>Template for the Hash level; Machine Config or environment only.</summary>
+    public string Command { get; init; } = UploadConfig.DefaultVerifyCommand;
+    /// <summary>Longest a single file's Verification may take.</summary>
+    public TimeSpan Timeout { get; init; } = TimeSpan.FromHours(1);
+}
+
 public sealed record EngineSettings
 {
+    public VerificationSettings Verification { get; init; } = new();
     /// <summary>Remote directory under which each Source gets its own directory unless it sets a Remote Path.</summary>
     public string RemoteRoot { get; init; } = "/";
     /// <summary>host:port of the SFTP server; part of the Upload State key, so a different server counts as new.</summary>
