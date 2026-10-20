@@ -10,6 +10,8 @@ internal abstract record ManifestNode(string Path, long Size, string Sha256)
 {
     /// <summary>The file left its Source after it was delivered; the server copy is still the one described.</summary>
     public bool MissingAtSource { get; init; }
+    /// <summary>The object was written straight to its final name (<c>UploadStrategy</c> Direct), not through a .part and a rename.</summary>
+    public bool DirectUpload { get; init; }
 }
 
 internal sealed record ManifestFile(string Path, long Size, string Sha256) : ManifestNode(Path, Size, Sha256);
@@ -166,6 +168,7 @@ internal static class ManifestWriter
         json.WriteNumber("size", node.Size);
         json.WriteString("sha256", node.Sha256);
         if (node.MissingAtSource) json.WriteBoolean("missingAtSource", true);
+        if (node.DirectUpload) json.WriteBoolean("directUpload", true);
         if (node is ManifestArchive archive)
         {
             json.WriteStartArray("members");
@@ -195,6 +198,7 @@ internal static class ManifestWriter
             json.WriteNumber("size", node.Size);
             json.WriteString("sha256", node.Sha256);
             if (node.MissingAtSource) json.WriteBoolean("missingAtSource", true);
+            if (node.DirectUpload) json.WriteBoolean("directUpload", true);
             json.WriteEndObject();
             if (++written % 1000 == 0) json.Flush();
         }

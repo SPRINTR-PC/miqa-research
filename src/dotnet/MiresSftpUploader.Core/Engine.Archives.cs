@@ -178,8 +178,8 @@ public sealed partial class Engine
                 {
                     if (result.Verified) run.CountVerified();
                     foreach (var m in plan.Members) run.Succeed(m.Item, memberHashes[m.Item.File.RelativePath].Sha256, _time.GetElapsedTime(started));
-                    run.CompleteArchive(work.Source.Name, plan.RelativePath, build.ZipSize, build.ZipSha256!, memberHashes);
-                    store?.RecordArchiveSucceeded(run.RunId, key, build.ZipSize, build.ZipSha256!, members, uploaded: true, _time.GetUtcNow(), _time.GetElapsedTime(started));
+                    run.CompleteArchive(work.Source.Name, plan.RelativePath, build.ZipSize, build.ZipSha256!, memberHashes, IsDirect);
+                    store?.RecordArchiveSucceeded(run.RunId, key, build.ZipSize, build.ZipSha256!, members, uploaded: true, _time.GetUtcNow(), _time.GetElapsedTime(started), IsDirect);
                     return;
                 }
                 failure = result.Reason ?? "unknown";
@@ -204,7 +204,7 @@ public sealed partial class Engine
     private async Task<UploadAttempt> TryUploadStagedAsync(
         IRemoteSession session, UploadStateStore? store, string stagedPath, string finalPath, FileKey key, long zipSize, string zipSha256, Action markVerifying, CancellationToken ct)
     {
-        var partPath = finalPath + ".part";
+        var partPath = UploadTarget(finalPath);
         try
         {
             var ensure = await session.EnsureDirectoryAsync(ParentOf(finalPath), ct);
@@ -227,8 +227,12 @@ public sealed partial class Engine
                     return new UploadAttempt(null, $"{VerificationFailedReason}: {check.Detail}", false);
                 }
             }
-            var rename = await session.RenameAsync(partPath, finalPath, overwrite: true, ct);
-            return rename.IsOk ? new UploadAttempt("uploaded", null, false, Verified: level != VerificationLevel.Off) : UploadAttempt.From(rename);
+            if (!IsDirect)
+            {
+                var rename = await session.RenameAsync(partPath, finalPath, overwrite: true, ct);
+                if (!rename.IsOk) return UploadAttempt.From(rename);
+            }
+            return new UploadAttempt("uploaded", null, false, Verified: level != VerificationLevel.Off);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -339,13 +343,14 @@ public sealed partial class Engine
                 });
         }
 
-        internal void CompleteArchive(string source, string path, long size, string sha256, IReadOnlyDictionary<string, PriorMember> members)
+        internal void CompleteArchive(string source, string path, long size, string sha256, IReadOnlyDictionary<string, PriorMember> members, bool directUpload = false)
         {
             lock (_gate)
             {
                 var entry = _archives[(source, path)];
                 entry.Size = size;
                 entry.Sha256 = sha256;
+                entry.DirectUpload = directUpload;
                 foreach (var (memberPath, member) in members)
                     if (_entries.TryGetValue((source, memberPath), out var e)) e.Sha256 ??= member.Sha256;
             }
@@ -385,8 +390,9 @@ public sealed partial class Engine
         public IReadOnlyList<string> Members { get; } = members;
         public long Size { get; set; }
         public string? Sha256 { get; set; }
+        public bool DirectUpload { get; set; }
 
-        public ArchiveEntry Clone() => new(Path, Rule, Members) { Size = Size, Sha256 = Sha256 };
+        public ArchiveEntry Clone() => new(Path, Rule, Members) { Size = Size, Sha256 = Sha256, DirectUpload = DirectUpload };
     }
 
     internal sealed partial class FileEntry

@@ -567,8 +567,8 @@ public sealed partial class Engine : IRunEngine
             if (attemptResult.Sha256 is not null)
             {
                 if (attemptResult.Verified) run.CountVerified();
-                run.Succeed(item, attemptResult.Sha256, _time.GetElapsedTime(started));
-                store?.RecordSucceeded(run.RunId, key, item.File.Size, mtime, attemptResult.Sha256, _time.GetUtcNow(), _time.GetElapsedTime(started));
+                run.Succeed(item, attemptResult.Sha256, _time.GetElapsedTime(started), IsDirect);
+                store?.RecordSucceeded(run.RunId, key, item.File.Size, mtime, attemptResult.Sha256, _time.GetUtcNow(), _time.GetElapsedTime(started), IsDirect);
                 return;
             }
 
@@ -585,6 +585,11 @@ public sealed partial class Engine : IRunEngine
     }
 
     private const string UnchangedReason = "unchanged";
+
+    private bool IsDirect => _settings.UploadStrategy == UploadStrategy.Direct;
+
+    /// <summary>Where the bytes of <paramref name="finalPath"/> are written first: <c>name.part</c>, or the final name itself for Direct.</summary>
+    private string UploadTarget(string finalPath) => IsDirect ? finalPath : finalPath + ".part";
 
     /// <summary>The size and mtime fast path: the Upload State has this file Succeeded with the same size and mtime.</summary>
     private static bool IsUnchanged(FileWork item, out PriorFile prior)
@@ -606,7 +611,8 @@ public sealed partial class Engine : IRunEngine
     private async Task<UploadAttempt> TryUploadAsync(IRemoteSession session, FileWork item, RunState run, CancellationToken ct)
     {
         var finalPath = Join(item.RemotePath, item.File.RelativePath);
-        var partPath = finalPath + ".part";
+        // The object the bytes are written to: a .part that is renamed afterwards, or the final name itself (Direct).
+        var partPath = UploadTarget(finalPath);
         try
         {
             var ensure = await session.EnsureDirectoryAsync(ParentOf(finalPath), ct);
@@ -648,8 +654,11 @@ public sealed partial class Engine : IRunEngine
                 }
             }
 
-            var rename = await session.RenameAsync(partPath, finalPath, overwrite: true, ct);
-            if (!rename.IsOk) return UploadAttempt.From(rename);
+            if (!IsDirect)
+            {
+                var rename = await session.RenameAsync(partPath, finalPath, overwrite: true, ct);
+                if (!rename.IsOk) return UploadAttempt.From(rename);
+            }
             return new UploadAttempt(sha256, null, false, Verified: level != VerificationLevel.Off);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -718,10 +727,10 @@ public sealed partial class Engine : IRunEngine
         var archives = run.SourceArchives(source.Name);
         IEnumerable<ManifestNode> Nodes() =>
             entries.Where(e => e.ArchivePath is null && e.Sha256 is not null && e.Outcome is FileOutcome.Succeeded or FileOutcome.Skipped)
-                .Select(e => (ManifestNode)new ManifestFile(e.Path, e.Size, e.Sha256!))
+                .Select(e => (ManifestNode)new ManifestFile(e.Path, e.Size, e.Sha256!) { DirectUpload = e.DirectUpload })
                 .Concat(archives.Select(a => (ManifestNode)new ManifestArchive(a.Path, a.Size, a.Sha256!,
                     a.Members.Select(m => byPath[m]).OrderBy(m => m.Path, StringComparer.Ordinal)
-                        .Select(m => new ManifestArchiveMember(m.Path, m.Size, m.Sha256!, m.Modified)).ToList())))
+                        .Select(m => new ManifestArchiveMember(m.Path, m.Size, m.Sha256!, m.Modified)).ToList()) { DirectUpload = a.DirectUpload }))
                 .OrderBy(n => n.Path, StringComparer.Ordinal);
         return (Nodes, entries.Where(e => e.Outcome == FileOutcome.Failed).Select(e => new ManifestFailure(e.Path, e.Reason ?? "Failed")).ToList());
     }
@@ -854,8 +863,8 @@ public sealed partial class Engine : IRunEngine
         internal void Set(FileWork item, FileOutcome outcome, string? reason) =>
             Update(item, e => { e.Outcome = outcome; e.Reason = reason; });
 
-        internal void Succeed(FileWork item, string sha256, TimeSpan duration) =>
-            Update(item, e => { e.Outcome = FileOutcome.Succeeded; e.Reason = null; e.Sha256 = sha256; e.Bytes = e.Size; e.DurationMs = (long)duration.TotalMilliseconds; });
+        internal void Succeed(FileWork item, string sha256, TimeSpan duration, bool directUpload = false) =>
+            Update(item, e => { e.Outcome = FileOutcome.Succeeded; e.Reason = null; e.Sha256 = sha256; e.Bytes = e.Size; e.DurationMs = (long)duration.TotalMilliseconds; e.DirectUpload = directUpload; });
 
         internal void Skip(FileWork item, string sha256, string reason) =>
             Update(item, e => { e.Outcome = FileOutcome.Skipped; e.Reason = reason; e.Sha256 = sha256; });
@@ -933,7 +942,8 @@ public sealed partial class Engine : IRunEngine
         public FileOutcome Outcome { get; set; }
         public string? Reason { get; set; }
         public string? Sha256 { get; set; }
+        public bool DirectUpload { get; set; }
 
-        public FileEntry Clone() => new(Source, Path, Size) { Outcome = Outcome, Reason = Reason, Sha256 = Sha256, Bytes = Bytes, DurationMs = DurationMs, Carried = Carried, Modified = Modified, ArchivePath = ArchivePath, EntryName = EntryName };
+        public FileEntry Clone() => new(Source, Path, Size) { DirectUpload = DirectUpload, Outcome = Outcome, Reason = Reason, Sha256 = Sha256, Bytes = Bytes, DurationMs = DurationMs, Carried = Carried, Modified = Modified, ArchivePath = ArchivePath, EntryName = EntryName };
     }
 }
