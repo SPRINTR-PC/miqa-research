@@ -24,7 +24,7 @@ public sealed class UserSettingsTests : ConfigurationTestBase
 
         var error = UserSettings.SaveTheme(configuration, UiTheme.Light);
 
-        StringAssert.Contains(error, "locked");
+        StringAssert.Contains(error, "Locked Setting");
         Assert.IsFalse(File.Exists(UserPath));
     }
 }
