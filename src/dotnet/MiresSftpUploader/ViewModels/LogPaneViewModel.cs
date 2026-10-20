@@ -33,6 +33,9 @@ public sealed class LogPaneViewModel : ViewModelBase
         source.LogReceived += OnLogReceived;
     }
 
+    /// <summary>The levels the pane's filter offers.</summary>
+    public static IReadOnlyList<LogLevel> SelectableLevels { get; } = [LogLevel.Debug, LogLevel.Information, LogLevel.Warning, LogLevel.Error];
+
     /// <summary>The entries at or above <see cref="MinimumLevel"/>, oldest first. Only touched on the UI thread.</summary>
     public ObservableCollection<LogEntry> Entries { get; } = [];
 
