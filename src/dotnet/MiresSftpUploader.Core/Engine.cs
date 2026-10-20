@@ -9,7 +9,7 @@ namespace MiresSftpUploader.Core;
 /// Per-file failures never throw; run-level failures come back as an exit code plus reason;
 /// cancellation is caught here and reported as exit code 130.
 /// </summary>
-public sealed class Engine
+public sealed class Engine : IRunEngine
 {
     private readonly IRemote _remote;
     private readonly IReadOnlyList<ISource> _sources;
@@ -50,7 +50,7 @@ public sealed class Engine
         }
 
         var result = new RunResult(run.RunId, run.SnapshotCounts(), exitCode, reason);
-        WriteReport(options, run, result);
+        result = result with { ReportPath = WriteReport(options, run, result) };
         _logger.LogInformation("Run {RunId} finished: Succeeded {Succeeded}, Skipped {Skipped}, Failed {Failed}, exit code {ExitCode}",
             run.RunId, result.Count(FileOutcome.Succeeded), result.Count(FileOutcome.Skipped), result.Count(FileOutcome.Failed), exitCode);
         progress.Report(new RunFinished(result));
@@ -61,12 +61,12 @@ public sealed class Engine
         options.DryRun ? "DryRun" : options.RetryOf is not null ? "Retry" : "Run";
 
     /// <summary>Writes the Report of the Run, whatever its exit code. A Report that cannot be written is logged, never a Run failure.</summary>
-    private void WriteReport(RunOptions options, RunState run, RunResult result)
+    private string? WriteReport(RunOptions options, RunState run, RunResult result)
     {
         var format = options.ReportFormat ?? _settings.Report.Format;
         var now = _time.GetUtcNow();
         var path = ReportPathFor(options, run, format);
-        if (path is null) return;
+        if (path is null) return null;
 
         var counts = result.Counts.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value);
         var summary = new RunSummary(run.RunId, "Finished", result.ExitCode, options.StartedBy, ModeOf(options),
@@ -76,10 +76,12 @@ public sealed class Engine
         {
             ReportWriter.WriteFile(path, ReportWriter.Render(new RunDetail(summary, files), format));
             _logger.LogInformation("Report written to {Path}", path);
+            return path;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             _logger.LogWarning("Could not write the Report to {Path}: {Reason}", path, ex.Message);
+            return null;
         }
     }
 

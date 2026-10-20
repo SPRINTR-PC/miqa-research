@@ -48,6 +48,10 @@ public static class UploaderComposition
         CancelPollInterval = TimeSpan.FromSeconds(config.State.CancelPollSeconds),
     };
 
+    /// <summary>The Upload State settings of the effective configuration, for <c>--list-runs</c> and <c>--export-run</c>; null when the configuration cannot be loaded.</summary>
+    public static StateSettings? LoadStateSettings(Configuration configuration, CliOptions cli) =>
+        configuration.Load(cli, headless: true).Config is { } config ? ToStateSettings(config) : null;
+
     /// <summary>host:port, the key the Upload State is filed under.</summary>
     public static string DestinationKey(SftpConfig sftp) =>
         string.IsNullOrWhiteSpace(sftp.Host) ? "" : $"{sftp.Host}:{sftp.Port}";

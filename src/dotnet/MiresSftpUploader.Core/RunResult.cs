@@ -17,5 +17,8 @@ public sealed record RunResult(
     int ExitCode,
     string? Reason)
 {
+    /// <summary>Where the Report of this Run was written; null when none was.</summary>
+    public string? ReportPath { get; init; }
+
     public int Count(FileOutcome outcome) => Counts.TryGetValue(outcome, out var n) ? n : 0;
 }
