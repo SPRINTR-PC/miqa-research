@@ -99,6 +99,11 @@ internal sealed class UploadStateStore : IAsyncDisposable
 
     private const int BatchSize = 200;
 
+    private static long _commitCount;
+
+    /// <summary>Write transactions committed by all stores in this process; lets the Scale tests prove writes are batched.</summary>
+    internal static long CommitCount => Interlocked.Read(ref _commitCount);
+
     private readonly string _path;
     private readonly Channel<WriteOp> _queue = Channel.CreateUnbounded<WriteOp>(new UnboundedChannelOptions { SingleReader = true });
     private readonly Task _writer;
@@ -138,6 +143,7 @@ internal sealed class UploadStateStore : IAsyncDisposable
                     Execute(connection, Migrations[version - 1], tx);
                     Execute(connection, $"PRAGMA user_version = {version}", tx);
                     tx.Commit();
+                Interlocked.Increment(ref _commitCount);
                 }
             }
             return new UploadStateStore(path, connection);
