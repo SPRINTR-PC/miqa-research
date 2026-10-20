@@ -41,22 +41,9 @@ public sealed class UnavailableRemoteFactory : IRemoteFactory
     }
 }
 
-/// <summary>Local directories only; an S3 Source is not available until its adapter is plugged in, and fails the Run with a clear message.</summary>
+/// <summary>The production <see cref="ISourceFactory"/>: a Directory or an S3 Source (see <see cref="SourceFactory"/>).</summary>
 public sealed class DefaultSourceFactory : ISourceFactory
 {
-    public const string S3Message = "S3 Sources are not available in this build.";
-
-    public ISource Create(SourceConfig config, Secrets secrets) =>
-        config.Type == SourceType.Directory
-            ? new DirectorySource(config.Name!, config.Path!, config.RemotePath)
-            : new UnavailableSource(config.Name!, config.RemotePath, S3Message);
-
-    private sealed class UnavailableSource(string name, string? remotePath, string message) : ISource
-    {
-        public string Name { get; } = name;
-        public string? RemotePath { get; } = remotePath;
-        public IAsyncEnumerable<SourceFile> ListAsync(CancellationToken cancellationToken) => throw new NotSupportedException(message);
-        public Task<SourceFile?> StatAsync(string relativePath, CancellationToken cancellationToken) => throw new NotSupportedException(message);
-        public Task<Stream> OpenReadAsync(string relativePath, CancellationToken cancellationToken) => throw new NotSupportedException(message);
-    }
+    /// <exception cref="SourceSetupException">An S3 Source's Secrets are not set.</exception>
+    public ISource Create(SourceConfig config, Secrets secrets) => SourceFactory.Create(config, secrets);
 }

@@ -41,9 +41,18 @@ public sealed class UploaderRuntime(
             return new PreparedUploader(null, load.Errors, load.Warnings, load.Secrets, null);
 
         var secrets = configuration.LoadSecrets();
+        List<ISource> built;
+        try
+        {
+            built = config.Sources.Where(s => s.Enabled).Select(s => _sources.Create(s, secrets)).ToList();
+        }
+        catch (SourceSetupException ex)
+        {
+            return new PreparedUploader(config, [.. load.Errors, new ConfigError("Sources", ex.Message)], load.Warnings, load.Secrets, null);
+        }
         var engine = new Engine(
             remotes.Create(config, secrets),
-            config.Sources.Where(s => s.Enabled).Select(s => _sources.Create(s, secrets)).ToList(),
+            built,
             UploaderComposition.ToEngineSettings(config),
             new Logger<Engine>(loggers),
             time);
