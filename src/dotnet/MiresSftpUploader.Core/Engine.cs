@@ -9,7 +9,7 @@ namespace MiresSftpUploader.Core;
 /// Per-file failures never throw; run-level failures come back as an exit code plus reason;
 /// cancellation is caught here and reported as exit code 130.
 /// </summary>
-public sealed class Engine : IRunEngine
+public sealed partial class Engine : IRunEngine
 {
     private readonly IRemote _remote;
     private readonly IReadOnlyList<ISource> _sources;
@@ -47,6 +47,10 @@ public sealed class Engine : IRunEngine
         {
             exitCode = ExitCodes.Cancelled;
             reason = "Cancelled";
+        }
+        finally
+        {
+            DeleteStagingArea(run);
         }
 
         var result = new RunResult(run.RunId, run.SnapshotCounts(), exitCode, reason);
@@ -109,6 +113,9 @@ public sealed class Engine : IRunEngine
         if (options.DryRun || _settings.State.Path is not { Length: > 0 } databasePath)
             return await ExecuteCoreAsync(options, run, ct);
 
+        var access = EnsureDataDirectory(databasePath, run);
+        if (access.Problem is not null) return (ExitCodes.ConfigurationError, access.Problem);
+
         using var runLock = RunLock.TryAcquire(databasePath + ".lock", options.StartedBy, _time.GetUtcNow(), out var holder);
         if (runLock is null) return (ExitCodes.LockHeld, $"Another Run holds the lock ({holder})");
 
@@ -125,6 +132,7 @@ public sealed class Engine : IRunEngine
         await using (store)
         {
             run.Store = store;
+            RemoveStaleStagingAreas(run);
             if (options.RetryOf is { } retryOf && !store.RunExists(retryOf))
                 return (ExitCodes.ConfigurationError, $"Unknown Run {retryOf}");
             await CleanUpAbandonedRunsAsync(store, ct);
@@ -156,6 +164,27 @@ public sealed class Engine : IRunEngine
             await store.FlushAsync();
             return outcome;
         }
+    }
+
+    /// <summary>
+    /// Checks the Data Directory holding the Upload State and reports the result. A missing directory is set up first when
+    /// this account has the rights; otherwise the problem (path, account, fix command) is returned. Never falls back to another directory.
+    /// </summary>
+    private DataDirectoryAccess EnsureDataDirectory(string databasePath, RunState run)
+    {
+        var directory = Path.GetDirectoryName(Path.GetFullPath(databasePath))!;
+        if (!Directory.Exists(directory))
+        {
+            var init = DataDirectory.Initialize(directory, _settings.State.AccessGroup, DataDirectory.CurrentPlatform);
+            foreach (var action in init.Actions) _logger.LogInformation("Data Directory: {Action}", action);
+            if (!init.Ok) _logger.LogWarning("Data Directory could not be set up: {Error}", init.Error);
+        }
+
+        var access = DataDirectory.Check(directory);
+        run.Report(new DataDirectoryChecked(access));
+        if (access.OnNetworkShare)
+            run.Warn($"The Data Directory '{directory}' looks like a network share. SQLite locking is unreliable there; use a local directory.");
+        return access;
     }
 
     private void PollCancelRequest(UploadStateStore store, Guid runId, CancellationTokenSource cancel)
@@ -196,7 +225,7 @@ public sealed class Engine : IRunEngine
     /// A vanished file becomes Missing. Everything else the Upload State knows as delivered is carried into the Manifest.
     /// Returns the Sources that take part.
     /// </summary>
-    private async Task<List<ISource>> PlanRetryAsync(Guid retryOf, List<ISource> candidates, List<FileWork> work, RunState run, CancellationToken ct)
+    private async Task<List<ISource>> PlanRetryAsync(Guid retryOf, List<ISource> candidates, List<object> work, RunState run, CancellationToken ct)
     {
         var store = run.Store!;
         var failedInRun = store.LoadFailedOf(retryOf, _settings.Destination);
@@ -209,23 +238,39 @@ public sealed class Engine : IRunEngine
             participating.Add(source);
 
             var prior = store.LoadSource(_settings.Destination, remotePath, source.Name);
+            var priorArchives = store.LoadArchives(_settings.Destination, remotePath, source.Name);
+            var maybeArchives = new List<(string Path, PriorFile Known)>();
             foreach (var (path, known) in prior.OrderBy(kv => kv.Key, StringComparer.Ordinal))
             {
                 if (known.Status == "Succeeded" && known.Sha256 is not null)
-                    run.Carry(source.Name, path, known.Size, known.Sha256);
+                {
+                    if (priorArchives.TryGetValue(path, out var delivered)) run.CarryArchive(source.Name, path, known.Size, known.Sha256, delivered.Members);
+                    else run.Carry(source.Name, path, known.Size, known.Sha256);
+                }
                 if (known.Status != "Failed" || !failedPaths.Contains(path)) continue;
 
                 var stat = await source.StatAsync(path, ct);
-                if (stat is null)
+                if (stat is null) maybeArchives.Add((path, known));
+                else work.Add(new FileWork(source, remotePath, stat));
+            }
+
+            // A failed path that is not a file of the Source may be an Archive: plan the Source to find out.
+            var rebuilt = new HashSet<string>(StringComparer.Ordinal);
+            if (maybeArchives.Count > 0 && ArchiveRulesOf(source).Count > 0)
+                foreach (var archive in await PlanArchivesAsync(source, remotePath, run, ct))
                 {
-                    var key = new FileKey(_settings.Destination, remotePath, source.Name, path);
-                    var vanished = new FileWork(source, remotePath, new SourceFile(path, known.Size, new DateTimeOffset(known.MtimeTicks, TimeSpan.Zero)));
-                    run.Set(vanished, FileOutcome.Skipped, "Missing");
-                    store.RecordSkipped(run.RunId, key, _time.GetUtcNow(), "Missing");
-                    await store.MarkMissingFileAsync(key, _time.GetUtcNow());
-                    continue;
+                    if (!maybeArchives.Any(m => m.Path == archive.RelativePath)) continue;
+                    rebuilt.Add(archive.RelativePath);
+                    var archiveWork = new ArchiveWork(source, remotePath, archive, Prior: null);
+                    if (PlanArchive(archiveWork, run, dryRun: false)) work.Add(archiveWork);
                 }
-                work.Add(new FileWork(source, remotePath, stat));
+            foreach (var (path, known) in maybeArchives.Where(m => !rebuilt.Contains(m.Path)))
+            {
+                var key = new FileKey(_settings.Destination, remotePath, source.Name, path);
+                var vanished = new FileWork(source, remotePath, new SourceFile(path, known.Size, new DateTimeOffset(known.MtimeTicks, TimeSpan.Zero)));
+                run.Set(vanished, FileOutcome.Skipped, "Missing");
+                store.RecordSkipped(run.RunId, key, _time.GetUtcNow(), "Missing");
+                await store.MarkMissingFileAsync(key, _time.GetUtcNow());
             }
         }
         return participating;
@@ -244,7 +289,8 @@ public sealed class Engine : IRunEngine
                 selected.Add(source);
             }
 
-        var work = new List<FileWork>();
+        run.BuildGate = new SemaphoreSlim(Math.Max(_settings.Archive.MaxParallelBuilds, 1));
+        var work = new List<object>();
         if (options.RetryOf is { } retryOf)
         {
             selected = await PlanRetryAsync(retryOf, selected, work, run, ct);
@@ -259,8 +305,12 @@ public sealed class Engine : IRunEngine
             var prior = store?.LoadSource(_settings.Destination, remotePath, source.Name);
             if (options.DryRun && _settings.State.Path is { Length: > 0 } dryRunDatabase)
                 prior = UploadStateStore.ReadPriorFiles(dryRunDatabase, _settings.Destination, remotePath, source.Name);
+            var priorArchives = store?.LoadArchives(_settings.Destination, remotePath, source.Name);
+            if (options.DryRun && _settings.State.Path is { Length: > 0 } archiveDatabase)
+                priorArchives = UploadStateStore.ReadPriorArchives(archiveDatabase, _settings.Destination, remotePath, source.Name);
             var listed = new HashSet<string>(StringComparer.Ordinal);
             var rules = IgnoreRulesOf(source);
+            var candidates = new List<(FileWork Item, bool TooRecent)>();
             await foreach (var file in source.ListAsync(ct))
             {
                 listed.Add(file.RelativePath);
@@ -269,10 +319,23 @@ public sealed class Engine : IRunEngine
                 var item = new FileWork(source, remotePath, file, options.RehashAll ? null : known);
                 if (rules.Reason(file.RelativePath, m => run.Warn(m)) is { } ignored)
                     run.Set(item, FileOutcome.Ignored, ignored);
-                else if (IsTooRecent(source, file))
-                    run.Set(item, FileOutcome.Skipped, TooRecentReason);
                 else
-                    work.Add(item);
+                    candidates.Add((item, IsTooRecent(source, file)));
+            }
+
+            var plan = ArchivePlanner.Plan(ArchiveRulesOf(source), candidates, source.Name, run.StartedAt);
+            foreach (var (item, tooRecent) in plan.Individual)
+            {
+                if (tooRecent) run.Set(item, FileOutcome.Skipped, TooRecentReason);
+                else work.Add(item);
+            }
+            foreach (var archive in plan.Archives)
+            {
+                listed.Add(archive.RelativePath);
+                PriorArchive? priorArchive = null;
+                priorArchives?.TryGetValue(archive.RelativePath, out priorArchive);
+                var archiveWork = new ArchiveWork(source, remotePath, archive, options.RehashAll ? null : priorArchive);
+                if (PlanArchive(archiveWork, run, options.DryRun)) work.Add(archiveWork);
             }
             if (store is not null)
                 await store.MarkMissingAsync(_settings.Destination, remotePath, source.Name, listed, _time.GetUtcNow());
@@ -280,7 +343,7 @@ public sealed class Engine : IRunEngine
 
         if (options.DryRun)
         {
-            foreach (var item in work)
+            foreach (var item in work.OfType<FileWork>())
             {
                 if (IsUnchanged(item, out var prior)) run.Skip(item, prior.Sha256!, UnchangedReason);
                 else run.Set(item, FileOutcome.Pending, null);
@@ -288,9 +351,9 @@ public sealed class Engine : IRunEngine
             return (ExitCodes.Ok, null);
         }
 
-        foreach (var item in work) run.Set(item, FileOutcome.Pending, null);
+        foreach (var item in work.OfType<FileWork>()) run.Set(item, FileOutcome.Pending, null);
 
-        var channel = Channel.CreateUnbounded<FileWork>();
+        var channel = Channel.CreateUnbounded<object>();
         foreach (var item in work) channel.Writer.TryWrite(item);
         channel.Writer.Complete();
 
@@ -322,7 +385,7 @@ public sealed class Engine : IRunEngine
             : (ExitCodes.Ok, null);
     }
 
-    private async Task WorkerAsync(ChannelReader<FileWork> reader, RunState run, ConcurrentQueue<string> connectFailure, CancellationToken ct)
+    private async Task WorkerAsync(ChannelReader<object> reader, RunState run, ConcurrentQueue<string> connectFailure, CancellationToken ct)
     {
         var connect = await _remote.ConnectAsync(ct);
         if (!connect.IsOk)
@@ -337,7 +400,8 @@ public sealed class Engine : IRunEngine
         await foreach (var item in reader.ReadAllAsync(ct))
         {
             ct.ThrowIfCancellationRequested();
-            await ProcessAsync(session, item, run, ct);
+            if (item is ArchiveWork archive) await ProcessArchiveAsync(session, archive, run, ct);
+            else await ProcessAsync(session, (FileWork)item, run, ct);
         }
     }
 
@@ -410,6 +474,7 @@ public sealed class Engine : IRunEngine
                 await store.MarkUploadingAsync(item.Key(_settings.Destination), item.File.Size, item.File.Modified.UtcTicks, partPath);
 
             string sha256;
+            long bytesRead;
             await using (var raw = await item.Source.OpenReadAsync(item.File.RelativePath, ct))
             await using (var hashing = new HashingReadStream(raw))
             {
@@ -417,6 +482,15 @@ public sealed class Engine : IRunEngine
                 var upload = await session.UploadAsync(hashing, partPath, ct);
                 if (!upload.IsOk) return UploadAttempt.From(upload);
                 sha256 = hashing.FinishHash();
+                bytesRead = hashing.BytesRead;
+            }
+
+            // A file that changed while it was read has a hash that matches no version of it: never rename it into place.
+            var changed = await ChangedSinceListingAsync(item, bytesRead, ct);
+            if (changed is not null)
+            {
+                await session.DeleteAsync(partPath, ct);
+                return new UploadAttempt(null, "ChangedDuringUpload: " + changed, true);
             }
 
             var rename = await session.RenameAsync(partPath, finalPath, overwrite: true, ct);
@@ -429,11 +503,23 @@ public sealed class Engine : IRunEngine
         }
     }
 
+    /// <summary>Why the file no longer matches its listing, or null when it is unchanged.</summary>
+    private static async Task<string?> ChangedSinceListingAsync(FileWork item, long bytesRead, CancellationToken ct)
+    {
+        var listed = item.File;
+        if (bytesRead != listed.Size) return $"read {bytesRead} bytes, listed {listed.Size}";
+        var now = await item.Source.StatAsync(listed.RelativePath, ct);
+        if (now is null) return null;
+        if (now.Size != listed.Size) return $"size is now {now.Size}, listed {listed.Size}";
+        if (now.Modified.UtcTicks != listed.Modified.UtcTicks) return $"modified at {now.Modified:O}, listed {listed.Modified:O}";
+        return null;
+    }
+
     private async Task<RemoteResult> UploadManifestAsync(IRemoteSession session, ISource source, RunState run, CancellationToken ct)
     {
         var remotePath = RemotePathOf(source);
         var finalPath = Join(remotePath, _settings.ManifestName);
-        var json = ManifestWriter.Write(source.Name, run, run.StartedAt, _time.GetUtcNow(), run.SourceEntries(source.Name));
+        var json = ManifestWriter.Write(source.Name, run, run.StartedAt, _time.GetUtcNow(), run.SourceEntries(source.Name), run.SourceArchives(source.Name));
 
         var ensure = await session.EnsureDirectoryAsync(remotePath, ct);
         if (!ensure.IsOk) return ensure;
@@ -506,7 +592,7 @@ public sealed class Engine : IRunEngine
     }
 
     /// <summary>Mutable state of one Run: outcome per file, hashes and failures for the Manifest.</summary>
-    internal sealed class RunState(Guid runId, DateTimeOffset startedAt, IProgress<RunEvent> progress, ILogger logger)
+    internal sealed partial class RunState(Guid runId, DateTimeOffset startedAt, IProgress<RunEvent> progress, ILogger logger)
     {
         private readonly object _gate = new();
         private readonly Dictionary<(string Source, string Path), FileEntry> _entries = new();
@@ -515,6 +601,7 @@ public sealed class Engine : IRunEngine
         public DateTimeOffset StartedAt { get; } = startedAt;
         public UploadStateStore? Store { get; set; }
 
+        internal void Report(RunEvent runEvent) => progress.Report(runEvent);
         /// <summary>A file delivered by an earlier Run, listed in the Manifest but not an outcome of this Run.</summary>
         internal void Carry(string source, string path, long size, string sha256)
         {
@@ -543,7 +630,7 @@ public sealed class Engine : IRunEngine
             {
                 var key = (item.Source.Name, item.File.RelativePath);
                 if (!_entries.TryGetValue(key, out entry!))
-                    _entries[key] = entry = new FileEntry(item.Source.Name, item.File.RelativePath, item.File.Size);
+                    _entries[key] = entry = new FileEntry(item.Source.Name, item.File.RelativePath, item.File.Size) { Modified = item.File.Modified };
                 change(entry);
             }
             LogFinalOutcome(item, entry);
@@ -595,7 +682,7 @@ public sealed class Engine : IRunEngine
         }
     }
 
-    internal sealed class FileEntry(string source, string path, long size)
+    internal sealed partial class FileEntry(string source, string path, long size)
     {
         public string Source { get; } = source;
         public bool Carried { get; set; }
@@ -607,6 +694,6 @@ public sealed class Engine : IRunEngine
         public string? Reason { get; set; }
         public string? Sha256 { get; set; }
 
-        public FileEntry Clone() => new(Source, Path, Size) { Outcome = Outcome, Reason = Reason, Sha256 = Sha256, Bytes = Bytes, DurationMs = DurationMs, Carried = Carried };
+        public FileEntry Clone() => new(Source, Path, Size) { Outcome = Outcome, Reason = Reason, Sha256 = Sha256, Bytes = Bytes, DurationMs = DurationMs, Carried = Carried, Modified = Modified, ArchivePath = ArchivePath, EntryName = EntryName };
     }
 }

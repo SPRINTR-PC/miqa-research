@@ -22,6 +22,7 @@ public sealed class CompositionSettingsTests
             HeartbeatSeconds = 15,
             StaleAfterSeconds = 60,
             CancelPollSeconds = 5,
+            AccessGroup = "mires-uploader",
         },
         Report = new ReportConfig { Directory = "/reports", Format = ReportFormat.Csv, FileNamePattern = "r-{runId}.{format}" },
     };
@@ -53,7 +54,8 @@ public sealed class CompositionSettingsTests
     {
         var state = UploaderComposition.ToEngineSettings(Config).State;
 
-        Assert.AreEqual(Path.Combine("/shared/mires", "upload-state.db"), state.Path);
+        Assert.AreEqual(DataDirectory.DatabasePath("/shared/mires"), state.Path);
+        Assert.AreEqual("mires-uploader", state.AccessGroup);
         Assert.AreEqual(TimeSpan.FromDays(30), state.RunFilesRetention);
         Assert.AreEqual(TimeSpan.FromDays(10), state.MissingRetention);
         Assert.AreEqual(TimeSpan.FromSeconds(15), state.HeartbeatInterval);
@@ -62,10 +64,19 @@ public sealed class CompositionSettingsTests
     }
 
     [TestMethod]
-    public void No_Data_Directory_configured_means_no_Upload_State()
+    public void No_Data_Directory_configured_means_the_per_OS_default()
     {
         var state = UploaderComposition.ToStateSettings(new AppConfig());
 
-        Assert.IsNull(state.Path);
+        var expected = DataDirectory.Resolve(null, null, DataDirectory.CurrentPlatform, Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData));
+        Assert.AreEqual(DataDirectory.DatabasePath(expected), state.Path);
+    }
+
+    [TestMethod]
+    public void The_real_SFTP_adapter_is_the_default_remote()
+    {
+        var remote = new SshNetRemoteFactory().Create(new AppConfig { Sftp = new SftpConfig { Host = "h", Username = "u", HostKeyFingerprint = "abc" } }, new Configuration(new ConfigurationLocations("", "", new Dictionary<string, string?>())).LoadSecrets());
+
+        Assert.IsInstanceOfType<SshNetRemote>(remote);
     }
 }

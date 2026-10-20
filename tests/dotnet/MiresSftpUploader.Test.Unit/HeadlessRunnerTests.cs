@@ -9,6 +9,15 @@ public sealed class HeadlessRunnerTests : ConfigurationTestBase
 {
     private readonly FakeRemote _remote = new();
 
+    /// <summary>A valid configuration whose Data Directory is a folder this account can write.</summary>
+    private string Machine()
+    {
+        var machine = ValidMachine();
+        machine["State"] = new System.Text.Json.Nodes.JsonObject { ["Path"] = Path.Combine(Dir, "shared") };
+        Directory.CreateDirectory(Path.Combine(Dir, "shared"));
+        return machine.ToJsonString();
+    }
+
     private void AddFile()
     {
         Directory.CreateDirectory(DataDir);
@@ -17,7 +26,7 @@ public sealed class HeadlessRunnerTests : ConfigurationTestBase
 
     private async Task<(int ExitCode, string Out, string Err)> RunAsync(params string[] args)
     {
-        File.WriteAllText(MachinePath, ValidMachine().ToJsonString());
+        File.WriteAllText(MachinePath, Machine());
         var cli = CliOptions.Parse(args).Options!;
         var configuration = new Configuration(new ConfigurationLocations(MachinePath, UserPath, new Dictionary<string, string?>()));
         var runtime = new UploaderRuntime(configuration, new StaticRemoteFactory(_remote), NullLoggerFactory.Instance, TimeProvider.System, cli);
@@ -91,7 +100,7 @@ public sealed class HeadlessRunnerTests : ConfigurationTestBase
     [TestMethod]
     public async Task The_placeholder_remote_fails_the_run_with_a_clear_message_until_the_SFTP_adapter_is_plugged_in()
     {
-        File.WriteAllText(MachinePath, ValidMachine().ToJsonString());
+        File.WriteAllText(MachinePath, Machine());
         AddFile();
         var cli = CliOptions.Parse(["--headless"]).Options!;
         var configuration = new Configuration(new ConfigurationLocations(MachinePath, UserPath, new Dictionary<string, string?>()));

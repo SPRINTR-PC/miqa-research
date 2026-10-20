@@ -89,8 +89,14 @@ public sealed class MainWindowViewModel : ViewModelBase
     public string ThemeNotice
     {
         get => _themeNotice;
-        private set => this.RaiseAndSetIfChanged(ref _themeNotice, value);
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _themeNotice, value);
+            this.RaisePropertyChanged(nameof(HasThemeNotice));
+        }
     }
+
+    public bool HasThemeNotice => ThemeNotice.Length > 0;
 
     private void ToggleTheme()
     {

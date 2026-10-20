@@ -42,6 +42,18 @@ public sealed class ConfigurationValidationTests : ConfigurationTestBase
     }
 
     [TestMethod]
+    public void Archive_staging_limits_cannot_be_negative()
+    {
+        var json = ValidMachine();
+        json["Archive"] = new JsonObject { ["MinFreeSpaceBytes"] = -1, ["WarnAboveBytes"] = -1 };
+
+        var r = Load(json);
+
+        AssertError(r, "Archive:MinFreeSpaceBytes");
+        AssertError(r, "Archive:WarnAboveBytes");
+    }
+
+    [TestMethod]
     public void Required_fields_are_host_username_fingerprint_and_at_least_one_enabled_source()
     {
         var r = Create("{}").Load();

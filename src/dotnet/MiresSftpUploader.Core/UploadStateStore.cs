@@ -19,6 +19,15 @@ internal readonly record struct FileKey(string Destination, string RemotePath, s
 /// <summary>What the Upload State knows about a file from earlier Runs.</summary>
 internal sealed record PriorFile(string Status, long Size, long MtimeTicks, string? Sha256);
 
+/// <summary>One member of an Archive as last delivered: its size and mtime in the Source and its own SHA-256.</summary>
+internal sealed record PriorMember(long Size, long MtimeTicks, string Sha256);
+
+/// <summary>What the Upload State knows about an Archive from earlier Runs: its own row and its members by Source-relative path.</summary>
+internal sealed record PriorArchive(PriorFile File, IReadOnlyDictionary<string, PriorMember> Members);
+
+/// <summary>A member to record for an Archive: Source-relative path, size, mtime ticks and SHA-256.</summary>
+internal sealed record ArchiveMemberRecord(string Path, long Size, long MtimeTicks, string Sha256);
+
 /// <summary>An upload that was in flight when its Run died: the server object to remove.</summary>
 internal sealed record OrphanPart(string Destination, string PartPath);
 
@@ -108,6 +117,8 @@ internal sealed class UploadStateStore : IAsyncDisposable
         var directory = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(path));
         if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
 
+        // SQLite gives -wal and -shm the mode of the database file, so it must be group-writable before SQLite creates it.
+        DataDirectory.EnsureGroupWritable(path, createIfMissing: true);
         var connection = OpenConnection(path);
         try
         {
@@ -165,6 +176,7 @@ internal sealed class UploadStateStore : IAsyncDisposable
         command.CommandText = "VACUUM INTO $target";
         command.Parameters.AddWithValue("$target", backup);
         command.ExecuteNonQuery();
+        DataDirectory.EnsureGroupWritable(backup);
     }
 
     // ---- Writes (queued) ----
@@ -210,6 +222,29 @@ internal sealed class UploadStateStore : IAsyncDisposable
         {
             Upsert(c, key, "Failed", size, mtimeTicks, sha256: null, error, partPath: null, success: null);
             InsertRunFile(c, runId, key, "Failed", 0, duration, error, now);
+        });
+
+    /// <summary>
+    /// Records an Archive delivered (or confirmed unchanged) with its zip hash and members; the member rows are replaced as a set.
+    /// </summary>
+    public void RecordArchiveSucceeded(Guid runId, FileKey key, long zipSize, string zipSha256,
+        IReadOnlyList<ArchiveMemberRecord> members, bool uploaded, DateTimeOffset now, TimeSpan duration) =>
+        _ = Enqueue(c =>
+        {
+            Upsert(c, key, "Succeeded", zipSize, 0, zipSha256, error: null, partPath: null, success: now.UtcTicks);
+            Exec(c, """
+                DELETE FROM ArchiveMembers WHERE ArchiveFileId IN
+                    (SELECT Id FROM Files WHERE Destination=$d AND RemotePath=$r AND Source=$s AND RelativePath=$p)
+                """, ("$d", key.Destination), ("$r", key.RemotePath), ("$s", key.Source), ("$p", key.RelativePath));
+            foreach (var m in members)
+                Exec(c, """
+                    INSERT INTO ArchiveMembers (ArchiveFileId, MemberPath, Size, Mtime, Sha256)
+                    SELECT Id, $m, $size, $mtime, $sha FROM Files
+                    WHERE Destination=$d AND RemotePath=$r AND Source=$s AND RelativePath=$p
+                    """, ("$m", m.Path), ("$size", m.Size), ("$mtime", m.MtimeTicks), ("$sha", m.Sha256),
+                    ("$d", key.Destination), ("$r", key.RemotePath), ("$s", key.Source), ("$p", key.RelativePath));
+            if (uploaded) InsertRunFile(c, runId, key, "Succeeded", zipSize, duration, null, now);
+            else InsertRunFile(c, runId, key, "Skipped", 0, TimeSpan.Zero, "unchanged", now);
         });
 
     /// <summary>Marks every recorded file of the Source that is no longer listed as Missing. Remote files are never touched.</summary>
@@ -333,6 +368,37 @@ internal sealed class UploadStateStore : IAsyncDisposable
         return LoadSource(connection, destination, remotePath, source);
     }
 
+    /// <summary>The Source's Archives that have member rows, for the skip decision.</summary>
+    public Dictionary<string, PriorArchive> LoadArchives(string destination, string remotePath, string source)
+    {
+        using var connection = OpenConnection(_path, readOnly: true);
+        return LoadArchives(connection, destination, remotePath, source);
+    }
+
+    private static Dictionary<string, PriorArchive> LoadArchives(SqliteConnection connection, string destination, string remotePath, string source)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT f.RelativePath, f.Status, f.Size, f.Mtime, f.Sha256, m.MemberPath, m.Size, m.Mtime, m.Sha256
+            FROM Files f JOIN ArchiveMembers m ON m.ArchiveFileId = f.Id
+            WHERE f.Destination=$d AND f.RemotePath=$r AND f.Source=$s
+            """;
+        command.Parameters.AddWithValue("$d", destination);
+        command.Parameters.AddWithValue("$r", remotePath);
+        command.Parameters.AddWithValue("$s", source);
+        var files = new Dictionary<string, PriorFile>(StringComparer.Ordinal);
+        var members = new Dictionary<string, Dictionary<string, PriorMember>>(StringComparer.Ordinal);
+        using var rows = command.ExecuteReader();
+        while (rows.Read())
+        {
+            var archive = rows.GetString(0);
+            files[archive] = new PriorFile(rows.GetString(1), rows.GetInt64(2), rows.GetInt64(3), rows.IsDBNull(4) ? null : rows.GetString(4));
+            if (!members.TryGetValue(archive, out var set)) members[archive] = set = new Dictionary<string, PriorMember>(StringComparer.Ordinal);
+            set[rows.GetString(5)] = new PriorMember(rows.GetInt64(6), rows.GetInt64(7), rows.GetString(8));
+        }
+        return files.ToDictionary(kv => kv.Key, kv => new PriorArchive(kv.Value, members[kv.Key]), StringComparer.Ordinal);
+    }
+
     private static Dictionary<string, PriorFile> LoadSource(SqliteConnection connection, string destination, string remotePath, string source)
     {
         using var command = connection.CreateCommand();
@@ -353,9 +419,15 @@ internal sealed class UploadStateStore : IAsyncDisposable
     /// What a Dry Run knows about a Source: reads the database without opening a store, creating, migrating or
     /// writing anything. A missing, empty or newer database yields no prior files.
     /// </summary>
-    public static Dictionary<string, PriorFile> ReadPriorFiles(string path, string destination, string remotePath, string source)
+    public static Dictionary<string, PriorFile> ReadPriorFiles(string path, string destination, string remotePath, string source) =>
+        ReadImmutable(path, new Dictionary<string, PriorFile>(StringComparer.Ordinal), c => LoadSource(c, destination, remotePath, source));
+
+    /// <summary>Like <see cref="ReadPriorFiles"/>, for the Archives a Dry Run may find unchanged.</summary>
+    public static Dictionary<string, PriorArchive> ReadPriorArchives(string path, string destination, string remotePath, string source) =>
+        ReadImmutable(path, new Dictionary<string, PriorArchive>(StringComparer.Ordinal), c => LoadArchives(c, destination, remotePath, source));
+
+    private static T ReadImmutable<T>(string path, T none, Func<SqliteConnection, T> read)
     {
-        var none = new Dictionary<string, PriorFile>(StringComparer.Ordinal);
         if (!File.Exists(path)) return none;
         try
         {
@@ -365,7 +437,7 @@ internal sealed class UploadStateStore : IAsyncDisposable
             using var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = uri, Pooling = false }.ToString());
             connection.Open();
             if (Convert.ToInt32(Scalar(connection, "PRAGMA user_version"), CultureInfo.InvariantCulture) != SchemaVersion) return none;
-            return LoadSource(connection, destination, remotePath, source);
+            return read(connection);
         }
         catch (SqliteException)
         {

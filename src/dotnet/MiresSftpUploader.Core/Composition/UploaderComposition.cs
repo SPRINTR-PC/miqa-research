@@ -6,9 +6,6 @@ namespace MiresSftpUploader.Core;
 /// </summary>
 public static class UploaderComposition
 {
-    /// <summary>File name of the Upload State database inside the Data Directory (the lock file lives beside it).</summary>
-    public const string DatabaseFileName = "upload-state.db";
-
     public static EngineSettings ToEngineSettings(AppConfig config) => new()
     {
         RemoteRoot = config.Sftp.RemoteRoot,
@@ -35,12 +32,15 @@ public static class UploaderComposition
     };
 
     /// <summary>
-    /// The Upload State settings. <c>State:Path</c> is the Data Directory; without one there is no Upload State
-    /// (and so no Run History). The Data Directory ticket replaces the "none" with the per-OS default.
+    /// The Upload State settings. <c>State:Path</c> is the Data Directory (<c>MIRES_DATA_DIR</c> and <c>--data-dir</c> set it);
+    /// when none is configured the per-OS default is used.
     /// </summary>
     public static StateSettings ToStateSettings(AppConfig config) => new()
     {
-        Path = string.IsNullOrWhiteSpace(config.State.Path) ? null : Path.Combine(config.State.Path, DatabaseFileName),
+        Path = DataDirectory.DatabasePath(DataDirectory.Resolve(
+            config.State.Path, null, DataDirectory.CurrentPlatform,
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData))),
+        AccessGroup = config.State.AccessGroup,
         RunFilesRetention = TimeSpan.FromDays(config.State.RunFilesRetentionDays),
         MissingRetention = TimeSpan.FromDays(config.State.MissingRetentionDays),
         HeartbeatInterval = TimeSpan.FromSeconds(config.State.HeartbeatSeconds),

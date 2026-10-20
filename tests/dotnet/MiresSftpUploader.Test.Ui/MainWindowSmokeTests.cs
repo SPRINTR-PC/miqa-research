@@ -9,6 +9,7 @@ using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Media;
 using Avalonia.Styling;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Microsoft.Extensions.Logging;
 using MiresSftpUploader;
@@ -149,12 +150,14 @@ public class MainWindowSmokeTests
 
         var running = vm.Upload.StartCommand.Execute().ToTask();
         await engine.Started;
+        Dispatcher.UIThread.RunJobs();
         Assert.False(start.IsEffectivelyEnabled);
         Assert.True(cancel.IsEffectivelyEnabled);
         Assert.False(retry.IsEffectivelyEnabled);
 
         engine.Release();
         await running;
+        Dispatcher.UIThread.RunJobs();
         Assert.True(start.IsEffectivelyEnabled);
         Assert.False(cancel.IsEffectivelyEnabled);
         Assert.True(retry.IsEffectivelyEnabled);
@@ -178,8 +181,11 @@ public class MainWindowSmokeTests
         var target = new UiLogTarget();
         var (window, _, _) = Create(logTarget: target);
         window.Show();
+        Find<Expander>(window, "LogExpander").IsExpanded = true;
 
         target.Emit(new LogEntry(DateTimeOffset.UnixEpoch, LogLevel.Warning, "Test", "disk almost full"));
+        Dispatcher.UIThread.RunJobs();
+        window.UpdateLayout();
 
         Assert.Contains("disk almost full", window.GetVisualDescendants().OfType<TextBlock>().Select(t => t.Text));
     }

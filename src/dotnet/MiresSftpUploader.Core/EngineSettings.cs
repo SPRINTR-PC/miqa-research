@@ -21,6 +21,11 @@ public sealed record StateSettings
 {
     /// <summary>Path of the Upload State database; the lock file lives beside it. Null means no Upload State (every Run uploads everything).</summary>
     public string? Path { get; init; }
+    /// <summary>
+    /// Group granted access to the Data Directory on Linux and macOS (default mires-uploader / staff). Machine Config or
+    /// environment only; never editable in the UI. Windows always uses BUILTIN\Users.
+    /// </summary>
+    public string? AccessGroup { get; init; }
     /// <summary>How long per-Run file outcomes are kept.</summary>
     public TimeSpan RunFilesRetention { get; init; } = TimeSpan.FromDays(180);
     /// <summary>How long a Missing file's record is kept.</summary>
@@ -49,6 +54,8 @@ public sealed record EngineSettings
     public string FlatManifestName { get; init; } = "manifest.sha256";
     /// <summary>Global Ignore Rules; each Source's own <see cref="SourceConfig.Ignore"/> adds to them.</summary>
     public IgnoreConfig Ignore { get; init; } = new();
+    /// <summary>Global Archive Rules and Staging Area settings; each Source's own <see cref="SourceConfig.ArchiveRules"/> are tried first.</summary>
+    public ArchiveConfig Archive { get; init; } = new();
     /// <summary>Global Too Recent limits; a Source's own <see cref="SourceConfig.Scan"/> overrides them.</summary>
     public ScanConfig Scan { get; init; } = new();
     /// <summary>Per-Source additions, matched to a Source by name (case-insensitive).</summary>

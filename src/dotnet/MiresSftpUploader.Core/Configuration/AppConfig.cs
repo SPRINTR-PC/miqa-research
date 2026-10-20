@@ -108,6 +108,8 @@ public sealed record ArchiveConfig
     public IReadOnlyList<ArchiveRuleConfig> Rules { get; init; } = [];
     public int MaxParallelBuilds { get; init; } = 1;
     public long WarnAboveBytes { get; init; } = 50L * 1024 * 1024 * 1024;
+    /// <summary>Free space that must remain in the Staging Area after the members of an Archive are accounted for.</summary>
+    public long MinFreeSpaceBytes { get; init; } = 1024L * 1024 * 1024;
 }
 
 public sealed record ArchiveRuleConfig
@@ -154,6 +156,11 @@ public sealed record StateConfig
 {
     /// <summary>Data Directory override; empty means the machine-wide default.</summary>
     public string? Path { get; init; }
+    /// <summary>
+    /// Group granted access to the Data Directory on Linux and macOS (default mires-uploader / staff; Windows uses BUILTIN\Users).
+    /// Machine Config or environment only: User Overrides and the UI cannot set it.
+    /// </summary>
+    public string? AccessGroup { get; init; }
     public int RunFilesRetentionDays { get; init; } = 180;
     public int MissingRetentionDays { get; init; } = 90;
     public int HeartbeatSeconds { get; init; } = 15;

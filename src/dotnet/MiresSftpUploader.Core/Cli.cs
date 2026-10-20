@@ -16,7 +16,7 @@ public static class Cli
     /// <paramref name="state"/> locates the Upload State for <c>--list-runs</c> and <c>--export-run</c>.
     /// </summary>
     public static bool TryRun(string[] args, string version, TextWriter stdout, TextWriter stderr, out int exitCode,
-        ConfigurationLocations? locations = null, StateSettings? state = null)
+        ConfigurationLocations? locations = null, StateSettings? state = null, Func<SftpConnection, IRemote>? remoteFactory = null)
     {
         exitCode = ExitCodes.Ok;
         if (args.Length == 0) return false;
@@ -41,6 +41,12 @@ public static class Cli
             return true;
         }
 
+        if (options.InitDataDir)
+        {
+            exitCode = InitDataDirectory(options, new Configuration(locations ?? ConfigurationLocations.Default()), stdout, stderr);
+            return true;
+        }
+
         if (options.ListRuns || options.ExportRunId is not null)
         {
             exitCode = options.ListRuns ? ListRuns(options, stdout, stderr, state) : ExportRun(options, stdout, stderr, state, locations);
@@ -49,7 +55,8 @@ public static class Cli
 
         if (!options.Headless && !options.ValidateConfig) return false;
 
-        var result = new Configuration(locations ?? ConfigurationLocations.Default()).Load(options, headless: true);
+        var configuration = new Configuration(locations ?? ConfigurationLocations.Default());
+        var result = configuration.Load(options, headless: true);
         var errors = result.Errors.Select(e => e.ToString()).ToList();
         if (result.Config is { } config)
             foreach (var name in options.Sources.Where(n => !config.Sources.Any(s => string.Equals(s.Name, n, StringComparison.OrdinalIgnoreCase))))
@@ -66,8 +73,59 @@ public static class Cli
         }
 
         if (!options.ValidateConfig) return false;
-        stdout.WriteLine("Configuration is valid.");
+        if (!options.CheckConnection)
+        {
+            stdout.WriteLine("Configuration is valid.");
+            return true;
+        }
+
+        exitCode = CheckConnection(result.Config!.Sftp, configuration.LoadSecrets(), remoteFactory ?? (c => new SshNetRemote(c)), stdout, stderr);
         return true;
+    }
+
+    /// <summary>Opens one session to prove the server answers, the Host Key Fingerprint matches and the credentials work.</summary>
+    private static int CheckConnection(SftpConfig sftp, Secrets secrets, Func<SftpConnection, IRemote> remoteFactory, TextWriter stdout, TextWriter stderr)
+    {
+        var missing = sftp.AuthMethod == AuthMethod.PrivateKey ? null : secrets.SftpPassword is null ? Secrets.SftpPasswordVariable : null;
+        if (missing is not null)
+        {
+            stderr.WriteLine($"{missing} is not set. Secrets are read only from environment variables.");
+            return ExitCodes.ConfigurationError;
+        }
+
+        var connection = SftpConnection.From(sftp, secrets);
+        var connect = remoteFactory(connection).ConnectAsync(CancellationToken.None).GetAwaiter().GetResult();
+        if (!connect.IsOk)
+        {
+            stderr.WriteLine($"Connection check failed for {connection}: {connect.Reason}");
+            return ExitCodes.ConnectFailed;
+        }
+
+        connect.Value!.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        stdout.WriteLine($"Configuration is valid. Connected to {connection}; the host key matches the pinned Host Key Fingerprint.");
+        return ExitCodes.Ok;
+    }
+
+    /// <summary>Creates or repairs the Data Directory (idempotent). Run once per machine by an administrator.</summary>
+    private static int InitDataDirectory(CliOptions options, Configuration configuration, TextWriter stdout, TextWriter stderr)
+    {
+        var settings = configuration.ResolveDataDirectory(options);
+        if (settings.Errors.Count > 0)
+        {
+            foreach (var e in settings.Errors) stderr.WriteLine(e.ToString());
+            return ExitCodes.ConfigurationError;
+        }
+
+        var result = DataDirectory.Initialize(settings.Path, settings.AccessGroup, DataDirectory.CurrentPlatform);
+        foreach (var action in result.Actions) stdout.WriteLine(action);
+        if (!result.Ok)
+        {
+            stderr.WriteLine(result.Error);
+            return ExitCodes.ConfigurationError;
+        }
+
+        stdout.WriteLine(result.Actions.Count == 0 ? $"Data Directory {settings.Path} is already set up." : $"Data Directory {settings.Path} is ready.");
+        return ExitCodes.Ok;
     }
 
     private static int ListRuns(CliOptions options, TextWriter stdout, TextWriter stderr, StateSettings? state)
@@ -155,7 +213,9 @@ public static class Cli
           --limit <n>             With --list-runs: show at most n Runs.
           --validate-config       Report every configuration error and exit; runs nothing.
           --check-connection      With --validate-config: also test the server and its host key.
-          --init-data-dir         Create the shared Data Directory and exit.
+          --init-data-dir         Create or repair the shared Data Directory and exit.
+                                  Run once per machine as administrator or with sudo; safe to repeat.
+                                  The group is State:AccessGroup (default mires-uploader, macOS staff).
           --log-level <level>     Trace, Debug, Info (default), Warn, Error or Fatal.
           --data-dir <path>       Use this Data Directory (also MIRES_DATA_DIR).
           --version               Print the version and exit.

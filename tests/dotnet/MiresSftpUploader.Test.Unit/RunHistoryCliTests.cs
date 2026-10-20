@@ -42,12 +42,12 @@ public sealed class RunHistoryCliTests : ConfigurationTestBase
     }
 
     [TestMethod]
-    public void Without_a_Data_Directory_there_is_no_state_to_read()
+    public void Without_a_Data_Directory_configured_the_default_one_is_used()
     {
         File.WriteAllText(MachinePath, ValidMachine().ToJsonString());
 
         var state = UploaderComposition.LoadStateSettings(new Configuration(Locations), new CliOptions());
 
-        Assert.IsNull(state?.Path);
+        StringAssert.EndsWith(state!.Path, DataDirectory.DatabaseFileName);
     }
 }
