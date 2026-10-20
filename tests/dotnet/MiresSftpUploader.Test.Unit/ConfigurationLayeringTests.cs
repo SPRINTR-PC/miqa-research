@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using MiresSftpUploader.Core;
 
 namespace MiresSftpUploader.Test.Unit;
@@ -30,6 +31,20 @@ public abstract class ConfigurationTestBase
     protected string MachinePath => Path.Combine(Dir, "install", "appsettings.json");
     protected string UserPath => Path.Combine(Dir, "user", "appsettings.user.json");
 
+    protected string DataDir => Path.Combine(Dir, "data");
+
+    /// <summary>A valid configuration; each test changes one thing in it.</summary>
+    protected JsonObject ValidMachine()
+    {
+        Directory.CreateDirectory(DataDir);
+        return JsonNode.Parse($$"""
+            {
+              "Sftp": { "Host": "sftp.example.org", "Username": "u", "HostKeyFingerprint": "abc", "RemoteRoot": "/incoming" },
+              "Sources": [ { "Name": "alpha", "Type": "Directory", "Path": {{System.Text.Json.JsonSerializer.Serialize(DataDir)}} } ]
+            }
+            """)!.AsObject();
+    }
+
     protected Configuration Create(string machineJson, string? userJson = null, Dictionary<string, string?>? env = null)
     {
         File.WriteAllText(MachinePath, machineJson);
@@ -44,9 +59,14 @@ public sealed class ConfigurationLayeringTests : ConfigurationTestBase
     [TestMethod]
     public void Machine_config_values_are_loaded_and_unset_keys_take_documented_defaults()
     {
-        var cfg = Create("""{ "Sftp": { "Host": "sftp.example.org", "Port": 2222 } }""");
+        var machine = ValidMachine();
+        machine["Sftp"]!["Host"] = "sftp.example.org";
+        machine["Sftp"]!["Port"] = 2222;
+        var cfg = Create(machine.ToJsonString());
 
         var r = cfg.Load();
+
+        Assert.IsTrue(r.Succeeded, string.Join(" | ", r.Errors));
 
         Assert.IsNotNull(r.Config);
         Assert.AreEqual("sftp.example.org", r.Config.Sftp.Host);
@@ -58,8 +78,10 @@ public sealed class ConfigurationLayeringTests : ConfigurationTestBase
     [TestMethod]
     public void Layers_override_in_order_machine_user_environment_cli()
     {
+        var machine = ValidMachine();
+        machine["Sftp"] = new JsonObject { ["Host"] = "machine", ["Username"] = "machine", ["HostKeyFingerprint"] = "fp", ["RemoteRoot"] = "/machine" };
         var cfg = Create(
-            """{ "Sftp": { "Host": "machine", "Username": "machine" , "RemoteRoot": "/machine" } }""",
+            machine.ToJsonString(),
             """{ "ConfigVersion": 1, "Sftp": { "Host": "user", "Username": "user" } }""",
             new() { ["MIRES_Sftp__Host"] = "env" });
         var cli = CliOptions.Parse(["--data-dir", "/cli/data"]).Options!;
@@ -80,22 +102,27 @@ public sealed class ConfigurationLayeringTests : ConfigurationTestBase
     [TestMethod]
     public void An_array_is_replaced_whole_by_the_highest_layer_that_defines_it()
     {
+        var machine = ValidMachine();
+        machine["Sources"] = new JsonArray(
+            new JsonObject { ["Name"] = "a", ["Path"] = DataDir },
+            new JsonObject { ["Name"] = "b", ["Path"] = DataDir });
+        machine["Ignore"] = new JsonObject { ["Files"] = new JsonArray("x", "y") };
         var cfg = Create(
-            """{ "Sources": [ { "Name": "a", "Path": "/a" }, { "Name": "b", "Path": "/b" } ], "Ignore": { "Files": ["x", "y"] } }""",
+            machine.ToJsonString(),
             """{ "Ignore": { "Files": ["z"] } }""",
-            new() { ["MIRES_Sources__0__Name"] = "only" });
+            new() { ["MIRES_Sources__0__Name"] = "only", ["MIRES_Sources__0__Path"] = DataDir });
 
         var r = cfg.Load();
 
         CollectionAssert.AreEqual(new[] { "only" }, r.Config!.Sources.Select(s => s.Name).ToArray());
-        Assert.IsNull(r.Config.Sources[0].Path);
+        Assert.AreEqual(DataDir, r.Config.Sources[0].Path);
         CollectionAssert.AreEqual(new[] { "z" }, r.Config.Ignore.Files.ToArray());
     }
 
     [TestMethod]
     public void Environment_supplied_keys_are_locked_and_other_keys_are_writable()
     {
-        var cfg = Create("""{ "Sftp": { "Host": "h" } }""", env: new() { ["MIRES_Sftp__Port"] = "2200" });
+        var cfg = Create(ValidMachine().ToJsonString(), env: new() { ["MIRES_Sftp__Port"] = "2200" });
 
         var r = cfg.Load();
 
@@ -107,7 +134,7 @@ public sealed class ConfigurationLayeringTests : ConfigurationTestBase
     public void Machine_config_in_a_read_only_folder_makes_its_keys_locked()
     {
         if (OperatingSystem.IsWindows()) Assert.Inconclusive("Uses Unix permissions.");
-        var cfg = Create("""{ "Sftp": { "Host": "h" } }""", """{ "Sftp": { "Username": "u" } }""");
+        var cfg = Create(ValidMachine().ToJsonString(), """{ "Sftp": { "Username": "u" } }""");
         File.SetUnixFileMode(Path.Combine(Dir, "install"), UnixFileMode.UserRead | UnixFileMode.UserExecute);
         if (Environment.UserName == "root") Assert.Inconclusive("root ignores permissions.");
 
