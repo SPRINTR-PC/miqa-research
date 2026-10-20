@@ -45,6 +45,43 @@ public sealed class CliTests
     }
 
     [TestMethod]
+    public void Init_data_dir_creates_the_directory_and_prints_what_it_did()
+    {
+        if (OperatingSystem.IsWindows()) Assert.Inconclusive("Windows grants BUILTIN\\Users; needs an elevated prompt.");
+        var parent = Directory.CreateTempSubdirectory("mires-cli-").FullName;
+        var path = Path.Combine(parent, "data");
+        var stdout = new StringWriter();
+        var stderr = new StringWriter();
+        var group = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("id", "-gn") { RedirectStandardOutput = true })!
+            .StandardOutput.ReadToEnd().Trim();
+
+        var handled = Cli.TryRun(["--init-data-dir", "--data-dir", path], "1.2.3", stdout, stderr, out var exitCode,
+            name => name == "State__AccessGroup" ? group : null);
+
+        Assert.IsTrue(handled);
+        Assert.AreEqual(0, exitCode, stderr.ToString());
+        Assert.IsTrue(Directory.Exists(path));
+        StringAssert.Contains(stdout.ToString(), path);
+        Directory.Delete(parent, recursive: true);
+    }
+
+    [TestMethod]
+    public void Init_data_dir_failure_exits_2_with_the_reason_on_stderr()
+    {
+        if (OperatingSystem.IsWindows()) Assert.Inconclusive("Unix group lookup.");
+        var path = Path.Combine(Path.GetTempPath(), "mires-never-created-" + Guid.NewGuid().ToString("N"));
+        var r = new StringWriter();
+        var stderr = new StringWriter();
+
+        Cli.TryRun(["--init-data-dir", "--data-dir", path], "1.2.3", r, stderr, out var exitCode,
+            name => name == "State__AccessGroup" ? "no-such-group-xyz" : null);
+
+        Assert.AreEqual(2, exitCode);
+        StringAssert.Contains(stderr.ToString(), "no-such-group-xyz");
+        Assert.IsFalse(Directory.Exists(path));
+    }
+
+    [TestMethod]
     public void No_arguments_is_not_handled_so_the_window_opens()
     {
         Assert.IsFalse(Invoke().Handled);
