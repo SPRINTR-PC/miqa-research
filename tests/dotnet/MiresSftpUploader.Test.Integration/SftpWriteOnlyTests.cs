@@ -130,6 +130,7 @@ public sealed class SftpWriteOnlyTests
         Assert.AreEqual(FileOutcome.Succeeded, files.Of("b.txt").Outcome, "a new name still works");
         Assert.AreEqual("alpha", await SftpServer.InboxReadTextAsync("a.txt", SftpServer.StickyUser), "no silent fallback: the earlier delivery is untouched");
         var onServer = await SftpServer.InboxFilesAsync(SftpServer.StickyUser);
-        Assert.IsTrue(onServer.Contains("a.txt.part"), "stale .part files are never deleted: " + string.Join(", ", onServer));
+        Assert.IsTrue(onServer.Any(f => f.StartsWith("a.txt.", StringComparison.Ordinal) && f.EndsWith(".part", StringComparison.Ordinal)),
+            "stale .part files are never deleted: " + string.Join(", ", onServer));
     }
 }
