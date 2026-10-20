@@ -1,0 +1,13 @@
+# Sample systemd timer for mires-sftp-uploader.service.
+# Enable: systemctl enable --now mires-sftp-uploader.timer      Check: systemctl list-timers mires-sftp-uploader.timer
+[Unit]
+Description=Run the MIRES SFTP Uploader every day
+
+[Timer]
+OnCalendar=*-*-* 02:00:00
+# Persistent=true runs a start that was missed while the machine was off; the tool itself does not catch up.
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

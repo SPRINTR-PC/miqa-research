@@ -173,7 +173,10 @@ public sealed class UploadPageViewModel : ViewModelBase
             Sources.Add(new SourceItemViewModel(source) { Included = !excluded.Contains(source.Name ?? "") });
     }
 
-    private async Task RunAsync(bool dryRun, bool retry, bool scan = false)
+    /// <summary>Uploads the failed files of a Run from the Run History again, as a new Run with a fresh file list. Does nothing while a Run is going.</summary>
+    public Task RetryRunAsync(Guid runId) => IsRunning ? Task.CompletedTask : RunAsync(dryRun: false, retry: true, historical: runId);
+
+    private async Task RunAsync(bool dryRun, bool retry, bool scan = false, Guid? historical = null)
     {
         var prepared = _runtime.Prepare(headless: false);
         ApplyConfiguration(prepared);
@@ -190,7 +193,8 @@ public sealed class UploadPageViewModel : ViewModelBase
             return;
         }
 
-        if (!retry) ClearFiles();
+        if (historical is not null) _retryOf = historical;
+        if (!retry || historical is not null) ClearFiles();
         var options = new RunOptions
         {
             SourceNames = included,

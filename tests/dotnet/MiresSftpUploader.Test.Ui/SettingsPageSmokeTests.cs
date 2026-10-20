@@ -39,7 +39,7 @@ public sealed class SettingsPageSmokeTests : IDisposable
         var settings = new SettingsPageViewModel(configuration,
             path => new DataDirectoryAccess(path, true, true, "alice", "mires-uploader", 0, 1L << 33, false, "", null), _ => long.MaxValue);
         var upload = new UploadPageViewModel(new FakeUploaderRuntime(new AppConfig(), new FakeRunEngine()), a => a());
-        var vm = new MainWindowViewModel(upload, null, theme, _ => null, settings);
+        var vm = new MainWindowViewModel(upload, null, theme, _ => null, settings: settings);
         var window = new MainWindow { DataContext = vm };
         window.Show();
         vm.ShowSettingsCommand.Execute().Subscribe();

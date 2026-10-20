@@ -8,7 +8,11 @@ namespace MiresSftpUploader.Test.Integration;
 public sealed class SftpRemoteContractTests : RemoteContract
 {
     [AssemblyCleanup]
-    public static async Task StopServer() => await SftpServer.StopAsync();
+    public static async Task StopServers()
+    {
+        await SftpServer.StopAsync();
+        await MinioServer.StopAsync();
+    }
 
     protected override string RootDirectory => SftpServer.Get().UploadDirectory;
 

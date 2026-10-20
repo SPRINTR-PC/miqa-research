@@ -202,22 +202,25 @@ public static class Cli
         Usage: MiresSftpUploader [options]
 
         Options:
-          --headless              Run once without opening a window.
+          --headless              Run once without opening a window. Default: open the window.
           --source <name>         Run only this Source; repeat for more. Default: every enabled Source.
-          --dry-run               Plan only: upload, archive and record nothing.
-          --rehash-all            Hash every file again instead of trusting the Upload State.
-          --report <path>         Write a Report of the Run to this file.
-          --report-format <f>     json (default) or csv.
-          --export-run <id>       Export the Report of a recorded Run and exit.
+          --dry-run               Plan only: upload, archive and record nothing. Default: off.
+          --rehash-all            Hash every file again instead of trusting the Upload State. Default: off.
+          --report <path>         Write a Report of the Run to this file. Default: Report:Directory, or reports/
+                                  in the Data Directory (a Dry Run writes none unless given).
+          --report-format <f>     json or csv. Default: json (Report:Format).
+          --export-run <id>       Export the Report of a recorded Run and exit. Default: print it; --report saves it.
           --list-runs             List recorded Runs and exit.
-          --limit <n>             With --list-runs: show at most n Runs.
+          --limit <n>             With --list-runs: show at most n Runs. Default: all.
           --validate-config       Report every configuration error and exit; runs nothing.
           --check-connection      With --validate-config: also test the server and its host key.
           --init-data-dir         Create or repair the shared Data Directory and exit.
                                   Run once per machine as administrator or with sudo; safe to repeat.
                                   The group is State:AccessGroup (default mires-uploader, macOS staff).
           --log-level <level>     Trace, Debug, Info (default), Warn, Error or Fatal.
-          --data-dir <path>       Use this Data Directory (also MIRES_DATA_DIR).
+          --data-dir <path>       Use this Data Directory (also MIRES_DATA_DIR). Default: Windows
+                                  %ProgramData%\MiresSftpUploader, macOS /Users/Shared/MiresSftpUploader,
+                                  Linux /var/lib/mires-sftp-uploader.
           --version               Print the version and exit.
           --help                  Print this help and exit.
 
@@ -226,6 +229,7 @@ public static class Cli
         application data folder, and appsettings.json next to the executable. A list is replaced
         whole by the highest layer that sets it. Secrets are read only from the environment:
         MIRES_SFTP_PASSWORD, MIRES_SFTP_KEY_PASSPHRASE, MIRES_S3_<SOURCE>_ACCESS_KEY and _SECRET_KEY.
+        stdout carries only the final summary line; logs go to stderr and the log file.
         --list-runs, --export-run, --validate-config, --init-data-dir and --version imply --headless.
 
         Exit codes:

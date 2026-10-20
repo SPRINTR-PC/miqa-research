@@ -15,7 +15,7 @@ The server directory a Source is uploaded into, including the Source's own direc
 _Avoid_: Destination, target folder
 
 **Ignore Rule**:
-An entry that excludes files from a Run: either an exact relative path or a regular expression matched against the relative path. The Manifests, the Upload State and a small set of built-in junk patterns (such as `.DS_Store`, which can be switched off) are always ignored.
+An entry that excludes files from a Run: either an exact relative path or a regular expression matched against the relative path. The Upload State and a small set of built-in junk patterns (such as `.DS_Store`, which can be switched off) are always ignored.
 _Avoid_: Exclude, filter, blacklist
 
 **Archive Rule**:

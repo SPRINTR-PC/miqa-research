@@ -87,7 +87,7 @@ internal static class ArchiveBuilder
     }
 
     private static bool Changed(SourceFile expected, SourceFile actual) =>
-        expected.Size != actual.Size || expected.Modified != actual.Modified;
+        expected.Size != actual.Size || expected.ChangeToken != actual.ChangeToken;
 
     private static void TryDelete(string path)
     {

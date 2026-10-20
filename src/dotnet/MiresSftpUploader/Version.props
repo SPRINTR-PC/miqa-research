@@ -1,0 +1,9 @@
+<Project>
+    <PropertyGroup>
+        <!-- Single source of the version: feeds AssemblyInformationalVersion, the version flag and the Manifest toolVersion.
+             Release builds override it: the publish scripts take a version option and pass it as the Version property. -->
+        <Version>0.1.0</Version>
+        <!-- No +commit suffix, so the version flag and the Manifest toolVersion are exactly the Version. -->
+        <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    </PropertyGroup>
+</Project>

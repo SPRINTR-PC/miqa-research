@@ -83,6 +83,42 @@ public sealed class MainWindowViewModelTests
     }
 
     [TestMethod]
+    public void The_sidebar_opens_History_which_reads_the_Run_History_again()
+    {
+        var history = new FakeRunHistory();
+        var engine = new FakeRunEngine();
+        var upload = new UploadPageViewModel(new FakeUploaderRuntime(new AppConfig(), engine), a => a());
+        var historyPage = new HistoryPageViewModel(history, "anna", a => a(), _ => Task.CompletedTask);
+        var window = new MainWindowViewModel(upload, null, UiTheme.Dark, _ => null, historyPage);
+        history.Add();
+        Assert.IsEmpty(historyPage.Runs);
+
+        window.ShowHistoryCommand.Execute().Subscribe();
+
+        Assert.AreEqual(AppPage.History, window.Page);
+        Assert.IsTrue(window.IsHistoryPage);
+        Assert.HasCount(1, historyPage.Runs);
+    }
+
+    [TestMethod]
+    public async Task Retrying_from_History_switches_to_the_Upload_page_and_starts_the_Retry()
+    {
+        var history = new FakeRunHistory();
+        var engine = new FakeRunEngine();
+        var upload = new UploadPageViewModel(new FakeUploaderRuntime(new AppConfig { Sources = [new SourceConfig { Name = "wsi", Path = "/d" }] }, engine), a => a());
+        MainWindowViewModel? window = null;
+        var historyPage = new HistoryPageViewModel(history, "anna", a => a(), id => window!.RetryFromHistoryAsync(id));
+        window = new MainWindowViewModel(upload, null, UiTheme.Dark, _ => null, historyPage);
+        var failed = history.Add(exitCode: 1, counts: new Dictionary<string, int> { ["Failed"] = 1 });
+        window.ShowHistoryCommand.Execute().Subscribe();
+
+        await historyPage.Runs[0].RetryCommand.Execute().ToTask();
+
+        Assert.AreEqual(AppPage.Upload, window.Page);
+        Assert.AreEqual(failed.Summary.RunId, engine.Calls.Single().RetryOf);
+    }
+
+    [TestMethod]
     public void Without_a_log_target_there_is_no_log_pane()
     {
         Assert.IsFalse(NewWindow(log: null).HasLog);
@@ -115,7 +151,7 @@ public sealed class MainWindowViewModelTests
         var settings = new SettingsPageViewModel(cfg, path => new DataDirectoryAccess(path, true, writable, "alice", null, 0, 0, false, "fix it", writable ? null : "not writable"), _ => long.MaxValue);
         var upload = new UploadPageViewModel(new FakeUploaderRuntime(new AppConfig(), new FakeRunEngine()), a => a());
 
-        var window = new MainWindowViewModel(upload, null, UiTheme.Dark, _ => null, settings);
+        var window = new MainWindowViewModel(upload, null, UiTheme.Dark, _ => null, settings: settings);
 
         Assert.IsTrue(window.Upload.IsBlocked);
         StringAssert.Contains(window.Upload.BlockedReason, "not writable");
@@ -134,7 +170,7 @@ public sealed class MainWindowViewModelTests
         var settings = new SettingsPageViewModel(cfg, path => new DataDirectoryAccess(path, true, true, "alice", null, 0, 0, false, "", null), _ => long.MaxValue);
         var runtime = new FakeUploaderRuntime(new AppConfig(), new FakeRunEngine());
         var upload = new UploadPageViewModel(runtime, a => a());
-        var window = new MainWindowViewModel(upload, null, UiTheme.Dark, _ => null, settings);
+        var window = new MainWindowViewModel(upload, null, UiTheme.Dark, _ => null, settings: settings);
         var prepared = runtime.PrepareCount;
 
         settings.Field("Ui:Theme").Value = "Light";
