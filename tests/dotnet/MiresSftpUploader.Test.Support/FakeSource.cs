@@ -30,14 +30,25 @@ public sealed class FakeSource(string name, string? remotePath = null) : ISource
 
     public FakeSource Add(string relativePath, string text) => Add(relativePath, System.Text.Encoding.UTF8.GetBytes(text));
 
+    private int _listCount;
+
+    /// <summary>How many times the Source has been listed (scanned).</summary>
+    public int ListCount => Volatile.Read(ref _listCount);
+
     public async IAsyncEnumerable<SourceFile> ListAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        Interlocked.Increment(ref _listCount);
         foreach (var (path, entry) in _files.OrderBy(f => f.Key, StringComparer.Ordinal))
         {
             await Task.Yield();
             yield return new SourceFile(path, entry.Data.Length, entry.Modified);
         }
     }
+
+    public Task<SourceFile?> StatAsync(string relativePath, CancellationToken cancellationToken) =>
+        Task.FromResult<SourceFile?>(_files.TryGetValue(relativePath, out var entry)
+            ? new SourceFile(relativePath, entry.Data.Length, entry.Modified)
+            : null);
 
     public Task<Stream> OpenReadAsync(string relativePath, CancellationToken cancellationToken) =>
         Task.FromResult<Stream>(Opened(_files[relativePath].Data));

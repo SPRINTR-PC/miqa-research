@@ -24,6 +24,19 @@ public sealed record LoadResult
     public SecretStatus Secrets { get; init; } = SecretStatus.None;
     public bool MachineConfigWritable { get; init; }
     internal IReadOnlyDictionary<string, SettingInfo> Keys { get; init; } = new Dictionary<string, SettingInfo>();
+    internal IReadOnlyDictionary<string, string> Values { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>
+    /// The effective flat keys under a top-level section the program does not bind itself (such as <c>NLog</c>), with the
+    /// section name stripped: <c>variables:MinLevel</c>, <c>rules:10_file:writeTo</c>. Empty when there is no such section.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> Section(string name)
+    {
+        var prefix = name + ":";
+        return Values
+            .Where(kv => kv.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            .ToDictionary(kv => kv.Key[prefix.Length..], kv => kv.Value, StringComparer.OrdinalIgnoreCase);
+    }
 
     public bool Succeeded => Errors.Count == 0;
 
@@ -145,6 +158,7 @@ public sealed class Configuration(ConfigurationLocations locations)
             Warnings = warnings,
             MachineConfigWritable = machineWritable,
             Keys = keys,
+            Values = merged.Values,
             Secrets = LoadSecrets().Status(config?.Sources ?? []),
         };
     }

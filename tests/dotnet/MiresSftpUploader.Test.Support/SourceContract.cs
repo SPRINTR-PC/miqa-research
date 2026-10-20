@@ -45,6 +45,21 @@ public abstract class SourceContract
     }
 
     [TestMethod]
+    public async Task Stat_describes_one_file_without_listing_the_source_and_is_null_for_a_vanished_one()
+    {
+        var source = CreateSource(new Dictionary<string, byte[]> { ["dir/a.bin"] = [5, 6, 7], ["b.bin"] = [] });
+        var listed = (await ListAll(source)).Single(f => f.RelativePath == "dir/a.bin");
+
+        var stat = await source.StatAsync("dir/a.bin", CancellationToken.None);
+
+        Assert.IsNotNull(stat);
+        Assert.AreEqual("dir/a.bin", stat.RelativePath);
+        Assert.AreEqual(3, stat.Size);
+        Assert.AreEqual(listed.Modified, stat.Modified);
+        Assert.IsNull(await source.StatAsync("dir/gone.bin", CancellationToken.None));
+    }
+
+    [TestMethod]
     public async Task An_empty_source_lists_nothing()
     {
         var source = CreateSource(new Dictionary<string, byte[]>());
