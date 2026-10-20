@@ -112,14 +112,13 @@
             </Border>
         </DockPanel>
 
-        <!-- Settings, Help: placeholders until their pages arrive -->
+        <!-- Settings: placeholder until its page arrives -->
         <StackPanel x:Name="SettingsPage" Grid.Column="1" Margin="20" Spacing="8" IsVisible="{Binding IsSettingsPage}">
             <TextBlock Classes="h" Text="Settings"/>
             <TextBlock Classes="muted" TextWrapping="Wrap" Text="The Settings page is not built yet. Until then, edit appsettings.json next to the executable (Machine Config) or set MIRES_* environment variables."/>
         </StackPanel>
-        <StackPanel x:Name="HelpPage" Grid.Column="1" Margin="20" Spacing="8" IsVisible="{Binding IsHelpPage}">
-            <TextBlock Classes="h" Text="Help"/>
-            <TextBlock Classes="muted" TextWrapping="Wrap" Text="The Help page is not built yet. Run MiresSftpUploader --help for the command line."/>
-        </StackPanel>
+        <Border x:Name="HelpPage" Grid.Column="1" Margin="20" IsVisible="{Binding IsHelpPage}">
+            <v:HelpView/>
+        </Border>
     </Grid>
 </Window>

@@ -23,8 +23,15 @@
          files are reported by the MiresReleaseFiles target; the publish scripts treat README.md as required. -->
     <ItemGroup>
         <ReleaseFile Include="README.md" TargetPath="README.md" />
+        <ReleaseFile Include="docs/scheduling.md" TargetPath="scheduling.md" />
         <ReleaseFile Include="docs/manifest.schema.json" TargetPath="manifest.schema.json" Condition="Exists('docs/manifest.schema.json')" />
         <ReleaseFile Include="docs/scheduler/**" TargetPath="scheduler/%(RecursiveDir)%(Filename)%(Extension)" />
+    </ItemGroup>
+
+    <!-- The Help page renders these two documents. -->
+    <ItemGroup>
+        <EmbeddedResource Include="README.md" LogicalName="help/README.md" />
+        <EmbeddedResource Include="docs/scheduling.md" LogicalName="help/scheduling.md" />
     </ItemGroup>
 
     <Import Project="Signing.targets" />
@@ -48,6 +55,7 @@
             <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
             <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
         </PackageReference>
+        <PackageReference Include="Markdown.Avalonia.Tight" Version="12.0.2" />
         <PackageReference Include="NLog" Version="6.2.2" />
         <PackageReference Include="NLog.Extensions.Logging" Version="6.2.2" />
         <PackageReference Include="ReactiveUI.Avalonia" Version="12.0.3" />
