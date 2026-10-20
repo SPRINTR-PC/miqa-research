@@ -23,14 +23,16 @@ public sealed class UiLogTarget : TargetWithLayout
 
     protected override void Write(LogEventInfo logEvent)
     {
-        var handler = LogReceived;
-        if (handler is null) return;
-        handler(new LogEntry(
+        if (LogReceived is null) return;
+        Emit(new LogEntry(
             new DateTimeOffset(logEvent.TimeStamp),
             ToMicrosoft(logEvent.Level),
             logEvent.LoggerName ?? "",
             RenderLogEvent(Layout, logEvent)));
     }
+
+    /// <summary>Hands an entry to the subscribers, as <see cref="Write"/> does for each log event.</summary>
+    public void Emit(LogEntry entry) => LogReceived?.Invoke(entry);
 
     private static LogLevel ToMicrosoft(NLog.LogLevel level) =>
         level.Ordinal switch

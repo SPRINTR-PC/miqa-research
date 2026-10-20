@@ -86,6 +86,22 @@ public sealed class AppLoggingTests
     }
 
     [TestMethod]
+    public void Log_events_reach_the_UI_target_subscribers_including_Debug_below_the_file_level()
+    {
+        var received = new List<LogEntry>();
+        using (var logging = Start(new LoggingConfig { Directory = _dir, Level = LogLevelSetting.Info }))
+        {
+            logging.Ui!.LogReceived += received.Add;
+            var log = logging.LoggerFactory.CreateLogger("Test");
+            log.LogDebug("sftp stat /x");
+            log.LogWarning("retry {N}", 2);
+        }
+
+        CollectionAssert.AreEqual(new[] { "sftp stat /x", "retry 2" }, received.Select(e => e.Message).ToArray());
+        CollectionAssert.AreEqual(new[] { LogLevel.Debug, LogLevel.Warning }, received.Select(e => e.Level).ToArray());
+    }
+
+    [TestMethod]
     public void An_NLog_section_replaces_the_generated_configuration()
     {
         var custom = Path.Combine(_dir, "custom.log");
