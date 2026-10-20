@@ -30,6 +30,14 @@ public sealed class DirectorySource(string name, string path, string? remotePath
         }
     }
 
+    public Task<SourceFile?> StatAsync(string relativePath, CancellationToken cancellationToken)
+    {
+        var file = new FileInfo(Path.Combine(path, relativePath.Replace('/', Path.DirectorySeparatorChar)));
+        return Task.FromResult<SourceFile?>(file.Exists && !IsLink(file)
+            ? new SourceFile(relativePath, file.Length, new DateTimeOffset(file.LastWriteTimeUtc, TimeSpan.Zero))
+            : null);
+    }
+
     public Task<Stream> OpenReadAsync(string relativePath, CancellationToken cancellationToken)
     {
         var full = Path.Combine(path, relativePath.Replace('/', Path.DirectorySeparatorChar));
