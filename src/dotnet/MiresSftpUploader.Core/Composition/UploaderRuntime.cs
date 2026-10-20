@@ -53,7 +53,7 @@ public sealed class UploaderRuntime(
         var engine = new Engine(
             remotes.Create(config, secrets),
             built,
-            UploaderComposition.ToEngineSettings(config),
+            UploaderComposition.ToEngineSettings(config) with { Redactor = Redactor.From(secrets) },
             new Logger<Engine>(loggers),
             time);
         return new PreparedUploader(config, load.Errors, load.Warnings, load.Secrets, engine);

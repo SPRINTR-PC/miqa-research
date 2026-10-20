@@ -55,6 +55,8 @@ public sealed record VerificationSettings
 public sealed record EngineSettings
 {
     public VerificationSettings Verification { get; init; } = new();
+    /// <summary>Applied to every reason the Run stores or shows (Reports, Upload State, events, the result), not only to log lines.</summary>
+    public Redactor Redactor { get; init; } = Redactor.None;
     /// <summary>What the account can do on the server. <c>Auto</c> probes at the start of a Run; <c>WriteOnly</c> is Write-only Access.</summary>
     public RemoteAccess RemoteAccess { get; init; } = RemoteAccess.Auto;
     /// <summary>How a file reaches its final name: through a <c>.part</c> and a rename, or written straight to it.</summary>

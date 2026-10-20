@@ -239,7 +239,7 @@ public sealed class ArchiveTests
         await RunAsync(settings, remote, sources: source);
 
         source.Add("d/a.jpg", "alpha", new DateTimeOffset(2026, 5, 5, 0, 0, 0, TimeSpan.Zero));
-        remote.Inject(RemoteOperation.Upload, RemoteResult.Failed("must not upload"), times: 100);
+        remote.Inject(RemoteOperation.Upload, RemoteResult.Failed("must not upload"), times: 100, pathContains: "tiles");
         var second = await RunAsync(settings, remote, sources: source);
         var opens = source.OpenCount;
         var third = await RunAsync(settings, remote, sources: source);

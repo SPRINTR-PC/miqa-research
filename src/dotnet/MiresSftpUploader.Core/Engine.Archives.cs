@@ -245,7 +245,7 @@ public sealed partial class Engine
     {
         _logger.LogWarning("Archive {Source}/{Path} failed: {Reason}", work.Source.Name, work.Plan.RelativePath, reason);
         foreach (var m in work.Plan.Members) run.Fail(m.Item, reason, _time.GetElapsedTime(started));
-        run.Store?.RecordFailed(run.RunId, work.Key(_settings.Destination), 0, 0, reason, _time.GetUtcNow(), _time.GetElapsedTime(started));
+        run.Store?.RecordFailed(run.RunId, work.Key(_settings.Destination), 0, 0, Redact(reason), _time.GetUtcNow(), _time.GetElapsedTime(started));
     }
 
     // ---- Staging Area ----

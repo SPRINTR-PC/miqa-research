@@ -33,7 +33,7 @@ public sealed partial class Engine : IRunEngine
 
     public async Task<RunResult> RunAsync(RunOptions options, IProgress<RunEvent> progress, CancellationToken cancellationToken)
     {
-        var run = new RunState(Guid.NewGuid(), _time.GetUtcNow(), progress, _logger);
+        var run = new RunState(Guid.NewGuid(), _time.GetUtcNow(), progress, _logger, _settings.Redactor);
         progress.Report(new RunStarted(run.RunId, run.StartedAt));
         _logger.LogInformation("Run {RunId} started by {User}", run.RunId, options.StartedBy);
 
@@ -53,7 +53,7 @@ public sealed partial class Engine : IRunEngine
             DeleteStagingArea(run);
         }
 
-        var result = new RunResult(run.RunId, run.SnapshotCounts(), exitCode, reason, run.Verified, run.VerificationFailures)
+        var result = new RunResult(run.RunId, run.SnapshotCounts(), exitCode, reason is null ? null : Redact(reason), run.Verified, run.VerificationFailures)
         {
             MovedAway = run.MovedAway,
             MoveFailures = run.MoveFailures,
@@ -64,6 +64,9 @@ public sealed partial class Engine : IRunEngine
         progress.Report(new RunFinished(result));
         return result;
     }
+
+    /// <summary>Removes Secrets from a reason before it is stored in the Upload State, a Report, an event or a result.</summary>
+    private string Redact(string text) => _settings.Redactor.Redact(text);
 
     private static string ModeOf(RunOptions options) =>
         options.DryRun ? "DryRun" : options.RetryOf is not null ? "Retry" : "Run";
@@ -433,66 +436,137 @@ public sealed partial class Engine : IRunEngine
 
         foreach (var item in work.OfType<FileWork>()) run.Set(item, FileOutcome.Pending, null);
 
-        var markers = await PlaceMarkersAsync(selected, run, ct);
-
-        var channel = Channel.CreateUnbounded<object>();
-        foreach (var item in work) channel.Writer.TryWrite(item);
-        channel.Writer.Complete();
-
-        var workerCount = Math.Clamp(_settings.MaxParallelUploads, 1, Math.Max(work.Count, 1));
+        var markers = new List<PlacedMarker>();
         var connectFailure = new ConcurrentQueue<string>();
-        var workers = Enumerable.Range(0, workerCount)
-            .Select(_ => WorkerAsync(channel.Reader, run, connectFailure, ct))
-            .ToArray();
-        await Task.WhenAll(workers);
-        ct.ThrowIfCancellationRequested();
-
-        if (connectFailure.TryPeek(out var failure))
-            return (ExitCodes.ConnectFailed, failure);
-
-        await MoveFilesAsync(selected, run, ct);
-
-        var connect = await _remote.ConnectAsync(ct);
-        if (!connect.IsOk) return (ExitCodes.ConnectFailed, connect.Reason);
-        await using (var session = connect.Value!)
+        var channel = Channel.CreateUnbounded<object>();
+        bool anyWorkerConnected;
+        try
         {
-            foreach (var source in selected)
-            {
-                var uploaded = await UploadManifestAsync(session, source, run, options, ct);
-                if (!uploaded.IsOk)
-                    _logger.LogWarning("Manifest upload for Source {Source} failed: {Reason}", source.Name, uploaded.Reason);
-            }
-            // After the Manifests, so a consumer that sees no Marker finds the final Manifest.
-            foreach (var marker in markers)
-            {
-                var removed = await session.DeleteAsync(marker, ct);
-                if (!removed.IsOk) _logger.LogWarning("Could not remove the In-progress Marker {Path}: {Reason}", marker, removed.Reason);
-            }
+            await PlaceMarkersAsync(selected, run, markers, ct);
+
+            foreach (var item in work) channel.Writer.TryWrite(item);
+            channel.Writer.Complete();
+
+            var workerCount = Math.Clamp(_settings.MaxParallelUploads, 1, Math.Max(work.Count, 1));
+            var workers = Enumerable.Range(0, workerCount)
+                .Select(_ => WorkerAsync(channel.Reader, run, connectFailure, ct))
+                .ToArray();
+            anyWorkerConnected = (await Task.WhenAll(workers)).Any(connected => connected);
+            ct.ThrowIfCancellationRequested();
+
+            if (anyWorkerConnected) await MoveFilesAsync(selected, run, ct);
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Consumers must never take a partial delivery for a full one: say so in a Manifest, on a token that is not cancelled.
+            using var grace = new CancellationTokenSource(CancelledManifestTimeout, _time);
+            try
+            {
+                if (await FinishSourcesAsync(selected, run, options, markers, CancelledReason, grace.Token) is { } failed)
+                    _logger.LogWarning("The Cancelled Run could not finish its Manifests: {Reason}", failed.Reason);
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogWarning("The Cancelled Run could not upload its Manifests in time; the In-progress Markers stay");
+            }
+            throw;
+        }
+
+        if (!anyWorkerConnected)
+        {
+            var reason = connectFailure.TryPeek(out var first) ? first : "connect failed";
+            while (channel.Reader.TryRead(out var unattempted)) FailUnattempted(unattempted, run, reason);
+            if (await FinishSourcesAsync(selected, run, options, markers, NotAttemptedReason, ct) is { } manifestFailure)
+                _logger.LogWarning("No Manifest was uploaded: {Reason}", manifestFailure.Reason);
+            return (ExitCodes.ConnectFailed, Redact(reason));
+        }
+        if (!connectFailure.IsEmpty)
+            _logger.LogWarning("{Count} of the upload workers could not connect; the others carried the Run", connectFailure.Count);
+
+        if (await FinishSourcesAsync(selected, run, options, markers, null, ct) is { } finishFailure)
+            return finishFailure;
 
         return run.Count(FileOutcome.Failed) > 0 || (_settings.MoveFailuresAreErrors && run.MoveFailures > 0)
             ? (ExitCodes.SomeFilesFailed, null)
             : (ExitCodes.Ok, null);
     }
 
+    private const string CancelledReason = "Cancelled";
+    private const string NotAttemptedReason = "NotAttempted";
+    private static readonly TimeSpan CancelledManifestTimeout = TimeSpan.FromSeconds(30);
+
+    /// <summary>An In-progress Marker this Run placed next to the Manifest of a Source.</summary>
+    private sealed record PlacedMarker(string Source, string Path);
+
+    /// <summary>
+    /// Uploads the Manifest of every Source on a connection of its own, then removes the Marker of each Source whose final Manifest
+    /// is on the server; a Marker whose Manifest could not be uploaded stays, so consumers know the Manifest is not final.
+    /// <paramref name="incomplete"/> is the reason this Run did not do all its work (Cancelled, NotAttempted) or null when it did.
+    /// Null when everything was uploaded; otherwise the exit code and reason of the failure.
+    /// </summary>
+    private async Task<(int ExitCode, string Reason)?> FinishSourcesAsync(
+        IReadOnlyList<ISource> sources, RunState run, RunOptions options, List<PlacedMarker> markers, string? incomplete, CancellationToken ct)
+    {
+        var connect = await _remote.ConnectAsync(ct);
+        if (!connect.IsOk)
+            return (ExitCodes.ConnectFailed, Redact($"Could not connect to upload the Manifest: {connect.Reason}. The In-progress Markers stay."));
+
+        await using var session = connect.Value!;
+        var failures = new List<string>();
+        foreach (var source in sources)
+        {
+            var uploaded = await UploadManifestAsync(session, source, run, options, incomplete, ct);
+            if (!uploaded.IsOk)
+            {
+                _logger.LogWarning("Manifest upload for Source {Source} failed: {Reason}", source.Name, uploaded.Reason);
+                failures.Add($"{source.Name}: {uploaded.Reason}");
+                continue;
+            }
+            // After the Manifest, so a consumer that sees no Marker finds the final Manifest.
+            foreach (var marker in markers.Where(m => m.Source == source.Name))
+            {
+                var removed = await session.DeleteAsync(marker.Path, ct);
+                if (!removed.IsOk) _logger.LogWarning("Could not remove the In-progress Marker {Path}: {Reason}", marker.Path, removed.Reason);
+            }
+        }
+        return failures.Count == 0
+            ? null
+            : (ExitCodes.SomeFilesFailed, Redact($"The Manifest could not be uploaded for Source {string.Join("; ", failures)}. The In-progress Marker stays."));
+    }
+
+    /// <summary>A file or Archive no worker could take because no connection could be made: Failed, so the Manifest lists it and a retry finds it.</summary>
+    private void FailUnattempted(object item, RunState run, string connectReason)
+    {
+        var reason = $"{NotAttemptedReason}: could not connect to the server ({connectReason})";
+        switch (item)
+        {
+            case ArchiveWork archive:
+                FailArchive(archive, run, reason, _time.GetTimestamp());
+                break;
+            case FileWork file:
+                run.Fail(file, reason, TimeSpan.Zero);
+                run.Store?.RecordFailed(run.RunId, file.Key(_settings.Destination), file.File.Size, file.File.ChangeToken, Redact(reason), _time.GetUtcNow(), TimeSpan.Zero);
+                break;
+        }
+    }
+
     /// <summary>
     /// Puts the In-progress Marker next to each Source's Manifest so consumers know the Manifest may be stale. A Marker nobody
     /// could remove would lie forever, so one is only placed after a probe file proves the account can delete.
-    /// Returns the server paths of the Markers to remove at the end of the Run.
+    /// Each Marker placed is added to <paramref name="placed"/> as soon as it exists, so a cancelled Run still knows it.
     /// </summary>
-    private async Task<List<string>> PlaceMarkersAsync(IReadOnlyList<ISource> sources, RunState run, CancellationToken ct)
+    private async Task PlaceMarkersAsync(IReadOnlyList<ISource> sources, RunState run, List<PlacedMarker> placed, CancellationToken ct)
     {
-        var placed = new List<string>();
         if (run.WriteOnly)
         {
             _logger.LogInformation("No In-progress Markers: the account has Write-only Access and cannot remove them");
-            return placed;
+            return;
         }
         var connect = await _remote.ConnectAsync(ct);
         if (!connect.IsOk)
         {
             _logger.LogWarning("No In-progress Markers: could not connect: {Reason}", connect.Reason);
-            return placed;
+            return;
         }
 
         await using var session = connect.Value!;
@@ -515,20 +589,21 @@ public sealed partial class Engine : IRunEngine
             }
 
             using var body = new MemoryStream(System.Text.Encoding.UTF8.GetBytes($"{{\"runId\":\"{run.RunId}\"}}\n"));
-            if ((await session.UploadAsync(body, marker, ct)).IsOk) placed.Add(marker);
+            if ((await session.UploadAsync(body, marker, ct)).IsOk) placed.Add(new PlacedMarker(source.Name, marker));
         }
-        return placed;
     }
 
-    private async Task WorkerAsync(ChannelReader<object> reader, RunState run, ConcurrentQueue<string> connectFailure, CancellationToken ct)
+    /// <summary>
+    /// One upload worker with a connection of its own. A worker that cannot connect leaves the work to the others and says why;
+    /// false when it never connected.
+    /// </summary>
+    private async Task<bool> WorkerAsync(ChannelReader<object> reader, RunState run, ConcurrentQueue<string> connectFailure, CancellationToken ct)
     {
         var connect = await _remote.ConnectAsync(ct);
         if (!connect.IsOk)
         {
             connectFailure.Enqueue(connect.Reason ?? "connect failed");
-            // Drain so the other workers are not left with work nobody can do.
-            await foreach (var _ in reader.ReadAllAsync(ct)) { }
-            return;
+            return false;
         }
 
         await using var session = connect.Value!;
@@ -538,6 +613,7 @@ public sealed partial class Engine : IRunEngine
             if (item is ArchiveWork archive) await ProcessArchiveAsync(session, archive, run, ct);
             else await ProcessAsync(session, (FileWork)item, run, ct);
         }
+        return true;
     }
 
     private async Task ProcessAsync(IRemoteSession session, FileWork item, RunState run, CancellationToken ct)
@@ -589,7 +665,7 @@ public sealed partial class Engine : IRunEngine
 
         if (failure.StartsWith(VerificationFailedReason, StringComparison.Ordinal)) run.CountVerificationFailure();
         run.Fail(item, failure, _time.GetElapsedTime(started));
-        store?.RecordFailed(run.RunId, key, item.File.Size, mtime, failure, _time.GetUtcNow(), _time.GetElapsedTime(started));
+        store?.RecordFailed(run.RunId, key, item.File.Size, mtime, Redact(failure), _time.GetUtcNow(), _time.GetElapsedTime(started));
     }
 
     private const string UnchangedReason = "unchanged";
@@ -690,18 +766,18 @@ public sealed partial class Engine : IRunEngine
         return null;
     }
 
-    private async Task<RemoteResult> UploadManifestAsync(IRemoteSession session, ISource source, RunState run, RunOptions options, CancellationToken ct)
+    private async Task<RemoteResult> UploadManifestAsync(IRemoteSession session, ISource source, RunState run, RunOptions options, string? incomplete, CancellationToken ct)
     {
         var remotePath = RemotePathOf(source);
 
         var ensure = await session.EnsureDirectoryAsync(remotePath, ct);
         if (!ensure.IsOk) return ensure;
 
-        var (nodes, failures) = await ManifestContentAsync(source, remotePath, run);
+        var (nodes, failures) = await ManifestContentAsync(source, remotePath, run, incomplete);
         var deferred = run.SourceEntries(source.Name)
             .Where(e => !e.Carried && e.Outcome == FileOutcome.Skipped && e.Reason == TooRecentReason)
             .Select(e => new ManifestFailure(e.Path, e.Reason!)).ToList();
-        var complete = failures.Count == 0 && deferred.Count == 0;
+        var complete = failures.Count == 0 && deferred.Count == 0 && incomplete is null;
         var completedAt = _time.GetUtcNow();
         var store = run.Store;
 
@@ -759,18 +835,28 @@ public sealed partial class Engine : IRunEngine
 
     /// <summary>
     /// What the Manifest of the Source lists: everything the Upload State knows to be on the server (cumulative over Runs),
-    /// or this Run's own results when there is no Upload State.
+    /// or this Run's own results when there is no Upload State. Files of this Run that never reached an outcome (a cancelled or
+    /// disconnected Run) are listed as failures with the reason the Run stopped, so they are not mistaken for delivered.
     /// </summary>
-    private async Task<(Func<IEnumerable<ManifestNode>> Nodes, List<ManifestFailure> Failures)> ManifestContentAsync(ISource source, string remotePath, RunState run)
+    private async Task<(Func<IEnumerable<ManifestNode>> Nodes, List<ManifestFailure> Failures)> ManifestContentAsync(
+        ISource source, string remotePath, RunState run, string? incomplete)
     {
+        var entries = run.SourceEntries(source.Name);
+        var unfinished = entries
+            .Where(e => !e.Carried && e.Outcome is FileOutcome.Pending or FileOutcome.Hashing or FileOutcome.Uploading or FileOutcome.Verifying)
+            .Select(e => new ManifestFailure(e.Path, incomplete ?? "NotCompleted"));
+
         if (run.Store is { } store)
         {
             await store.FlushAsync();
+            var recorded = store.LoadFailures(_settings.Destination, remotePath, source.Name);
+            var known = recorded.Select(f => f.Path).ToHashSet(StringComparer.Ordinal);
             return (() => store.EnumerateDelivered(_settings.Destination, remotePath, source.Name),
-                store.LoadFailures(_settings.Destination, remotePath, source.Name));
+                recorded.Concat(unfinished.Where(f => !known.Contains(f.Path)))
+                    .OrderBy(f => f.Path, StringComparer.Ordinal).ToList());
         }
 
-        var entries = run.SourceEntries(source.Name);
+
         var byPath = entries.ToDictionary(e => e.Path, StringComparer.Ordinal);
         var archives = run.SourceArchives(source.Name);
         IEnumerable<ManifestNode> Nodes() =>
@@ -780,7 +866,8 @@ public sealed partial class Engine : IRunEngine
                     a.Members.Select(m => byPath[m]).OrderBy(m => m.Path, StringComparer.Ordinal)
                         .Select(m => new ManifestArchiveMember(m.Path, m.Size, m.Sha256!, m.Modified)).ToList()) { DirectUpload = a.DirectUpload }))
                 .OrderBy(n => n.Path, StringComparer.Ordinal);
-        return (Nodes, entries.Where(e => e.Outcome == FileOutcome.Failed).Select(e => new ManifestFailure(e.Path, e.Reason ?? "Failed")).ToList());
+        return (Nodes, entries.Where(e => e.Outcome == FileOutcome.Failed).Select(e => new ManifestFailure(e.Path, e.Reason ?? "Failed")).Concat(unfinished)
+            .OrderBy(f => f.Path, StringComparer.Ordinal).ToList());
     }
 
     private static FileStream TemporaryFile() =>
@@ -881,7 +968,7 @@ public sealed partial class Engine : IRunEngine
     }
 
     /// <summary>Mutable state of one Run: outcome per file, hashes and failures for the Manifest.</summary>
-    internal sealed partial class RunState(Guid runId, DateTimeOffset startedAt, IProgress<RunEvent> progress, ILogger logger)
+    internal sealed partial class RunState(Guid runId, DateTimeOffset startedAt, IProgress<RunEvent> progress, ILogger logger, Redactor redactor)
     {
         private readonly object _gate = new();
         private readonly Dictionary<(string Source, string Path), FileEntry> _entries = new();
@@ -910,7 +997,7 @@ public sealed partial class Engine : IRunEngine
                 _entries[(source, path)] = new FileEntry(source, path, size) { Outcome = FileOutcome.Skipped, Reason = "delivered earlier", Sha256 = sha256, Carried = true };
         }
 
-        internal void Warn(string message) => progress.Report(new RunWarning(message));
+        internal void Warn(string message) => progress.Report(new RunWarning(redactor.Redact(message)));
 
         internal void Set(FileWork item, FileOutcome outcome, string? reason) =>
             Update(item, e => { e.Outcome = outcome; e.Reason = reason; });
@@ -933,6 +1020,7 @@ public sealed partial class Engine : IRunEngine
                 if (!_entries.TryGetValue(key, out entry!))
                     _entries[key] = entry = new FileEntry(item.Source.Name, item.File.RelativePath, item.File.Size) { Modified = item.File.Modified, ChangeToken = item.File.ChangeToken };
                 change(entry);
+                if (entry.Reason is not null) entry.Reason = redactor.Redact(entry.Reason);
             }
             LogFinalOutcome(item, entry);
             progress.Report(new FileOutcomeChanged(item.Source.Name, item.File.RelativePath, entry.Outcome, entry.Reason));
