@@ -351,6 +351,8 @@ public sealed partial class Engine
 
         foreach (var item in work.OfType<FileWork>()) run.Set(item, FileOutcome.Pending, null);
 
+        var markers = await PlaceMarkersAsync(selected, run, ct);
+
         var channel = Channel.CreateUnbounded<object>();
         foreach (var item in work) channel.Writer.TryWrite(item);
         channel.Writer.Complete();
@@ -376,11 +378,57 @@ public sealed partial class Engine
                 if (!uploaded.IsOk)
                     _logger.LogWarning("Manifest upload for Source {Source} failed: {Reason}", source.Name, uploaded.Reason);
             }
+            // After the Manifests, so a consumer that sees no Marker finds the final Manifest.
+            foreach (var marker in markers)
+            {
+                var removed = await session.DeleteAsync(marker, ct);
+                if (!removed.IsOk) _logger.LogWarning("Could not remove the In-progress Marker {Path}: {Reason}", marker, removed.Reason);
+            }
         }
 
         return run.Count(FileOutcome.Failed) > 0
             ? (ExitCodes.SomeFilesFailed, null)
             : (ExitCodes.Ok, null);
+    }
+
+    /// <summary>
+    /// Puts the In-progress Marker next to each Source's Manifest so consumers know the Manifest may be stale. A Marker nobody
+    /// could remove would lie forever, so one is only placed after a probe file proves the account can delete.
+    /// Returns the server paths of the Markers to remove at the end of the Run.
+    /// </summary>
+    private async Task<List<string>> PlaceMarkersAsync(IReadOnlyList<ISource> sources, RunState run, CancellationToken ct)
+    {
+        var placed = new List<string>();
+        var connect = await _remote.ConnectAsync(ct);
+        if (!connect.IsOk)
+        {
+            _logger.LogWarning("No In-progress Markers: could not connect: {Reason}", connect.Reason);
+            return placed;
+        }
+
+        await using var session = connect.Value!;
+        foreach (var source in sources)
+        {
+            var remotePath = RemotePathOf(source);
+            var marker = Join(remotePath, _settings.ManifestName + _settings.InProgressSuffix);
+            var probe = marker + ".probe";
+            var ensure = await session.EnsureDirectoryAsync(remotePath, ct);
+            if (!ensure.IsOk) continue;
+
+            using (var content = new MemoryStream())
+            {
+                if (!(await session.UploadAsync(content, probe, ct)).IsOk) continue;
+            }
+            if (!(await session.DeleteAsync(probe, ct)).IsOk)
+            {
+                _logger.LogInformation("No In-progress Marker for Source {Source}: the account cannot delete on the server", source.Name);
+                continue;
+            }
+
+            using var body = new MemoryStream(System.Text.Encoding.UTF8.GetBytes($"{{\"runId\":\"{run.RunId}\"}}\n"));
+            if ((await session.UploadAsync(body, marker, ct)).IsOk) placed.Add(marker);
+        }
+        return placed;
     }
 
     private async Task WorkerAsync(ChannelReader<object> reader, RunState run, ConcurrentQueue<string> connectFailure, CancellationToken ct)
@@ -531,8 +579,13 @@ public sealed partial class Engine
         await using var json = TemporaryFile();
         ManifestWriter.Write(json, header, failures, deferred, nodes);
         json.Position = 0;
-        var (result, _) = await UploadViaPartAsync(session, json, finalPath, ct);
-        return result;
+        var (result, jsonSha256) = await UploadViaPartAsync(session, json, finalPath, ct);
+        if (!result.IsOk || !_settings.WriteFlatManifest) return result;
+
+        await using var flat = TemporaryFile();
+        ManifestWriter.WriteFlat(flat, nodes(), _settings.ManifestName, jsonSha256!);
+        flat.Position = 0;
+        return (await UploadViaPartAsync(session, flat, Join(remotePath, _settings.FlatManifestName), ct)).Result;
     }
 
     /// <summary>

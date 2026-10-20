@@ -85,6 +85,24 @@ internal static class ManifestWriter
         json.WriteEndObject();
     }
 
+    /// <summary>
+    /// The Flat Manifest in <c>sha256sum -c</c> format: <c>hash␣␣path</c> per object physically on the server, UTF-8, LF,
+    /// forward slashes. Like GNU sha256sum, a path holding a backslash or newline gets a leading backslash on the line
+    /// and the characters written as <c>\\</c> and <c>\n</c>. The line for the JSON Manifest itself comes last.
+    /// </summary>
+    public static void WriteFlat(Stream output, IEnumerable<ManifestNode> nodes, string manifestName, string manifestSha256)
+    {
+        using var writer = new StreamWriter(output, new System.Text.UTF8Encoding(false), 81920, leaveOpen: true) { NewLine = "\n" };
+        foreach (var node in nodes) writer.Write(FlatLine(node.Sha256, node.Path));
+        writer.Write(FlatLine(manifestSha256, manifestName));
+    }
+
+    private static string FlatLine(string sha256, string path)
+    {
+        var escaped = path.Contains('\\') || path.Contains('\n');
+        return (escaped ? "\\" : "") + sha256 + "  " + (escaped ? path.Replace("\\", "\\\\").Replace("\n", "\\n") : path) + "\n";
+    }
+
     private static void WriteProblems(Utf8JsonWriter json, string name, IReadOnlyList<ManifestFailure> problems)
     {
         json.WriteStartArray(name);

@@ -52,6 +52,10 @@ public sealed record EngineSettings
     public string ManifestName { get; init; } = "manifest.json";
     /// <summary>Name of the Flat Manifest; always Ignored when it turns up in a Source, like the Manifest.</summary>
     public string FlatManifestName { get; init; } = "manifest.sha256";
+    /// <summary>Also upload the Flat Manifest, a <c>sha256sum -c</c> companion listing the objects physically on the server.</summary>
+    public bool WriteFlatManifest { get; init; }
+    /// <summary>Appended to <see cref="ManifestName"/> for the In-progress Marker that exists while a Source uploads.</summary>
+    public string InProgressSuffix { get; init; } = ".inprogress";
     /// <summary>Written into every Manifest as <c>toolVersion</c>; defaults to the AssemblyInformationalVersion shared with the app.</summary>
     public string ToolVersion { get; init; } = typeof(EngineSettings).Assembly
         .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
