@@ -118,6 +118,51 @@ public sealed class WriteOnlyAccessTests
     }
 
     [TestMethod]
+    public async Task Auto_that_cannot_prepare_the_remote_root_fails_the_Run_instead_of_assuming_read_write()
+    {
+        var remote = new FakeRemote();
+        remote.Inject(RemoteOperation.EnsureDirectory, RemoteResult.Failed("connection reset"), times: 1, pathContains: "/upload");
+        var (engine, _) = NewEngine(Settings(), remote, new FakeSource("scans").Add("a.txt", "alpha"));
+
+        var result = await Run(engine);
+
+        Assert.AreEqual(ExitCodes.ConnectFailed, result.ExitCode);
+        StringAssert.Contains(result.Reason, "connection reset");
+        StringAssert.Contains(result.Reason, "RemoteAccess");
+        Assert.IsEmpty(remote.Files);
+    }
+
+    [TestMethod]
+    public async Task Auto_that_is_refused_the_remote_root_exits_2_and_says_to_set_RemoteAccess()
+    {
+        var remote = new FakeRemote();
+        remote.Inject(RemoteOperation.EnsureDirectory, RemoteResult.Denied("permission denied"), times: 1, pathContains: "/upload");
+        var (engine, _) = NewEngine(Settings(), remote, new FakeSource("scans").Add("a.txt", "alpha"));
+
+        var result = await Run(engine);
+
+        Assert.AreEqual(ExitCodes.ConfigurationError, result.ExitCode);
+        StringAssert.Contains(result.Reason, "RemoteAccess");
+        Assert.IsEmpty(remote.Files);
+    }
+
+    [TestMethod]
+    [DataRow(RemoteOperation.Stat)]
+    [DataRow(RemoteOperation.List)]
+    public async Task Auto_whose_probe_fails_for_a_reason_other_than_a_refusal_fails_the_Run(RemoteOperation failing)
+    {
+        var remote = new FakeRemote();
+        remote.Inject(failing, RemoteResult.Failed("i/o error"), times: 1, pathContains: "/upload");
+        var (engine, _) = NewEngine(Settings(), remote, new FakeSource("scans").Add("a.txt", "alpha"));
+
+        var result = await Run(engine);
+
+        Assert.AreEqual(ExitCodes.ConnectFailed, result.ExitCode);
+        StringAssert.Contains(result.Reason, "i/o error");
+        Assert.IsEmpty(remote.Files);
+    }
+
+    [TestMethod]
     public async Task A_Dry_Run_does_not_touch_the_server_to_probe_access()
     {
         var remote = new FakeRemote { WriteOnly = true };

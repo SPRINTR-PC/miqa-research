@@ -317,14 +317,17 @@ public sealed partial class Engine : IRunEngine
         if (!connect.IsOk) return (ExitCodes.ConnectFailed, connect.Reason);
         await using var session = connect.Value!;
         var root = Normalize(_settings.RemoteRoot);
+        const string SetExplicitly = "Set Sftp:RemoteAccess to ReadWrite or WriteOnly to skip the check.";
         var ensure = await session.EnsureDirectoryAsync(root, ct);
         if (!ensure.IsOk)
-        {
-            _logger.LogInformation("Remote access: read-write assumed; could not prepare {Root}: {Reason}", root, ensure.Reason);
-            return null;
-        }
+            return ensure.Kind == RemoteResultKind.Denied
+                ? (ExitCodes.ConfigurationError, Redact($"Cannot tell what this account may do: it may not create or enter {root} ({ensure.Reason}). {SetExplicitly}"))
+                : (ExitCodes.ConnectFailed, Redact($"Cannot tell what this account may do: {root} could not be prepared ({ensure.Reason}). {SetExplicitly}"));
+
         var stat = await session.StatAsync(root, ct);
         var list = await session.ListAsync(root, ct);
+        if (stat.Kind == RemoteResultKind.Failed || list.Kind == RemoteResultKind.Failed)
+            return (ExitCodes.ConnectFailed, Redact($"Cannot tell what this account may do: {(stat.Kind == RemoteResultKind.Failed ? "stat" : "listing")} of {root} failed ({(stat.Kind == RemoteResultKind.Failed ? stat.Reason : list.Reason)}). {SetExplicitly}"));
         var denied = stat.Kind == RemoteResultKind.Denied ? stat.Reason : list.Kind == RemoteResultKind.Denied ? list.Reason : null;
         if (denied is null)
         {
