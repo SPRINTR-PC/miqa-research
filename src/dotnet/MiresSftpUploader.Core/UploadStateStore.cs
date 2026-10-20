@@ -272,6 +272,11 @@ internal sealed class UploadStateStore : IAsyncDisposable
     public Dictionary<string, PriorFile> LoadSource(string destination, string remotePath, string source)
     {
         using var connection = OpenConnection(_path, readOnly: true);
+        return LoadSource(connection, destination, remotePath, source);
+    }
+
+    private static Dictionary<string, PriorFile> LoadSource(SqliteConnection connection, string destination, string remotePath, string source)
+    {
         using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT RelativePath, Status, Size, Mtime, Sha256 FROM Files WHERE Destination=$d AND RemotePath=$r AND Source=$s
@@ -284,6 +289,30 @@ internal sealed class UploadStateStore : IAsyncDisposable
         while (rows.Read())
             result[rows.GetString(0)] = new PriorFile(rows.GetString(1), rows.GetInt64(2), rows.GetInt64(3), rows.IsDBNull(4) ? null : rows.GetString(4));
         return result;
+    }
+
+    /// <summary>
+    /// What a Dry Run knows about a Source: reads the database without opening a store, creating, migrating or
+    /// writing anything. A missing, empty or newer database yields no prior files.
+    /// </summary>
+    public static Dictionary<string, PriorFile> ReadPriorFiles(string path, string destination, string remotePath, string source)
+    {
+        var none = new Dictionary<string, PriorFile>(StringComparer.Ordinal);
+        if (!File.Exists(path)) return none;
+        try
+        {
+            // immutable=1: no locks and no -wal/-shm files are created, so the directory is left exactly as found.
+            // Changes still in the write-ahead log of a Run in progress are not seen, which is fine for a preview.
+            var uri = new Uri(System.IO.Path.GetFullPath(path)).AbsoluteUri + "?mode=ro&immutable=1";
+            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = uri, Pooling = false }.ToString());
+            connection.Open();
+            if (Convert.ToInt32(Scalar(connection, "PRAGMA user_version"), CultureInfo.InvariantCulture) != SchemaVersion) return none;
+            return LoadSource(connection, destination, remotePath, source);
+        }
+        catch (SqliteException)
+        {
+            return none;
+        }
     }
 
     // ---- Writer ----
