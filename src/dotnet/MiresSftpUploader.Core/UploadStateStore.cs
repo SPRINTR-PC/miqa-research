@@ -225,6 +225,16 @@ internal sealed class UploadStateStore : IAsyncDisposable
             WHERE Destination=$d AND RemotePath=$r AND Source=$s AND RelativePath=$p
             """, ("$now", now.UtcTicks), ("$d", key.Destination), ("$r", key.RemotePath), ("$s", key.Source), ("$p", key.RelativePath)));
 
+    /// <summary>
+    /// The file left its Source through a Post-upload Move. Its hash and error stay; it is not Missing, and a path that
+    /// reappears is uploaded as a changed file.
+    /// </summary>
+    public Task RecordMovedAwayAsync(FileKey key) =>
+        Enqueue(c => Exec(c, """
+            UPDATE Files SET Status='MovedAway', PartPath=NULL, MissingSince=NULL
+            WHERE Destination=$d AND RemotePath=$r AND Source=$s AND RelativePath=$p
+            """, ("$d", key.Destination), ("$r", key.RemotePath), ("$s", key.Source), ("$p", key.RelativePath)));
+
     public void RecordFailed(Guid runId, FileKey key, long size, long mtimeTicks, string error, DateTimeOffset now, TimeSpan duration) =>
         _ = Enqueue(c =>
         {
@@ -262,7 +272,7 @@ internal sealed class UploadStateStore : IAsyncDisposable
             var vanished = new List<long>();
             using (var read = c.CreateCommand())
             {
-                read.CommandText = "SELECT Id, RelativePath FROM Files WHERE Destination=$d AND RemotePath=$r AND Source=$s AND Status <> 'Missing'";
+                read.CommandText = "SELECT Id, RelativePath FROM Files WHERE Destination=$d AND RemotePath=$r AND Source=$s AND Status NOT IN ('Missing', 'MovedAway')";
                 read.Parameters.AddWithValue("$d", destination);
                 read.Parameters.AddWithValue("$r", remotePath);
                 read.Parameters.AddWithValue("$s", source);

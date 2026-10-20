@@ -150,6 +150,23 @@ public sealed class UploadPageViewModelTests
     }
 
     [TestMethod]
+    public async Task Retrying_a_Run_from_the_History_uploads_its_failed_files_again_as_a_new_Run_with_a_fresh_list()
+    {
+        var page = NewPage();
+        _engine.Script.Add(File("old", FileOutcome.Failed));
+        await Start(page);
+        _engine.Script.Clear();
+        _engine.Script.Add(File("new", FileOutcome.Succeeded));
+        var earlier = Guid.NewGuid();
+
+        await page.RetryRunAsync(earlier);
+
+        Assert.AreEqual(earlier, _engine.Calls[1].RetryOf);
+        Assert.AreEqual(RunTrigger.Ui, _engine.Calls[1].Trigger);
+        CollectionAssert.AreEqual(new[] { "new" }, page.Files.Select(f => f.Path).ToArray());
+    }
+
+    [TestMethod]
     public async Task Retry_failed_runs_again_the_failed_files_of_the_last_Run_without_clearing_the_list()
     {
         _engine.Script.AddRange([File("a", FileOutcome.Succeeded), File("b", FileOutcome.Failed, reason: "x")]);
@@ -234,5 +251,24 @@ public sealed class UploadPageViewModelTests
 
         CollectionAssert.AreEqual(new[] { "z" }, page.Files.Select(f => f.Path).ToArray());
         Assert.AreEqual(1, page.Succeeded);
+    }
+
+    [TestMethod]
+    public void A_blocked_page_cannot_start_a_Run_until_it_is_unblocked()
+    {
+        var page = NewPage();
+        Assert.IsTrue(Can(page.StartCommand));
+
+        page.BlockedReason = "The Data Directory '/srv/mires' is not writable by account 'alice'.";
+
+        Assert.IsTrue(page.IsBlocked);
+        Assert.IsFalse(Can(page.StartCommand));
+        Assert.IsFalse(Can(page.DryRunCommand));
+        Assert.IsFalse(Can(page.ScanCommand));
+
+        page.BlockedReason = "";
+
+        Assert.IsFalse(page.IsBlocked);
+        Assert.IsTrue(Can(page.StartCommand));
     }
 }

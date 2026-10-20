@@ -53,7 +53,11 @@ public sealed partial class Engine : IRunEngine
             DeleteStagingArea(run);
         }
 
-        var result = new RunResult(run.RunId, run.SnapshotCounts(), exitCode, reason, run.Verified, run.VerificationFailures);
+        var result = new RunResult(run.RunId, run.SnapshotCounts(), exitCode, reason, run.Verified, run.VerificationFailures)
+        {
+            MovedAway = run.MovedAway,
+            MoveFailures = run.MoveFailures,
+        };
         result = result with { ReportPath = WriteReport(options, run, result) };
         _logger.LogInformation("Run {RunId} finished: Succeeded {Succeeded}, Skipped {Skipped}, Failed {Failed}, exit code {ExitCode}",
             run.RunId, result.Count(FileOutcome.Succeeded), result.Count(FileOutcome.Skipped), result.Count(FileOutcome.Failed), exitCode);
@@ -75,6 +79,8 @@ public sealed partial class Engine : IRunEngine
         var counts = result.Counts.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value);
         if (result.Verified > 0) counts["Verified"] = result.Verified;
         if (result.VerificationFailures > 0) counts["VerificationFailed"] = result.VerificationFailures;
+        if (result.MovedAway > 0) counts["MovedAway"] = result.MovedAway;
+        if (result.MoveFailures > 0) counts["MoveFailed"] = result.MoveFailures;
         var summary = new RunSummary(run.RunId, "Finished", result.ExitCode, options.StartedBy, ModeOf(options),
             options.Trigger.ToString(), run.StartedAt, now, now, false, counts);
         var files = run.SnapshotFiles().Select(e => new RunFileOutcome(e.Source, e.Path, e.Outcome.ToString(), e.Bytes, e.DurationMs, e.Reason)).ToList();
@@ -244,7 +250,7 @@ public sealed partial class Engine : IRunEngine
             var maybeArchives = new List<(string Path, PriorFile Known)>();
             foreach (var (path, known) in prior.OrderBy(kv => kv.Key, StringComparer.Ordinal))
             {
-                if (known.Status == "Succeeded" && known.Sha256 is not null)
+                if (known.Status is "Succeeded" or "MovedAway" && known.Sha256 is not null)
                 {
                     if (priorArchives.TryGetValue(path, out var delivered)) run.CarryArchive(source.Name, path, known.Size, known.Sha256, delivered.Members);
                     else run.Carry(source.Name, path, known.Size, known.Sha256);
@@ -381,6 +387,8 @@ public sealed partial class Engine : IRunEngine
         if (connectFailure.TryPeek(out var failure))
             return (ExitCodes.ConnectFailed, failure);
 
+        await MoveFilesAsync(selected, run, ct);
+
         var connect = await _remote.ConnectAsync(ct);
         if (!connect.IsOk) return (ExitCodes.ConnectFailed, connect.Reason);
         await using (var session = connect.Value!)
@@ -399,7 +407,7 @@ public sealed partial class Engine : IRunEngine
             }
         }
 
-        return run.Count(FileOutcome.Failed) > 0
+        return run.Count(FileOutcome.Failed) > 0 || (_settings.MoveFailuresAreErrors && run.MoveFailures > 0)
             ? (ExitCodes.SomeFilesFailed, null)
             : (ExitCodes.Ok, null);
     }
@@ -799,7 +807,7 @@ public sealed partial class Engine : IRunEngine
             {
                 var key = (item.Source.Name, item.File.RelativePath);
                 if (!_entries.TryGetValue(key, out entry!))
-                    _entries[key] = entry = new FileEntry(item.Source.Name, item.File.RelativePath, item.File.Size) { Modified = item.File.Modified };
+                    _entries[key] = entry = new FileEntry(item.Source.Name, item.File.RelativePath, item.File.Size) { Modified = item.File.Modified, ChangeToken = item.File.ChangeToken };
                 change(entry);
             }
             LogFinalOutcome(item, entry);
@@ -863,6 +871,6 @@ public sealed partial class Engine : IRunEngine
         public string? Reason { get; set; }
         public string? Sha256 { get; set; }
 
-        public FileEntry Clone() => new(Source, Path, Size) { Outcome = Outcome, Reason = Reason, Sha256 = Sha256, Bytes = Bytes, DurationMs = DurationMs, Carried = Carried, Modified = Modified, ArchivePath = ArchivePath, EntryName = EntryName };
+        public FileEntry Clone() => new(Source, Path, Size) { Outcome = Outcome, Reason = Reason, Sha256 = Sha256, Bytes = Bytes, DurationMs = DurationMs, Carried = Carried, Modified = Modified, ArchivePath = ArchivePath, EntryName = EntryName, ChangeToken = ChangeToken, Moved = Moved };
     }
 }

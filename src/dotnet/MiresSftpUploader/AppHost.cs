@@ -15,10 +15,20 @@ public sealed class AppHost(Configuration configuration, IUploaderRuntime runtim
     /// <param name="post">Runs an action on the UI thread: <c>Dispatcher.UIThread.Post</c> in the app.</param>
     public MainWindowViewModel CreateMainWindowViewModel(Action<Action> post)
     {
-        var ui = runtime.Prepare(headless: false).Config?.Ui ?? new UiConfig();
+        var config = runtime.Prepare(headless: false).Config;
+        var ui = config?.Ui ?? new UiConfig();
         var upload = new UploadPageViewModel(runtime, post);
         var log = logging?.Ui is { } target ? new LogPaneViewModel(target, post, ToLogLevel(ui.LogLevel)) : null;
-        return new MainWindowViewModel(upload, log, ui.Theme, theme => UserSettings.SaveTheme(configuration, theme));
+
+        // Without a loadable configuration there is no Upload State path, so the Run History is empty.
+        IRunHistory runHistory = config is null
+            ? new RunHistory(new StateSettings(), TimeProvider.System)
+            : new RunHistory(UploaderComposition.ToStateSettings(config), TimeProvider.System, UploaderComposition.ToEngineSettings(config).Report);
+        MainWindowViewModel? window = null;
+        var history = new HistoryPageViewModel(runHistory, Environment.UserName, post, id => window!.RetryFromHistoryAsync(id));
+        var settings = new SettingsPageViewModel(configuration);
+        window = new MainWindowViewModel(upload, log, ui.Theme, theme => UserSettings.SaveTheme(configuration, theme), history, settings);
+        return window;
     }
 
     private static LogLevel ToLogLevel(LogLevelSetting level) => level switch

@@ -72,6 +72,14 @@ public static partial class DataDirectory
         return total;
     }
 
+    /// <summary>Free space on the volume that holds <paramref name="path"/>, or on its nearest existing parent when it does not exist yet; 0 when unknown.</summary>
+    public static long FreeSpaceBytes(string path)
+    {
+        var probe = System.IO.Path.GetFullPath(path);
+        while (!Directory.Exists(probe) && System.IO.Path.GetDirectoryName(probe) is { } parent) probe = parent;
+        return FreeSpace(probe);
+    }
+
     private static long FreeSpace(string path)
     {
         try
