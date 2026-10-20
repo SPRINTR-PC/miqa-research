@@ -1,11 +1,12 @@
 ﻿using System;
 using System.Reactive;
+using System.Threading.Tasks;
 using MiresSftpUploader.Core;
 using ReactiveUI;
 
 namespace MiresSftpUploader.ViewModels;
 
-public enum AppPage { Upload, Settings, Help }
+public enum AppPage { Upload, History, Settings, Help }
 
 /// <summary>
 /// The window: the sidebar (navigation, theme), the page shown in the main area, and the log pane. The Upload page
@@ -21,25 +22,35 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     /// <param name="log">Null when there is no log target (the configuration could not be loaded).</param>
     /// <param name="saveTheme">Saves the theme to User Overrides; returns null, or why it could not be saved.</param>
-    public MainWindowViewModel(UploadPageViewModel upload, LogPaneViewModel? log, UiTheme theme, Func<UiTheme, string?> saveTheme)
+    /// <param name="history">Null when there is no Run History to show.</param>
+    public MainWindowViewModel(UploadPageViewModel upload, LogPaneViewModel? log, UiTheme theme, Func<UiTheme, string?> saveTheme,
+        HistoryPageViewModel? history = null)
     {
         Upload = upload;
+        History = history;
         Log = log;
         _theme = theme;
         _saveTheme = saveTheme;
 
         ToggleThemeCommand = ReactiveCommand.Create(ToggleTheme);
         ShowUploadCommand = ReactiveCommand.Create(() => { Page = AppPage.Upload; });
+        ShowHistoryCommand = ReactiveCommand.Create(() =>
+        {
+            History?.Refresh();
+            Page = AppPage.History;
+        });
         ShowSettingsCommand = ReactiveCommand.Create(() => { Page = AppPage.Settings; });
         ShowHelpCommand = ReactiveCommand.Create(() => { Page = AppPage.Help; });
     }
 
     public UploadPageViewModel Upload { get; }
+    public HistoryPageViewModel? History { get; }
     public LogPaneViewModel? Log { get; }
     public bool HasLog => Log is not null;
 
     public ReactiveCommand<Unit, Unit> ToggleThemeCommand { get; }
     public ReactiveCommand<Unit, Unit> ShowUploadCommand { get; }
+    public ReactiveCommand<Unit, Unit> ShowHistoryCommand { get; }
     public ReactiveCommand<Unit, Unit> ShowSettingsCommand { get; }
     public ReactiveCommand<Unit, Unit> ShowHelpCommand { get; }
 
@@ -50,14 +61,23 @@ public sealed class MainWindowViewModel : ViewModelBase
         {
             this.RaiseAndSetIfChanged(ref _page, value);
             this.RaisePropertyChanged(nameof(IsUploadPage));
+            this.RaisePropertyChanged(nameof(IsHistoryPage));
             this.RaisePropertyChanged(nameof(IsSettingsPage));
             this.RaisePropertyChanged(nameof(IsHelpPage));
         }
     }
 
     public bool IsUploadPage => Page == AppPage.Upload;
+    public bool IsHistoryPage => Page == AppPage.History;
     public bool IsSettingsPage => Page == AppPage.Settings;
     public bool IsHelpPage => Page == AppPage.Help;
+
+    /// <summary>Retry from the History page: shows the Upload page, where the new Run is followed.</summary>
+    public Task RetryFromHistoryAsync(Guid runId)
+    {
+        Page = AppPage.Upload;
+        return Upload.RetryRunAsync(runId);
+    }
 
     public UiTheme Theme
     {
