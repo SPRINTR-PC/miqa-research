@@ -21,7 +21,7 @@ internal sealed class IgnoreRules
     private readonly HashSet<string> _alwaysPaths;
     private readonly HashSet<string> _alwaysNames;
 
-    /// <param name="alwaysPaths">Relative paths (Source root) that are always ignored, such as the Manifests and their .part files.</param>
+    /// <param name="alwaysPaths">Relative paths (Source root) that are always ignored regardless of the configured rules.</param>
     /// <param name="alwaysNames">File names ignored at any depth, such as the Upload State database and its companions.</param>
     public IgnoreRules(bool useDefaults, IEnumerable<string> files, IEnumerable<string> patterns,
         IEnumerable<string>? alwaysPaths = null, IEnumerable<string>? alwaysNames = null)
