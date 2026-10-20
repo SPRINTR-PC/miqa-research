@@ -276,6 +276,7 @@ public sealed class Engine
                 await store.MarkUploadingAsync(item.Key(_settings.Destination), item.File.Size, item.File.Modified.UtcTicks, partPath);
 
             string sha256;
+            long bytesRead;
             await using (var raw = await item.Source.OpenReadAsync(item.File.RelativePath, ct))
             await using (var hashing = new HashingReadStream(raw))
             {
@@ -283,6 +284,15 @@ public sealed class Engine
                 var upload = await session.UploadAsync(hashing, partPath, ct);
                 if (!upload.IsOk) return UploadAttempt.From(upload);
                 sha256 = hashing.FinishHash();
+                bytesRead = hashing.BytesRead;
+            }
+
+            // A file that changed while it was read has a hash that matches no version of it: never rename it into place.
+            var changed = await ChangedSinceListingAsync(item, bytesRead, ct);
+            if (changed is not null)
+            {
+                await session.DeleteAsync(partPath, ct);
+                return new UploadAttempt(null, "ChangedDuringUpload: " + changed, true);
             }
 
             var rename = await session.RenameAsync(partPath, finalPath, overwrite: true, ct);
@@ -293,6 +303,18 @@ public sealed class Engine
         {
             return new UploadAttempt(null, ex.Message, false);
         }
+    }
+
+    /// <summary>Why the file no longer matches its listing, or null when it is unchanged.</summary>
+    private static async Task<string?> ChangedSinceListingAsync(FileWork item, long bytesRead, CancellationToken ct)
+    {
+        var listed = item.File;
+        if (bytesRead != listed.Size) return $"read {bytesRead} bytes, listed {listed.Size}";
+        var now = await item.Source.StatAsync(listed.RelativePath, ct);
+        if (now is null) return null;
+        if (now.Size != listed.Size) return $"size is now {now.Size}, listed {listed.Size}";
+        if (now.Modified.UtcTicks != listed.Modified.UtcTicks) return $"modified at {now.Modified:O}, listed {listed.Modified:O}";
+        return null;
     }
 
     private async Task<RemoteResult> UploadManifestAsync(IRemoteSession session, ISource source, RunState run, CancellationToken ct)

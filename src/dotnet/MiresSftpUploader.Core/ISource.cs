@@ -15,4 +15,10 @@ public interface ISource
     IAsyncEnumerable<SourceFile> ListAsync(CancellationToken cancellationToken);
 
     Task<Stream> OpenReadAsync(string relativePath, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The file's current size and modification time, or null when it is gone or the Source cannot tell.
+    /// The Engine compares it with the listing to notice a file that changed while it was uploaded.
+    /// </summary>
+    Task<SourceFile?> StatAsync(string relativePath, CancellationToken cancellationToken) => Task.FromResult<SourceFile?>(null);
 }

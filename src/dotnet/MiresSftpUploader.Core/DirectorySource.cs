@@ -37,6 +37,14 @@ public sealed class DirectorySource(string name, string path, string? remotePath
         return Task.FromResult(stream);
     }
 
+    public Task<SourceFile?> StatAsync(string relativePath, CancellationToken cancellationToken)
+    {
+        var file = new FileInfo(Path.Combine(path, relativePath.Replace('/', Path.DirectorySeparatorChar)));
+        return Task.FromResult(file.Exists
+            ? new SourceFile(relativePath, file.Length, new DateTimeOffset(file.LastWriteTimeUtc, TimeSpan.Zero))
+            : null);
+    }
+
     private static bool IsLink(FileSystemInfo entry) =>
         entry.LinkTarget is not null || entry.Attributes.HasFlag(FileAttributes.ReparsePoint);
 }
