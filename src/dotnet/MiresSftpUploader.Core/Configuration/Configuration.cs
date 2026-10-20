@@ -41,6 +41,13 @@ public sealed record LoadResult
     }
 }
 
+public sealed record SaveResult(IReadOnlyList<ConfigError> Errors)
+{
+    public bool Succeeded => Errors.Count == 0;
+    /// <summary>The keys written to User Overrides; empty when nothing changed.</summary>
+    public IReadOnlyList<string> WrittenKeys { get; init; } = [];
+}
+
 public sealed record ConfigurationLocations(string MachineConfigPath, string UserOverridesPath, IReadOnlyDictionary<string, string?> Environment)
 {
     public const string MachineFileName = "appsettings.json";
@@ -85,11 +92,16 @@ public sealed class Configuration(ConfigurationLocations locations)
         var machineWritable = IsDirectoryWritable(Path.GetDirectoryName(Path.GetFullPath(locations.MachineConfigPath))!);
         if (layers is null)
             return new LoadResult { Errors = errors, MachineConfigWritable = machineWritable };
+        return Evaluate(layers, headless, machineWritable);
+    }
 
+    private LoadResult Evaluate(Layers layers, bool headless, bool machineWritable)
+    {
+        var errors = new List<ConfigError>();
         var merged = Merge(layers);
         var keys = merged.Layers.ToDictionary(
             kv => kv.Key,
-            kv => new SettingInfo(kv.Value, kv.Value is ConfigLayer.Environment or ConfigLayer.Cli || (kv.Value == ConfigLayer.Machine && !machineWritable)),
+            kv => new SettingInfo(kv.Value, IsLocked(kv.Value, machineWritable)),
             StringComparer.OrdinalIgnoreCase);
 
         var config = Bind(merged.Values, errors);
@@ -109,6 +121,121 @@ public sealed class Configuration(ConfigurationLocations locations)
             Keys = keys,
             Secrets = LoadSecrets().Status(config?.Sources ?? []),
         };
+    }
+
+    private static bool IsLocked(ConfigLayer layer, bool machineWritable) =>
+        layer is ConfigLayer.Environment or ConfigLayer.Cli || (layer == ConfigLayer.Machine && !machineWritable);
+
+    /// <summary>
+    /// Writes <paramref name="changes"/> (flat key to new value; <c>null</c> drops the User Override; <c>[]</c> empties a list)
+    /// to User Overrides after re-validating the result. Only keys whose value changes are written. Locked Settings and
+    /// Secrets are rejected. When a change touches a list, the whole effective list is saved with it, since a list is
+    /// replaced whole.
+    /// </summary>
+    public SaveResult Save(IReadOnlyDictionary<string, string?> changes, CliOptions? cli = null)
+    {
+        var layers = ReadLayers(cli ?? new CliOptions(), out var errors);
+        if (layers is null) return new SaveResult(errors);
+        var machineWritable = IsDirectoryWritable(Path.GetDirectoryName(Path.GetFullPath(locations.MachineConfigPath))!);
+
+        var current = Merge(layers);
+        var user = layers.User;
+        var next = new FlatSettings();
+        foreach (var (k, v) in user.Values) next.Values[k] = v;
+        foreach (var e in user.EmptyArrays) next.EmptyArrays.Add(e);
+
+        foreach (var key in changes.Keys)
+        {
+            if (SecretLikeKey.IsMatch(key))
+                errors.Add(new(key, "is a Secret and is never saved; set it in an environment variable."));
+            else if (IsLocked(LayerOf(current, key), machineWritable))
+                errors.Add(new(key, "is a locked setting (set by the environment, a CLI flag or a read-only Machine Config)."));
+        }
+        if (errors.Count > 0) return new SaveResult(errors);
+
+        var cleared = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, value) in changes.Where(c => c.Value is null || c.Value == "[]"))
+        {
+            RemoveUnder(next, key);
+            if (value == "[]") next.EmptyArrays.Add(key);
+            cleared.Add(key);
+        }
+
+        var written = new List<string>();
+        foreach (var (key, value) in changes.Where(c => c.Value is not null && c.Value != "[]"))
+        {
+            var effective = current.Values.TryGetValue(key, out var set) ? set : DefaultText(key);
+            if (string.Equals(effective, value, StringComparison.OrdinalIgnoreCase)) continue;
+            var root = FlatSettings.ArrayRootOf(key);
+            if (root is not null && !cleared.Contains(root) && !next.Values.Keys.Any(k => k.StartsWith(root + ":", StringComparison.OrdinalIgnoreCase)))
+                foreach (var (k, v) in current.Values.Where(kv => kv.Key.StartsWith(root + ":", StringComparison.OrdinalIgnoreCase)))
+                    next.Values[k] = v;
+            next.EmptyArrays.Remove(root ?? key);
+            next.Values[key] = value!;
+            written.Add(key);
+        }
+        written.AddRange(cleared);
+
+        if (written.Count == 0) return new SaveResult([]);
+
+        var candidate = Evaluate(layers with { User = next }, headless: false, machineWritable);
+        if (!candidate.Succeeded) return new SaveResult(candidate.Errors);
+
+        WriteAtomically(locations.UserOverridesPath, UserFile.ToJson(next, ConfigVersion));
+        return new SaveResult([]) { WrittenKeys = written };
+    }
+
+    /// <summary>The documented default of a scalar key, as text; null for lists, unknown keys and keys without a default.</summary>
+    private static string? DefaultText(string key)
+    {
+        object? node = new AppConfig();
+        foreach (var segment in key.Split(':'))
+        {
+            var property = node?.GetType().GetProperty(segment, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.IgnoreCase);
+            if (property is null) return null;
+            node = property.GetValue(node);
+        }
+        return node switch
+        {
+            null => null,
+            bool b => b ? "true" : "false",
+            string or Enum or int or long => Convert.ToString(node, System.Globalization.CultureInfo.InvariantCulture),
+            _ => null,
+        };
+    }
+
+    private static void RemoveUnder(FlatSettings flat, string key)
+    {
+        var under = key + ":";
+        foreach (var k in flat.Values.Keys.Where(k => k.Equals(key, StringComparison.OrdinalIgnoreCase) || k.StartsWith(under, StringComparison.OrdinalIgnoreCase)).ToList())
+            flat.Values.Remove(k);
+        flat.EmptyArrays.RemoveWhere(k => k.Equals(key, StringComparison.OrdinalIgnoreCase) || k.StartsWith(under, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static ConfigLayer LayerOf(MergedSettings merged, string key)
+    {
+        if (merged.Layers.TryGetValue(key, out var exact)) return exact;
+        foreach (var prefix in new[] { key, FlatSettings.ArrayRootOf(key) })
+            if (prefix is not null)
+                foreach (var (k, layer) in merged.Layers)
+                    if (k.StartsWith(prefix + ":", StringComparison.OrdinalIgnoreCase)) return layer;
+        return ConfigLayer.Default;
+    }
+
+    private static void WriteAtomically(string path, string content)
+    {
+        var dir = Path.GetDirectoryName(Path.GetFullPath(path))!;
+        Directory.CreateDirectory(dir);
+        var temp = Path.Combine(dir, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            File.WriteAllText(temp, content);
+            File.Move(temp, path, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temp)) File.Delete(temp);
+        }
     }
 
     /// <summary>The Secrets in the environment. Hand them to the code that connects; never log them.</summary>
