@@ -17,6 +17,7 @@ public sealed class FakeRemote : IRemote
 
     private readonly List<string> _commands = new();
     private readonly List<Corruption> _corruptions = new();
+    private readonly List<Corruption> _cuts = new();
 
     public int ConnectCount { get; private set; }
 
@@ -73,6 +74,15 @@ public sealed class FakeRemote : IRemote
     public void CorruptNextUpload(string pathContains, bool truncate = false, int times = 1)
     {
         lock (_gate) _corruptions.Add(new Corruption(pathContains, truncate, times));
+    }
+
+    /// <summary>
+    /// Makes the next <paramref name="times"/> uploads to a matching path die half way: the first half of the bytes stays on the
+    /// server under that path, as after a real connection cut, and the upload fails.
+    /// </summary>
+    public void CutNextUpload(string pathContains, int times = 1)
+    {
+        lock (_gate) _cuts.Add(new Corruption(pathContains, truncate: false, times));
     }
 
     private sealed class Corruption(string pathContains, bool truncate, int remaining)
@@ -171,6 +181,13 @@ public sealed class FakeRemote : IRemote
                 if (parent.Length > 0 && !remote._directories.Contains(parent))
                     return RemoteResult.Failed($"directory does not exist: {parent}");
                 var stored = buffer.ToArray();
+                var cut = remote._cuts.FirstOrDefault(c => c.Remaining > 0 && path.Contains(c.PathContains, StringComparison.Ordinal));
+                if (cut is not null)
+                {
+                    cut.Remaining--;
+                    remote._files[path] = stored[..(stored.Length / 2)];
+                    return RemoteResult.Failed("connection lost during the upload");
+                }
                 var corruption = remote._corruptions.FirstOrDefault(c => c.Remaining > 0 && path.Contains(c.PathContains, StringComparison.Ordinal));
                 if (corruption is not null && stored.Length > 0)
                 {

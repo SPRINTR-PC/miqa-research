@@ -172,7 +172,7 @@ public sealed partial class Engine
             for (var attempt = 1; attempt <= max; attempt++)
             {
                 foreach (var m in plan.Members) run.Set(m.Item, FileOutcome.Uploading, null);
-                var result = await TryUploadStagedAsync(session, store, staged, finalPath, key, build.ZipSize, build.ZipSha256!, work.Delivered,
+                var result = await TryUploadStagedAsync(session, run, attempt, store, staged, finalPath, key, build.ZipSize, build.ZipSha256!, work.Delivered,
                     () => { foreach (var m in plan.Members) run.Set(m.Item, FileOutcome.Verifying, null); }, ct);
                 if (result.Sha256 is not null)
                 {
@@ -202,9 +202,9 @@ public sealed partial class Engine
         before.Count == now.Count && now.All(kv => before.TryGetValue(kv.Key, out var p) && p.Sha256 == kv.Value.Sha256);
 
     private async Task<UploadAttempt> TryUploadStagedAsync(
-        IRemoteSession session, UploadStateStore? store, string stagedPath, string finalPath, FileKey key, long zipSize, string zipSha256, bool delivered, Action markVerifying, CancellationToken ct)
+        IRemoteSession session, RunState run, int attempt, UploadStateStore? store, string stagedPath, string finalPath, FileKey key, long zipSize, string zipSha256, bool delivered, Action markVerifying, CancellationToken ct)
     {
-        var partPath = UploadTarget(finalPath);
+        var partPath = UploadTarget(finalPath, run, attempt);
         try
         {
             var ensure = await session.EnsureDirectoryAsync(ParentOf(finalPath), ct);

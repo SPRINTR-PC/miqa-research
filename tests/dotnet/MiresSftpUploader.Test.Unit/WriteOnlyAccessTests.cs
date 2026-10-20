@@ -163,6 +163,43 @@ public sealed class WriteOnlyAccessTests
     }
 
     [TestMethod]
+    public async Task A_retry_after_a_mid_upload_cut_succeeds_on_a_server_that_cannot_replace_the_part_file()
+    {
+        var remote = new FakeRemote { WriteOnly = true };
+        remote.CutNextUpload(".part", times: 1);
+        var (engine, _) = NewEngine(Settings(RemoteAccess.WriteOnly), remote, new FakeSource("scans").Add("a.txt", "alpha"));
+
+        var result = await Run(engine);
+
+        Assert.AreEqual(ExitCodes.Ok, result.ExitCode, result.Reason);
+        Assert.AreEqual("alpha", remote.ReadText("/upload/scans/a.txt"));
+    }
+
+    [TestMethod]
+    public async Task A_part_file_left_by_an_earlier_Run_does_not_block_a_write_only_upload()
+    {
+        var remote = new FakeRemote { WriteOnly = true };
+        remote.PutFile("/upload/scans/a.txt.part", "half"u8.ToArray());
+        var (engine, _) = NewEngine(Settings(RemoteAccess.WriteOnly), remote, new FakeSource("scans").Add("a.txt", "alpha"));
+
+        var result = await Run(engine);
+
+        Assert.AreEqual(ExitCodes.Ok, result.ExitCode, result.Reason);
+        Assert.AreEqual("alpha", remote.ReadText("/upload/scans/a.txt"));
+    }
+
+    [TestMethod]
+    public async Task On_a_readable_server_the_part_file_name_stays_predictable()
+    {
+        var remote = new FakeRemote();
+        var (engine, _) = NewEngine(Settings(RemoteAccess.ReadWrite), remote, new FakeSource("scans").Add("a.txt", "alpha"));
+
+        await Run(engine);
+
+        Assert.IsTrue(remote.Operations.Any(o => o.Operation == RemoteOperation.Upload && o.Path == "/upload/scans/a.txt.part"));
+    }
+
+    [TestMethod]
     public async Task A_Dry_Run_does_not_touch_the_server_to_probe_access()
     {
         var remote = new FakeRemote { WriteOnly = true };

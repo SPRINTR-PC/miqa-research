@@ -651,7 +651,7 @@ public sealed partial class Engine : IRunEngine
         for (var attempt = 1; attempt <= max; attempt++)
         {
             run.Set(item, FileOutcome.Hashing, null);
-            var attemptResult = await TryUploadAsync(session, item, run, ct);
+            var attemptResult = await TryUploadAsync(session, item, run, attempt, ct);
             if (attemptResult.Sha256 is not null)
             {
                 if (attemptResult.Verified) run.CountVerified();
@@ -679,6 +679,13 @@ public sealed partial class Engine : IRunEngine
     /// <summary>Where the bytes of <paramref name="finalPath"/> are written first: <c>name.part</c>, or the final name itself for Direct.</summary>
     private string UploadTarget(string finalPath) => IsDirect ? finalPath : finalPath + ".part";
 
+    /// <summary>
+    /// <see cref="UploadTarget(string)"/> for a file or Archive of a Run. A Write-only Access account can neither replace nor delete
+    /// a <c>.part</c> left by a cut upload or an earlier Run, so each attempt of such a Run writes to a part name of its own.
+    /// </summary>
+    private string UploadTarget(string finalPath, RunState run, int attempt) =>
+        run.WriteOnly && !IsDirect ? $"{finalPath}.{run.RunId.ToString("N")[..8]}-{attempt}.part" : UploadTarget(finalPath);
+
     /// <summary>The size and mtime fast path: the Upload State has this file Succeeded with the same size and mtime.</summary>
     private static bool IsUnchanged(FileWork item, out PriorFile prior)
     {
@@ -696,11 +703,11 @@ public sealed partial class Engine : IRunEngine
         return TimeSpan.FromMilliseconds(jittered);
     }
 
-    private async Task<UploadAttempt> TryUploadAsync(IRemoteSession session, FileWork item, RunState run, CancellationToken ct)
+    private async Task<UploadAttempt> TryUploadAsync(IRemoteSession session, FileWork item, RunState run, int attempt, CancellationToken ct)
     {
         var finalPath = Join(item.RemotePath, item.File.RelativePath);
         // The object the bytes are written to: a .part that is renamed afterwards, or the final name itself (Direct).
-        var partPath = UploadTarget(finalPath);
+        var partPath = UploadTarget(finalPath, run, attempt);
         try
         {
             var ensure = await session.EnsureDirectoryAsync(ParentOf(finalPath), ct);

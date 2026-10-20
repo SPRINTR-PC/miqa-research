@@ -74,7 +74,7 @@ public sealed class UploadStrategyTests
         var remote = new FakeRemote { WriteOnly = true };
         var settings = Settings(UploadStrategy.PartThenRename);
         await Run(settings, remote, new FakeSource("scans").Add("a.txt", "alpha"));
-        var renamesBefore = remote.Operations.Count(o => o.Operation == RemoteOperation.Rename && o.Path == "/upload/scans/a.txt.part");
+        var renamesBefore = remote.Operations.Count(o => o.Operation == RemoteOperation.Rename && o.Path.Contains("a.txt"));
 
         var (result, files) = await RunWithOutcomes(settings, remote, new FakeSource("scans").Add("a.txt", "changed content"));
 
@@ -83,8 +83,10 @@ public sealed class UploadStrategyTests
         Assert.AreEqual(FileOutcome.Failed, failed.Outcome);
         StringAssert.StartsWith(failed.Reason, "RemoteDenied");
         Assert.AreEqual("alpha", remote.ReadText("/upload/scans/a.txt"), "the earlier delivery is untouched");
-        Assert.AreEqual("changed content", remote.ReadText("/upload/scans/a.txt.part"), "stale .part files are never deleted");
-        Assert.AreEqual(renamesBefore + 1, remote.Operations.Count(o => o.Operation == RemoteOperation.Rename && o.Path == "/upload/scans/a.txt.part"),
+        var left = remote.Files.Where(f => f.Key.StartsWith("/upload/scans/a.txt.", StringComparison.Ordinal) && f.Key.EndsWith(".part", StringComparison.Ordinal)).ToList();
+        Assert.HasCount(1, left, "stale .part files are never deleted");
+        Assert.AreEqual("changed content", System.Text.Encoding.UTF8.GetString(left[0].Value));
+        Assert.AreEqual(renamesBefore + 1, remote.Operations.Count(o => o.Operation == RemoteOperation.Rename && o.Path.Contains("a.txt")),
             "RemoteDenied is permanent: no retry, no fallback");
     }
 
