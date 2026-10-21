@@ -79,6 +79,7 @@ public sealed class SettingsPageViewModel : ViewModelBase
     private string? _stagingKey;
     private readonly Dictionary<string, SettingFieldViewModel> _byKey = new(StringComparer.OrdinalIgnoreCase);
     private LoadResult _load = new();
+    private SecretStatus _secrets = SecretStatus.None;
     private bool _sourcesLocked;
     private int _sourceCount;
     private bool _hasErrors;
@@ -155,14 +156,15 @@ public sealed class SettingsPageViewModel : ViewModelBase
     public SecretEntryViewModel SftpKeyPassphrase { get; }
 
     private SecretEntryViewModel NewSecretEntry(string name, string label) =>
-        new(name, label, _configuration.SetSecret, _configuration.ClearSecret, RefreshSecrets);
+        new(name, label, _configuration.SetSecret, _configuration.ClearSecret, () => { RefreshSecrets(); Revalidate(); });
 
     /// <summary>Reads where each Secret comes from again, without touching unsaved edits.</summary>
     private void RefreshSecrets()
     {
-        var status = _configuration.LoadSecretStatus(_load.Config?.Sources ?? []);
+        var status = _secrets = _configuration.LoadSecretStatus(_load.Config?.Sources ?? []);
         SftpPassword.Refresh(status.OriginOf(Secrets.SftpPasswordName), status.StoreProblem);
         SftpKeyPassphrase.Refresh(status.OriginOf(Secrets.SftpKeyPassphraseName), status.StoreProblem);
+        foreach (var source in Sources) SyncKeyEntries(source);
         SftpPasswordStatus = status.SftpPassword ? "set" : "not set";
         SftpKeyPassphraseStatus = status.SftpKeyPassphrase ? "set" : "not set";
         this.RaisePropertyChanged(nameof(SftpPasswordStatus));
@@ -361,12 +363,31 @@ public sealed class SettingsPageViewModel : ViewModelBase
 
     private bool SourcesChanged => !SourcesLocked && (Sources.Count != _sourceCount || Sources.Any(s => s.IsChanged));
 
+    /// <summary>Gives a saved S3 Source entries for its keys, keeps them current, and drops them when the Source is renamed or retyped.</summary>
+    private void SyncKeyEntries(SourceEditorViewModel source)
+    {
+        var saved = source.IsS3 && !string.IsNullOrEmpty(source.Name) && _secrets.S3.ContainsKey(source.Name);
+        if (!saved)
+        {
+            source.AccessKey = null;
+            source.SecretKey = null;
+            return;
+        }
+
+        var access = Secrets.S3Name(source.Name, "access-key");
+        var secret = Secrets.S3Name(source.Name, "secret-key");
+        if (source.AccessKey?.Name != access) source.AccessKey = NewSecretEntry(access, "Access key");
+        if (source.SecretKey?.Name != secret) source.SecretKey = NewSecretEntry(secret, "Secret key");
+        source.AccessKey!.Refresh(_secrets.OriginOf(access), _secrets.StoreProblem);
+        source.SecretKey!.Refresh(_secrets.OriginOf(secret), _secrets.StoreProblem);
+    }
+
     private string SecretStatusOf(SourceEditorViewModel source)
     {
         if (!source.IsS3) return "";
         var variable = Secrets.NormaliseSourceName(source.Name);
         var names = $"MIRES_S3_{variable}_ACCESS_KEY and MIRES_S3_{variable}_SECRET_KEY";
-        return _load.Secrets.S3.TryGetValue(source.Name, out var status)
+        return _secrets.S3.TryGetValue(source.Name, out var status)
             ? $"Access key: {(status.AccessKeySet ? "set" : "not set")} · Secret key: {(status.SecretKeySet ? "set" : "not set")}. Supply them as {names}."
             : $"Supply the access and secret keys as {names}; whether they are set is shown once the Source is saved.";
     }
@@ -379,6 +400,7 @@ public sealed class SettingsPageViewModel : ViewModelBase
         {
             source.Error = "";
             source.Warning = "";
+            SyncKeyEntries(source);
             source.SecretStatus = SecretStatusOf(source);
             source.RefreshPlaceholder();
         }

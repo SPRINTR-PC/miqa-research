@@ -126,6 +126,43 @@ public sealed class SettingsPageSecretsTests : ConfigurationTestBase
     }
 
     [TestMethod]
+    public void A_saved_S3_Source_has_entries_for_its_access_and_secret_key()
+    {
+        var cfg = CreateWithStore(new() { ["MIRES_S3_WSI_ACCESS_KEY"] = "ak-env" }, withS3: true);
+        var page = NewPage(cfg);
+        var wsi = page.Sources[1];
+
+        Assert.AreEqual("s3-access-key:wsi", wsi.AccessKey!.Name);
+        Assert.AreEqual("s3-secret-key:wsi", wsi.SecretKey!.Name);
+        Assert.IsTrue(wsi.AccessKey.IsLocked);
+        Assert.AreEqual("not set", wsi.SecretKey.Status);
+
+        wsi.SecretKey.Input = "sk-typed";
+        Save(wsi.SecretKey);
+
+        Assert.AreEqual("stored", wsi.SecretKey.Status);
+        Assert.AreEqual("sk-typed", cfg.LoadSecrets().S3("wsi")!.SecretKey);
+        Assert.AreEqual("ak-env", cfg.LoadSecrets().S3("wsi")!.AccessKey);
+        StringAssert.Contains(wsi.SecretStatus, "Access key: set");
+        StringAssert.Contains(wsi.SecretStatus, "Secret key: set");
+    }
+
+    [TestMethod]
+    public void A_Directory_Source_and_an_unsaved_S3_Source_have_no_key_entries()
+    {
+        var page = NewPage(CreateWithStore());
+
+        Assert.IsNull(page.Sources[0].AccessKey);
+        page.AddSourceCommand.Execute().Subscribe();
+        var added = page.Sources[^1];
+        added.Name = "fresh";
+        added.Type = SourceType.S3;
+
+        Assert.IsNull(added.AccessKey);
+        Assert.IsNull(added.SecretKey);
+    }
+
+    [TestMethod]
     public void Saving_a_Secret_keeps_unsaved_setting_edits()
     {
         var page = NewPage(CreateWithStore());

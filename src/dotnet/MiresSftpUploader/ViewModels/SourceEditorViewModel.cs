@@ -120,6 +120,13 @@ public sealed class SourceEditorViewModel : ViewModelBase
     /// <summary>For an S3 Source: whether its access and secret keys are set in the environment. Never their values.</summary>
     public string SecretStatus { get => _secretStatus; internal set => this.RaiseAndSetIfChanged(ref _secretStatus, value); }
 
+    private SecretEntryViewModel? _accessKey;
+    private SecretEntryViewModel? _secretKey;
+
+    /// <summary>Entries for an S3 Source's keys; null until the Source is saved, because they are stored under its saved name.</summary>
+    public SecretEntryViewModel? AccessKey { get => _accessKey; internal set => this.RaiseAndSetIfChanged(ref _accessKey, value); }
+    public SecretEntryViewModel? SecretKey { get => _secretKey; internal set => this.RaiseAndSetIfChanged(ref _secretKey, value); }
+
     internal void RefreshPlaceholder() => this.RaisePropertyChanged(nameof(RemotePathPlaceholder));
 
     /// <summary>The keys relative to the Source: the ones the editor owns (only those that apply to the Type) plus the untouched extras.</summary>
