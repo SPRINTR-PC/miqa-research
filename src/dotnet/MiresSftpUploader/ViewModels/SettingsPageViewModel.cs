@@ -90,6 +90,8 @@ public sealed class SettingsPageViewModel : ViewModelBase
         _configuration = configuration;
         _check = checkDataDirectory ?? (path => DataDirectory.Check(path));
         _freeSpace = freeSpace ?? DataDirectory.FreeSpaceBytes;
+        SftpPassword = NewSecretEntry(Secrets.SftpPasswordName, "SFTP password");
+        SftpKeyPassphrase = NewSecretEntry(Secrets.SftpKeyPassphraseName, "SFTP key passphrase");
         UnlockFingerprintCommand = ReactiveCommand.CreateFromTask(UnlockFingerprint);
         RecheckDataDirectoryCommand = ReactiveCommand.Create(() => CheckDataDirectory(force: true));
         CopyFixCommandCommand = ReactiveCommand.CreateFromTask(() => CopyToClipboard(DataDirectoryFixCommand));
@@ -149,6 +151,24 @@ public sealed class SettingsPageViewModel : ViewModelBase
     public string SftpPasswordStatus { get; private set; } = "not set";
     public string SftpKeyPassphraseStatus { get; private set; } = "not set";
 
+    public SecretEntryViewModel SftpPassword { get; }
+    public SecretEntryViewModel SftpKeyPassphrase { get; }
+
+    private SecretEntryViewModel NewSecretEntry(string name, string label) =>
+        new(name, label, _configuration.SetSecret, _configuration.ClearSecret, RefreshSecrets);
+
+    /// <summary>Reads where each Secret comes from again, without touching unsaved edits.</summary>
+    private void RefreshSecrets()
+    {
+        var status = _configuration.LoadSecretStatus(_load.Config?.Sources ?? []);
+        SftpPassword.Refresh(status.OriginOf(Secrets.SftpPasswordName), status.StoreProblem);
+        SftpKeyPassphrase.Refresh(status.OriginOf(Secrets.SftpKeyPassphraseName), status.StoreProblem);
+        SftpPasswordStatus = status.SftpPassword ? "set" : "not set";
+        SftpKeyPassphraseStatus = status.SftpKeyPassphrase ? "set" : "not set";
+        this.RaisePropertyChanged(nameof(SftpPasswordStatus));
+        this.RaisePropertyChanged(nameof(SftpKeyPassphraseStatus));
+    }
+
     public bool SourcesLocked
     {
         get => _sourcesLocked;
@@ -201,10 +221,7 @@ public sealed class SettingsPageViewModel : ViewModelBase
             AttachSource(new SourceEditorViewModel(entry, SourcesLocked, PickFolderAsync, RemoteRoot));
         _sourceCount = Sources.Count;
 
-        SftpPasswordStatus = _load.Secrets.SftpPassword ? "set" : "not set";
-        SftpKeyPassphraseStatus = _load.Secrets.SftpKeyPassphrase ? "set" : "not set";
-        this.RaisePropertyChanged(nameof(SftpPasswordStatus));
-        this.RaisePropertyChanged(nameof(SftpKeyPassphraseStatus));
+        RefreshSecrets();
 
         SaveMessage = "";
         _checkedPath = null;

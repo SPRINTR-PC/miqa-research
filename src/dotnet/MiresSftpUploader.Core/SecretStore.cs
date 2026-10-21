@@ -29,6 +29,9 @@ public sealed class SecretStoreUnavailableException(string message) : Exception(
 /// </summary>
 public sealed class SecretStore : IDisposable
 {
+    internal const string NoMachineIdentifierMessage =
+        "This machine has no stable machine identifier, so the Secret Store is unavailable. Supply Secrets as environment variables instead.";
+
     private const int NonceSize = 12;
     private const int TagSize = 16;
 
@@ -45,7 +48,7 @@ public sealed class SecretStore : IDisposable
     public static SecretStore Open(string path, IMachineIdentity identity)
     {
         if (string.IsNullOrWhiteSpace(identity.MachineId))
-            throw new SecretStoreUnavailableException("This machine has no stable machine identifier, so the Secret Store is unavailable. Supply Secrets as environment variables instead.");
+            throw new SecretStoreUnavailableException(NoMachineIdentifierMessage);
         var directory = Path.GetDirectoryName(Path.GetFullPath(path));
         if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
         // Created owner-only before SQLite can create it with the umask; SQLite's journal copies the database file's mode.

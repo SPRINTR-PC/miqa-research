@@ -349,9 +349,37 @@ public sealed class Configuration(ConfigurationLocations locations)
     }
 
     /// <summary>The Secrets in the environment. Hand them to the code that connects; never log them.</summary>
+    /// <summary>Whether and where each Secret is set, for the Settings screen. Never the values.</summary>
+    public SecretStatus LoadSecretStatus(IEnumerable<SourceConfig> sources) => LoadSecrets().Status(sources);
+
+    /// <summary>Stores a Secret in the account's Secret Store. Returns why it could not, or null.</summary>
+    public string? SetSecret(string name, string value) => WithStore(store => store.Set(name, value));
+
+    /// <summary>Removes a Secret from the account's Secret Store. Returns why it could not, or null.</summary>
+    public string? ClearSecret(string name) => WithStore(store => store.Clear(name));
+
+    private string? WithStore(Action<SecretStore> action)
+    {
+        if (locations.SecretStorePath is null || locations.Identity is null) return "The Secret Store is not configured.";
+        try
+        {
+            using var store = SecretStore.Open(locations.SecretStorePath, locations.Identity);
+            action(store);
+            return null;
+        }
+        catch (SecretStoreUnavailableException e)
+        {
+            return e.Message;
+        }
+    }
+
     public Secrets LoadSecrets()
     {
-        if (locations.SecretStorePath is null || locations.Identity is null || !File.Exists(locations.SecretStorePath))
+        if (locations.SecretStorePath is null || locations.Identity is null)
+            return Secrets.FromEnvironment(locations.Environment);
+        if (string.IsNullOrWhiteSpace(locations.Identity.MachineId))
+            return Secrets.FromEnvironmentWithoutStore(locations.Environment, SecretStore.NoMachineIdentifierMessage);
+        if (!File.Exists(locations.SecretStorePath))
             return Secrets.FromEnvironment(locations.Environment);
         try
         {
