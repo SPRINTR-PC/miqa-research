@@ -25,7 +25,7 @@ public sealed class SettingsPageViewModel : ViewModelBase
         ("Sftp:Host", "Host", "Destination", FieldKind.Text, null, null),
         ("Sftp:Port", "Port", "Destination", FieldKind.Number, null, null),
         ("Sftp:Username", "Username", "Destination", FieldKind.Text, null, null),
-        ("Sftp:AuthMethod", "Authentication", "Destination", FieldKind.Choice, ["Password", "PrivateKey"], "The password or key passphrase is a Secret: set it in the environment."),
+        ("Sftp:AuthMethod", "Authentication", "Destination", FieldKind.Choice, ["Password", "PrivateKey"], "The password or key passphrase is a Secret: set it under Secrets below, or in the environment."),
         ("Sftp:PrivateKeyPath", "Private key file", "Destination", FieldKind.Text, null, null),
         (FingerprintKey, "Host Key Fingerprint", "Destination", FieldKind.Text, null, "The pinned identity of the server. A server presenting a different one is refused."),
         ("Sftp:RemoteRoot", "Remote root", "Destination", FieldKind.Text, null, "The server directory every Source is uploaded under, unless the Source has its own Remote Path."),

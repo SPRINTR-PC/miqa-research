@@ -8,7 +8,7 @@ This folder contains the executable, `appsettings.json` (the Machine Config; edi
 
 1. Create the shared Data Directory once, as an administrator: `MiresSftpUploader --init-data-dir`, then add the accounts that run the tool to the group it reports (Linux and macOS; on Windows every local account is granted access).
 2. Edit `appsettings.json`: set `Sftp:Host`, `Sftp:Username`, `Sftp:HostKeyFingerprint` and add at least one Source.
-3. Provide Secrets through environment variables only (`MIRES_SFTP_PASSWORD`, `MIRES_SFTP_KEY_PASSPHRASE`, `MIRES_S3_<SOURCE>_ACCESS_KEY` and `_SECRET_KEY`). They are never read from files.
+3. Provide Secrets either as environment variables (`MIRES_SFTP_PASSWORD`, `MIRES_SFTP_KEY_PASSPHRASE`, `MIRES_S3_<SOURCE>_ACCESS_KEY` and `_SECRET_KEY`), which win, or in the account's Secret Store: type them in the Settings page, or run `MiresSftpUploader --set-secret sftp-password` (the value is read from a prompt or stdin, never from the command line). They are never read from the configuration files. The Secret Store is encrypted for this account on this machine; it protects a copied or leaked file, not someone already running as that account (see `docs/adr/0003-secret-store-per-account-machine-derived-key.md`).
 4. Check: `MiresSftpUploader --validate-config --check-connection`, then `MiresSftpUploader --headless --dry-run`.
 5. Schedule `MiresSftpUploader --headless` with the operating system's scheduler, using the samples in `scheduler/`; `scheduling.md` has the steps for each system, how to keep Secrets out of the task, and what each exit code means.
 

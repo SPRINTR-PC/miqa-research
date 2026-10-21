@@ -18,7 +18,20 @@ Do these in order, on the machine that will run the schedule.
 
 ## Secrets in scheduled Runs
 
-A Secret (password, key passphrase, S3 secret key) is only ever read from an environment variable: `MIRES_SFTP_PASSWORD`, `MIRES_SFTP_KEY_PASSPHRASE`, `MIRES_S3_<SOURCE>_ACCESS_KEY` and `MIRES_S3_<SOURCE>_SECRET_KEY`. There is no option to read them from a file.
+A Secret (password, key passphrase, S3 access key, S3 secret key) comes from an environment variable (`MIRES_SFTP_PASSWORD`, `MIRES_SFTP_KEY_PASSPHRASE`, `MIRES_S3_<SOURCE>_ACCESS_KEY` and `MIRES_S3_<SOURCE>_SECRET_KEY`), which wins, or else from the service account's **Secret Store**. There is no option to read them from a configuration file.
+
+**The Secret Store** is an encrypted SQLite file in the account's own application-data folder (`secrets.db`, next to the logs). Log on as the service account and run, once per Secret:
+
+```
+MiresSftpUploader --set-secret sftp-password
+MiresSftpUploader --set-secret sftp-key-passphrase
+MiresSftpUploader --set-secret s3-access-key:<Source>
+MiresSftpUploader --set-secret s3-secret-key:<Source>
+```
+
+Each prompts without echo, or reads one line from stdin (`printf '%s\n' "$VALUE" | MiresSftpUploader --set-secret sftp-password`). The value is never accepted as an argument. `--list-secrets` shows names and state (`stored`, `unreadable`), never values; `--clear-secret <name>` removes one.
+
+The key is derived from the machine identifier and the account name, so the store is readable only by the same account on the same machine. It protects against a copied, backed-up or leaked file. It does **not** protect against another process running as the same account, who can derive the same key. If you need that, use the DPAPI, Keychain or `0600` env-file patterns below. If the machine is cloned or reinstalled, or the account is renamed, the stored Secrets read as `unreadable` and a Run fails with a clear message until you set them again. A machine with no stable machine identifier (some containers) cannot use the Secret Store and says so.
 
 **Never put a Secret in a task definition**, a crontab, a unit file or a plist: they are readable by other accounts or end up in backups and logs. Use one of these patterns instead.
 

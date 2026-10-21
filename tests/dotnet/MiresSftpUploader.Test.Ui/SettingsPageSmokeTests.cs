@@ -35,7 +35,8 @@ public sealed class SettingsPageSmokeTests : IDisposable
               "Sources": [ { "Name": "alpha", "Type": "Directory", "Path": {{System.Text.Json.JsonSerializer.Serialize(data)}} } ]
             }
             """);
-        var configuration = new Configuration(new ConfigurationLocations(Path.Combine(install, "appsettings.json"), Path.Combine(_dir, "user", "appsettings.user.json"), env ?? []));
+        var configuration = new Configuration(new ConfigurationLocations(Path.Combine(install, "appsettings.json"), Path.Combine(_dir, "user", "appsettings.user.json"), env ?? [],
+            Path.Combine(_dir, "user", "secrets.db"), new FixedIdentity("machine-1", "alice")));
         var settings = new SettingsPageViewModel(configuration,
             path => new DataDirectoryAccess(path, true, true, "alice", "mires-uploader", 0, 1L << 33, false, "", null), _ => long.MaxValue);
         var upload = new UploadPageViewModel(new FakeUploaderRuntime(new AppConfig(), new FakeRunEngine()), a => a());
@@ -115,16 +116,53 @@ public sealed class SettingsPageSmokeTests : IDisposable
         Assert.True(save.IsEffectivelyEnabled);
     }
 
+    private sealed record FixedIdentity(string? MachineId, string Account) : IMachineIdentity;
+
+    private static TextBlock StatusOf(Control root, SecretEntryViewModel entry) =>
+        root.GetVisualDescendants().OfType<TextBlock>().First(t => t.Name == "SecretStatusText" && ReferenceEquals(t.DataContext, entry));
+
+    private static TextBox InputOf(Control root, SecretEntryViewModel entry) =>
+        root.GetVisualDescendants().OfType<TextBox>().First(t => t.Name == "SecretInput" && ReferenceEquals(t.DataContext, entry));
+
+    private static Button ButtonOf(Control root, SecretEntryViewModel entry, string name) =>
+        root.GetVisualDescendants().OfType<Button>().First(b => b.Name == name && ReferenceEquals(b.DataContext, entry));
+
     [AvaloniaFact]
-    public void Secrets_show_set_or_not_set_and_have_no_input()
+    public void Secrets_show_where_they_come_from_and_the_inputs_are_masked_and_empty()
     {
-        var (window, _, _) = Create(env: new() { ["MIRES_SFTP_PASSWORD"] = "hunter2-secret" });
+        var (window, _, settings) = Create(env: new() { ["MIRES_SFTP_PASSWORD"] = "hunter2-secret" });
 
-        string TextOf(string name) => window.GetVisualDescendants().OfType<TextBlock>().First(t => t.Name == name).Text!;
-
-        Assert.Equal("set", TextOf("SftpPasswordStatusText"));
-        Assert.Equal("not set", TextOf("SftpKeyPassphraseStatusText"));
+        Assert.Equal("environment variable", StatusOf(window, settings.SftpPassword).Text);
+        Assert.Equal("not set", StatusOf(window, settings.SftpKeyPassphrase).Text);
+        foreach (var entry in new[] { settings.SftpPassword, settings.SftpKeyPassphrase })
+        {
+            var box = InputOf(window, entry);
+            Assert.NotEqual('\0', box.PasswordChar);
+            Assert.True(string.IsNullOrEmpty(box.Text));
+        }
+        Assert.False(InputOf(window, settings.SftpPassword).IsEffectivelyEnabled);
+        Assert.True(InputOf(window, settings.SftpKeyPassphrase).IsEffectivelyEnabled);
         Assert.DoesNotContain(window.GetVisualDescendants().OfType<TextBox>(), t => t.Text is { } s && s.Contains("hunter2"));
+    }
+
+    [AvaloniaFact]
+    public void A_typed_Secret_is_saved_with_the_button_and_the_box_empties()
+    {
+        var (window, _, settings) = Create();
+        var entry = settings.SftpKeyPassphrase;
+        var box = InputOf(window, entry);
+        var save = ButtonOf(window, entry, "SecretSaveButton");
+        Assert.False(save.IsEffectivelyEnabled);
+
+        box.Text = "phrase-typed";
+        Layout(window);
+        Assert.True(save.IsEffectivelyEnabled);
+        entry.SaveCommand.Execute().Subscribe();
+        Layout(window);
+
+        Assert.Equal("stored", StatusOf(window, entry).Text);
+        Assert.True(string.IsNullOrEmpty(box.Text));
+        Assert.True(ButtonOf(window, entry, "SecretClearButton").IsEffectivelyEnabled);
     }
 
     [AvaloniaFact]

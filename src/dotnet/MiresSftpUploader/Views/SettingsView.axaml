@@ -2,6 +2,22 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:MiresSftpUploader.ViewModels"
              x:Class="MiresSftpUploader.Views.SettingsView" x:DataType="vm:SettingsPageViewModel">
+    <UserControl.DataTemplates>
+        <!-- One Secret: where it comes from, a masked box that is emptied after Save, and Save / Clear. A stored value is never shown. -->
+        <DataTemplate DataType="vm:SecretEntryViewModel">
+            <StackPanel Spacing="2">
+                <Grid ColumnDefinitions="180,160,*,Auto,Auto" ColumnSpacing="8">
+                    <TextBlock VerticalAlignment="Center" Text="{Binding Label}"/>
+                    <TextBlock x:Name="SecretStatusText" Grid.Column="1" VerticalAlignment="Center" TextWrapping="Wrap" Text="{Binding Status}"/>
+                    <TextBox x:Name="SecretInput" Grid.Column="2" PasswordChar="●" Text="{Binding Input}" IsEnabled="{Binding !IsLocked}" Watermark="New value"/>
+                    <Button x:Name="SecretSaveButton" Grid.Column="3" Content="Save" Command="{Binding SaveCommand}"/>
+                    <Button x:Name="SecretClearButton" Grid.Column="4" Content="Clear" Command="{Binding ClearCommand}"/>
+                </Grid>
+                <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap" IsVisible="{Binding !StoreAvailable}" Text="{Binding StoreProblem}"/>
+                <TextBlock Foreground="{DynamicResource MDestructive}" TextWrapping="Wrap" IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Text="{Binding Error}"/>
+            </StackPanel>
+        </DataTemplate>
+    </UserControl.DataTemplates>
     <DockPanel>
         <!-- Save bar -->
         <Border DockPanel.Dock="Bottom" Classes="sunken" BorderBrush="{DynamicResource MBorder}" BorderThickness="0,1,0,0" Padding="0,10,0,0" Margin="0,10,0,0">
@@ -113,6 +129,8 @@
                                                     <CheckBox Grid.Column="2" VerticalAlignment="Bottom" Content="Path-style addressing" IsChecked="{Binding ForcePathStyle}"/>
                                                 </Grid>
                                                 <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap" Text="{Binding SecretStatus}"/>
+                                                <ContentControl Content="{Binding AccessKey}"/>
+                                                <ContentControl Content="{Binding SecretKey}"/>
                                             </StackPanel>
 
                                             <StackPanel>
@@ -134,15 +152,9 @@
                     <StackPanel Spacing="4">
                         <TextBlock Classes="h" Text="Secrets"/>
                         <TextBlock Classes="muted" TextWrapping="Wrap"
-                                   Text="Secrets are supplied by environment variables only and are never stored or shown. The status below is all this screen knows."/>
-                        <Grid ColumnDefinitions="260,*">
-                            <TextBlock Classes="mono" Text="MIRES_SFTP_PASSWORD"/>
-                            <TextBlock x:Name="SftpPasswordStatusText" Grid.Column="1" Text="{Binding SftpPasswordStatus}"/>
-                        </Grid>
-                        <Grid ColumnDefinitions="260,*">
-                            <TextBlock Classes="mono" Text="MIRES_SFTP_KEY_PASSPHRASE"/>
-                            <TextBlock x:Name="SftpKeyPassphraseStatusText" Grid.Column="1" Text="{Binding SftpKeyPassphraseStatus}"/>
-                        </Grid>
+                                   Text="A Secret comes from an environment variable, which wins, or from the Secret Store: encrypted for this account on this machine. It guards a copied or leaked file, not someone already running as you. Values are never shown."/>
+                        <ContentControl Content="{Binding SftpPassword}"/>
+                        <ContentControl Content="{Binding SftpKeyPassphrase}"/>
                     </StackPanel>
                 </Border>
 
