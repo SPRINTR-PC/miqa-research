@@ -29,7 +29,7 @@ sealed class Program
         var state = options is { ListRuns: true } or { ExportRunId: not null }
             ? UploaderComposition.LoadStateSettings(configuration, options)
             : null;
-        if (Cli.TryRun(args, Version, Console.Out, Console.Error, out var exitCode, state: state))
+        if (Cli.TryRun(args, Version, Console.Out, Console.Error, out var exitCode, state: state, readSecret: ConsoleSecretInput.Read))
             return exitCode;
 
         var headless = options?.Headless == true;

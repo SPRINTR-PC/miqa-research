@@ -16,7 +16,7 @@ public static class Cli
     /// <paramref name="state"/> locates the Upload State for <c>--list-runs</c> and <c>--export-run</c>.
     /// </summary>
     public static bool TryRun(string[] args, string version, TextWriter stdout, TextWriter stderr, out int exitCode,
-        ConfigurationLocations? locations = null, StateSettings? state = null, Func<SftpConnection, IRemote>? remoteFactory = null)
+        ConfigurationLocations? locations = null, StateSettings? state = null, Func<SftpConnection, IRemote>? remoteFactory = null, Func<string?>? readSecret = null)
     {
         exitCode = ExitCodes.Ok;
         if (args.Length == 0) return false;
@@ -44,6 +44,12 @@ public static class Cli
         if (options.InitDataDir)
         {
             exitCode = InitDataDirectory(options, new Configuration(locations ?? ConfigurationLocations.Default()), stdout, stderr);
+            return true;
+        }
+
+        if (options.SetSecret is not null || options.ClearSecret is not null || options.ListSecrets)
+        {
+            exitCode = SecretCommands.Run(options, locations ?? ConfigurationLocations.Default(), readSecret ?? ConsoleSecretInput.Read, stdout, stderr);
             return true;
         }
 
@@ -89,7 +95,7 @@ public static class Cli
         var missing = sftp.AuthMethod == AuthMethod.PrivateKey ? null : secrets.SftpPassword is null ? Secrets.SftpPasswordVariable : null;
         if (missing is not null)
         {
-            stderr.WriteLine($"{missing} is not set. Secrets are read only from environment variables.");
+            stderr.WriteLine($"{missing} is not set. Set it as an environment variable, or store it with --set-secret sftp-password.");
             return ExitCodes.ConfigurationError;
         }
 
@@ -215,6 +221,9 @@ public static class Cli
           --validate-config       Report every configuration error and exit; runs nothing.
           --check-connection      With --validate-config: also test the server and its host key.
           --init-data-dir         Create or repair the shared Data Directory and exit.
+          --set-secret <name>     Store a Secret (the value is read from the prompt or stdin) and exit.
+          --clear-secret <name>   Remove a stored Secret and exit.
+          --list-secrets          List the stored Secrets (names and state, never values) and exit.
                                   Run once per machine as administrator or with sudo; safe to repeat.
                                   The group is State:AccessGroup (default mires-uploader, macOS staff).
           --log-level <level>     Trace, Debug, Info (default), Warn, Error or Fatal.

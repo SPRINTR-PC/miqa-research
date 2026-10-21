@@ -139,7 +139,7 @@ public sealed record ConfigurationLocations(
 
 /// <summary>
 /// Layered settings: Machine Config, then User Overrides, then <c>MIRES_*</c> environment variables, then CLI flags.
-/// An array is replaced whole by the highest layer that defines it. Secrets come only from environment variables
+/// An array is replaced whole by the highest layer that defines it. Secrets come from environment variables or the Secret Store
 /// and are never part of <see cref="AppConfig"/>.
 /// </summary>
 public sealed class Configuration(ConfigurationLocations locations)

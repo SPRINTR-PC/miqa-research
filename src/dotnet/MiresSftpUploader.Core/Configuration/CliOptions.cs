@@ -15,18 +15,21 @@ public sealed record CliOptions
     public bool ValidateConfig { get; init; }
     public bool CheckConnection { get; init; }
     public bool InitDataDir { get; init; }
+    public string? SetSecret { get; init; }
+    public string? ClearSecret { get; init; }
+    public bool ListSecrets { get; init; }
     public bool Version { get; init; }
     public bool Help { get; init; }
     public IReadOnlyDictionary<string, string> ConfigOverrides { get; init; } = new Dictionary<string, string>();
 
     /// <summary>Flags that start a Headless Run (or an administrative command) without a window.</summary>
-    public bool ImpliesHeadless => Headless || ListRuns || ExportRunId is not null || ValidateConfig || InitDataDir || Version;
+    public bool ImpliesHeadless => Headless || ListRuns || ExportRunId is not null || ValidateConfig || InitDataDir || Version || SetSecret is not null || ClearSecret is not null || ListSecrets;
 
     private static readonly HashSet<string> ValueFlags =
-        ["--source", "--report", "--report-format", "--export-run", "--limit", "--log-level", "--data-dir"];
+        ["--source", "--report", "--report-format", "--export-run", "--limit", "--log-level", "--data-dir", "--set-secret", "--clear-secret"];
 
     private static readonly HashSet<string> SwitchFlags =
-        ["--headless", "--dry-run", "--rehash-all", "--list-runs", "--validate-config", "--check-connection", "--init-data-dir", "--version", "--help"];
+        ["--headless", "--dry-run", "--rehash-all", "--list-runs", "--validate-config", "--check-connection", "--init-data-dir", "--list-secrets", "--version", "--help"];
 
     public static CliParseResult Parse(IReadOnlyList<string> args)
     {
@@ -57,14 +60,18 @@ public sealed record CliOptions
                     "--validate-config" => options with { ValidateConfig = true },
                     "--check-connection" => options with { CheckConnection = true },
                     "--init-data-dir" => options with { InitDataDir = true },
+                    "--list-secrets" => options with { ListSecrets = true },
                     "--version" => options with { Version = true },
                     _ => options with { Help = true },
                 };
                 continue;
             }
 
+            // A bare argument is not echoed: it may be a Secret value typed where only a name belongs.
+            if (!arg.StartsWith("--", StringComparison.Ordinal))
+                return new(null, "Unexpected argument. Values are never given on the command line. Use --help to list the options.");
             if (!ValueFlags.Contains(name))
-                return new(null, $"Unknown option '{arg}'. Use --help to list the options.");
+                return new(null, $"Unknown option '{name}'. Use --help to list the options.");
 
             var value = inlineValue;
             if (value is null)
@@ -78,6 +85,8 @@ public sealed record CliOptions
             {
                 case "--source": sources.Add(value); break;
                 case "--report": options = options with { ReportPath = value }; break;
+                case "--set-secret": options = options with { SetSecret = value }; break;
+                case "--clear-secret": options = options with { ClearSecret = value }; break;
                 case "--export-run": options = options with { ExportRunId = value }; break;
                 case "--limit":
                     if (!int.TryParse(value, out var limit) || limit < 1)
