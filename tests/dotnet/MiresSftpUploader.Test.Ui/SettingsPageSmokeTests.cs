@@ -68,6 +68,21 @@ public sealed class SettingsPageSmokeTests : IDisposable
     }
 
     [AvaloniaFact]
+    public void Browsing_for_a_Source_fills_its_Directory_path_box()
+    {
+        var (window, _, settings) = Create();
+        var picked = Path.Combine(_dir, "picked");
+        settings.PickFolder = () => System.Threading.Tasks.Task.FromResult<string?>(picked);
+        var box = window.GetVisualDescendants().OfType<TextBox>().First(t => t.DataContext is SourceEditorViewModel && t.Text == settings.Sources[0].Path);
+
+        settings.Sources[0].BrowseCommand.Execute().Subscribe();
+        Layout(window);
+
+        Assert.Equal(picked, settings.Sources[0].Path);
+        Assert.Equal(picked, box.Text);
+    }
+
+    [AvaloniaFact]
     public void A_Locked_Setting_is_shown_but_not_editable()
     {
         var (window, _, _) = Create(env: new() { ["MIRES_Sftp__Host"] = "env.example.org" });

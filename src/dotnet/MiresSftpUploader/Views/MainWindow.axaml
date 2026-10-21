@@ -7,129 +7,171 @@
         Width="1180" Height="760" MinWidth="900" MinHeight="600"
         Icon="/Assets/avalonia-logo.ico"
         Title="MIRES SFTP Uploader">
-    <Grid ColumnDefinitions="270,*">
-        <!-- Sidebar -->
-        <Border Classes="sunken" BorderBrush="{DynamicResource MBorder}" BorderThickness="0,0,1,0" Padding="16">
+    <DockPanel>
+        <!-- Top bar: logo and title, the four pages, then the theme toggle (as in the MiqaResearch web application). -->
+        <Border DockPanel.Dock="Top" Classes="sunken" BorderBrush="{DynamicResource MBorder}" BorderThickness="0,0,0,1" Padding="20,0" Height="60">
             <DockPanel>
-                <StackPanel DockPanel.Dock="Bottom" Spacing="8">
-                    <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap" Text="{Binding ThemeNotice}" IsVisible="{Binding HasThemeNotice}"/>
-                    <Button x:Name="ThemeButton" HorizontalAlignment="Stretch" Content="{Binding ThemeToggleLabel}" Command="{Binding ToggleThemeCommand}"/>
-                    <Button x:Name="SettingsButton" HorizontalAlignment="Stretch" Content="Settings" Command="{Binding ShowSettingsCommand}"/>
-                    <Button x:Name="HelpButton" HorizontalAlignment="Stretch" Content="Help" Command="{Binding ShowHelpCommand}"/>
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                    <v:MiresLogo Height="34" Width="40"/>
+                    <TextBlock FontSize="18" FontWeight="Bold" Foreground="{DynamicResource MPrimary}" VerticalAlignment="Center" Text="SFTP Uploader"/>
                 </StackPanel>
-                <ScrollViewer>
-                    <StackPanel Spacing="10">
-                        <StackPanel Orientation="Horizontal" Spacing="10">
-                            <v:MiresLogo Height="34" Width="40"/>
-                            <TextBlock FontSize="18" FontWeight="Bold" Foreground="{DynamicResource MPrimary}" VerticalAlignment="Center" TextWrapping="Wrap" Text="MIRES SFTP Uploader"/>
-                        </StackPanel>
-                        <Button x:Name="UploadButton" Classes="primary" HorizontalAlignment="Stretch" Margin="0,8,0,0" Content="Upload" Command="{Binding ShowUploadCommand}"/>
-                        <Button x:Name="HistoryButton" HorizontalAlignment="Stretch" Content="History" Command="{Binding ShowHistoryCommand}"/>
-
-                        <TextBlock Classes="h" Text="Sources" Margin="0,8,0,0"/>
-                        <ItemsControl ItemsSource="{Binding Upload.Sources}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="vm:SourceItemViewModel">
-                                    <StackPanel Margin="0,0,0,6">
-                                        <CheckBox IsChecked="{Binding Included}" Content="{Binding Name}"/>
-                                        <TextBlock Classes="muted" FontSize="11" Margin="28,-4,0,0" Text="{Binding Summary}" TextTrimming="CharacterEllipsis"/>
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-
-                        <TextBlock Classes="h" Text="Destination" Margin="0,8,0,0"/>
-                        <TextBlock Classes="muted" TextWrapping="Wrap" Text="{Binding Upload.Destination}"/>
-
-                        <Button x:Name="StartButton" Classes="primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="0,12,0,0" Content="Start" Command="{Binding Upload.StartCommand}"/>
-                        <Button x:Name="DryRunButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Dry run" Command="{Binding Upload.DryRunCommand}"/>
-                        <Button x:Name="ScanButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Scan" Command="{Binding Upload.ScanCommand}"/>
-                        <Button x:Name="CancelButton" Classes="danger" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Cancel" Command="{Binding Upload.CancelCommand}"/>
-                    </StackPanel>
-                </ScrollViewer>
+                <Button x:Name="ThemeButton" DockPanel.Dock="Right" Classes="nav icon" VerticalAlignment="Center"
+                        Command="{Binding ToggleThemeCommand}" ToolTip.Tip="{Binding ThemeToggleLabel}"
+                        AutomationProperties.Name="{Binding ThemeToggleLabel}">
+                    <Panel>
+                        <!-- Shows the theme it switches to: a sun in the dark theme, a moon in the light theme. -->
+                        <PathIcon Width="16" Height="16" IsVisible="{Binding IsDark}"
+                                  Data="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8ZM11 2h2v2h-2ZM11 20h2v2h-2ZM2 11h2v2H2ZM20 11h2v2h-2ZM4.22 5.64l1.42-1.42 1.41 1.42-1.41 1.41ZM16.95 18.36l1.41-1.41 1.42 1.41-1.42 1.42ZM4.22 18.36l1.41-1.42 1.42 1.42-1.42 1.41ZM16.95 5.64l1.41-1.41 1.42 1.41-1.42 1.42Z"/>
+                        <PathIcon Width="16" Height="16" IsVisible="{Binding !IsDark}"
+                                  Data="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
+                    </Panel>
+                </Button>
+                <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <Button x:Name="UploadButton" Classes="nav" Classes.active="{Binding IsUploadPage}" Content="Upload" Command="{Binding ShowUploadCommand}"/>
+                    <Button x:Name="HistoryButton" Classes="nav" Classes.active="{Binding IsHistoryPage}" Content="History" Command="{Binding ShowHistoryCommand}"/>
+                    <Button x:Name="SettingsButton" Classes="nav" Classes.active="{Binding IsSettingsPage}" Content="Settings" Command="{Binding ShowSettingsCommand}"/>
+                    <Button x:Name="HelpButton" Classes="nav" Classes.active="{Binding IsHelpPage}" Content="Help" Command="{Binding ShowHelpCommand}"/>
+                </StackPanel>
             </DockPanel>
         </Border>
+        <Border DockPanel.Dock="Top" Classes="card" Margin="20,14,20,0" IsVisible="{Binding HasThemeNotice}">
+            <TextBlock Classes="muted" TextWrapping="Wrap" Text="{Binding ThemeNotice}"/>
+        </Border>
 
-        <!-- Main area -->
-        <DockPanel x:Name="UploadPage" Grid.Column="1" Margin="20" IsVisible="{Binding IsUploadPage}">
-            <Border x:Name="BlockedBanner" DockPanel.Dock="Top" Classes="card" Margin="0,0,0,14" BorderBrush="{DynamicResource MDestructive}"
-                    IsVisible="{Binding Upload.IsBlocked}">
-                <StackPanel Spacing="4">
-                    <TextBlock Classes="h" Text="Uploading is disabled"/>
-                    <TextBlock TextWrapping="Wrap" Text="{Binding Upload.BlockedReason}"/>
-                    <TextBlock Classes="muted" Text="Settings shows the access check and the command that fixes it."/>
-                </StackPanel>
-            </Border>
-            <Border DockPanel.Dock="Top" Classes="card" Margin="0,0,0,14" BorderBrush="{DynamicResource MDestructive}"
-                    IsVisible="{Binding Upload.HasProblems}">
-                <StackPanel Spacing="4">
-                    <TextBlock Classes="h" Text="The configuration has problems"/>
-                    <TextBlock Classes="mono" TextWrapping="Wrap" Text="{Binding Upload.Problems}"/>
-                </StackPanel>
-            </Border>
-            <Grid DockPanel.Dock="Top" ColumnDefinitions="*,*,*,*" Margin="0,0,0,14">
-                <Border Classes="card" Margin="0,0,8,0"><StackPanel>
-                    <TextBlock Classes="muted" Text="Succeeded"/>
-                    <TextBlock x:Name="SucceededTile" Classes="tile" Foreground="{DynamicResource MSuccess}" Text="{Binding Upload.Succeeded}"/>
-                </StackPanel></Border>
-                <Border Grid.Column="1" Classes="card" Margin="0,0,8,0"><StackPanel>
-                    <TextBlock Classes="muted" Text="Failed"/>
-                    <TextBlock x:Name="FailedTile" Classes="tile" Foreground="{DynamicResource MDestructive}" Text="{Binding Upload.Failed}"/>
-                </StackPanel></Border>
-                <Border Grid.Column="2" Classes="card" Margin="0,0,8,0"><StackPanel>
-                    <TextBlock Classes="muted" Text="Skipped"/>
-                    <TextBlock x:Name="SkippedTile" Classes="tile" Text="{Binding Upload.Skipped}"/>
-                </StackPanel></Border>
-                <Border Grid.Column="3" Classes="card"><StackPanel>
-                    <TextBlock Classes="muted" Text="Pending"/>
-                    <TextBlock x:Name="PendingTile" Classes="tile" Foreground="{DynamicResource MInfo}" Text="{Binding Upload.Pending}"/>
-                </StackPanel></Border>
-            </Grid>
-            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
-                <TextBlock DockPanel.Dock="Right" Classes="muted" Text="{Binding Upload.Status}"/>
-                <ProgressBar x:Name="OverallProgress" Value="{Binding Upload.OverallProgress}" Maximum="100" Height="10" Margin="0,0,16,0" VerticalAlignment="Center"/>
-            </DockPanel>
-            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
-                <Button x:Name="RetryButton" DockPanel.Dock="Right" Content="Retry failed" Command="{Binding Upload.RetryFailedCommand}"/>
-                <ToggleButton x:Name="FailedOnlyToggle" DockPanel.Dock="Right" Margin="0,0,8,0" Content="Failed only" IsChecked="{Binding Upload.FailedOnly}"/>
-                <TextBlock Classes="h" Text="Files"/>
-            </DockPanel>
-            <!-- The files container; the log sits inside it, at its full width. -->
-            <Border Classes="card" Padding="12,6">
-                <DockPanel>
-                    <Expander x:Name="LogExpander" DockPanel.Dock="Bottom" Header="Log" Margin="0,8,0,0"
-                              HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsVisible="{Binding HasLog}">
-                        <v:LogPaneView DataContext="{Binding Log}"/>
-                    </Expander>
+        <Grid>
+            <!-- Upload page: the sidebar (Sources, Destination, Run controls) and the Run's results. -->
+            <Grid x:Name="UploadPage" ColumnDefinitions="270,*" IsVisible="{Binding IsUploadPage}">
+                <Border Classes="sunken" BorderBrush="{DynamicResource MBorder}" BorderThickness="0,0,1,0" Padding="16">
                     <ScrollViewer>
-                        <ItemsControl ItemsSource="{Binding Upload.Files}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="vm:FileRowViewModel">
-                                    <Grid ColumnDefinitions="22,*,110" Margin="0,5">
-                                        <Ellipse Classes="dot" Classes.ok="{Binding IsSucceeded}" Classes.fail="{Binding IsFailed}" Classes.active="{Binding IsActive}"/>
-                                        <StackPanel Grid.Column="1" Spacing="1">
-                                            <TextBlock Text="{Binding Path}" TextTrimming="CharacterEllipsis" Classes.muted="{Binding IsMuted}"/>
-                                            <TextBlock Text="{Binding Reason}" FontSize="11" Classes="muted" TextTrimming="CharacterEllipsis"/>
+                        <StackPanel Spacing="10">
+                            <TextBlock Classes="h" Text="Sources"/>
+                            <ItemsControl ItemsSource="{Binding Upload.Sources}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:SourceItemViewModel">
+                                        <StackPanel Margin="0,0,0,6">
+                                            <CheckBox IsChecked="{Binding Included}" Content="{Binding Name}"/>
+                                            <TextBlock Classes="muted" FontSize="11" Margin="28,-4,0,0" Text="{Binding Summary}" TextTrimming="CharacterEllipsis"/>
                                         </StackPanel>
-                                        <TextBlock Grid.Column="2" Text="{Binding OutcomeText}" VerticalAlignment="Center"/>
-                                    </Grid>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <TextBlock Classes="h" Text="Destination" Margin="0,8,0,0"/>
+                            <TextBlock Classes="muted" TextWrapping="Wrap" Text="{Binding Upload.Destination}"/>
+
+                            <Button x:Name="StartButton" Classes="primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="0,12,0,0" Content="Start" Command="{Binding Upload.StartCommand}"/>
+                            <Button x:Name="DryRunButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Dry run" Command="{Binding Upload.DryRunCommand}"/>
+                            <Button x:Name="ScanButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Scan" Command="{Binding Upload.ScanCommand}"/>
+                            <Button x:Name="CancelButton" Classes="danger" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Cancel" Command="{Binding Upload.CancelCommand}"/>
+                        </StackPanel>
                     </ScrollViewer>
+                </Border>
+
+            <DockPanel Grid.Column="1" Margin="20">
+                <Border x:Name="BlockedBanner" DockPanel.Dock="Top" Classes="card" Margin="0,0,0,14" BorderBrush="{DynamicResource MDestructive}"
+                        IsVisible="{Binding Upload.IsBlocked}">
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="h" Text="Uploading is disabled"/>
+                        <TextBlock TextWrapping="Wrap" Text="{Binding Upload.BlockedReason}"/>
+                        <TextBlock Classes="muted" Text="Settings shows the access check and the command that fixes it."/>
+                    </StackPanel>
+                </Border>
+                <Border DockPanel.Dock="Top" Classes="card" Margin="0,0,0,14" BorderBrush="{DynamicResource MDestructive}"
+                        IsVisible="{Binding Upload.HasProblems}">
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="h" Text="The configuration has problems"/>
+                        <TextBlock Classes="mono" TextWrapping="Wrap" Text="{Binding Upload.Problems}"/>
+                    </StackPanel>
+                </Border>
+                <Grid DockPanel.Dock="Top" ColumnDefinitions="*,*,*,*" Margin="0,0,0,14">
+                    <ToggleButton Classes="tile" HorizontalAlignment="Stretch" Margin="0,0,8,0" IsChecked="{Binding Upload.FilterSucceeded}"
+                                  ToolTip.Tip="Show only the succeeded files; click again to show all">
+                        <StackPanel>
+                            <TextBlock Classes="muted" Text="Succeeded"/>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <PathIcon Width="18" Height="18" VerticalAlignment="Center" Foreground="{DynamicResource MSuccess}" Data="{x:Static vm:UploadPageViewModel.SucceededIcon}"/>
+                                <TextBlock x:Name="SucceededTile" Classes="tile" Foreground="{DynamicResource MSuccess}" Text="{Binding Upload.Succeeded}"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </ToggleButton>
+                    <ToggleButton Grid.Column="1" Classes="tile" HorizontalAlignment="Stretch" Margin="0,0,8,0" IsChecked="{Binding Upload.FilterFailed}"
+                                  ToolTip.Tip="Show only the failed files; click again to show all">
+                        <StackPanel>
+                            <TextBlock Classes="muted" Text="Failed"/>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <PathIcon Width="18" Height="18" VerticalAlignment="Center" Foreground="{DynamicResource MDestructive}" Data="{x:Static vm:UploadPageViewModel.FailedIcon}"/>
+                                <TextBlock x:Name="FailedTile" Classes="tile" Foreground="{DynamicResource MDestructive}" Text="{Binding Upload.Failed}"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </ToggleButton>
+                    <ToggleButton Grid.Column="2" Classes="tile" HorizontalAlignment="Stretch" Margin="0,0,8,0" IsChecked="{Binding Upload.FilterSkipped}"
+                                  ToolTip.Tip="Show only the skipped files; click again to show all">
+                        <StackPanel>
+                            <TextBlock Classes="muted" Text="Skipped"/>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <PathIcon Width="18" Height="18" VerticalAlignment="Center" Foreground="{DynamicResource MMuted}" Data="{x:Static vm:UploadPageViewModel.SkippedIcon}"/>
+                                <TextBlock x:Name="SkippedTile" Classes="tile" Text="{Binding Upload.Skipped}"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </ToggleButton>
+                    <ToggleButton Grid.Column="3" Classes="tile" HorizontalAlignment="Stretch" IsChecked="{Binding Upload.FilterPending}"
+                                  ToolTip.Tip="Show only the pending files; click again to show all">
+                        <StackPanel>
+                            <TextBlock Classes="muted" Text="Pending"/>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <PathIcon Width="18" Height="18" VerticalAlignment="Center" Foreground="{DynamicResource MInfo}" Data="{x:Static vm:UploadPageViewModel.PendingIcon}"/>
+                                <TextBlock x:Name="PendingTile" Classes="tile" Foreground="{DynamicResource MInfo}" Text="{Binding Upload.Pending}"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </ToggleButton>
+                </Grid>
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+                    <TextBlock DockPanel.Dock="Right" Classes="muted" Text="{Binding Upload.Status}"/>
+                    <ProgressBar x:Name="OverallProgress" Value="{Binding Upload.OverallProgress}" Maximum="100" Height="10" Margin="0,0,16,0" VerticalAlignment="Center"/>
                 </DockPanel>
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                    <Button x:Name="RetryButton" DockPanel.Dock="Right" Content="Retry failed" Command="{Binding Upload.RetryFailedCommand}"/>
+                    <TextBlock Classes="h" Text="Files"/>
+                </DockPanel>
+                <!-- The files container; the log sits inside it, at its full width. -->
+                <Border Classes="card" Padding="0,4" ClipToBounds="True">
+                    <DockPanel>
+                        <Expander x:Name="LogExpander" DockPanel.Dock="Bottom" Header="Log" Margin="12,8,12,4"
+                                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsVisible="{Binding HasLog}">
+                            <v:LogPaneView DataContext="{Binding Log}"/>
+                        </Expander>
+                        <ScrollViewer>
+                            <ItemsControl Classes="files" ItemsSource="{Binding Upload.Files}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:FileRowViewModel">
+                                        <Grid ColumnDefinitions="26,*,96" MinHeight="26" Margin="12,0">
+                                            <PathIcon Classes="status" Classes.ok="{Binding IsSucceeded}" Classes.fail="{Binding IsFailed}" Classes.active="{Binding IsActive}"
+                                                      Classes.muted="{Binding IsMuted}" Data="{Binding IconData}" VerticalAlignment="Center" HorizontalAlignment="Left"/>
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,2">
+                                                <TextBlock Text="{Binding Path}" TextTrimming="CharacterEllipsis" Classes.muted="{Binding IsMuted}"/>
+                                                <TextBlock Text="{Binding Reason}" IsVisible="{Binding HasReason}" FontSize="11" Classes="muted" TextTrimming="CharacterEllipsis"/>
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="2" Text="{Binding OutcomeText}" VerticalAlignment="Center" Classes.muted="{Binding IsMuted}"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </DockPanel>
+                </Border>
+            </DockPanel>
+            </Grid>
+
+            <Border x:Name="HistoryPage" Margin="20" IsVisible="{Binding IsHistoryPage}">
+                <v:HistoryPageView DataContext="{Binding History}"/>
             </Border>
-        </DockPanel>
 
-        <Border x:Name="HistoryPage" Grid.Column="1" Margin="20" IsVisible="{Binding IsHistoryPage}">
-            <v:HistoryPageView DataContext="{Binding History}"/>
-        </Border>
-
-        <Border x:Name="SettingsPage" Grid.Column="1" Margin="20" IsVisible="{Binding IsSettingsPage}">
-            <v:SettingsView DataContext="{Binding Settings}"/>
-        </Border>
-        <Border x:Name="HelpPage" Grid.Column="1" Margin="20" IsVisible="{Binding IsHelpPage}">
-            <v:HelpView/>
-        </Border>
-    </Grid>
+            <Border x:Name="SettingsPage" Margin="20" IsVisible="{Binding IsSettingsPage}">
+                <v:SettingsView DataContext="{Binding Settings}"/>
+            </Border>
+            <Border x:Name="HelpPage" Margin="20" IsVisible="{Binding IsHelpPage}">
+                <v:HelpView/>
+            </Border>
+            </Grid>
+    </DockPanel>
 </Window>

@@ -53,10 +53,60 @@
         <Style Selector="Button.danger:disabled /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Opacity" Value="0.45"/>
         </Style>
+        <!-- Top-bar navigation, as .top-bar nav a in mires.css: muted text, a muted fill on hover, the accent fill for the current page. -->
+        <Style Selector="Button.nav">
+            <Setter Property="Padding" Value="12,8"/>
+            <Setter Property="CornerRadius" Value="10"/>
+        </Style>
+        <Style Selector="Button.nav.icon">
+            <Setter Property="Width" Value="40"/>
+            <Setter Property="Height" Value="40"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="Button.nav /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource MSecondary}"/>
+        </Style>
+        <Style Selector="Button.nav:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource MPopover}"/>
+            <Setter Property="Foreground" Value="{DynamicResource MForeground}"/>
+        </Style>
+        <Style Selector="Button.nav.active /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource MAccent}"/>
+            <Setter Property="Foreground" Value="{DynamicResource MAccentFg}"/>
+        </Style>
+        <!-- The Succeeded / Failed / Skipped / Pending tiles are toggle buttons: they look like cards, and a checked one has the accent border (its background is unchanged). -->
+        <Style Selector="ToggleButton.tile">
+            <Setter Property="Padding" Value="12"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        </Style>
+        <Style Selector="ToggleButton.tile /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource MCard}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource MBorder}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+        </Style>
+        <Style Selector="ToggleButton.tile:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource MPopover}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource MBorder}"/>
+        </Style>
+        <Style Selector="ToggleButton.tile:checked /template/ ContentPresenter#PART_ContentPresenter, ToggleButton.tile:checked:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="BorderBrush" Value="{DynamicResource MPrimary}"/>
+            <Setter Property="BorderThickness" Value="2"/>
+        </Style>
         <Style Selector="ProgressBar">
             <Setter Property="Foreground" Value="{DynamicResource MPrimary}"/>
             <Setter Property="Background" Value="{DynamicResource MBorder}"/>
         </Style>
+        <!-- The file list: a status icon per outcome (colour as well), and every other row striped. -->
+        <Style Selector="PathIcon.status"><Setter Property="Width" Value="16"/><Setter Property="Height" Value="16"/></Style>
+        <Style Selector="PathIcon.status.muted"><Setter Property="Foreground" Value="{DynamicResource MMuted}"/></Style>
+        <Style Selector="PathIcon.status.ok"><Setter Property="Foreground" Value="{DynamicResource MSuccess}"/></Style>
+        <Style Selector="PathIcon.status.fail"><Setter Property="Foreground" Value="{DynamicResource MDestructive}"/></Style>
+        <Style Selector="PathIcon.status.active"><Setter Property="Foreground" Value="{DynamicResource MPrimary}"/></Style>
+        <Style Selector="ItemsControl.files ContentPresenter:nth-child(2n)"><Setter Property="Background" Value="{DynamicResource MSunken}"/></Style>
         <Style Selector="Ellipse.dot"><Setter Property="Width" Value="10"/><Setter Property="Height" Value="10"/><Setter Property="Fill" Value="{DynamicResource MMuted}"/></Style>
         <Style Selector="Ellipse.dot.ok"><Setter Property="Fill" Value="{DynamicResource MSuccess}"/></Style>
         <Style Selector="Ellipse.dot.fail"><Setter Property="Fill" Value="{DynamicResource MDestructive}"/></Style>

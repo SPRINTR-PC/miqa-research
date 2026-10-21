@@ -11,6 +11,10 @@ using ReactiveUI;
 
 namespace MiresSftpUploader.ViewModels;
 
+/// <summary>Which outcomes the file list is narrowed to; <see cref="None"/> shows every file, otherwise a file shows if it matches any of the set flags.</summary>
+[Flags]
+public enum FileFilter { None = 0, Succeeded = 1, Failed = 2, Skipped = 4, Pending = 8 }
+
 /// <summary>
 /// The Upload page: the Sources and Destination in the sidebar, Start / Dry run / Scan / Cancel, and the live
 /// state of the current Run (tiles, overall progress, files). It talks to an <see cref="IUploaderRuntime"/>, so
@@ -31,7 +35,7 @@ public sealed class UploadPageViewModel : ViewModelBase
     private Guid? _lastRunId;
 
     private bool _isRunning;
-    private bool _failedOnly;
+    private FileFilter _filter;
     private bool _canRetry;
     private string _status = "Ready";
     private string _problems = "";
@@ -55,7 +59,7 @@ public sealed class UploadPageViewModel : ViewModelBase
 
     public ObservableCollection<SourceItemViewModel> Sources { get; } = [];
 
-    /// <summary>The files shown: all of the Run, or only the failed ones while <see cref="FailedOnly"/> is on.</summary>
+    /// <summary>The files shown: all of the Run, or only those matching <see cref="Filter"/>.</summary>
     public ObservableCollection<FileRowViewModel> Files { get; } = [];
 
     public ReactiveCommand<Unit, Unit> StartCommand { get; }
@@ -104,16 +108,28 @@ public sealed class UploadPageViewModel : ViewModelBase
         private set => this.RaiseAndSetIfChanged(ref _canRetry, value);
     }
 
-    public bool FailedOnly
+    /// <summary>The outcomes the file list is narrowed to. Each of the four tiles toggles its own flag: one click turns it on, another turns it off.</summary>
+    public FileFilter Filter
     {
-        get => _failedOnly;
+        get => _filter;
         set
         {
-            if (_failedOnly == value) return;
-            this.RaiseAndSetIfChanged(ref _failedOnly, value);
+            if (_filter == value) return;
+            this.RaiseAndSetIfChanged(ref _filter, value);
+            this.RaisePropertyChanged(nameof(FilterSucceeded));
+            this.RaisePropertyChanged(nameof(FilterFailed));
+            this.RaisePropertyChanged(nameof(FilterSkipped));
+            this.RaisePropertyChanged(nameof(FilterPending));
             RebuildFiles();
         }
     }
+
+    public bool FilterSucceeded { get => Filter.HasFlag(FileFilter.Succeeded); set => SetFilter(FileFilter.Succeeded, value); }
+    public bool FilterFailed { get => Filter.HasFlag(FileFilter.Failed); set => SetFilter(FileFilter.Failed, value); }
+    public bool FilterSkipped { get => Filter.HasFlag(FileFilter.Skipped); set => SetFilter(FileFilter.Skipped, value); }
+    public bool FilterPending { get => Filter.HasFlag(FileFilter.Pending); set => SetFilter(FileFilter.Pending, value); }
+
+    private void SetFilter(FileFilter filter, bool on) => Filter = on ? Filter | filter : Filter & ~filter;
 
     public string Status
     {
@@ -133,6 +149,12 @@ public sealed class UploadPageViewModel : ViewModelBase
     }
 
     public bool HasProblems => Problems.Length > 0;
+
+    /// <summary>The icons of the four tiles: the same as the ones in the file list.</summary>
+    public static string SucceededIcon => FileRowViewModel.IconFor(FileOutcome.Succeeded);
+    public static string FailedIcon => FileRowViewModel.IconFor(FileOutcome.Failed);
+    public static string SkippedIcon => FileRowViewModel.IconFor(FileOutcome.Skipped);
+    public static string PendingIcon => FileRowViewModel.IconFor(FileOutcome.Pending);
 
     public int Succeeded => Count(FileOutcome.Succeeded);
     public int Failed => Count(FileOutcome.Failed);
@@ -299,7 +321,12 @@ public sealed class UploadPageViewModel : ViewModelBase
         else if (!visible && wasVisible) Files.Remove(row);
     }
 
-    private bool IsVisible(FileRowViewModel row) => !_failedOnly || row.IsFailed;
+    private bool IsVisible(FileRowViewModel row) =>
+        _filter == FileFilter.None
+        || (_filter.HasFlag(FileFilter.Succeeded) && row.IsSucceeded)
+        || (_filter.HasFlag(FileFilter.Failed) && row.IsFailed)
+        || (_filter.HasFlag(FileFilter.Skipped) && row.Outcome == FileOutcome.Skipped)
+        || (_filter.HasFlag(FileFilter.Pending) && (row.Outcome == FileOutcome.Pending || row.IsActive));
 
     private void RebuildFiles()
     {

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reactive;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using MiresSftpUploader.Core;
 using ReactiveUI;
@@ -71,7 +72,7 @@ public sealed class SourceEditorViewModel : ViewModelBase
 
     public ReactiveCommand<Unit, Unit> BrowseCommand { get; }
 
-    public string Name { get => _name; set => Set(ref _name, value, nameof(RemotePathPlaceholder)); }
+    public string Name { get => _name; set => Set(ref _name, value, [nameof(RemotePathPlaceholder)]); }
     public string RemotePath { get => _remotePath; set => Set(ref _remotePath, value); }
     public string Path { get => _path; set => Set(ref _path, value); }
     public string Endpoint { get => _endpoint; set => Set(ref _endpoint, value); }
@@ -87,7 +88,7 @@ public sealed class SourceEditorViewModel : ViewModelBase
         set
         {
             if (_type == value) return;
-            Set(ref _type, value, nameof(IsDirectory), nameof(IsS3), nameof(TypeName));
+            Set(ref _type, value, [nameof(IsDirectory), nameof(IsS3), nameof(TypeName)]);
         }
     }
 
@@ -152,11 +153,11 @@ public sealed class SourceEditorViewModel : ViewModelBase
 
     private static bool IsManaged(string key) => Array.Exists(ManagedKeys, k => k.Equals(key, StringComparison.OrdinalIgnoreCase));
 
-    private void Set<T>(ref T field, T value, params string[] alsoRaise)
+    private void Set<T>(ref T field, T value, string[]? alsoRaise = null, [CallerMemberName] string? property = null)
     {
         if (EqualityComparer<T>.Default.Equals(field, value)) return;
-        this.RaiseAndSetIfChanged(ref field, value);
-        foreach (var name in alsoRaise) this.RaisePropertyChanged(name);
+        this.RaiseAndSetIfChanged(ref field, value, property);
+        foreach (var name in alsoRaise ?? []) this.RaisePropertyChanged(name);
         this.RaisePropertyChanged(nameof(IsChanged));
         Edited?.Invoke();
     }

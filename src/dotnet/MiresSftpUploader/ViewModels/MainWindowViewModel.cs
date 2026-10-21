@@ -9,7 +9,7 @@ namespace MiresSftpUploader.ViewModels;
 public enum AppPage { Upload, History, Settings, Help }
 
 /// <summary>
-/// The window: the sidebar (navigation, theme), the page shown in the main area, and the log pane. The Upload page
+/// The window: the top bar (navigation, theme), the page shown in the main area, and the log pane. The Upload page
 /// owns the Sources and the Run controls.
 /// </summary>
 public sealed class MainWindowViewModel : ViewModelBase

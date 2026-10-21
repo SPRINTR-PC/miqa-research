@@ -125,8 +125,12 @@ A setting currently supplied by an environment variable, or by Machine Config th
 _Avoid_: Read-only setting
 
 **Secret**:
-A setting that grants access (password, key passphrase, S3 secret key). Supplied only by environment variables, never displayed, never saved.
+A setting that grants access (password, key passphrase, S3 access key, S3 secret key). Supplied by an environment variable, which wins, or else by the account's Secret Store. Never displayed, never part of User Overrides or Machine Config.
 _Avoid_: Credential setting
+
+**Secret Store**:
+The per-account, encrypted record of Secrets, kept apart from the Upload State. Its values can be read only by the same account on the same machine; it guards against a copied or leaked file, not against someone already running as that account. A Secret that can no longer be decrypted counts as not set.
+_Avoid_: Vault, keychain, credential file
 
 **Host Key Fingerprint**:
 The pinned identity of the SFTP server. A connection to a server presenting a different one is refused.

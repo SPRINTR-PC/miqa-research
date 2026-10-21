@@ -5,6 +5,8 @@ using System.Reactive.Threading.Tasks;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Presenters;
+using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Media;
@@ -102,18 +104,40 @@ public class MainWindowSmokeTests
     }
 
     [AvaloniaFact]
-    public void The_sidebar_has_the_logo_Sources_Destination_and_the_Run_controls()
+    public void The_window_has_the_logo_Sources_Destination_the_Run_controls_and_the_top_bar()
     {
         var (window, _, _) = Create();
         window.Show();
 
         Assert.NotEmpty(window.GetVisualDescendants().OfType<MiresLogo>());
         var texts = window.GetVisualDescendants().OfType<TextBlock>().Select(t => t.Text).ToList();
-        Assert.Contains("MIRES SFTP Uploader", texts);
+        Assert.Contains("SFTP Uploader", texts);
         Assert.Contains("wsi", window.GetVisualDescendants().OfType<CheckBox>().Select(c => c.Content as string));
         Assert.Contains("sftp.mires.example:22", texts);
         foreach (var name in new[] { "StartButton", "DryRunButton", "ScanButton", "CancelButton", "ThemeButton", "SettingsButton", "HelpButton" })
             Assert.NotNull(Find<Button>(window, name));
+    }
+
+    [AvaloniaFact]
+    public void The_top_bar_highlights_the_button_of_the_page_shown_and_the_run_controls_belong_to_the_Upload_page()
+    {
+        var (window, vm, _) = Create();
+        window.Show();
+
+        void AssertOnly(string active, bool uploadPageVisible)
+        {
+            foreach (var name in new[] { "UploadButton", "HistoryButton", "SettingsButton", "HelpButton" })
+                Assert.Equal(name == active, Find<Button>(window, name).Classes.Contains("active"));
+            Assert.Equal(uploadPageVisible, Find<Grid>(window, "UploadPage").IsVisible);
+        }
+
+        AssertOnly("UploadButton", true);
+        vm.ShowHelpCommand.Execute().Subscribe();
+        AssertOnly("HelpButton", false);
+        vm.ShowSettingsCommand.Execute().Subscribe();
+        AssertOnly("SettingsButton", false);
+        vm.ShowUploadCommand.Execute().Subscribe();
+        AssertOnly("UploadButton", true);
     }
 
     [AvaloniaFact]
@@ -130,6 +154,55 @@ public class MainWindowSmokeTests
         Assert.Equal("1", Find<TextBlock>(window, "FailedTile").Text);
         Assert.Equal("0", Find<TextBlock>(window, "SkippedTile").Text);
         Assert.Equal("0", Find<TextBlock>(window, "PendingTile").Text);
+
+        foreach (var tile in new[] { "SucceededTile", "FailedTile", "SkippedTile", "PendingTile" })
+            Assert.NotNull(((Panel)Find<TextBlock>(window, tile).Parent!).Children.OfType<PathIcon>().Single().Data);
+    }
+
+    [AvaloniaFact]
+    public void Tiles_filter_the_files_several_at_a_time_and_clicking_one_again_clears_it()
+    {
+        var (window, vm, engine) = Create();
+        engine.Script.Add(new FileOutcomeChanged("wsi", "a", FileOutcome.Succeeded, null));
+        engine.Script.Add(new FileOutcomeChanged("wsi", "b", FileOutcome.Failed, "x"));
+        window.Show();
+        vm.Upload.StartCommand.Execute().Subscribe();
+        var failed = Find<TextBlock>(window, "FailedTile").FindAncestorOfType<ToggleButton>()!;
+        var succeeded = Find<TextBlock>(window, "SucceededTile").FindAncestorOfType<ToggleButton>()!;
+
+        failed.IsChecked = true;
+        Assert.Equal(["b"], vm.Upload.Files.Select(f => f.Path));
+
+        succeeded.IsChecked = true;
+        Assert.True(failed.IsChecked);
+        Assert.Equal(["a", "b"], vm.Upload.Files.Select(f => f.Path));
+
+        failed.IsChecked = false;
+        Assert.Equal(["a"], vm.Upload.Files.Select(f => f.Path));
+
+        succeeded.IsChecked = false;
+        Assert.Equal(["a", "b"], vm.Upload.Files.Select(f => f.Path));
+    }
+
+    [AvaloniaFact]
+    public void The_file_rows_have_an_icon_per_outcome_and_every_other_row_is_striped()
+    {
+        var (window, vm, engine) = Create();
+        foreach (var (name, outcome) in new[] { ("a", FileOutcome.Succeeded), ("b", FileOutcome.Failed), ("c", FileOutcome.Skipped), ("d", FileOutcome.Pending) })
+            engine.Script.Add(new FileOutcomeChanged("wsi", name, outcome, outcome == FileOutcome.Failed ? "x" : null));
+        window.Show();
+        vm.Upload.StartCommand.Execute().Subscribe();
+        Dispatcher.UIThread.RunJobs();
+        window.UpdateLayout();
+
+        var icons = window.GetVisualDescendants().OfType<PathIcon>().Where(i => i.Classes.Contains("status")).ToList();
+        Assert.True(icons.Count == 4, $"files={vm.Upload.Files.Count} icons={icons.Count}");
+        Assert.All(icons, i => Assert.NotNull(i.Data));
+        Assert.Equal(4, icons.Select(i => ((FileRowViewModel)i.DataContext!).IconData).Distinct().Count());
+
+        var rows = window.GetVisualDescendants().OfType<ContentPresenter>().Where(c => c.Child is Grid { MinHeight: 26 }).ToList();
+        Assert.Equal(4, rows.Count);
+        Assert.Equal([false, true, false, true], rows.Select(r => r.Background is not null));
     }
 
     [AvaloniaFact]

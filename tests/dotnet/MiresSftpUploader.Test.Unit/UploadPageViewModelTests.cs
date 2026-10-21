@@ -109,17 +109,37 @@ public sealed class UploadPageViewModelTests
     }
 
     [TestMethod]
-    public async Task Failed_only_shows_just_the_failed_files_and_follows_later_changes()
+    public async Task A_filter_shows_just_the_matching_files_and_clicking_it_again_clears_it()
     {
-        _engine.Script.AddRange([File("a", FileOutcome.Succeeded), File("b", FileOutcome.Failed, reason: "x"), File("c", FileOutcome.Succeeded)]);
+        _engine.Script.AddRange([File("a", FileOutcome.Succeeded), File("b", FileOutcome.Failed, reason: "x"), File("c", FileOutcome.Succeeded), File("d", FileOutcome.Skipped, reason: "same")]);
         var page = NewPage();
         await Start(page);
 
-        page.FailedOnly = true;
+        page.FilterFailed = true;
         CollectionAssert.AreEqual(new[] { "b" }, page.Files.Select(f => f.Path).ToArray());
 
-        page.FailedOnly = false;
-        CollectionAssert.AreEqual(new[] { "a", "b", "c" }, page.Files.Select(f => f.Path).ToArray());
+        page.FilterFailed = false;
+        CollectionAssert.AreEqual(new[] { "a", "b", "c", "d" }, page.Files.Select(f => f.Path).ToArray());
+    }
+
+    [TestMethod]
+    public async Task Several_filters_can_be_active_at_once_and_each_is_cleared_on_its_own()
+    {
+        _engine.Script.AddRange([File("a", FileOutcome.Succeeded), File("b", FileOutcome.Failed, reason: "x"), File("d", FileOutcome.Skipped, reason: "same")]);
+        var page = NewPage();
+        await Start(page);
+
+        page.FilterFailed = true;
+        page.FilterSkipped = true;
+        Assert.IsTrue(page.FilterFailed);
+        CollectionAssert.AreEqual(new[] { "b", "d" }, page.Files.Select(f => f.Path).ToArray());
+
+        page.FilterFailed = false;
+        Assert.IsTrue(page.FilterSkipped);
+        CollectionAssert.AreEqual(new[] { "d" }, page.Files.Select(f => f.Path).ToArray());
+
+        page.FilterSkipped = false;
+        CollectionAssert.AreEqual(new[] { "a", "b", "d" }, page.Files.Select(f => f.Path).ToArray());
     }
 
     [TestMethod]
