@@ -99,8 +99,15 @@ public sealed record SaveCheck(IReadOnlyList<ConfigError> Errors, IReadOnlyList<
     public bool Succeeded => Errors.Count == 0;
 }
 
-public sealed record ConfigurationLocations(string MachineConfigPath, string UserOverridesPath, IReadOnlyDictionary<string, string?> Environment)
+public sealed record ConfigurationLocations(
+    string MachineConfigPath,
+    string UserOverridesPath,
+    IReadOnlyDictionary<string, string?> Environment,
+    string? SecretStorePath = null,
+    IMachineIdentity? Identity = null)
 {
+    public const string SecretStoreFileName = "secrets.db";
+
     public const string MachineFileName = "appsettings.json";
     public const string UserFileName = "appsettings.user.json";
 
@@ -113,7 +120,9 @@ public sealed record ConfigurationLocations(string MachineConfigPath, string Use
         return new ConfigurationLocations(
             Path.Combine(AppContext.BaseDirectory, MachineFileName),
             Path.Combine(UserDataDirectory(), UserFileName),
-            env);
+            env,
+            Path.Combine(UserDataDirectory(), SecretStoreFileName),
+            new OsMachineIdentity());
     }
 
     public static string UserDataDirectory()
@@ -340,7 +349,20 @@ public sealed class Configuration(ConfigurationLocations locations)
     }
 
     /// <summary>The Secrets in the environment. Hand them to the code that connects; never log them.</summary>
-    public Secrets LoadSecrets() => Secrets.FromEnvironment(locations.Environment);
+    public Secrets LoadSecrets()
+    {
+        if (locations.SecretStorePath is null || locations.Identity is null || !File.Exists(locations.SecretStorePath))
+            return Secrets.FromEnvironment(locations.Environment);
+        try
+        {
+            using var store = SecretStore.Open(locations.SecretStorePath, locations.Identity);
+            return Secrets.FromEnvironmentAndStore(locations.Environment, store.List().Select(s => (s.Name, store.Get(s.Name))));
+        }
+        catch (SecretStoreUnavailableException e)
+        {
+            return Secrets.FromEnvironmentWithoutStore(locations.Environment, e.Message);
+        }
+    }
 
     // ---- layers ----
 
