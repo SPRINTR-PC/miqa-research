@@ -1,0 +1,127 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MiresSftpUploader.ViewModels"
+             x:Class="MiresSftpUploader.Views.HistoryPageView" x:DataType="vm:HistoryPageViewModel">
+    <!-- Master-detail (design H1): the Runs list on the left, each expandable to its outcomes; the selected Run in full on the right. -->
+    <UserControl.Resources>
+        <DataTemplate x:Key="OutcomeRow" x:DataType="vm:HistoryFileRow">
+            <Grid ColumnDefinitions="22,*,110" Margin="0,4">
+                <Ellipse Classes="dot" Classes.ok="{Binding IsSucceeded}" Classes.fail="{Binding IsFailed}" Classes.active="{Binding IsActive}"/>
+                <StackPanel Grid.Column="1" Spacing="1">
+                    <TextBlock Text="{Binding Path}" TextTrimming="CharacterEllipsis" Classes.muted="{Binding IsMuted}"/>
+                    <TextBlock Text="{Binding ReasonText}" FontSize="11" Classes="muted" TextTrimming="CharacterEllipsis"/>
+                </StackPanel>
+                <TextBlock Grid.Column="2" Text="{Binding OutcomeText}" VerticalAlignment="Center"/>
+            </Grid>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <Grid ColumnDefinitions="360,*">
+        <DockPanel Margin="0,0,12,0">
+            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                <Button x:Name="RefreshButton" DockPanel.Dock="Right" Content="Refresh" Command="{Binding RefreshCommand}"/>
+                <TextBlock Classes="h" Text="History" VerticalAlignment="Center"/>
+            </DockPanel>
+            <ListBox x:Name="FilterList" DockPanel.Dock="Top" Margin="0,0,0,8" ItemsSource="{x:Static vm:HistoryPageViewModel.FilterNames}"
+                     SelectedIndex="{Binding FilterIndex}">
+                <ListBox.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="4"/></ItemsPanelTemplate></ListBox.ItemsPanel>
+            </ListBox>
+            <TextBlock x:Name="HistoryNotice" DockPanel.Dock="Bottom" Classes="muted" TextWrapping="Wrap" Margin="0,8,0,0" Text="{Binding Notice}" IsVisible="{Binding HasNotice}"/>
+            <TextBlock DockPanel.Dock="Top" Classes="muted" Text="No Runs." IsVisible="{Binding IsEmpty}"/>
+            <ListBox x:Name="RunList" ItemsSource="{Binding Runs}" SelectedItem="{Binding Selected}">
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:RunItemViewModel">
+                        <StackPanel Spacing="3" Margin="0,4">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Ellipse Classes="dot" VerticalAlignment="Center" Classes.ok="{Binding IsOk}" Classes.fail="{Binding NeedsAttention}" Classes.active="{Binding IsLive}"/>
+                                <TextBlock FontWeight="SemiBold" Text="{Binding StatusText}"/>
+                                <TextBlock Classes="mono muted" VerticalAlignment="Center" Text="{Binding ShortId}"/>
+                                <TextBlock Classes="muted" Text="{Binding StartedText}"/>
+                            </StackPanel>
+                            <TextBlock Classes="muted" TextTrimming="CharacterEllipsis"><Run Text="{Binding Who}"/><Run Text=" · "/><Run Text="{Binding ModeText}"/></TextBlock>
+                            <TextBlock Text="{Binding CountsText}"/>
+                            <ProgressBar Value="{Binding Progress}" Maximum="100" Height="6" IsVisible="{Binding IsLive}"/>
+                            <Expander Header="Outcomes" IsExpanded="{Binding IsExpanded}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="4,0">
+                                <ItemsControl ItemsSource="{Binding VisibleFiles}" ItemTemplate="{StaticResource OutcomeRow}"/>
+                            </Expander>
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </DockPanel>
+
+        <!-- Detail -->
+        <ContentControl x:Name="DetailHost" Grid.Column="1" Content="{Binding Selected}">
+            <ContentControl.DataTemplates>
+                <DataTemplate x:DataType="vm:RunItemViewModel">
+                    <DockPanel>
+                        <StackPanel DockPanel.Dock="Top" Spacing="10">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <Ellipse Classes="dot" Classes.ok="{Binding IsOk}" Classes.fail="{Binding NeedsAttention}" Classes.active="{Binding IsLive}"/>
+                                <TextBlock FontSize="20" FontWeight="Bold" Text="{Binding Title}"/>
+                                <TextBlock x:Name="DetailStatus" VerticalAlignment="Center" Text="{Binding StatusText}"/>
+                                <TextBlock Classes="muted" VerticalAlignment="Center" Text="{Binding ExitText}"/>
+                            </StackPanel>
+                            <TextBlock Classes="muted" TextWrapping="Wrap"><Run Text="{Binding Who}"/><Run Text=" · "/><Run Text="{Binding ModeText}"/><Run Text=" · started "/><Run Text="{Binding StartedText}"/><Run Text=" · "/><Run Text="{Binding DurationText}"/></TextBlock>
+
+                            <Border x:Name="LiveBanner" Classes="card" BorderBrush="{DynamicResource MInfo}" IsVisible="{Binding IsLiveOthers}">
+                                <StackPanel Spacing="4">
+                                    <TextBlock TextWrapping="Wrap"><Run FontWeight="SemiBold" Text="Live view of "/><Run FontWeight="SemiBold" Text="{Binding StartedBy}"/><Run Text="'s Run. It is read-only: you can watch it or ask it to stop."/></TextBlock>
+                                    <TextBlock Classes="muted" Text="{Binding HeartbeatText, StringFormat='Last heartbeat {0}'}"/>
+                                </StackPanel>
+                            </Border>
+                            <Border x:Name="CancelRequestedBanner" Classes="card" BorderBrush="{DynamicResource MWarning}" IsVisible="{Binding ShowCancelRequested}">
+                                <TextBlock TextWrapping="Wrap" Text="Cancel requested. The Run stops at its next cancel poll; in-flight .part files are left on the server."/>
+                            </Border>
+                            <Border x:Name="AbandonedBanner" Classes="card" BorderBrush="{DynamicResource MWarning}" IsVisible="{Binding IsAbandoned}">
+                                <TextBlock TextWrapping="Wrap" Text="Abandoned Run: the process stopped without finishing (its heartbeat went stale). Unfinished files are marked Failed and are retried by the next Run; use Retry failed to start that now."/>
+                            </Border>
+                            <Border Classes="card" IsVisible="{Binding IsDryRun}">
+                                <TextBlock TextWrapping="Wrap" Text="Dry Run: nothing was uploaded, archived or recorded."/>
+                            </Border>
+                            <StackPanel Spacing="4" IsVisible="{Binding IsLive}">
+                                <ProgressBar Value="{Binding Progress}" Maximum="100" Height="10"/>
+                                <TextBlock Classes="muted" Text="{Binding ProgressText}"/>
+                            </StackPanel>
+
+                            <Grid ColumnDefinitions="*,*,*,*">
+                                <Border Classes="card" Margin="0,0,8,0"><StackPanel>
+                                    <TextBlock Classes="muted" Text="Succeeded"/>
+                                    <TextBlock Classes="tile" Foreground="{DynamicResource MSuccess}" Text="{Binding Succeeded}"/>
+                                </StackPanel></Border>
+                                <Border Grid.Column="1" Classes="card" Margin="0,0,8,0"><StackPanel>
+                                    <TextBlock Classes="muted" Text="Failed"/>
+                                    <TextBlock Classes="tile" Foreground="{DynamicResource MDestructive}" Text="{Binding Failed}"/>
+                                </StackPanel></Border>
+                                <Border Grid.Column="2" Classes="card" Margin="0,0,8,0"><StackPanel>
+                                    <TextBlock Classes="muted" Text="{Binding TooRecent, StringFormat='Skipped (incl. {0} Too Recent)'}"/>
+                                    <TextBlock Classes="tile" Text="{Binding Skipped}"/>
+                                </StackPanel></Border>
+                                <Border Grid.Column="3" Classes="card"><StackPanel>
+                                    <TextBlock Classes="muted" Text="Moved away"/>
+                                    <TextBlock Classes="tile" Foreground="{DynamicResource MInfo}" Text="{Binding MovedAway}"/>
+                                </StackPanel></Border>
+                            </Grid>
+
+                            <DockPanel>
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
+                                    <Button x:Name="HistoryCancelButton" Classes="danger" Content="{Binding CancelLabel}" Command="{Binding CancelCommand}" IsVisible="{Binding IsLive}"/>
+                                    <Button x:Name="HistoryRetryButton" Classes="primary" Content="Retry failed" Command="{Binding RetryCommand}"/>
+                                    <Button x:Name="ExportJsonButton" Content="Export JSON" Command="{Binding ExportJsonCommand}"/>
+                                    <Button x:Name="ExportCsvButton" Content="Export CSV" Command="{Binding ExportCsvCommand}"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Classes="h" Text="Outcomes" VerticalAlignment="Center"/>
+                                    <ToggleButton x:Name="HistoryFailedOnly" Content="Failed only" IsChecked="{Binding FailedOnly}"/>
+                                </StackPanel>
+                            </DockPanel>
+                        </StackPanel>
+                        <Border Classes="card" Padding="12,6" Margin="0,10,0,0">
+                            <ScrollViewer><ItemsControl ItemsSource="{Binding VisibleFiles}" ItemTemplate="{StaticResource OutcomeRow}"/></ScrollViewer>
+                        </Border>
+                    </DockPanel>
+                </DataTemplate>
+            </ContentControl.DataTemplates>
+        </ContentControl>
+    </Grid>
+</UserControl>
