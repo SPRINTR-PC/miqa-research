@@ -28,7 +28,7 @@ public sealed class RedactedReasonsTests
         RemoteAccess = RemoteAccess.ReadWrite,
         Redactor = Redactor.From(Secrets.FromEnvironment(new Dictionary<string, string?> { ["MIRES_SFTP_PASSWORD"] = Secret })),
         Retry = new RetrySettings { MaxAttempts = 1, BaseDelay = TimeSpan.Zero, MaxDelay = TimeSpan.Zero },
-        State = new StateSettings { Path = Path.Combine(_dir, "state.db") },
+        State = new StateSettings { AccessGroup = TestAccessGroup.Name, Path = Path.Combine(_dir, "state.db") },
         Report = new ReportSettings { Directory = Path.Combine(_dir, "reports") },
     };
 

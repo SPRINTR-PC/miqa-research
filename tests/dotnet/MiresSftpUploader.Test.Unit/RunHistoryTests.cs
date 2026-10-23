@@ -25,7 +25,7 @@ public sealed class RunHistoryTests
         RemoteRoot = "/upload",
         Destination = "sftp.example:22",
         Retry = new RetrySettings { MaxAttempts = 1, BaseDelay = TimeSpan.Zero, MaxDelay = TimeSpan.Zero },
-        State = new StateSettings { Path = DbPath, CancelPollInterval = TimeSpan.FromMilliseconds(20), WatchInterval = TimeSpan.FromMilliseconds(20) },
+        State = new StateSettings { AccessGroup = TestAccessGroup.Name, Path = DbPath, CancelPollInterval = TimeSpan.FromMilliseconds(20), WatchInterval = TimeSpan.FromMilliseconds(20) },
     };
 
     private Engine NewEngine(FakeRemote remote, ISource source, TimeProvider? time = null, EngineSettings? settings = null) =>

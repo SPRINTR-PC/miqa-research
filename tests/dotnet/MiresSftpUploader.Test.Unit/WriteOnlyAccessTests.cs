@@ -28,7 +28,7 @@ public sealed class WriteOnlyAccessTests
         UploadStrategy = strategy,
         Verification = verification ?? new VerificationSettings(),
         Retry = new RetrySettings { MaxAttempts = 2, BaseDelay = TimeSpan.Zero, MaxDelay = TimeSpan.Zero },
-        State = new StateSettings { Path = withState ? Path.Combine(_dir, "state.db") : null },
+        State = new StateSettings { AccessGroup = TestAccessGroup.Name, Path = withState ? Path.Combine(_dir, "state.db") : null },
     };
 
     private static (Engine Engine, CapturingLoggerProvider Log) NewEngine(EngineSettings settings, FakeRemote remote, params ISource[] sources)

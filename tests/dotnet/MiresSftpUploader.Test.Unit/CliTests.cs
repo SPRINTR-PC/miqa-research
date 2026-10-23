@@ -19,7 +19,7 @@ public sealed class CliTests
     {
         var stdout = new StringWriter();
         var stderr = new StringWriter();
-        var handled = Cli.TryRun(args, "1.2.3", stdout, stderr, out var exitCode, state: new StateSettings { Path = databasePath });
+        var handled = Cli.TryRun(args, "1.2.3", stdout, stderr, out var exitCode, state: new StateSettings { AccessGroup = TestAccessGroup.Name, Path = databasePath });
         return (handled, exitCode, stdout.ToString(), stderr.ToString());
     }
 
@@ -31,7 +31,7 @@ public sealed class CliTests
         {
             RemoteRoot = "/upload", Destination = "h:22",
             Retry = new RetrySettings { MaxAttempts = 1, BaseDelay = TimeSpan.Zero, MaxDelay = TimeSpan.Zero },
-            State = new StateSettings { Path = db },
+            State = new StateSettings { AccessGroup = TestAccessGroup.Name, Path = db },
         };
         var remote = new FakeRemote();
         var source = new FakeSource("scans").Add("a.txt", "a");
@@ -82,7 +82,7 @@ public sealed class CliTests
         var csv = InvokeWithState(db, "--export-run", failing.ToString(), "--report-format", "csv");
 
         Assert.AreEqual(0, json.ExitCode);
-        Assert.AreEqual(new RunHistory(new StateSettings { Path = db }, TimeProvider.System).Export(failing, ReportFormat.Json), json.Out);
+        Assert.AreEqual(new RunHistory(new StateSettings { AccessGroup = TestAccessGroup.Name, Path = db }, TimeProvider.System).Export(failing, ReportFormat.Json), json.Out);
         StringAssert.StartsWith(csv.Out, "RunId,StartedAt,");
     }
 

@@ -29,7 +29,7 @@ public sealed class UploadStrategyTests
         UploadStrategy = strategy,
         Verification = verification ?? new VerificationSettings(),
         Retry = new RetrySettings { MaxAttempts = 2, BaseDelay = TimeSpan.Zero, MaxDelay = TimeSpan.Zero },
-        State = new StateSettings { Path = Path.Combine(_dir, "state.db") },
+        State = new StateSettings { AccessGroup = TestAccessGroup.Name, Path = Path.Combine(_dir, "state.db") },
         Archive = (archive ?? new ArchiveConfig()) with { StagingPath = Path.Combine(_dir, "staging"), MinFreeSpaceBytes = 0 },
     };
 

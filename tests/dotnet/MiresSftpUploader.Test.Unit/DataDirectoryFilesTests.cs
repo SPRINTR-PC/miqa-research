@@ -29,7 +29,7 @@ public sealed class DataDirectoryFilesTests
 
     private async Task RunOnce()
     {
-        var settings = new EngineSettings { Destination = "sftp.example:22", State = new StateSettings { Path = DataDirectory.DatabasePath(_dir) } };
+        var settings = new EngineSettings { Destination = "sftp.example:22", State = new StateSettings { AccessGroup = TestAccessGroup.Name, Path = DataDirectory.DatabasePath(_dir) } };
         var engine = new Engine(new FakeRemote(), [new FakeSource("scans").Add("a.txt", "alpha")], settings,
             NullLogger<Engine>.Instance, TimeProvider.System);
         var result = await engine.RunAsync(new RunOptions(), new Progress<RunEvent>(), CancellationToken.None);

@@ -110,6 +110,9 @@ public sealed class SettingsPageViewModel : ViewModelBase
     public ObservableCollection<SettingsGroupViewModel> Groups { get; } = [];
     public ObservableCollection<SourceEditorViewModel> Sources { get; } = [];
 
+    /// <summary>The global Archive Rules, tried after each Source's own.</summary>
+    public ArchiveRulesViewModel ArchiveRules { get; private set; } = new([], locked: false);
+
     public static IReadOnlyList<string> SourceTypes { get; } = ["Directory", "S3"];
 
     /// <summary>Errors that belong to no field, one per line.</summary>
@@ -222,6 +225,10 @@ public sealed class SettingsPageViewModel : ViewModelBase
         foreach (var entry in _load.SourceEntries())
             AttachSource(new SourceEditorViewModel(entry, SourcesLocked, PickFolderAsync, RemoteRoot));
         _sourceCount = Sources.Count;
+
+        ArchiveRules = new ArchiveRulesViewModel(_load.ListEntries("Archive:Rules"), _load.Setting("Archive:Rules").Locked);
+        ArchiveRules.Edited += Revalidate;
+        this.RaisePropertyChanged(nameof(ArchiveRules));
 
         RefreshSecrets();
 
@@ -404,6 +411,7 @@ public sealed class SettingsPageViewModel : ViewModelBase
             source.SecretStatus = SecretStatusOf(source);
             source.RefreshPlaceholder();
         }
+        ArchiveRules.Error = "";
         OtherErrors.Clear();
         Warnings.Clear();
 
@@ -427,6 +435,7 @@ public sealed class SettingsPageViewModel : ViewModelBase
         {
             if (error.Key is not null && FieldFor(error.Key) is { } field) field.Error ??= error.Message;
             else if (SourceFor(error.Key, out var row, out var rest)) row.Error = Join(row.Error, $"{rest}: {error.Message}");
+            else if (error.Key?.StartsWith("Archive:Rules", StringComparison.OrdinalIgnoreCase) == true) ArchiveRules.Error = Join(ArchiveRules.Error, error.ToString());
             else OtherErrors.Add(error.ToString());
         }
         foreach (var warning in warnings)
@@ -438,7 +447,7 @@ public sealed class SettingsPageViewModel : ViewModelBase
         UpdateNotes();
         CheckDataDirectory(force: false);
         CheckStaging();
-        HasErrors = Fields.Any(f => f.HasError) || Sources.Any(r => r.HasError) || OtherErrors.Count > 0;
+        HasErrors = Fields.Any(f => f.HasError) || Sources.Any(r => r.HasError) || ArchiveRules.HasError || OtherErrors.Count > 0;
         HasChanges = changes.Count > 0;
         SaveMessage = "";
     }
@@ -492,6 +501,15 @@ public sealed class SettingsPageViewModel : ViewModelBase
                 for (var i = 0; i < Sources.Count; i++)
                     foreach (var (key, value) in Sources[i].ToEntry())
                         changes[$"Sources:{i}:{key}"] = value;
+            }
+        }
+        if (ArchiveRules.IsChanged)
+        {
+            if (ArchiveRules.Rules.Count == 0) changes["Archive:Rules"] = "[]";
+            else
+            {
+                changes["Archive:Rules"] = null;
+                foreach (var (key, value) in ArchiveRules.ToFlat("Archive:Rules")) changes[key] = value;
             }
         }
         return changes;

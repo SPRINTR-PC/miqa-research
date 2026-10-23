@@ -56,15 +56,24 @@ public sealed record LoadResult
     /// The effective settings of each Source as flat keys relative to the Source (<c>Name</c>, <c>Ignore:Files:0</c>,
     /// <c>AfterUpload:OnSuccess:Path</c>), in list order. Lets the Settings screen rewrite the list without losing the keys it does not edit.
     /// </summary>
-    public IReadOnlyList<IReadOnlyDictionary<string, string>> SourceEntries()
+    public IReadOnlyList<IReadOnlyDictionary<string, string>> SourceEntries() => ListEntries("Sources");
+
+    /// <summary>
+    /// The effective elements of a list of objects such as <c>Archive:Rules</c> as flat keys relative to each element
+    /// (<c>Name</c>, <c>Pattern</c>), in list order.
+    /// </summary>
+    public IReadOnlyList<IReadOnlyDictionary<string, string>> ListEntries(string listKey)
     {
+        var depth = listKey.Split(':').Length;
+        var prefix = listKey + ":";
         var entries = new SortedDictionary<int, Dictionary<string, string>>();
         foreach (var (key, value) in Values)
         {
+            if (!key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
             var segments = key.Split(':');
-            if (segments.Length < 3 || !segments[0].Equals("Sources", StringComparison.OrdinalIgnoreCase) || !int.TryParse(segments[1], out var index)) continue;
+            if (segments.Length < depth + 2 || !int.TryParse(segments[depth], out var index)) continue;
             if (!entries.TryGetValue(index, out var entry)) entries[index] = entry = new(StringComparer.OrdinalIgnoreCase);
-            entry[string.Join(':', segments[2..])] = value;
+            entry[string.Join(':', segments[(depth + 1)..])] = value;
         }
         return entries.Values.Select(e => (IReadOnlyDictionary<string, string>)e).ToList();
     }

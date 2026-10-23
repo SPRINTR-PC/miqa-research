@@ -26,7 +26,7 @@ public sealed class RetryTests
         RemoteRoot = "/upload",
         Destination = "sftp.example:22",
         Retry = new RetrySettings { MaxAttempts = 1, BaseDelay = TimeSpan.Zero, MaxDelay = TimeSpan.Zero },
-        State = new StateSettings { Path = statePath == "" ? DbPath : statePath },
+        State = new StateSettings { AccessGroup = TestAccessGroup.Name, Path = statePath == "" ? DbPath : statePath },
     };
 
     private static Task<RunResult> Run(EngineSettings settings, FakeRemote remote, FakeSource source, RunOptions? options = null) =>

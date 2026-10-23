@@ -25,7 +25,7 @@ public sealed class VerificationTests
         RemoteRoot = "/upload",
         Destination = "sftp.example:22",
         Retry = new RetrySettings { MaxAttempts = attempts, BaseDelay = TimeSpan.Zero, MaxDelay = TimeSpan.Zero },
-        State = withState ? new StateSettings { Path = Path.Combine(_dir, "data", "state.db") } : new StateSettings(),
+        State = withState ? new StateSettings { AccessGroup = TestAccessGroup.Name, Path = Path.Combine(_dir, "data", "state.db") } : new StateSettings(),
         Archive = new ArchiveConfig { StagingPath = Path.Combine(_dir, "staging") },
         Verification = new VerificationSettings
         {

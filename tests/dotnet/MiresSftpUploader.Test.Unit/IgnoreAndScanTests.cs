@@ -125,7 +125,7 @@ public sealed class IgnoreAndScanTests
         var settings = Settings() with
         {
             Ignore = new IgnoreConfig { UseDefaults = false },
-            State = new StateSettings { Path = Path.Combine(Path.GetTempPath(), "mires-ignore-" + Guid.NewGuid().ToString("N"), "mires.db") },
+            State = new StateSettings { AccessGroup = TestAccessGroup.Name, Path = Path.Combine(Path.GetTempPath(), "mires-ignore-" + Guid.NewGuid().ToString("N"), "mires.db") },
         };
 
         var (result, _) = await RunAsync(remote, settings, null, source);

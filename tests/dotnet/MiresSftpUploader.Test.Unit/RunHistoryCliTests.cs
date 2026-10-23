@@ -14,7 +14,11 @@ public sealed class RunHistoryCliTests : ConfigurationTestBase
         Directory.CreateDirectory(DataDir);
         File.WriteAllText(Path.Combine(DataDir, "a.txt"), "alpha");
         var machine = ValidMachine();
-        machine["State"] = new System.Text.Json.Nodes.JsonObject { ["Path"] = Path.Combine(Dir, "shared") };
+        machine["State"] = new System.Text.Json.Nodes.JsonObject
+        {
+            ["Path"] = Path.Combine(Dir, "shared"),
+            ["AccessGroup"] = TestAccessGroup.Name,
+        };
         File.WriteAllText(MachinePath, machine.ToJsonString());
 
         var cli = CliOptions.Parse(["--headless"]).Options!;

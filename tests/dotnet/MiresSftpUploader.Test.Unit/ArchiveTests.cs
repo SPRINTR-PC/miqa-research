@@ -33,7 +33,7 @@ public sealed class ArchiveTests
         RemoteRoot = "/upload",
         Destination = "sftp.example:22",
         Retry = new RetrySettings { MaxAttempts = 1, BaseDelay = TimeSpan.Zero, MaxDelay = TimeSpan.Zero },
-        State = withState ? new StateSettings { Path = DbPath } : new StateSettings(),
+        State = withState ? new StateSettings { AccessGroup = TestAccessGroup.Name, Path = DbPath } : new StateSettings(),
         Archive = (archive ?? new ArchiveConfig()) with { StagingPath = StagingRoot, MinFreeSpaceBytes = minFree },
         Scan = scan ?? new ScanConfig(),
     };

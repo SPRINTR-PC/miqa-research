@@ -11,13 +11,15 @@ namespace MiresSftpUploader.ViewModels;
 
 /// <summary>
 /// One Source being edited on the Settings page. The fields adapt to <see cref="Type"/>; the settings the page does not edit
-/// (Ignore Rules, Archive Rules, Post-upload Move, scan limits) travel in <see cref="Extras"/> and are saved back unchanged.
+/// (Ignore Rules, Post-upload Move, scan limits) travel in <see cref="Extras"/> and are saved back unchanged.
 /// </summary>
 public sealed class SourceEditorViewModel : ViewModelBase
 {
     /// <summary>The keys of a Source the editor owns; everything else is kept as it was.</summary>
     internal static readonly string[] ManagedKeys =
         ["Name", "Type", "Enabled", "RemotePath", "Path", "Endpoint", "Bucket", "Prefix", "Region", "ForcePathStyle"];
+
+    private const string ArchiveRulesKey = "ArchiveRules";
 
     private string _name = "";
     private SourceType _type;
@@ -35,7 +37,7 @@ public sealed class SourceEditorViewModel : ViewModelBase
 
     internal SourceEditorViewModel(IReadOnlyDictionary<string, string> entry, bool locked, Func<Task<string?>> pickFolder, Func<string> remoteRoot)
     {
-        Extras = entry.Where(kv => !IsManaged(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
+        Extras = entry.Where(kv => !IsManaged(kv.Key) && !kv.Key.StartsWith(ArchiveRulesKey + ":", StringComparison.OrdinalIgnoreCase)).ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
         IsLocked = locked;
         _remoteRootAccessor = remoteRoot;
         string Get(string key) => entry.TryGetValue(key, out var v) ? v : "";
@@ -49,6 +51,12 @@ public sealed class SourceEditorViewModel : ViewModelBase
         _prefix = Get("Prefix");
         _region = Get("Region");
         _forcePathStyle = string.Equals(Get("ForcePathStyle"), "true", StringComparison.OrdinalIgnoreCase);
+        ArchiveRules = new ArchiveRulesViewModel(RuleEntries(entry), locked);
+        ArchiveRules.Edited += () =>
+        {
+            this.RaisePropertyChanged(nameof(IsChanged));
+            Edited?.Invoke();
+        };
         Original = Snapshot();
         BrowseCommand = ReactiveCommand.CreateFromTask(async () =>
         {
@@ -61,6 +69,22 @@ public sealed class SourceEditorViewModel : ViewModelBase
         new(new Dictionary<string, string> { ["Type"] = "Directory" }, locked: false, pickFolder, remoteRoot) { Original = "" };
 
     private readonly Func<string> _remoteRootAccessor;
+
+    /// <summary>This Source's own Archive Rules, tried before the global ones.</summary>
+    public ArchiveRulesViewModel ArchiveRules { get; }
+
+    private static IEnumerable<IReadOnlyDictionary<string, string>> RuleEntries(IReadOnlyDictionary<string, string> entry)
+    {
+        var rules = new SortedDictionary<int, Dictionary<string, string>>();
+        foreach (var (key, value) in entry)
+        {
+            var parts = key.Split(':', 3);
+            if (parts.Length != 3 || !parts[0].Equals(ArchiveRulesKey, StringComparison.OrdinalIgnoreCase) || !int.TryParse(parts[1], out var index)) continue;
+            if (!rules.TryGetValue(index, out var rule)) rules[index] = rule = new(StringComparer.OrdinalIgnoreCase);
+            rule[parts[2]] = value;
+        }
+        return rules.Values;
+    }
 
     internal IReadOnlyDictionary<string, string> Extras { get; }
     internal string Original { get; private set; }
@@ -149,6 +173,7 @@ public sealed class SourceEditorViewModel : ViewModelBase
             Put("Region", Region);
             if (ForcePathStyle) entry["ForcePathStyle"] = "true";
         }
+        foreach (var (key, value) in ArchiveRules.ToFlat(ArchiveRulesKey)) entry[key] = value;
         return entry;
     }
 

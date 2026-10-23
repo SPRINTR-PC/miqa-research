@@ -25,7 +25,7 @@ public sealed class ManifestTests
         RemoteRoot = "/upload",
         Destination = "sftp.example:22",
         Retry = new RetrySettings { MaxAttempts = 1, BaseDelay = TimeSpan.Zero, MaxDelay = TimeSpan.Zero },
-        State = new StateSettings { Path = withState ? Path.Combine(_dir, "state.db") : null },
+        State = new StateSettings { AccessGroup = TestAccessGroup.Name, Path = withState ? Path.Combine(_dir, "state.db") : null },
         MachineName = "lab-pc-7",
     };
 

@@ -31,7 +31,7 @@ public sealed class PostUploadMoveTests
         RemoteRoot = "/upload",
         Destination = "sftp.example:22",
         Retry = new RetrySettings { MaxAttempts = 1, BaseDelay = TimeSpan.Zero, MaxDelay = TimeSpan.Zero },
-        State = new StateSettings { Path = DbPath },
+        State = new StateSettings { AccessGroup = TestAccessGroup.Name, Path = DbPath },
         Scan = scan ?? new ScanConfig(),
         MoveFailuresAreErrors = moveFailuresAreErrors,
         Archive = new ArchiveConfig { StagingPath = Path.Combine(_dir, "staging"), MinFreeSpaceBytes = 0, Rules = rules ?? [] },

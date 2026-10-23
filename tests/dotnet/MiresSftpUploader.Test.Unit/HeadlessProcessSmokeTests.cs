@@ -1,3 +1,4 @@
+using MiresSftpUploader.Test.Support;
 using System.Diagnostics;
 
 namespace MiresSftpUploader.Test.Unit;
@@ -31,6 +32,7 @@ public sealed class HeadlessProcessSmokeTests
             var env = new Dictionary<string, string>
             {
                 ["MIRES_DATA_DIR"] = Path.Combine(dir, "data"),
+                ["MIRES_State__AccessGroup"] = TestAccessGroup.Name ?? "",
                 ["MIRES_Sftp__Host"] = "127.0.0.1",
                 ["MIRES_Sftp__Port"] = "1",
                 ["MIRES_Sftp__Username"] = "u",

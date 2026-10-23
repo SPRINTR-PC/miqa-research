@@ -26,7 +26,7 @@ public sealed class DryRunTests
         RemoteRoot = "/upload",
         Destination = "sftp.example:22",
         Retry = new RetrySettings { MaxAttempts = 1, BaseDelay = TimeSpan.Zero, MaxDelay = TimeSpan.Zero },
-        State = new StateSettings { Path = DbPath },
+        State = new StateSettings { AccessGroup = TestAccessGroup.Name, Path = DbPath },
         Scan = scan ?? new ScanConfig(),
     };
 

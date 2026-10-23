@@ -27,7 +27,7 @@ public sealed class UploadStateTests
         RemoteRoot = "/upload",
         Destination = "sftp.example:22",
         Retry = new RetrySettings { MaxAttempts = 2, BaseDelay = TimeSpan.Zero, MaxDelay = TimeSpan.Zero },
-        State = (state ?? (s => s))(new StateSettings { Path = DbPath }),
+        State = (state ?? (s => s))(new StateSettings { AccessGroup = TestAccessGroup.Name, Path = DbPath }),
     };
 
     private static Engine NewEngine(EngineSettings settings, TimeProvider time, FakeRemote remote, params ISource[] sources) =>

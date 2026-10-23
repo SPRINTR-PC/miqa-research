@@ -17,6 +17,49 @@
                 <TextBlock Foreground="{DynamicResource MDestructive}" TextWrapping="Wrap" IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Text="{Binding Error}"/>
             </StackPanel>
         </DataTemplate>
+        <!-- A list of Archive Rules: global, or one Source's own. The first rule that matches a file wins. -->
+        <DataTemplate DataType="vm:ArchiveRulesViewModel">
+            <StackPanel Spacing="6" IsEnabled="{Binding IsEditable}">
+                <ItemsControl ItemsSource="{Binding Rules}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ArchiveRuleEditorViewModel">
+                            <Border Classes="sunken" Padding="10" Margin="0,0,0,8" CornerRadius="6">
+                                <StackPanel Spacing="6">
+                                    <Grid ColumnDefinitions="*,160,100,Auto" ColumnSpacing="8">
+                                        <StackPanel>
+                                            <TextBlock Classes="muted" Text="Rule name"/>
+                                            <TextBox Text="{Binding Name}"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1">
+                                            <TextBlock Classes="muted" Text="One Archive per"/>
+                                            <ComboBox HorizontalAlignment="Stretch" ItemsSource="{x:Static vm:ArchiveRuleEditorViewModel.GroupingNames}" SelectedItem="{Binding Grouping}"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Classes="muted" Text="Min files"/>
+                                            <TextBox Text="{Binding MinFiles}"/>
+                                        </StackPanel>
+                                        <Button Grid.Column="3" VerticalAlignment="Bottom" Classes="danger" Content="Remove"
+                                                Command="{Binding $parent[ItemsControl].((vm:ArchiveRulesViewModel)DataContext).RemoveRuleCommand}"
+                                                CommandParameter="{Binding}"/>
+                                    </Grid>
+                                    <StackPanel>
+                                        <TextBlock Classes="muted" Text="Pattern (regular expression, matched against the path inside the Source)"/>
+                                        <TextBox Classes="mono" Text="{Binding Pattern}"/>
+                                    </StackPanel>
+                                    <StackPanel>
+                                        <TextBlock Classes="muted" Text="Archive name ({rule}, {dir} and {date} are replaced)"/>
+                                        <TextBox Text="{Binding ArchiveName}"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Classes="muted" FontSize="11" IsVisible="{Binding IsEmpty}" Text="No Archive Rules: every file is uploaded on its own."/>
+                <Button HorizontalAlignment="Left" Content="Add Archive Rule" Command="{Binding AddRuleCommand}"/>
+                <TextBlock Foreground="{DynamicResource MDestructive}" TextWrapping="Wrap" IsVisible="{Binding HasError}" Text="{Binding Error}"/>
+            </StackPanel>
+        </DataTemplate>
     </UserControl.DataTemplates>
     <DockPanel>
         <!-- Save bar -->
@@ -137,6 +180,10 @@
                                                 <TextBlock Classes="muted" Text="Remote Path (optional)"/>
                                                 <TextBox Text="{Binding RemotePath}" Watermark="{Binding RemotePathPlaceholder}"/>
                                             </StackPanel>
+
+                                            <Expander Header="Archive Rules for this Source" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                                                <ContentControl Content="{Binding ArchiveRules}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"/>
+                                            </Expander>
                                             <TextBlock Foreground="{DynamicResource MDestructive}" TextWrapping="Wrap" IsVisible="{Binding HasError}" Text="{Binding Error}"/>
                                             <TextBlock Foreground="{DynamicResource MWarning}" TextWrapping="Wrap" IsVisible="{Binding HasWarning}" Text="{Binding Warning}"/>
                                         </StackPanel>
@@ -144,6 +191,18 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <!-- Archive Rules -->
+                <Border x:Name="ArchiveRulesCard" Classes="card">
+                    <StackPanel Spacing="8">
+                        <TextBlock Classes="h" Text="Archive Rules"/>
+                        <TextBlock Classes="muted" TextWrapping="Wrap"
+                                   Text="Files whose path matches a rule are packed into one zip Archive and uploaded instead of the loose files. A Source's own rules are tried first, then these; the first rule that matches a file wins, and a group with fewer files than Min files stays loose."/>
+                        <TextBlock Classes="muted" IsVisible="{Binding ArchiveRules.IsLocked}" TextWrapping="Wrap"
+                                   Text="The Archive Rules are Locked Settings here: they come from an environment variable or from a Machine Config you cannot write."/>
+                        <ContentControl Content="{Binding ArchiveRules}"/>
                     </StackPanel>
                 </Border>
 

@@ -25,7 +25,7 @@ public sealed class ETagChangeDetectionTests
         RemoteRoot = "/upload",
         Destination = "sftp.example:22",
         Retry = new RetrySettings { MaxAttempts = 1, BaseDelay = TimeSpan.Zero, MaxDelay = TimeSpan.Zero },
-        State = new StateSettings { Path = Path.Combine(_dir, "state.db") },
+        State = new StateSettings { AccessGroup = TestAccessGroup.Name, Path = Path.Combine(_dir, "state.db") },
         Archive = new ArchiveConfig { StagingPath = Path.Combine(_dir, "staging"), Rules = rules },
     };
 

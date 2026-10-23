@@ -28,7 +28,7 @@ public sealed class RunStampedManifestTests
         UploadStrategy = strategy,
         WriteFlatManifest = true,
         Retry = new RetrySettings { MaxAttempts = 2, BaseDelay = TimeSpan.Zero, MaxDelay = TimeSpan.Zero },
-        State = new StateSettings { Path = withState ? Path.Combine(_dir, "state.db") : null },
+        State = new StateSettings { AccessGroup = TestAccessGroup.Name, Path = withState ? Path.Combine(_dir, "state.db") : null },
     };
 
     private static async Task<RunResult> Run(EngineSettings settings, FakeRemote remote, FakeSource source) =>
