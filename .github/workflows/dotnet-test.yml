@@ -4,6 +4,10 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: read
+  checks: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -23,4 +27,32 @@ jobs:
       run: dotnet build MiqaResearch.slnx --no-restore
 
     - name: Run tests for MIQA Research .NET solution
-      run: dotnet test MiqaResearch.slnx --no-build --verbosity normal
+      run: dotnet test MiqaResearch.slnx --no-build --verbosity normal --logger trx --results-directory "$RUNNER_TEMP/test-results"
+
+    - name: Publish test results to the PR check and job summary
+      if: ${{ !cancelled() }}
+      uses: dorny/test-reporter@v3
+      with:
+        name: .NET test results
+        path: ${{ runner.temp }}/test-results/*.trx
+        reporter: dotnet-trx
+        fail-on-error: false
+
+    - name: Render HTML test reports
+      if: ${{ !cancelled() }}
+      run: |
+        dotnet tool install trxlog2html --version 1.0.4 --tool-path "$RUNNER_TEMP/tools"
+        mkdir -p "$RUNNER_TEMP/test-report"
+        for trx in "$RUNNER_TEMP"/test-results/*.trx; do
+          [ -e "$trx" ] || continue
+          "$RUNNER_TEMP/tools/trxlog2html" -i "$trx" -o "$RUNNER_TEMP/test-report/$(basename "${trx%.trx}").html"
+        done
+
+    - name: Upload HTML test reports
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: dotnet-test-report
+        path: ${{ runner.temp }}/test-report/*.html
+        if-no-files-found: warn
+        retention-days: 30

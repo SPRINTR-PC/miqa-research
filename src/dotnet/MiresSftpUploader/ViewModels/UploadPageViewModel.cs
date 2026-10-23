@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Reactive;
+using Avalonia.Media;
 using MiresSftpUploader.Core;
 using ReactiveUI;
 
@@ -150,11 +151,11 @@ public sealed class UploadPageViewModel : ViewModelBase
 
     public bool HasProblems => Problems.Length > 0;
 
-    /// <summary>The icons of the four tiles: the same as the ones in the file list.</summary>
-    public static string SucceededIcon => FileRowViewModel.IconFor(FileOutcome.Succeeded);
-    public static string FailedIcon => FileRowViewModel.IconFor(FileOutcome.Failed);
-    public static string SkippedIcon => FileRowViewModel.IconFor(FileOutcome.Skipped);
-    public static string PendingIcon => FileRowViewModel.IconFor(FileOutcome.Pending);
+    /// <summary>The icons of the four tiles: the same as the ones in the file list (a Geometry, which is what PathIcon.Data takes).</summary>
+    public static Geometry SucceededIcon { get; } = Geometry.Parse(FileRowViewModel.IconFor(FileOutcome.Succeeded));
+    public static Geometry FailedIcon { get; } = Geometry.Parse(FileRowViewModel.IconFor(FileOutcome.Failed));
+    public static Geometry SkippedIcon { get; } = Geometry.Parse(FileRowViewModel.IconFor(FileOutcome.Skipped));
+    public static Geometry PendingIcon { get; } = Geometry.Parse(FileRowViewModel.IconFor(FileOutcome.Pending));
 
     public int Succeeded => Count(FileOutcome.Succeeded);
     public int Failed => Count(FileOutcome.Failed);
