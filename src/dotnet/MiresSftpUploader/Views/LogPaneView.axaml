@@ -1,0 +1,24 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MiresSftpUploader.ViewModels"
+             xmlns:log="using:MiresSftpUploader.Logging"
+             x:Class="MiresSftpUploader.Views.LogPaneView" x:DataType="vm:LogPaneViewModel">
+    <DockPanel Height="170" HorizontalAlignment="Stretch">
+        <ComboBox DockPanel.Dock="Top" HorizontalAlignment="Right" MinWidth="130"
+                  ItemsSource="{x:Static vm:LogPaneViewModel.SelectableLevels}"
+                  SelectedItem="{Binding MinimumLevel}"/>
+        <ScrollViewer HorizontalAlignment="Stretch">
+            <ItemsControl ItemsSource="{Binding Entries}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="log:LogEntry">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <TextBlock Classes="mono muted" Text="{Binding TimeText}"/>
+                            <TextBlock Classes="mono" Width="46" Text="{Binding LevelText}"/>
+                            <TextBlock Classes="mono" Text="{Binding Message}"/>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>

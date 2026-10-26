@@ -1,0 +1,38 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MiresSftpUploader.ViewModels"
+             xmlns:md="clr-namespace:Markdown.Avalonia;assembly=Markdown.Avalonia"
+             xmlns:mds="clr-namespace:Markdown.Avalonia.StyleCollections;assembly=Markdown.Avalonia"
+             xmlns:ctxt="clr-namespace:ColorTextBlock.Avalonia;assembly=ColorTextBlock.Avalonia"
+             x:Class="MiresSftpUploader.Views.HelpView" x:DataType="vm:HelpViewModel">
+    <DockPanel>
+        <TextBlock DockPanel.Dock="Top" Classes="h" Text="Help" Margin="0,0,0,8"/>
+        <ListBox x:Name="TopicList" DockPanel.Dock="Left" Width="170" Margin="0,0,16,0"
+                 ItemsSource="{Binding Topics}" SelectedItem="{Binding Selected}">
+            <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:HelpTopic">
+                    <TextBlock Text="{Binding Title}"/>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+        <md:MarkdownScrollViewer x:Name="Viewer" Markdown="{Binding Markdown}">
+            <md:MarkdownScrollViewer.MarkdownStyle>
+                <Styles>
+                    <mds:MarkdownStyleFluentTheme/>
+                    <!-- The library's code colours (blue-violet on translucent white) are hard to read on the dark theme; use the
+                         app's text colour on a raised fill. These come after the library's styles in the same collection, so they win. -->
+                    <Style Selector=".Markdown_Avalonia_MarkdownViewer ctxt|CCode">
+                        <Setter Property="Foreground" Value="{DynamicResource MForeground}"/>
+                        <Setter Property="Background" Value="{DynamicResource MPopover}"/>
+                    </Style>
+                    <Style Selector=".Markdown_Avalonia_MarkdownViewer Border.CodeBlock">
+                        <Setter Property="Background" Value="{DynamicResource MPopover}"/>
+                    </Style>
+                    <Style Selector=".Markdown_Avalonia_MarkdownViewer TextBlock.CodeBlock">
+                        <Setter Property="Foreground" Value="{DynamicResource MForeground}"/>
+                    </Style>
+                </Styles>
+            </md:MarkdownScrollViewer.MarkdownStyle>
+        </md:MarkdownScrollViewer>
+    </DockPanel>
+</UserControl>

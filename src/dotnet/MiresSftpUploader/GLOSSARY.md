@@ -15,7 +15,7 @@ The server directory a Source is uploaded into, including the Source's own direc
 _Avoid_: Destination, target folder
 
 **Ignore Rule**:
-An entry that excludes files from a Run: either an exact relative path or a regular expression matched against the relative path. The Manifests, the Upload State and a small set of built-in junk patterns (such as `.DS_Store`, which can be switched off) are always ignored.
+An entry that excludes files from a Run: either an exact relative path or a regular expression matched against the relative path. The Upload State and a small set of built-in junk patterns (such as `.DS_Store`, which can be switched off) are always ignored.
 _Avoid_: Exclude, filter, blacklist
 
 **Archive Rule**:
@@ -94,6 +94,10 @@ _Avoid_: Export, log file
 The uploaded hash file for a Source: a tree in which each uploaded item has its SHA-256 and each Archive additionally lists its original member files with their own hashes. Always uploaded at the end of a Run and always truthful: it states whether the Run was complete and lists the files that failed.
 _Avoid_: Hash file, checksum file, index
 
+**Run-stamped Manifest**:
+A Manifest uploaded as `manifest.<runId>.json` (and `manifest.<runId>.sha256`) because the server refused to replace the stable name. Never overwritten, complete and cumulative, and it lists the Manifests it replaces in `supersedes`; consumers take the latest `generatedAt`.
+_Avoid_: Versioned Manifest, Manifest copy
+
 **Flat Manifest**:
 The optional companion to the Manifest in `sha256sum -c` format, listing only the objects physically present on the server (plain files and Archives).
 _Avoid_: Checksum list
@@ -121,8 +125,12 @@ A setting currently supplied by an environment variable, or by Machine Config th
 _Avoid_: Read-only setting
 
 **Secret**:
-A setting that grants access (password, key passphrase, S3 secret key). Supplied only by environment variables, never displayed, never saved.
+A setting that grants access (password, key passphrase, S3 access key, S3 secret key). Supplied by an environment variable, which wins, or else by the account's Secret Store. Never displayed, never part of User Overrides or Machine Config.
 _Avoid_: Credential setting
+
+**Secret Store**:
+The per-account, encrypted record of Secrets, kept apart from the Upload State. Its values can be read only by the same account on the same machine; it guards against a copied or leaked file, not against someone already running as that account. A Secret that can no longer be decrypted counts as not set.
+_Avoid_: Vault, keychain, credential file
 
 **Host Key Fingerprint**:
 The pinned identity of the SFTP server. A connection to a server presenting a different one is refused.
