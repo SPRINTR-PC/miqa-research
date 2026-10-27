@@ -120,6 +120,6 @@ public sealed class SettingFieldViewModel : ViewModelBase
     {
         ConfigLayer.Environment => "Set by an environment variable (MIRES_*); change it there.",
         ConfigLayer.Cli => "Set by a command-line flag.",
-        _ => "Set in Machine Config, which this account cannot write; an administrator changes it.",
+        _ => "Kept in Machine Config (appsettings.json), which this account cannot write; an administrator changes it.",
     };
 }

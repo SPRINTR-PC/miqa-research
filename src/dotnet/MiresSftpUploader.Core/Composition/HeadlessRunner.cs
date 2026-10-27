@@ -30,8 +30,27 @@ public static class HeadlessRunner
             ReportPath = cli.ReportPath,
         };
 
-        var result = await engine.RunAsync(options, new Progress<RunEvent>(), cancellationToken);
+        var plans = new PlanCollector();
+        var result = await engine.RunAsync(options, plans, cancellationToken);
+        foreach (var plan in plans.Plans) stderr.WriteLine(Describe(plan));
         HeadlessSummary.Write(stdout, result, result.ReportPath);
         return result.ExitCode;
+    }
+
+    /// <summary>One line on stderr per zip Archive a Dry Run planned.</summary>
+    private static string Describe(ArchivePlanned plan) =>
+        $"archive: {plan.Source}/{plan.Name} rule={plan.Rule} files={plan.MemberCount} bytes={plan.TotalSize} status={plan.Status}";
+
+    /// <summary>Keeps the Archive plans of a Dry Run; unlike <see cref="Progress{T}"/> it takes each event on the spot, so none is missing when the Run ends.</summary>
+    private sealed class PlanCollector : IProgress<RunEvent>
+    {
+        private readonly List<ArchivePlanned> _plans = [];
+
+        public IReadOnlyList<ArchivePlanned> Plans { get { lock (_plans) return _plans.ToList(); } }
+
+        public void Report(RunEvent value)
+        {
+            if (value is ArchivePlanned plan) lock (_plans) _plans.Add(plan);
+        }
     }
 }

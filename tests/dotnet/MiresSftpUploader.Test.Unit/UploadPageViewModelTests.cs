@@ -75,6 +75,23 @@ public sealed class UploadPageViewModelTests
     }
 
     [TestMethod]
+    public async Task A_Dry_Run_shows_each_planned_zip_as_a_row_that_is_not_counted_as_a_file()
+    {
+        _engine.Script.Add(File("d/a.dcm", FileOutcome.Pending, reason: "Would be packed into d/dicom-d.zip (rule dicom)"));
+        _engine.Script.Add(new ArchivePlanned("wsi", "d/dicom-d.zip", "dicom", 1, 2048, 2048, "WouldBuild"));
+        var page = NewPage();
+
+        await page.DryRunCommand.Execute().ToTask();
+
+        Assert.AreEqual(2, page.Files.Count);
+        var zip = page.Files.Single(f => f.Path == "d/dicom-d.zip");
+        StringAssert.Contains(zip.Reason, "rule dicom");
+        StringAssert.Contains(zip.Reason, "1 files, 2 KiB");
+        StringAssert.Contains(zip.Reason, "Would be built");
+        Assert.AreEqual(1, page.Pending);
+    }
+
+    [TestMethod]
     public async Task Tiles_and_overall_progress_follow_the_File_Outcomes()
     {
         _engine.Script.AddRange(

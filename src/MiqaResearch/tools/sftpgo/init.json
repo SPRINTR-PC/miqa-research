@@ -1,0 +1,23 @@
+{
+  "users": [
+    {
+      "username": "aramis",
+      "password": "change-me",
+      "status": 1,
+      "home_dir": "/srv/sftpgo/data/aramis",
+      "permissions": { "/": ["*"] },
+      "filesystem": {
+        "provider": 1,
+        "s3config": {
+          "bucket": "mires-sftp",
+          "region": "us-east-1",
+          "endpoint": "http://miresfs:9000",
+          "access_key": "MiresAccessKey",
+          "access_secret": { "status": "Plain", "payload": "MiresSecretKey" },
+          "key_prefix": "aramis/",
+          "force_path_style": true
+        }
+      }
+    }
+  ]
+}

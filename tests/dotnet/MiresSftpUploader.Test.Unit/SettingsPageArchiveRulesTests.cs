@@ -3,6 +3,7 @@ using System.Reactive.Threading.Tasks;
 using System.Linq;
 using System.Text.Json.Nodes;
 using MiresSftpUploader.Core;
+using MiresSftpUploader.Test.Support;
 using MiresSftpUploader.ViewModels;
 
 namespace MiresSftpUploader.Test.Unit;
@@ -119,5 +120,32 @@ public sealed class SettingsPageArchiveRulesTests : ConfigurationTestBase
         Assert.IsTrue(page.ArchiveRules.IsLocked);
         Assert.AreEqual("envrule", page.ArchiveRules.Rules[0].Name);
         Assert.IsFalse(page.ArchiveRules.AddRuleCommand.CanExecute.FirstAsync().ToTask().Result);
+    }
+
+    [TestMethod]
+    public async Task A_rule_saved_on_a_Source_in_the_page_archives_that_Sources_files_in_a_real_Run()
+    {
+        Directory.CreateDirectory(Path.Combine(DataDir, "p1"));
+        File.WriteAllText(Path.Combine(DataDir, "p1", "a.dcm"), "alpha");
+        File.WriteAllText(Path.Combine(DataDir, "p1", "b.dcm"), "beta");
+        File.WriteAllText(Path.Combine(DataDir, "p1", "n.txt"), "notes");
+        var machine = ValidMachine();
+        machine["State"] = new JsonObject { ["Path"] = Path.Combine(Dir, "shared"), ["AccessGroup"] = TestAccessGroup.Name };
+        var cfg = Create(machine.ToJsonString());
+        var page = NewPage(cfg);
+        page.Sources[0].ArchiveRules.AddRuleCommand.Execute().Subscribe();
+        var rule = page.Sources[0].ArchiveRules.Rules[0];
+        rule.Name = "dicom";
+        rule.Pattern = @"\.dcm$";
+        Save(page);
+
+        var remote = new FakeRemote();
+        var runtime = new UploaderRuntime(cfg, new StaticRemoteFactory(remote), Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance,
+            TimeProvider.System, CliOptions.Parse(["--headless"]).Options!);
+        var result = await runtime.Prepare(headless: true).Engine!.RunAsync(new RunOptions(), new Progress<RunEvent>(), CancellationToken.None);
+
+        Assert.AreEqual(0, result.ExitCode);
+        Assert.IsTrue(remote.Files.Keys.Any(k => k.EndsWith("dicom-p1.zip")), string.Join(", ", remote.Files.Keys));
+        Assert.IsFalse(remote.Files.Keys.Any(k => k.EndsWith("a.dcm")));
     }
 }

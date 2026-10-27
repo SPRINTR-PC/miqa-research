@@ -289,6 +289,9 @@ public sealed class UploadPageViewModel : ViewModelBase
                     Apply(file);
                     changed = true;
                     break;
+                case ArchivePlanned plan:
+                    AddArchiveRow(plan);
+                    break;
             }
         }
         if (!changed) return;
@@ -321,6 +324,33 @@ public sealed class UploadPageViewModel : ViewModelBase
         if (visible && (isNew || !wasVisible)) Files.Add(row);
         else if (!visible && wasVisible) Files.Remove(row);
     }
+
+    /// <summary>
+    /// A Dry Run's plan for one zip Archive, as a row of its own. Archive rows are not counted in the tiles, since the
+    /// files in them are.
+    /// </summary>
+    private void AddArchiveRow(ArchivePlanned plan)
+    {
+        var (outcome, text) = plan.Status switch
+        {
+            "WouldSkip" => (FileOutcome.Skipped, "Unchanged since it was last delivered"),
+            "NeedsHashing" => (FileOutcome.Pending, "Same files, but some changed size or time; they are checked again"),
+            "WouldBuild" => (FileOutcome.Pending, "Would be built and uploaded"),
+            var other => (other == "ArchiveNameCollision" ? FileOutcome.Failed : FileOutcome.Skipped, other),
+        };
+        var row = new FileRowViewModel(plan.Source, plan.Name);
+        row.Update(outcome, $"Archive, rule {plan.Rule}: {plan.MemberCount} files, {FormatSize(plan.TotalSize)}. {text}");
+        _order.Add(row);
+        if (IsVisible(row)) Files.Add(row);
+    }
+
+    private static string FormatSize(long bytes) => bytes switch
+    {
+        >= 1L << 30 => $"{bytes / (double)(1L << 30):0.#} GiB",
+        >= 1L << 20 => $"{bytes / (double)(1L << 20):0.#} MiB",
+        >= 1L << 10 => $"{bytes / (double)(1L << 10):0.#} KiB",
+        _ => $"{bytes} bytes",
+    };
 
     private bool IsVisible(FileRowViewModel row) =>
         _filter == FileFilter.None

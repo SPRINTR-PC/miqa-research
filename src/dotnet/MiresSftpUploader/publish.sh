@@ -44,6 +44,11 @@ smoke_test() {
     actual="$("$exe" --version)" || { echo "--version failed" >&2; return 1; }
     [ "$actual" = "$version" ] || { echo "--version printed '$actual', expected '$version'" >&2; return 1; }
 
+    # --configure needs a terminal; under redirected streams it must refuse with exit 2 and print nothing on stdout.
+    local configure_out configure_rc=0
+    configure_out="$("$exe" --configure </dev/null 2>/dev/null)" || configure_rc=$?
+    [ "$configure_rc" = 2 ] && [ -z "$configure_out" ] || { echo "--configure under redirected streams exited $configure_rc with stdout '$configure_out', expected 2 and no output" >&2; return 1; }
+
     # The shipped appsettings.json has no host, username, host key or Sources, so --validate-config is expected to
     # report exactly those four required fields and nothing else.
     local rc=0

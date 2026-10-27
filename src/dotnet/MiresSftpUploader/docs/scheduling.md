@@ -16,6 +16,10 @@ Do these in order, on the machine that will run the schedule.
 6. **Try a Dry Run as that account:** `MiresSftpUploader --headless --dry-run`. It plans and reports but uploads and records nothing.
 7. **Create the scheduled task** with one of the samples below.
 
+## Configuring a headless machine
+
+On a server reached over SSH, edit the settings with the **Settings TUI**: `MiresSftpUploader --configure` (see the README for the key bindings). It manages the same settings as the Settings page, including Secrets, and F5 runs Check connection against the saved configuration, so it can replace steps 3 to 5 above. `--configure` is supported on Linux and macOS; Windows is unverified, so on Windows edit `appsettings.json` and use `--set-secret` instead. It refuses with exit code 2 when run from a scheduler, a pipe or a terminal below 80x24, so never put it in a scheduled task.
+
 ## Secrets in scheduled Runs
 
 A Secret (password, key passphrase, S3 access key, S3 secret key) comes from an environment variable (`MIRES_SFTP_PASSWORD`, `MIRES_SFTP_KEY_PASSPHRASE`, `MIRES_S3_<SOURCE>_ACCESS_KEY` and `MIRES_S3_<SOURCE>_SECRET_KEY`), which wins, or else from the service account's **Secret Store**. There is no option to read them from a configuration file.

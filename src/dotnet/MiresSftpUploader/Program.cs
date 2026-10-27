@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using MiresSftpUploader.Core;
 using MiresSftpUploader.Logging;
+using MiresSftpUploader.SettingsTui;
 using System;
 using System.IO;
 using System.Reflection;
@@ -32,6 +33,9 @@ sealed class Program
         if (Cli.TryRun(args, Version, Console.Out, Console.Error, out var exitCode, state: state, readSecret: ConsoleSecretInput.Read))
             return exitCode;
 
+        if (options?.Configure == true)
+            return SettingsTuiEntry.Run(new ConsoleTerminalEnvironment(), Console.Error, () => RunSettingsTui(configuration, options));
+
         var headless = options?.Headless == true;
         Logging = StartLogging(configuration, headless);
         try
@@ -46,12 +50,26 @@ sealed class Program
             if (headless)
                 return RunHeadless(options!, runtime);
 
-            AppHost.Current = new AppHost(configuration, runtime, Logging);
+            AppHost.Current = new AppHost(configuration, runtime, Logging, options);
             return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
         }
         finally
         {
             // Flush before returning so the last lines are not lost.
+            Logging?.Dispose();
+        }
+    }
+
+    /// <summary>The Settings TUI: logs to the file only, so the terminal and stdout stay the interface's.</summary>
+    private static int RunSettingsTui(Configuration configuration, CliOptions options)
+    {
+        Logging = StartLogging(configuration, headless: true, fileOnly: true);
+        try
+        {
+            return SettingsTuiApp.Run(configuration, options, (ILoggerFactory?)Logging?.LoggerFactory ?? NullLoggerFactory.Instance);
+        }
+        finally
+        {
             Logging?.Dispose();
         }
     }
@@ -81,7 +99,7 @@ sealed class Program
     /// <summary>Logging for this process; null when the configuration could not be loaded (the UI then shows the errors).</summary>
     public static AppLogging? Logging { get; private set; }
 
-    private static AppLogging? StartLogging(Configuration configuration, bool headless)
+    private static AppLogging? StartLogging(Configuration configuration, bool headless, bool fileOnly = false)
     {
         var load = configuration.Load(headless: headless);
         if (load.Config is not { } config) return null;
@@ -90,7 +108,8 @@ sealed class Program
             load.Section("NLog"),
             headless,
             Redactor.From(configuration.LoadSecrets()),
-            Path.Combine(ConfigurationLocations.UserDataDirectory(), "logs"));
+            Path.Combine(ConfigurationLocations.UserDataDirectory(), "logs"),
+            fileOnly);
     }
 
     private static string Version =>

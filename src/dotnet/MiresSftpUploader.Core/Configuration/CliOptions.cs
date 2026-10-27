@@ -20,22 +20,26 @@ public sealed record CliOptions
     public bool ListSecrets { get; init; }
     public bool Version { get; init; }
     public bool Help { get; init; }
+
+    /// <summary>Start the Settings TUI. A mode flag: only --data-dir and --log-level may accompany it.</summary>
+    public bool Configure { get; init; }
     public IReadOnlyDictionary<string, string> ConfigOverrides { get; init; } = new Dictionary<string, string>();
 
     /// <summary>Flags that start a Headless Run (or an administrative command) without a window.</summary>
-    public bool ImpliesHeadless => Headless || ListRuns || ExportRunId is not null || ValidateConfig || InitDataDir || Version || SetSecret is not null || ClearSecret is not null || ListSecrets;
+    public bool ImpliesHeadless => Headless || ListRuns || ExportRunId is not null || ValidateConfig || InitDataDir || Version || SetSecret is not null || ClearSecret is not null || ListSecrets || Configure;
 
     private static readonly HashSet<string> ValueFlags =
         ["--source", "--report", "--report-format", "--export-run", "--limit", "--log-level", "--data-dir", "--set-secret", "--clear-secret"];
 
     private static readonly HashSet<string> SwitchFlags =
-        ["--headless", "--dry-run", "--rehash-all", "--list-runs", "--validate-config", "--check-connection", "--init-data-dir", "--list-secrets", "--version", "--help"];
+        ["--headless", "--dry-run", "--rehash-all", "--list-runs", "--validate-config", "--check-connection", "--init-data-dir", "--list-secrets", "--version", "--help", "--configure"];
 
     public static CliParseResult Parse(IReadOnlyList<string> args)
     {
         var options = new CliOptions();
         var sources = new List<string>();
         var overrides = new Dictionary<string, string>();
+        var seen = new List<string>();
 
         for (var i = 0; i < args.Count; i++)
         {
@@ -49,6 +53,7 @@ public sealed record CliOptions
                 inlineValue = arg[(eq + 1)..];
             }
 
+            if (arg.StartsWith("--", StringComparison.Ordinal)) seen.Add(name);
             if (SwitchFlags.Contains(name) && inlineValue is null)
             {
                 options = name switch
@@ -62,6 +67,7 @@ public sealed record CliOptions
                     "--init-data-dir" => options with { InitDataDir = true },
                     "--list-secrets" => options with { ListSecrets = true },
                     "--version" => options with { Version = true },
+                    "--configure" => options with { Configure = true },
                     _ => options with { Help = true },
                 };
                 continue;
@@ -98,6 +104,9 @@ public sealed record CliOptions
                 case "--data-dir": options = Override(options, overrides, "State:Path", value); break;
             }
         }
+
+        if (options.Configure && seen.FirstOrDefault(n => n is not ("--configure" or "--data-dir" or "--log-level")) is { } other)
+            return new(null, $"--configure starts the Settings TUI and accepts only --data-dir and --log-level, not '{other}'.");
 
         return new(options with { Sources = sources, ConfigOverrides = overrides }, null);
     }

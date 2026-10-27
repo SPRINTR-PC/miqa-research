@@ -35,6 +35,10 @@ function Test-Published([string]$Dir, [string]$ExeName) {
     if ($LASTEXITCODE -ne 0) { throw '--version failed' }
     if ($actual -ne $Version) { throw "--version printed '$actual', expected '$Version'" }
 
+    # --configure needs a terminal; under redirected streams it must refuse with exit 2 and print nothing on stdout.
+    $configureOut = @(& $exe --configure 2>$null)
+    if ($LASTEXITCODE -ne 2 -or $configureOut.Count -ne 0) { throw "--configure under redirected streams exited $LASTEXITCODE with stdout '$($configureOut -join ' ')', expected 2 and no output" }
+
     # The shipped appsettings.json has no host, username, host key or Sources, so --validate-config is expected to
     # report exactly those four required fields and nothing else.
     $errorLines = @(& $exe --validate-config 2>&1 | ForEach-Object { "$_" })

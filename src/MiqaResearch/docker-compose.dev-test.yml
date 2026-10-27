@@ -68,6 +68,45 @@ services:
       - "9001:9001"
     restart: on-failure
 
+  mires_fs_init:
+    build:
+      context: .
+      dockerfile: dev.Dockerfile
+    command: uv run --no-sync python tools/create_bucket.py
+    environment:
+      - S3_ENDPOINT_URL=http://miresfs:9000
+      - S3_ACCESS_KEY=MiresAccessKey
+      - S3_SECRET_KEY=MiresSecretKey
+      - S3_BUCKET=mires-sftp
+    volumes:
+      - ./:/app
+    networks:
+      - mires
+    depends_on:
+      - mires_fs
+    restart: "no"
+
+  mires_sftpgo:
+    image: drakkan/sftpgo:v2.7
+    networks:
+      - mires
+    ports:
+      - "2022:2022"
+      - "8081:8080"     # web admin / REST API (8080 is taken by mires_web)
+    environment:
+      - SFTPGO_DEFAULT_ADMIN_USERNAME=admin
+      - SFTPGO_DEFAULT_ADMIN_PASSWORD=admin
+      - SFTPGO_LOADDATA_FROM=/etc/sftpgo-init/init.json
+      - SFTPGO_LOADDATA_MODE=1 (mode 1 = only add users that don't exist yet)
+    volumes:
+      - ./tools/sftpgo/init.json:/etc/sftpgo-init/init.json:ro
+      - mires_sftpgo_data:/var/lib/sftpgo   # SQLite db + host keys
+    depends_on:
+        - mires_fs
+        - mires_fs_init
+    restart: unless-stopped
+
+
   mires_vault:
     image: hashicorp/vault:latest
     container_name: mires_vault
@@ -329,3 +368,4 @@ networks:
 
 volumes:
   mires_vault_data:
+  mires_sftpgo_data:

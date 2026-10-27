@@ -60,6 +60,25 @@ public sealed class ArchiveTests
     }
 
     [TestMethod]
+    public async Task A_rule_set_on_one_Source_archives_that_Source_only()
+    {
+        var remote = new FakeRemote();
+        var withRule = new FakeSource("scans").Add("a/one.dcm", "1").Add("a/two.dcm", "2").Add("a/notes.txt", "n");
+        var without = new FakeSource("other").Add("a/three.dcm", "3");
+        var settings = Settings() with
+        {
+            SourceConfigs = [new SourceConfig { Name = "scans", ArchiveRules = [Rule("dicom", @"\.dcm$", ArchiveGrouping.PerRule)] }],
+        };
+
+        var result = await RunAsync(settings, remote, sources: [withRule, without]);
+
+        Assert.AreEqual(0, result.ExitCode);
+        Assert.IsTrue(remote.Files.ContainsKey("/upload/scans/dicom-scans.zip"), string.Join(", ", remote.Files.Keys));
+        Assert.IsFalse(remote.Files.ContainsKey("/upload/scans/a/one.dcm"));
+        Assert.IsTrue(remote.Files.ContainsKey("/upload/other/a/three.dcm"), "the other Source is not archived");
+    }
+
+    [TestMethod]
     public async Task Per_directory_rule_uploads_one_archive_per_directory_instead_of_its_matching_files()
     {
         var remote = new FakeRemote();

@@ -80,23 +80,44 @@ public sealed class ConfigurationLayeringTests : ConfigurationTestBase
     {
         var machine = ValidMachine();
         machine["Sftp"] = new JsonObject { ["Host"] = "machine", ["Username"] = "machine", ["HostKeyFingerprint"] = "fp", ["RemoteRoot"] = "/machine" };
+        machine["Scan"] = new JsonObject { ["MinFileAgeSeconds"] = 10 };
+        machine["Upload"] = new JsonObject { ["MaxParallelUploads"] = 2 };
         var cfg = Create(
             machine.ToJsonString(),
-            """{ "ConfigVersion": 1, "Sftp": { "Host": "user", "Username": "user" } }""",
-            new() { ["MIRES_Sftp__Host"] = "env" });
+            """{ "ConfigVersion": 1, "Scan": { "MinFileAgeSeconds": 20 }, "Upload": { "MaxParallelUploads": 4 } }""",
+            new() { ["MIRES_Sftp__Host"] = "env", ["MIRES_Upload__MaxParallelUploads"] = "6" });
         var cli = CliOptions.Parse(["--data-dir", "/cli/data"]).Options!;
 
         var r = cfg.Load(cli);
 
         Assert.AreEqual("env", r.Config!.Sftp.Host);
-        Assert.AreEqual("user", r.Config.Sftp.Username);
+        Assert.AreEqual("machine", r.Config.Sftp.Username);
         Assert.AreEqual("/machine", r.Config.Sftp.RemoteRoot);
+        Assert.AreEqual(20, r.Config.Scan.MinFileAgeSeconds);
+        Assert.AreEqual(6, r.Config.Upload.MaxParallelUploads);
         Assert.AreEqual("/cli/data", r.Config.State.Path);
         Assert.AreEqual(ConfigLayer.Environment, r.Setting("Sftp:Host").Layer);
-        Assert.AreEqual(ConfigLayer.User, r.Setting("Sftp:Username").Layer);
-        Assert.AreEqual(ConfigLayer.Machine, r.Setting("Sftp:RemoteRoot").Layer);
+        Assert.AreEqual(ConfigLayer.Machine, r.Setting("Sftp:Username").Layer);
+        Assert.AreEqual(ConfigLayer.User, r.Setting("Scan:MinFileAgeSeconds").Layer);
+        Assert.AreEqual(ConfigLayer.Environment, r.Setting("Upload:MaxParallelUploads").Layer);
         Assert.AreEqual(ConfigLayer.Cli, r.Setting("State:Path").Layer);
         Assert.AreEqual(ConfigLayer.Default, r.Setting("Sftp:Port").Layer);
+    }
+
+    [TestMethod]
+    public void Sources_and_Sftp_settings_in_User_Overrides_are_ignored_with_a_warning()
+    {
+        var machine = ValidMachine();
+        machine["Sftp"] = new JsonObject { ["Host"] = "machine", ["Username"] = "machine", ["HostKeyFingerprint"] = "fp", ["RemoteRoot"] = "/machine" };
+        var cfg = Create(machine.ToJsonString(),
+            $$"""{ "Sftp": { "Username": "user" }, "Sources": [ { "Name": "mine", "Type": "Directory", "Path": {{System.Text.Json.JsonSerializer.Serialize(DataDir)}} } ] }""");
+
+        var r = cfg.Load();
+
+        Assert.AreEqual("machine", r.Config!.Sftp.Username);
+        CollectionAssert.AreEqual(new[] { "alpha" }, r.Config.Sources.Select(x => x.Name).ToArray());
+        Assert.IsTrue(r.Warnings.Any(w => w.Key == "Sftp:Username" && w.Message.Contains("ignored in User Overrides")));
+        Assert.IsTrue(r.Warnings.Any(w => w.Key == "Sources" && w.Message.Contains("ignored in User Overrides")));
     }
 
     [TestMethod]
@@ -134,15 +155,16 @@ public sealed class ConfigurationLayeringTests : ConfigurationTestBase
     public void Machine_config_in_a_read_only_folder_makes_its_keys_locked()
     {
         if (OperatingSystem.IsWindows()) Assert.Inconclusive("Uses Unix permissions.");
-        var cfg = Create(ValidMachine().ToJsonString(), """{ "Sftp": { "Username": "u" } }""");
+        var cfg = Create(ValidMachine().ToJsonString());
         File.SetUnixFileMode(Path.Combine(Dir, "install"), UnixFileMode.UserRead | UnixFileMode.UserExecute);
         if (Environment.UserName == "root") Assert.Inconclusive("root ignores permissions.");
 
         var r = cfg.Load();
 
         Assert.IsTrue(r.Setting("Sftp:Host").Locked);
-        Assert.IsFalse(r.Setting("Sftp:Username").Locked, "a key the user already overrides stays editable");
-        Assert.IsFalse(r.Setting("Sftp:Port").Locked, "an unset key falls to the default and is editable");
+        Assert.IsTrue(r.Setting("Sftp:Port").Locked, "an unset Sftp key is kept in Machine Config too, so it cannot be changed");
+        Assert.IsTrue(r.Setting("Sources").Locked);
+        Assert.IsFalse(r.Setting("Upload:MaxParallelUploads").Locked, "other keys fall to the default and are editable in User Overrides");
     }
 
     [TestMethod]

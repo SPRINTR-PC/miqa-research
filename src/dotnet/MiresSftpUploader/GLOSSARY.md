@@ -113,11 +113,11 @@ _Avoid_: Blind mode, restricted mode
 ### Configuration
 
 **Machine Config**:
-The `appsettings.json` next to the executable: the settings (Sources, Destination, rules) that all users of a machine share, managed by an administrator. When its folder is not writable, the UI shows them as Locked Settings.
+The `appsettings.json` next to the executable: the settings (Sources, Destination, rules) that all users of a machine share, managed by an administrator. The Sources and the Destination (`Sftp:*`) are kept only here: the Settings page saves them to this file, and User Overrides cannot hold them. When its folder is not writable, the UI shows them as Locked Settings.
 _Avoid_: Global config, shared settings
 
 **User Overrides**:
-Settings changed in the UI and saved per user, layered above Machine Config and below environment variables. Secrets are never part of them.
+Settings changed in the UI and saved per user, layered above Machine Config and below environment variables. Not the Sources or the Destination (`Sftp:*`), which are kept in Machine Config; a value for them found here is ignored with a warning and dropped on the next Save. Secrets are never part of them.
 _Avoid_: User config, preferences
 
 **Locked Setting**:
@@ -135,3 +135,7 @@ _Avoid_: Vault, keychain, credential file
 **Host Key Fingerprint**:
 The pinned identity of the SFTP server. A connection to a server presenting a different one is refused.
 _Avoid_: Server key, known host
+
+**Settings TUI**:
+The terminal counterpart of the Settings page, for machines without a display: it manages the same settings (including Sources, rules and Secrets) with the same layering, Locked Settings and validation, and is started explicitly rather than by a Headless Run.
+_Avoid_: Config wizard, console UI

@@ -21,6 +21,9 @@
   <ItemGroup>
     <None Include="..\..\..\src\dotnet\MiresSftpUploader\appsettings.json" Link="shipped\appsettings.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\..\src\dotnet\MiresSftpUploader\README.md" Link="shipped\README.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\src\dotnet\MiresSftpUploader\docs\release-checklist.md" Link="shipped\release-checklist.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\src\dotnet\MiresSftpUploader\publish.sh" Link="shipped\publish.sh" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\src\dotnet\MiresSftpUploader\publish.ps1" Link="shipped\publish.ps1" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\..\src\dotnet\MiresSftpUploader\docs\scheduling.md" Link="shipped\scheduling.md" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\..\src\dotnet\MiresSftpUploader\docs\scheduler\**" Link="shipped\scheduler\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\..\src\dotnet\MiresSftpUploader\docs\manifest.schema.json" Link="shipped\manifest.schema.json" CopyToOutputDirectory="PreserveNewest" />

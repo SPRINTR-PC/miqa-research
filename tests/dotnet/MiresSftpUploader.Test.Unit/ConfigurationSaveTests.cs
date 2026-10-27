@@ -114,7 +114,8 @@ public sealed class ConfigurationSaveTests : ConfigurationTestBase
         var saved = cfg.Save(new Dictionary<string, string?> { ["Sources:1:Name"] = "renamed" });
 
         Assert.IsTrue(saved.Succeeded, string.Join(" | ", saved.Errors));
-        Assert.AreEqual(2, SavedUserFile()["Sources"]!.AsArray().Count);
+        Assert.AreEqual(2, System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(MachinePath))!["Sources"]!.AsArray().Count, "Sources are saved to Machine Config");
+        Assert.IsFalse(File.Exists(UserPath), "nothing goes to User Overrides");
         CollectionAssert.AreEqual(new[] { "a", "renamed" }, cfg.Load().Config!.Sources.Select(s => s.Name).ToArray());
     }
 
@@ -187,5 +188,48 @@ public sealed class ConfigurationSaveTests : ConfigurationTestBase
         var sources = cfg.Load().Config!.Sources;
         CollectionAssert.AreEqual(new[] { "alpha", "beta" }, sources.Select(s => s.Name).ToArray());
         Assert.AreEqual(DataDir, sources[0].Path);
+    }
+
+    [TestMethod]
+    public void Sources_and_Sftp_settings_are_saved_to_Machine_Config_and_the_rest_to_User_Overrides()
+    {
+        var cfg = Create(ValidMachine().ToJsonString());
+
+        var saved = cfg.Save(new Dictionary<string, string?> { ["Sftp:Port"] = "2222", ["Scan:MinFileAgeSeconds"] = "30" });
+
+        Assert.IsTrue(saved.Succeeded, string.Join(" | ", saved.Errors));
+        var machine = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(MachinePath))!;
+        Assert.AreEqual(2222, (int)machine["Sftp"]!["Port"]!);
+        Assert.AreEqual("sftp.example.org", (string)machine["Sftp"]!["Host"]!, "the rest of Machine Config is kept");
+        var user = SavedUserFile();
+        Assert.AreEqual(30, (int)user["Scan"]!["MinFileAgeSeconds"]!);
+        Assert.IsNull(user["Sftp"]);
+    }
+
+    [TestMethod]
+    public void Saving_drops_the_old_Sources_and_Sftp_values_from_User_Overrides()
+    {
+        var cfg = Create(ValidMachine().ToJsonString(), """{ "Sftp": { "Username": "old" }, "Scan": { "MinFileAgeSeconds": 5 } }""");
+
+        var saved = cfg.Save(new Dictionary<string, string?> { ["Sftp:Port"] = "2222" });
+
+        Assert.IsTrue(saved.Succeeded, string.Join(" | ", saved.Errors));
+        var user = SavedUserFile();
+        Assert.IsNull(user["Sftp"], "the stale per-user value is gone");
+        Assert.AreEqual(5, (int)user["Scan"]!["MinFileAgeSeconds"]!, "other overrides are kept");
+    }
+
+    [TestMethod]
+    public void A_read_only_Machine_Config_folder_rejects_saving_Sources_and_Sftp_settings()
+    {
+        if (OperatingSystem.IsWindows()) Assert.Inconclusive("Uses Unix permissions.");
+        var cfg = Create(ValidMachine().ToJsonString());
+        File.SetUnixFileMode(Path.Combine(Dir, "install"), UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        if (Environment.UserName == "root") Assert.Inconclusive("root ignores permissions.");
+
+        var saved = cfg.Save(new Dictionary<string, string?> { ["Sftp:Port"] = "2222" });
+
+        Assert.IsFalse(saved.Succeeded);
+        StringAssert.Contains(saved.Errors[0].Message, "Locked Setting");
     }
 }

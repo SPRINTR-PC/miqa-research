@@ -9,6 +9,7 @@ using NLog;
 using NLog.Config;
 using NLog.Extensions.Logging;
 using NLog.Targets;
+using NLog.Targets.Wrappers;
 
 namespace MiresSftpUploader.Logging;
 
@@ -44,7 +45,8 @@ public sealed class AppLogging : IDisposable
 
     /// <param name="nlogSection">The effective flat keys under <c>NLog</c> (<see cref="LoadResult.Section"/>); empty means generate.</param>
     /// <param name="defaultDirectory">Used when <c>Logging:Directory</c> is not set.</param>
-    public static AppLogging Start(LoggingConfig config, IReadOnlyDictionary<string, string> nlogSection, bool headless, Redactor redactor, string defaultDirectory)
+    /// <param name="fileOnly">Only the file target, for the Settings TUI: the console belongs to the interface and stdout must stay empty.</param>
+    public static AppLogging Start(LoggingConfig config, IReadOnlyDictionary<string, string> nlogSection, bool headless, Redactor redactor, string defaultDirectory, bool fileOnly = false)
     {
         var directory = string.IsNullOrWhiteSpace(config.Directory) ? defaultDirectory : config.Directory;
         var logFactory = new LogFactory();
@@ -56,10 +58,15 @@ public sealed class AppLogging : IDisposable
                 .AddInMemoryCollection(nlogSection.Select(kv => new KeyValuePair<string, string?>("NLog:" + kv.Key, kv.Value)))
                 .Build();
             logFactory.Setup().LoadConfigurationFromSection(root);
+            if (fileOnly && logFactory.Configuration is { } loaded)
+            {
+                RemoveTerminalTargets(loaded);
+                logFactory.Configuration = loaded;
+            }
         }
         else
         {
-            logFactory.Configuration = Generate(config, directory, headless);
+            logFactory.Configuration = Generate(config, directory, headless, fileOnly);
         }
 
         var ui = logFactory.Configuration?.AllTargets.OfType<UiLogTarget>().FirstOrDefault();
@@ -68,7 +75,26 @@ public sealed class AppLogging : IDisposable
         return new AppLogging(logFactory, loggerFactory, ui, directory);
     }
 
-    private static LoggingConfiguration Generate(LoggingConfig config, string directory, bool headless)
+    /// <summary>Takes the console and log-pane targets (also behind a wrapper) out of a user-supplied configuration: the Settings TUI owns the terminal.</summary>
+    private static void RemoveTerminalTargets(LoggingConfiguration configuration)
+    {
+        static bool IsTerminal(Target? t) => t switch
+        {
+            ConsoleTarget or ColoredConsoleTarget or UiLogTarget => true,
+            WrapperTargetBase w => IsTerminal(w.WrappedTarget),
+            _ => false,
+        };
+
+        foreach (var rule in configuration.LoggingRules.ToList())
+        {
+            foreach (var t in rule.Targets.Where(IsTerminal).ToList()) rule.Targets.Remove(t);
+            if (rule.Targets.Count == 0 && rule.ChildRules.Count == 0) configuration.LoggingRules.Remove(rule);
+        }
+
+        foreach (var t in configuration.AllTargets.Where(IsTerminal).ToList()) configuration.RemoveTarget(t.Name);
+    }
+
+    private static LoggingConfiguration Generate(LoggingConfig config, string directory, bool headless, bool fileOnly)
     {
         var minimum = ToNLog(config.Level);
         var configuration = new LoggingConfiguration();
@@ -82,13 +108,13 @@ public sealed class AppLogging : IDisposable
         };
         configuration.AddRule(minimum, NLog.LogLevel.Fatal, file);
 
-        if (config.Console ?? headless)
+        if (!fileOnly && (config.Console ?? headless))
         {
             var console = new ConsoleTarget("console") { StdErr = true, Layout = Layout };
             configuration.AddRule(minimum, NLog.LogLevel.Fatal, console);
         }
 
-        if (!headless)
+        if (!headless && !fileOnly)
         {
             // The pane has its own level filter, so it sees Debug even when the file is at Info.
             var ui = new UiLogTarget { Name = "ui" };

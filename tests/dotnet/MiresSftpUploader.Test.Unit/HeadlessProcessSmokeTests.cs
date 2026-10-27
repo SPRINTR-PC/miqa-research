@@ -22,6 +22,17 @@ public sealed class HeadlessProcessSmokeTests
     }
 
     [TestMethod]
+    public void Configure_with_redirected_streams_exits_2_with_one_stderr_line_and_empty_stdout()
+    {
+        var r = Start(new Dictionary<string, string> { ["TERM"] = "xterm-256color" }, "--configure");
+
+        Assert.AreEqual(2, r.Exit, r.Err);
+        Assert.AreEqual("", r.Out);
+        Assert.AreEqual(1, r.Err.TrimEnd().Split('\n').Length, r.Err);
+        StringAssert.Contains(r.Err, "--configure");
+    }
+
+    [TestMethod]
     public void Headless_runs_the_Engine_and_prints_only_the_summary_line()
     {
         var dir = Directory.CreateTempSubdirectory("mires-smoke-").FullName;

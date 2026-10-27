@@ -27,6 +27,62 @@ public sealed class HelpAndDocsTests
     }
 
     [TestMethod]
+    public void Help_describes_configure_its_honoured_flags_and_its_terminal_requirement()
+    {
+        var line = Cli.HelpText.Split('\n').Single(l => l.TrimStart().StartsWith("--configure ", StringComparison.Ordinal));
+
+        StringAssert.Contains(Cli.HelpText, "Settings TUI");
+        StringAssert.Contains(Cli.HelpText, "--data-dir and --log-level");
+        StringAssert.Contains(Cli.HelpText, "80x24");
+        Assert.IsTrue(line.Length > 0);
+        StringAssert.Contains(Cli.HelpText, "--configure and --version imply --headless", StringComparison.Ordinal);
+    }
+
+    [TestMethod]
+    public void Help_names_the_supported_platforms_of_the_Settings_TUI_and_that_Windows_is_unverified()
+    {
+        StringAssert.Contains(Cli.HelpText, "Linux and macOS");
+        StringAssert.Contains(Cli.HelpText, "Windows is unverified");
+    }
+
+    [TestMethod]
+    public void The_readme_the_scheduling_guide_and_the_Help_page_document_the_Settings_TUI()
+    {
+        var help = HelpViewModel.Create(_ => { });
+        foreach (var text in new[] { Shipped("README.md"), Shipped("scheduling.md"), help.Topics[0].Markdown, help.Topics[1].Markdown })
+        {
+            StringAssert.Contains(text, "--configure");
+            StringAssert.Contains(text, "Settings TUI");
+            StringAssert.Contains(text, "Linux and macOS");
+            StringAssert.Contains(text, "Windows is unverified");
+        }
+        var readme = Shipped("README.md");
+        foreach (var key in new[] { "F5", "Ctrl+S", "Ctrl+R", "Ctrl+Q", "F4", "Ctrl+PageUp", "Tab completion", "Check connection" })
+            StringAssert.Contains(readme, key);
+    }
+
+    [TestMethod]
+    public void The_release_checklist_has_the_manual_Settings_TUI_items_and_dialogs_are_driven_headlessly()
+    {
+        var text = Shipped("release-checklist.md");
+
+        foreach (var item in new[] { "Settings TUI", "SSH session", "throttled", "Resize while running", "TERM=dumb", "256-colour", "PuTTY",
+                     "Unlock", "unsaved changes", "Archive Rules", "SIGHUP", "130", "linux-arm64", "osx-arm64", "headless", "Windows console" })
+            StringAssert.Contains(text, item, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [TestMethod]
+    public void The_publish_scripts_smoke_test_configure_under_redirected_streams()
+    {
+        var root = Path.Combine(AppContext.BaseDirectory, "shipped");
+        foreach (var script in new[] { "publish.sh", "publish.ps1" })
+        {
+            var text = File.ReadAllText(Path.Combine(root, script));
+            StringAssert.Contains(text, "--configure", script);
+        }
+    }
+
+    [TestMethod]
     public void Help_lists_every_exit_code()
     {
         foreach (var code in new[] { "0", "1", "2", "3", "4", "130" })

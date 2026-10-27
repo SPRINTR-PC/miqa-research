@@ -51,6 +51,31 @@ public sealed class HeadlessRunnerTests : ConfigurationTestBase
     }
 
     [TestMethod]
+    public async Task A_headless_Dry_Run_prints_the_zip_plan_on_stderr_and_keeps_stdout_to_the_summary()
+    {
+        var machine = System.Text.Json.Nodes.JsonNode.Parse(Machine())!.AsObject();
+        machine["Archive"] = new System.Text.Json.Nodes.JsonObject
+        {
+            ["Rules"] = new System.Text.Json.Nodes.JsonArray(new System.Text.Json.Nodes.JsonObject { ["Name"] = "texts", ["Pattern"] = "\\.txt$" }),
+        };
+        File.WriteAllText(MachinePath, machine.ToJsonString());
+        AddFile();
+        var cli = CliOptions.Parse(["--headless", "--dry-run"]).Options!;
+        var configuration = new Configuration(new ConfigurationLocations(MachinePath, UserPath, new Dictionary<string, string?>()));
+        var runtime = new UploaderRuntime(configuration, new StaticRemoteFactory(_remote), NullLoggerFactory.Instance, TimeProvider.System, cli);
+        var stdout = new StringWriter();
+        var stderr = new StringWriter();
+
+        var exit = await HeadlessRunner.RunAsync(cli, runtime, stdout, stderr, CancellationToken.None);
+
+        Assert.AreEqual(0, exit, stderr.ToString());
+        StringAssert.Contains(stderr.ToString(), "archive: ");
+        StringAssert.Contains(stderr.ToString(), "rule=texts files=1");
+        StringAssert.Contains(stderr.ToString(), "status=WouldBuild");
+        Assert.DoesNotContain("archive", stdout.ToString());
+    }
+
+    [TestMethod]
     public async Task Dry_run_uploads_nothing()
     {
         AddFile();

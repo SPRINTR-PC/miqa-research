@@ -29,6 +29,8 @@ public static class Cli
             return true;
         }
 
+        if (options.Configure) return false;
+
         if (options.Version)
         {
             stdout.WriteLine(version);
@@ -85,31 +87,11 @@ public static class Cli
             return true;
         }
 
-        exitCode = CheckConnection(result.Config!.Sftp, configuration.LoadSecrets(), remoteFactory ?? (c => new SshNetRemote(c)), stdout, stderr);
+        var check = ConnectionCheck.RunAsync(result.Config!.Sftp, configuration.LoadSecrets(), remoteFactory ?? (c => new SshNetRemote(c)), CancellationToken.None)
+            .GetAwaiter().GetResult();
+        (check.IsConnected ? stdout : stderr).WriteLine(check.Message);
+        exitCode = check.ExitCode;
         return true;
-    }
-
-    /// <summary>Opens one session to prove the server answers, the Host Key Fingerprint matches and the credentials work.</summary>
-    private static int CheckConnection(SftpConfig sftp, Secrets secrets, Func<SftpConnection, IRemote> remoteFactory, TextWriter stdout, TextWriter stderr)
-    {
-        var missing = sftp.AuthMethod == AuthMethod.PrivateKey ? null : secrets.SftpPassword is null ? Secrets.SftpPasswordVariable : null;
-        if (missing is not null)
-        {
-            stderr.WriteLine($"{missing} is not set. Set it as an environment variable, or store it with --set-secret sftp-password.");
-            return ExitCodes.ConfigurationError;
-        }
-
-        var connection = SftpConnection.From(sftp, secrets);
-        var connect = remoteFactory(connection).ConnectAsync(CancellationToken.None).GetAwaiter().GetResult();
-        if (!connect.IsOk)
-        {
-            stderr.WriteLine($"Connection check failed for {connection}: {connect.Reason}");
-            return ExitCodes.ConnectFailed;
-        }
-
-        connect.Value!.DisposeAsync().AsTask().GetAwaiter().GetResult();
-        stdout.WriteLine($"Configuration is valid. Connected to {connection}; the host key matches the pinned Host Key Fingerprint.");
-        return ExitCodes.Ok;
     }
 
     /// <summary>Creates or repairs the Data Directory (idempotent). Run once per machine by an administrator.</summary>
@@ -230,6 +212,9 @@ public static class Cli
           --data-dir <path>       Use this Data Directory (also MIRES_DATA_DIR). Default: Windows
                                   %ProgramData%\MiresSftpUploader, macOS /Users/Shared/MiresSftpUploader,
                                   Linux /var/lib/mires-sftp-uploader.
+          --configure             Open the Settings TUI, a full-screen terminal editor for the settings. Needs an
+                                  interactive terminal of at least 80x24; honours only --data-dir and --log-level.
+                                  Supported on Linux and macOS; Windows is unverified. F5 checks the connection.
           --version               Print the version and exit.
           --help                  Print this help and exit.
 
@@ -239,7 +224,7 @@ public static class Cli
         whole by the highest layer that sets it. Secrets are read only from the environment:
         MIRES_SFTP_PASSWORD, MIRES_SFTP_KEY_PASSPHRASE, MIRES_S3_<SOURCE>_ACCESS_KEY and _SECRET_KEY.
         stdout carries only the final summary line; logs go to stderr and the log file.
-        --list-runs, --export-run, --validate-config, --init-data-dir and --version imply --headless.
+        --list-runs, --export-run, --validate-config, --init-data-dir, --configure and --version imply --headless.
 
         Exit codes:
           0    OK, or every file skipped as unchanged

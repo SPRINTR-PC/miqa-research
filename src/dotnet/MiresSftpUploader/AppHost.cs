@@ -7,7 +7,7 @@ using MiresSftpUploader.ViewModels;
 namespace MiresSftpUploader;
 
 /// <summary>What the window needs from the process: configuration, the Engine runtime and logging. Builds the window's view-model.</summary>
-public sealed class AppHost(Configuration configuration, IUploaderRuntime runtime, AppLogging? logging)
+public sealed class AppHost(Configuration configuration, IUploaderRuntime runtime, AppLogging? logging, CliOptions? cli = null)
 {
     /// <summary>The host of the running process; set by <c>Program</c> before Avalonia starts.</summary>
     public static AppHost? Current { get; set; }
@@ -26,7 +26,7 @@ public sealed class AppHost(Configuration configuration, IUploaderRuntime runtim
             : new RunHistory(UploaderComposition.ToStateSettings(config), TimeProvider.System, UploaderComposition.ToEngineSettings(config).Report);
         MainWindowViewModel? window = null;
         var history = new HistoryPageViewModel(runHistory, Environment.UserName, post, id => window!.RetryFromHistoryAsync(id));
-        var settings = new SettingsPageViewModel(configuration);
+        var settings = new SettingsPageViewModel(configuration, cli: cli);
         window = new MainWindowViewModel(upload, log, ui.Theme, theme => UserSettings.SaveTheme(configuration, theme), history, settings);
         return window;
     }

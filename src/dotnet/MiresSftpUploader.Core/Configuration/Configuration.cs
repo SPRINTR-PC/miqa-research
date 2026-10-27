@@ -88,7 +88,7 @@ public sealed record LoadResult
         var under = key + ":";
         foreach (var (k, info) in Keys)
             if (k.StartsWith(under, StringComparison.OrdinalIgnoreCase)) return info;
-        return new SettingInfo(ConfigLayer.Default, false);
+        return new SettingInfo(ConfigLayer.Default, Configuration.IsMachineScoped(key) && !MachineConfigWritable);
     }
 }
 
@@ -192,10 +192,12 @@ public sealed class Configuration(ConfigurationLocations locations)
         var warnings = new List<ConfigError>();
         if (layers.User.Values.Remove(VerifyCommandKey))
             warnings.Add(new(VerifyCommandKey, "is ignored in User Overrides. Set it in Machine Config or the environment."));
+        foreach (var ignored in layers.IgnoredUserKeys)
+            warnings.Add(new(ignored, "is ignored in User Overrides. The Sources and the Sftp settings are kept in Machine Config (appsettings.json) and saved there."));
         var merged = Merge(layers);
         var keys = merged.Layers.ToDictionary(
             kv => kv.Key,
-            kv => new SettingInfo(kv.Value, IsLocked(kv.Value, machineWritable)),
+            kv => new SettingInfo(kv.Value, IsLocked(kv.Value, machineWritable) || (IsMachineScoped(kv.Key) && !machineWritable)),
             StringComparer.OrdinalIgnoreCase);
 
         var config = Bind(merged.Values, errors);
@@ -219,13 +221,21 @@ public sealed class Configuration(ConfigurationLocations locations)
         };
     }
 
+    /// <summary>
+    /// The settings that describe where files come from and where they go (<c>Sources</c> and <c>Sftp:*</c>): every user of the
+    /// machine shares them, so they live in Machine Config and are saved there. User Overrides cannot hold them.
+    /// </summary>
+    internal static bool IsMachineScoped(string key) =>
+        key.Equals("Sources", StringComparison.OrdinalIgnoreCase) || key.StartsWith("Sources:", StringComparison.OrdinalIgnoreCase)
+        || key.Equals("Sftp", StringComparison.OrdinalIgnoreCase) || key.StartsWith("Sftp:", StringComparison.OrdinalIgnoreCase);
+
     private static bool IsLocked(ConfigLayer layer, bool machineWritable) =>
         layer is ConfigLayer.Environment or ConfigLayer.Cli || (layer == ConfigLayer.Machine && !machineWritable);
 
     /// <summary>
     /// Writes <paramref name="changes"/> (flat key to new value; <c>null</c> drops the User Override; <c>[]</c> empties a list)
-    /// to User Overrides after re-validating the result. Only keys whose value changes are written. Locked Settings and
-    /// Secrets are rejected. When a change touches a list, the whole effective list is saved with it, since a list is
+    /// to User Overrides, or to Machine Config for the Sources and Sftp settings, after re-validating the result. Only keys
+    /// whose value changes are written. Locked Settings and Secrets are rejected. When a change touches a list, the whole effective list is saved with it, since a list is
     /// replaced whole.
     /// </summary>
     public SaveResult Save(IReadOnlyDictionary<string, string?> changes, CliOptions? cli = null)
@@ -234,7 +244,15 @@ public sealed class Configuration(ConfigurationLocations locations)
         if (plan.Errors.Count > 0) return new SaveResult(plan.Errors);
         if (plan.Written.Count == 0) return new SaveResult([]);
 
-        WriteAtomically(locations.UserOverridesPath, UserFile.ToJson(plan.Next!, ConfigVersion));
+        try
+        {
+            if (plan.WritesMachine) WriteAtomically(locations.MachineConfigPath, UserFile.ToJson(plan.NextMachine!, ConfigVersion));
+            if (plan.WritesUser) WriteAtomically(locations.UserOverridesPath, UserFile.ToJson(plan.Next!, ConfigVersion));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return new SaveResult([new(null, $"Could not write the settings: {e.Message}")]);
+        }
         return new SaveResult([]) { WrittenKeys = plan.Written };
     }
 
@@ -248,7 +266,17 @@ public sealed class Configuration(ConfigurationLocations locations)
         return new SaveCheck(plan.Errors, plan.Warnings);
     }
 
-    private sealed record SavePlan(IReadOnlyList<ConfigError> Errors, IReadOnlyList<ConfigError> Warnings, IReadOnlyList<string> Written, FlatSettings? Next);
+    private sealed record SavePlan(
+        IReadOnlyList<ConfigError> Errors, IReadOnlyList<ConfigError> Warnings, IReadOnlyList<string> Written,
+        FlatSettings? Next, FlatSettings? NextMachine = null, bool WritesUser = false, bool WritesMachine = false);
+
+    private static FlatSettings Copy(FlatSettings source)
+    {
+        var copy = new FlatSettings();
+        foreach (var (k, v) in source.Values) copy.Values[k] = v;
+        foreach (var e in source.EmptyArrays) copy.EmptyArrays.Add(e);
+        return copy;
+    }
 
     private SavePlan Plan(IReadOnlyDictionary<string, string?> changes, CliOptions? cli)
     {
@@ -257,10 +285,9 @@ public sealed class Configuration(ConfigurationLocations locations)
         var machineWritable = IsDirectoryWritable(Path.GetDirectoryName(Path.GetFullPath(locations.MachineConfigPath))!);
 
         var current = Merge(layers);
-        var user = layers.User;
-        var next = new FlatSettings();
-        foreach (var (k, v) in user.Values) next.Values[k] = v;
-        foreach (var e in user.EmptyArrays) next.EmptyArrays.Add(e);
+        var next = Copy(layers.User);
+        var nextMachine = Copy(layers.Machine);
+        FlatSettings TargetOf(string key) => IsMachineScoped(key) ? nextMachine : next;
 
         foreach (var key in changes.Keys)
         {
@@ -268,7 +295,7 @@ public sealed class Configuration(ConfigurationLocations locations)
                 errors.Add(new(key, "is a Secret and is never saved; set it in an environment variable."));
             else if (key.Equals(GroupKey, StringComparison.OrdinalIgnoreCase) || key.Equals(VerifyCommandKey, StringComparison.OrdinalIgnoreCase))
                 errors.Add(new(key, "can only be set in Machine Config or the environment."));
-            else if (IsLocked(LayerOf(current, key), machineWritable))
+            else if (IsLocked(LayerOf(current, key), machineWritable) || (IsMachineScoped(key) && !machineWritable))
                 errors.Add(new(key, "is a Locked Setting (supplied by the environment, a CLI flag or a Machine Config you cannot write)."));
         }
         if (errors.Count > 0) return new SavePlan(errors, [], [], null);
@@ -276,8 +303,8 @@ public sealed class Configuration(ConfigurationLocations locations)
         var cleared = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (key, value) in changes.Where(c => c.Value is null || c.Value == "[]"))
         {
-            RemoveUnder(next, key);
-            if (value == "[]") next.EmptyArrays.Add(key);
+            RemoveUnder(TargetOf(key), key);
+            if (value == "[]") TargetOf(key).EmptyArrays.Add(key);
             cleared.Add(key);
         }
 
@@ -289,19 +316,23 @@ public sealed class Configuration(ConfigurationLocations locations)
             var rewritten = root is not null && cleared.Contains(root);
             var effective = current.Values.TryGetValue(key, out var set) ? set : DefaultText(key);
             if (!rewritten && string.Equals(effective, value, StringComparison.OrdinalIgnoreCase)) continue;
-            if (root is not null && !rewritten && !next.Values.Keys.Any(k => k.StartsWith(root + ":", StringComparison.OrdinalIgnoreCase)))
+            var target = TargetOf(key);
+            if (root is not null && !rewritten && !target.Values.Keys.Any(k => k.StartsWith(root + ":", StringComparison.OrdinalIgnoreCase)))
                 foreach (var (k, v) in current.Values.Where(kv => kv.Key.StartsWith(root + ":", StringComparison.OrdinalIgnoreCase)))
-                    next.Values[k] = v;
-            next.EmptyArrays.Remove(root ?? key);
-            next.Values[key] = value!;
+                    target.Values[k] = v;
+            target.EmptyArrays.Remove(root ?? key);
+            target.Values[key] = value!;
             written.Add(key);
         }
         written.AddRange(cleared);
 
-        if (written.Count == 0) return new SavePlan([], [], [], next);
+        if (written.Count == 0) return new SavePlan([], [], [], next, nextMachine);
 
-        var candidate = Evaluate(layers with { User = next }, headless: false, machineWritable);
-        return new SavePlan(candidate.Errors, candidate.Warnings, written, next);
+        var writesMachine = written.Any(IsMachineScoped);
+        // Old per-user Sources and Sftp values are dropped from the file together with any other save to it.
+        var writesUser = written.Any(k => !IsMachineScoped(k)) || layers.IgnoredUserKeys.Count > 0;
+        var candidate = Evaluate(layers with { Machine = nextMachine, User = next, IgnoredUserKeys = [] }, headless: false, machineWritable);
+        return new SavePlan(candidate.Errors, candidate.Warnings, written, next, nextMachine, writesUser, writesMachine);
     }
 
     /// <summary>The documented default of a scalar key, as text; null for lists, unknown keys and keys without a default.</summary>
@@ -403,7 +434,11 @@ public sealed class Configuration(ConfigurationLocations locations)
 
     // ---- layers ----
 
-    internal sealed record Layers(FlatSettings Machine, FlatSettings User, FlatSettings Environment, FlatSettings Cli);
+    internal sealed record Layers(FlatSettings Machine, FlatSettings User, FlatSettings Environment, FlatSettings Cli)
+    {
+        /// <summary>Keys (or list roots) found in User Overrides that belong in Machine Config; they were left out of <see cref="User"/>.</summary>
+        public IReadOnlyList<string> IgnoredUserKeys { get; init; } = [];
+    }
 
     internal Layers? ReadLayers(CliOptions cli, out List<ConfigError> errors, bool machineRequired = true)
     {
@@ -411,6 +446,19 @@ public sealed class Configuration(ConfigurationLocations locations)
         var machine = ReadFile(locations.MachineConfigPath, "Machine Config", required: machineRequired, errors);
         var user = ReadFile(locations.UserOverridesPath, "User Overrides", required: false, errors);
         if (errors.Count > 0) return null;
+
+        var ignored = new List<string>();
+        foreach (var key in user!.Values.Keys.Where(IsMachineScoped).ToList())
+        {
+            user.Values.Remove(key);
+            var root = FlatSettings.ArrayRootOf(key) ?? key;
+            if (!ignored.Contains(root, StringComparer.OrdinalIgnoreCase)) ignored.Add(root);
+        }
+        foreach (var empty in user.EmptyArrays.Where(IsMachineScoped).ToList())
+        {
+            user.EmptyArrays.Remove(empty);
+            if (!ignored.Contains(empty, StringComparer.OrdinalIgnoreCase)) ignored.Add(empty);
+        }
 
         var env = new FlatSettings();
         foreach (var (name, value) in locations.Environment)
@@ -423,7 +471,7 @@ public sealed class Configuration(ConfigurationLocations locations)
 
         var cliLayer = new FlatSettings();
         foreach (var (k, v) in cli.ConfigOverrides) cliLayer.Values[k] = v;
-        return new Layers(machine!, user!, env, cliLayer);
+        return new Layers(machine!, user, env, cliLayer) { IgnoredUserKeys = ignored };
     }
 
     private static FlatSettings? ReadFile(string path, string what, bool required, List<ConfigError> errors)

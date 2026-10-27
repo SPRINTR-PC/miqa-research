@@ -45,6 +45,44 @@ public sealed class AppLoggingTests
     }
 
     [TestMethod]
+    public void File_only_logging_has_no_console_and_no_pane_target_even_when_the_console_is_switched_on()
+    {
+        using var logging = AppLogging.Start(new LoggingConfig { Directory = _dir, Console = true }, NoSection, headless: true, Redactor.None, _dir, fileOnly: true);
+
+        var targets = logging.LogFactory.Configuration!.AllTargets;
+        Assert.AreEqual(1, targets.Count);
+        Assert.IsInstanceOfType<FileTarget>(targets[0]);
+        Assert.IsNull(logging.Ui);
+    }
+
+    [TestMethod]
+    public void File_only_logging_strips_console_targets_from_a_user_supplied_NLog_section()
+    {
+        var custom = Path.Combine(_dir, "custom.log");
+        var section = new Dictionary<string, string>
+        {
+            ["targets:file:type"] = "File",
+            ["targets:file:fileName"] = custom,
+            ["targets:console:type"] = "Console",
+            ["targets:colored:type"] = "ColoredConsole",
+            ["rules:0:logger"] = "*",
+            ["rules:0:minLevel"] = "Info",
+            ["rules:0:writeTo"] = "file,console,colored",
+        };
+
+        using (var logging = AppLogging.Start(new LoggingConfig { Directory = _dir }, section, headless: true, Redactor.None, _dir, fileOnly: true))
+        {
+            var targets = logging.LogFactory.Configuration!.AllTargets;
+            Assert.IsEmpty(targets.OfType<ConsoleTarget>().ToList());
+            Assert.IsEmpty(targets.OfType<ColoredConsoleTarget>().ToList());
+            Assert.IsEmpty(logging.LogFactory.Configuration!.LoggingRules.SelectMany(r => r.Targets).Where(t => t is ConsoleTarget or ColoredConsoleTarget).ToList());
+            logging.LoggerFactory.CreateLogger("Test").LogWarning("to the file only");
+        }
+
+        StringAssert.Contains(File.ReadAllText(custom), "to the file only");
+    }
+
+    [TestMethod]
     public void Log_directory_defaults_to_the_given_default_when_none_is_configured()
     {
         using (var logging = Start(new LoggingConfig()))

@@ -72,6 +72,7 @@ public sealed class SettingsPageViewModel : ViewModelBase
         Definitions.Where(d => d.Kind == FieldKind.Number).Select(d => d.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     private readonly Configuration _configuration;
+    private readonly CliOptions? _cli;
     private readonly Func<string, DataDirectoryAccess> _check;
     private readonly Func<string, long> _freeSpace;
     private readonly string _defaultDataDirectory = DataDirectory.Resolve(null, null, DataDirectory.CurrentPlatform, Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData));
@@ -86,9 +87,10 @@ public sealed class SettingsPageViewModel : ViewModelBase
     private bool _hasChanges;
     private string _saveMessage = "";
 
-    public SettingsPageViewModel(Configuration configuration, Func<string, DataDirectoryAccess>? checkDataDirectory = null, Func<string, long>? freeSpace = null)
+    public SettingsPageViewModel(Configuration configuration, Func<string, DataDirectoryAccess>? checkDataDirectory = null, Func<string, long>? freeSpace = null, CliOptions? cli = null)
     {
         _configuration = configuration;
+        _cli = cli;
         _check = checkDataDirectory ?? (path => DataDirectory.Check(path));
         _freeSpace = freeSpace ?? DataDirectory.FreeSpaceBytes;
         SftpPassword = NewSecretEntry(Secrets.SftpPasswordName, "SFTP password");
@@ -199,7 +201,7 @@ public sealed class SettingsPageViewModel : ViewModelBase
     /// <summary>Reads the configuration again and drops every unsaved edit.</summary>
     public void Reload()
     {
-        _load = _configuration.Load();
+        _load = _configuration.Load(_cli);
         Fields.Clear();
         _byKey.Clear();
         foreach (var (key, label, group, kind, options, help) in Definitions)
@@ -368,7 +370,8 @@ public sealed class SettingsPageViewModel : ViewModelBase
         Revalidate();
     }
 
-    private bool SourcesChanged => !SourcesLocked && (Sources.Count != _sourceCount || Sources.Any(s => s.IsChanged));
+    /// <summary>True when the Sources list differs from what was loaded: one added, one removed, or one edited.</summary>
+    public bool SourcesChanged => !SourcesLocked && (Sources.Count != _sourceCount || Sources.Any(s => s.IsChanged));
 
     /// <summary>Gives a saved S3 Source entries for its keys, keeps them current, and drops them when the Source is renamed or retyped.</summary>
     private void SyncKeyEntries(SourceEditorViewModel source)
@@ -425,7 +428,7 @@ public sealed class SettingsPageViewModel : ViewModelBase
             if (changes.Count == 0) errors.AddRange(_load.Errors);
             else
             {
-                var check = _configuration.Check(changes);
+                var check = _configuration.Check(changes, _cli);
                 errors.AddRange(check.Errors);
                 warnings = check.Warnings;
             }
@@ -515,9 +518,24 @@ public sealed class SettingsPageViewModel : ViewModelBase
         return changes;
     }
 
+    /// <summary>Says where the saved keys went: the Sources and Sftp settings to Machine Config, the rest to User Overrides.</summary>
+    private static string SavedMessage(IReadOnlyList<string> keys)
+    {
+        var machine = keys.Any(k => k.Equals("Sources", StringComparison.OrdinalIgnoreCase) || k.StartsWith("Sources:", StringComparison.OrdinalIgnoreCase)
+            || k.StartsWith("Sftp:", StringComparison.OrdinalIgnoreCase));
+        var user = keys.Any(k => !(k.Equals("Sources", StringComparison.OrdinalIgnoreCase) || k.StartsWith("Sources:", StringComparison.OrdinalIgnoreCase)
+            || k.StartsWith("Sftp:", StringComparison.OrdinalIgnoreCase)));
+        return (machine, user) switch
+        {
+            (true, true) => "Saved to the Machine Config (Sources, Destination) and to your User Overrides.",
+            (true, false) => "Saved to the Machine Config (appsettings.json).",
+            _ => "Saved to your User Overrides.",
+        };
+    }
+
     private void Save()
     {
-        var result = _configuration.Save(Changes());
+        var result = _configuration.Save(Changes(), _cli);
         if (!result.Succeeded)
         {
             SaveMessage = "Not saved: " + string.Join(" ", result.Errors.Select(e => e.ToString()));
@@ -525,7 +543,7 @@ public sealed class SettingsPageViewModel : ViewModelBase
         }
 
         Reload();
-        SaveMessage = "Saved to your User Overrides.";
+        SaveMessage = SavedMessage(result.WrittenKeys);
         Saved?.Invoke();
     }
 }

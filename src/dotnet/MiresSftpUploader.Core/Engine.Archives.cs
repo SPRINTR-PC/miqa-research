@@ -73,7 +73,7 @@ public sealed partial class Engine
         }
         else
         {
-            run.AddArchive(sourceName, plan, FileOutcome.Pending, null);
+            run.AddArchive(sourceName, plan, FileOutcome.Pending, $"Would be packed into {plan.RelativePath} (rule {plan.RuleName})");
         }
         var estimate = skipStatus == ArchiveStatuses.WouldSkip ? 0 : plan.TotalSize;
         if (estimate > 0 && StagingShortfall(estimate) is { } shortfall) run.Warn(shortfall);

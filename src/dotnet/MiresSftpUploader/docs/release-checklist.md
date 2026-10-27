@@ -124,6 +124,22 @@ Targets: all four.
 - [ ] **Do:** `MIRES_TEST_4GIB=1 dotnet test MiqaResearch.slnx --filter "TestCategory=Container&FullyQualifiedName~SftpHashProof"`, or upload one 4 GiB file to an SFTP server by hand and compare its `sha256sum` with the Manifest.
 - **Expect:** equal hashes and flat memory during the transfer. The automated hash proof covers 64 MiB only. There is no resume: a restarted Run uploads the file again.
 
+## 14. Settings TUI (`--configure`)
+
+Targets: as listed per item. Modal dialogs (Unlock confirmation, unsaved changes, per-Source Archive Rules) CAN be driven headlessly by injecting keys from a timer while the modal runs (see `SettingsTuiConfirmDialogTests`), so the automated tests cover their keys; the items below stay manual to check how they look and behave in a real terminal.
+
+- [ ] **Windows console under the `WinExe` build** (win-x64). **Never verified.** **Do:** run `MiresSftpUploader --configure` from cmd, PowerShell, Windows Terminal and an SSH session into Windows. **Expect:** the Settings TUI opens and takes keys, or it fails cleanly. Record the result; if it does nothing, try `AttachConsole` plus `CONIN$`/`CONOUT$`, `SetStdHandle` and Terminal.Gui's `ansi` driver, or build the console shim from item 2. Until verified, `--configure` is documented as supported on Linux and macOS, with Windows unverified.
+- [ ] **SSH session** (linux-x64, linux-arm64, osx-arm64). **Do:** `ssh host` and run `--configure`, edit a field, save with Ctrl+S, quit with Ctrl+Q. **Expect:** it renders, the keys work, the terminal is restored on exit.
+- [ ] **Throttled SSH session.** **Do:** the same over a slow link (for example `tc qdisc add dev eth0 root netem delay 200ms`, or a mobile hotspot). **Expect:** usable, no garbled screen, no hang.
+- [ ] **Resize while running.** **Do:** shrink the terminal below 80x24, then enlarge it. **Expect:** an overlay says the terminal is too small instead of a broken screen, and the form returns when it is large enough.
+- [ ] **`TERM=dumb`.** **Do:** `TERM=dumb MiresSftpUploader --configure`. **Expect:** exit code 2, one line on stderr, nothing on stdout.
+- [ ] **A 256-colour terminal.** **Do:** `TERM=xterm-256color` in a terminal without truecolor. **Expect:** the colours round to the nearest ones and keep their meaning (cyan navigation, green changed, red error, amber locked or warning), and the symbols carry it too.
+- [ ] **Emoji and Unicode rendering** of the lock, the changed mark and the error mark in Windows Terminal, PuTTY and macOS Terminal. **Expect:** no overlapping or clipped cells; record the font.
+- [ ] **Dialogs** (Unlock the Host Key Fingerprint, unsaved changes on quit, per-Source Archive Rules). **Do:** open each in a real terminal. **Expect:** Cancel is the default of the Unlock confirmation, Esc cancels, Save is absent from the unsaved-changes dialog while errors exist, and the Archive Rules dialog edits and closes.
+- [ ] **SIGHUP and SIGTERM.** **Do:** change a field without saving, then `kill -HUP <pid>` (and again with `-TERM`). **Expect:** exit code 130, the terminal is restored, and nothing was written to the User Overrides.
+- [ ] **The published binary starts the Settings TUI** on linux-x64, linux-arm64 and osx-arm64. **Do:** from the unpacked package run `--configure`. **Expect:** the TUI opens from the untrimmed single file with no missing native or driver error.
+- [ ] **Check connection (F5) against a real SFTP server.** **Do:** in `--configure` with a saved, valid Destination and the password set (environment or Secret Store), press F5; then repeat with a wrong password and with a wrong Host Key Fingerprint. **Expect:** a dialog says connected; then an authentication failure; then a host key mismatch. No secret value appears in any of them, and nothing is uploaded.
+
 ---
 
 ## Sign-off
