@@ -31,7 +31,7 @@ public sealed class HistoryTuiTests : ConfigurationTestBase
 
     private Started Start(int width = 100, int height = 32)
     {
-        var settings = new SettingsPageViewModel(Create(ValidMachine().ToJsonString()));
+        var settings = new SettingsPageViewModel(Create(ValidMachine().ToJsonString()), WritableDataDirectory.Check, _ => long.MaxValue);
         HistoryTuiPage? page = null;
         HistoryPageViewModel? vm = null;
         TuiShell? shell = null;

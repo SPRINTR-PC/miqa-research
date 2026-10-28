@@ -26,7 +26,7 @@ public sealed class HistoryTuiRetryTests : ConfigurationTestBase
 
     private Started Start(FakeRunEngine engine)
     {
-        var settings = new SettingsPageViewModel(Create(ValidMachine().ToJsonString()));
+        var settings = new SettingsPageViewModel(Create(ValidMachine().ToJsonString()), WritableDataDirectory.Check, _ => long.MaxValue);
         var dialogs = new FakeTuiDialogs();
         TuiShell? shell = null;
         UploadPageViewModel? upload = null;

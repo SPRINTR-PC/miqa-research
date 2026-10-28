@@ -37,7 +37,7 @@ public sealed class UploadTuiLogPaneTests : ConfigurationTestBase
         for (var i = 0; i < files; i++)
             engine.Script.Add(new FileOutcomeChanged("wsi", $"f{i:D5}.ndpi", FileOutcome.Pending, null));
         var target = new UiLogTarget();
-        var settings = new SettingsPageViewModel(Create(ValidMachine().ToJsonString()));
+        var settings = new SettingsPageViewModel(Create(ValidMachine().ToJsonString()), WritableDataDirectory.Check, _ => long.MaxValue);
         var dialogs = new FakeTuiDialogs();
         TuiShell? shell = null;
         UploadTuiPage? page = null;

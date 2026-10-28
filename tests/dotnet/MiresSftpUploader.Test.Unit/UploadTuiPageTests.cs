@@ -39,7 +39,7 @@ public sealed class UploadTuiPageTests : ConfigurationTestBase
     {
         engine ??= new FakeRunEngine();
         var fake = engine as FakeRunEngine;
-        var settings = new SettingsPageViewModel(Create(ValidMachine().ToJsonString()));
+        var settings = new SettingsPageViewModel(Create(ValidMachine().ToJsonString()), WritableDataDirectory.Check, _ => long.MaxValue);
         var dialogs = new FakeTuiDialogs();
         TuiShell? shell = null;
         UploadTuiPage? page = null;

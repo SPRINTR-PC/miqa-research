@@ -67,7 +67,7 @@ public sealed class SettingsTuiHarness : IDisposable
     public SettingsTuiHarness(Configuration configuration, int width = 100, int height = 32, FakeTuiDialogs? dialogs = null, SettingsPageViewModel? page = null)
     {
         Dialogs = dialogs ?? new FakeTuiDialogs();
-        Page = page ?? new SettingsPageViewModel(configuration);
+        Page = page ?? new SettingsPageViewModel(configuration, WritableDataDirectory.Check, _ => long.MaxValue);
         App = Application.Create();
         App.Init(DriverRegistry.Names.ANSI);
         App.Driver!.SetScreenSize(width, height);
@@ -190,4 +190,11 @@ public abstract class SettingsTuiTestBase : ConfigurationTestBase
         _open.Add(h);
         return h;
     }
+}
+
+/// <summary>A Data Directory check that always finds a writable directory, so a TUI test does not depend on the machine's real one (absent on CI).</summary>
+internal static class WritableDataDirectory
+{
+    public static MiresSftpUploader.Core.DataDirectoryAccess Check(string path) =>
+        new(path, true, true, "alice", "mires-uploader", 0, long.MaxValue, false, "", null);
 }

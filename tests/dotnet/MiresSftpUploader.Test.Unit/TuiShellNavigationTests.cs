@@ -63,7 +63,7 @@ public sealed class TuiShellNavigationTests : ConfigurationTestBase
 
     private Started Start(ShellTab tab = ShellTab.Upload, int width = 100, int height = 32)
     {
-        var page = new SettingsPageViewModel(Create(ValidMachine().ToJsonString()));
+        var page = new SettingsPageViewModel(Create(ValidMachine().ToJsonString()), WritableDataDirectory.Check, _ => long.MaxValue);
         var dialogs = new FakeTuiDialogs();
         var probe = new ProbePage();
         TuiShell? shell = null;

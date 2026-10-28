@@ -24,7 +24,7 @@ public sealed class HelpTuiTests : ConfigurationTestBase
     {
         var opened = new List<Uri>();
         var vm = topics is null ? HelpPage.CreateViewModel(opened.Add) : new HelpViewModel(topics, opened.Add);
-        var settings = new SettingsPageViewModel(Create(ValidMachine().ToJsonString()));
+        var settings = new SettingsPageViewModel(Create(ValidMachine().ToJsonString()), WritableDataDirectory.Check, _ => long.MaxValue);
         HelpPage? help = null;
         TuiShell? shell = null;
         var host = new TuiTestHost(app =>
