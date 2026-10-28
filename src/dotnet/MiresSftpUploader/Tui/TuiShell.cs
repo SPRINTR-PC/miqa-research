@@ -27,6 +27,7 @@ public sealed class TuiShell : Window
     private static readonly Rune NoHotKey = new('￿');
 
     private readonly IApplication _app;
+    private readonly ITuiDialogs _dialogs;
     private readonly SettingsPageViewModel _settings;
     private readonly SettingsTuiWindow _settingsWindow;
     private readonly IShellPage _upload;
@@ -49,6 +50,7 @@ public sealed class TuiShell : Window
         IShellPage? upload = null, IShellPage? history = null, IShellPage? help = null)
     {
         _app = app;
+        _dialogs = dialogs;
         _settings = settings;
         Current = start;
         Title = "MIRES SFTP Uploader";
@@ -127,8 +129,63 @@ public sealed class TuiShell : Window
     /// <summary>0 after a user quit, 130 after <see cref="Terminate"/>.</summary>
     public int ExitCode => _settingsWindow.ExitCode;
 
-    /// <summary>SIGHUP or SIGTERM: stop with exit code 130; nothing is asked or saved.</summary>
-    public void Terminate() => _settingsWindow.Terminate();
+    /// <summary>How long a quit or a signal waits for a cancelled Run to end before the TUI exits anyway (a Run cut off is an Abandoned Run).</summary>
+    public TimeSpan CancelWait { get; set; } = TimeSpan.FromSeconds(10);
+
+    private bool IsRunActive => _upload.IsRunActive || _history.IsRunActive;
+
+    private bool _stopping;
+    private bool _signalled;
+
+    /// <summary>
+    /// Quit (Ctrl+Q, Ctrl+C): asks about an active Run first ("Cancel the Run and quit" or "Back"), then about unsaved Settings changes (Save,
+    /// Discard, Cancel); only when both are settled does it cancel the Run, wait up to <see cref="CancelWait"/>, and stop with exit code 0.
+    /// </summary>
+    public void RequestQuit()
+    {
+        if (_stopping) return;
+        var running = IsRunActive;
+        if (running && !_dialogs.AskCancelRunAndQuit()) return;
+        if (!_settingsWindow.ResolveUnsaved()) return;
+        if (running) CancelRunsThen(() => _settingsWindow.StopNow());
+        else _settingsWindow.StopNow();
+    }
+
+    /// <summary>
+    /// SIGHUP or SIGTERM: cancel an active Run, wait up to <see cref="CancelWait"/>, then stop with exit code 130; nothing is asked or saved.
+    /// A second signal stops at once.
+    /// </summary>
+    public void Terminate()
+    {
+        if (_signalled || !IsRunActive)
+        {
+            _signalled = true;
+            _settingsWindow.Terminate();
+            return;
+        }
+
+        _signalled = true;
+        CancelRunsThen(_settingsWindow.Terminate);
+    }
+
+    private void CancelRunsThen(Action stop)
+    {
+        _stopping = true;
+        _upload.CancelRun();
+        _history.CancelRun();
+        _statusOverride = "Cancelling…";
+        Refresh();
+        var deadline = DateTime.UtcNow + CancelWait;
+        _app.AddTimeout(TimeSpan.FromMilliseconds(50), () =>
+        {
+            if (_settingsWindow.ExitRequested) return false;
+            if (IsRunActive && DateTime.UtcNow < deadline) return true;
+            stop();
+            return false;
+        });
+    }
+
+    private string? _statusOverride;
 
     public void Show(ShellTab tab)
     {
@@ -152,7 +209,7 @@ public sealed class TuiShell : Window
         if (!FocusInShell()) return;
         if (key == Key.Q.WithCtrl || key == Key.C.WithCtrl)
         {
-            _settingsWindow.RequestQuit();
+            RequestQuit();
             key.Handled = true;
             return;
         }
@@ -210,7 +267,12 @@ public sealed class TuiShell : Window
 
     private string TabText(int i)
     {
-        var badge = (ShellTab)i == ShellTab.Settings && _settings.HasChanges ? " ●" : "";
+        var badge = (ShellTab)i switch
+        {
+            ShellTab.Settings => _settings.HasChanges ? " ●" : "",
+            ShellTab.Upload => _upload.Badge is { Length: > 0 } b ? " " + b : "",
+            _ => "",
+        };
         return $" F{i + 9} {TabNames[i]}{badge} ";
     }
 
@@ -227,7 +289,10 @@ public sealed class TuiShell : Window
         }
 
         var onSettings = Current == ShellTab.Settings;
-        _status.Text = onSettings ? WithSaveTargets(_settingsWindow.StatusText) : PageOf(Current)?.StatusText ?? "";
+        var status = onSettings ? WithSaveTargets(_settingsWindow.StatusText) : PageOf(Current)?.StatusText ?? "";
+        if (_statusOverride is not null) status = _statusOverride;
+        else if (IsRunActive) status += "   Settings changes apply to the next Run";
+        _status.Text = status;
         _status.SetScheme(onSettings && _settings.HasChanges ? Theme.Locked : Theme.Ok);
         var pageKeys = onSettings ? _settingsWindow.KeyHints : PageOf(Current)?.KeyHints ?? "";
         _keyBar.Text = string.Join("   ", new[] { pageKeys, "F9-F12 Page", "Ctrl+Q Quit" }.Where(t => t.Length > 0));

@@ -33,6 +33,15 @@ public sealed class FakeTuiDialogs : ITuiDialogs
 
     public void ShowIssues(IReadOnlyList<string> lines) => IssueLists.Add(lines);
 
+    public int RunQuitAsked { get; private set; }
+    public Queue<bool> RunQuitAnswers { get; } = new();
+
+    public bool AskCancelRunAndQuit()
+    {
+        RunQuitAsked++;
+        return RunQuitAnswers.Count > 0 && RunQuitAnswers.Dequeue();
+    }
+
     public void ShowMessage(string title, string message) => Messages.Add((title, message));
 
     public List<(string Title, ArchiveRulesViewModel Rules)> ArchiveRuleDialogs { get; } = [];

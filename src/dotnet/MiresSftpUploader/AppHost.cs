@@ -31,7 +31,7 @@ public sealed class AppHost(Configuration configuration, IUploaderRuntime runtim
         return window;
     }
 
-    private static LogLevel ToLogLevel(LogLevelSetting level) => level switch
+    internal static LogLevel ToLogLevel(LogLevelSetting level) => level switch
     {
         LogLevelSetting.Trace => LogLevel.Trace,
         LogLevelSetting.Debug => LogLevel.Debug,

@@ -259,21 +259,27 @@ public sealed class SettingsTuiWindow : Window
 
     private void Quit()
     {
-        if (_vm.HasChanges)
-        {
-            switch (_dialogs.AskUnsaved(canSave: !_vm.HasErrors))
-            {
-                case UnsavedChoice.Cancel:
-                    return;
-                case UnsavedChoice.Save:
-                    Save();
-                    if (_vm.HasChanges) return; // the save failed: stay and show why
-                    break;
-            }
-        }
-
-        Stop();
+        if (ResolveUnsaved()) Stop();
     }
+
+    /// <summary>Asks what to do with unsaved changes (when there are any). False when the user chose to keep editing or a save failed: the quit stops there.</summary>
+    public bool ResolveUnsaved()
+    {
+        if (!_vm.HasChanges) return true;
+        switch (_dialogs.AskUnsaved(canSave: !_vm.HasErrors))
+        {
+            case UnsavedChoice.Cancel:
+                return false;
+            case UnsavedChoice.Save:
+                Save();
+                return !_vm.HasChanges; // a failed save stays and shows why
+            default:
+                return true;
+        }
+    }
+
+    /// <summary>Stops the application with exit code 0, without asking anything (the caller has settled every question).</summary>
+    public void StopNow() => Stop();
 
     // ---------------------------------------------------------------- pages
 
