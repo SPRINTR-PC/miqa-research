@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using MiresSftpUploader.Core;
 using MiresSftpUploader.Logging;
 using MiresSftpUploader.SettingsTui;
+using MiresSftpUploader.Tui;
 using System;
 using System.IO;
 using System.Reflection;
@@ -34,7 +35,10 @@ sealed class Program
             return exitCode;
 
         if (options?.Configure == true)
-            return SettingsTuiEntry.Run(new ConsoleTerminalEnvironment(), Console.Error, () => RunSettingsTui(configuration, options));
+            return SettingsTuiEntry.Run(new ConsoleTerminalEnvironment(), Console.Error, () => RunSettingsTui(configuration, options, ShellTab.Settings));
+
+        if (options?.Tui == true)
+            return SettingsTuiEntry.Run(new ConsoleTerminalEnvironment(), Console.Error, () => RunSettingsTui(configuration, options, ShellTab.Upload), "--tui");
 
         var headless = options?.Headless == true;
         Logging = StartLogging(configuration, headless);
@@ -60,13 +64,14 @@ sealed class Program
         }
     }
 
-    /// <summary>The Settings TUI: logs to the file only, so the terminal and stdout stay the interface's.</summary>
-    private static int RunSettingsTui(Configuration configuration, CliOptions options)
+    /// <summary>The whole-app TUI (and --configure, which opens it on Settings): logs to the file only, so the terminal and stdout stay the interface's.</summary>
+    private static int RunSettingsTui(Configuration configuration, CliOptions options, ShellTab start)
     {
         Logging = StartLogging(configuration, headless: true, fileOnly: true);
         try
         {
-            return SettingsTuiApp.Run(configuration, options, (ILoggerFactory?)Logging?.LoggerFactory ?? NullLoggerFactory.Instance);
+            return SettingsTuiApp.Run(configuration, options, (ILoggerFactory?)Logging?.LoggerFactory ?? NullLoggerFactory.Instance, start: start,
+                logTarget: Logging?.Ui);
         }
         finally
         {

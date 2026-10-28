@@ -1,0 +1,36 @@
+using System;
+using Terminal.Gui.Input;
+
+namespace MiresSftpUploader.Tui;
+
+public enum ShellTab { Upload, History, Settings, Help }
+
+/// <summary>A page of the whole-app TUI other than Settings: the text the shell shows for it and the keys the shell routes to it.</summary>
+public interface IShellPage
+{
+    /// <summary>The page's text in the shell's shared status line.</summary>
+    string StatusText { get; }
+
+    /// <summary>The page's keys in the shell's shared key bar; must fit the 80-column bar together with the shell's own keys.</summary>
+    string KeyHints { get; }
+
+    /// <summary>Handles a page key (letters, digits) before any view sees it; true when it was used. Only called while this page is shown.</summary>
+    bool HandleKey(Key key);
+
+    /// <summary>Raised when <see cref="StatusText"/>, <see cref="KeyHints"/>, <see cref="Badge"/> or <see cref="IsRunActive"/> changed; the shell then redraws its chrome. A page that never changes them while shown can leave the default (never raised).</summary>
+    event System.Action? ChromeChanged { add { } remove { } }
+
+    /// <summary>Puts the focus where the user left off (or on the page's first control); called after every switch to the page.</summary>
+    void FocusDefault();
+
+    /// <summary>A short text after the page's tab label, such as <c>▶ 37%</c> while a Run is active; empty for none.</summary>
+    string Badge => "";
+
+    /// <summary>True while a Run started from this page is going: quitting then asks about it.</summary>
+    bool IsRunActive => false;
+
+    /// <summary>Asks the active Run to stop (the Run's cancellation token); returns at once.</summary>
+    void CancelRun()
+    {
+    }
+}

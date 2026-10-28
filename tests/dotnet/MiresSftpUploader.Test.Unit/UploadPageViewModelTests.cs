@@ -308,4 +308,61 @@ public sealed class UploadPageViewModelTests
         Assert.IsFalse(page.IsBlocked);
         Assert.IsTrue(Can(page.StartCommand));
     }
+
+    [TestMethod]
+    public void The_trigger_of_the_Runs_is_the_one_given_to_the_page()
+    {
+        var page = new UploadPageViewModel(new FakeUploaderRuntime(Config, _engine), a => a(), RunTrigger.Tui);
+
+        Start(page).GetAwaiter().GetResult();
+
+        Assert.AreEqual(RunTrigger.Tui, _engine.Calls.Single().Trigger);
+    }
+
+    [TestMethod]
+    public async Task Follow_target_is_the_first_in_flight_row_else_the_first_Pending_else_the_last()
+    {
+        _engine.Script.AddRange([File("a", FileOutcome.Succeeded), File("b", FileOutcome.Pending), File("c", FileOutcome.Pending), File("d", FileOutcome.Uploading)]);
+        var page = NewPage();
+
+        await Start(page);
+        Assert.AreEqual(3, page.FollowIndex, "the file being uploaded");
+
+        _engine.Script.Clear();
+        _engine.Script.AddRange([File("a", FileOutcome.Succeeded), File("b", FileOutcome.Pending), File("c", FileOutcome.Pending)]);
+        await Start(page);
+        Assert.AreEqual(1, page.FollowIndex, "the first file still waiting");
+
+        _engine.Script.Clear();
+        _engine.Script.AddRange([File("a", FileOutcome.Succeeded), File("b", FileOutcome.Failed)]);
+        await Start(page);
+        Assert.AreEqual(1, page.FollowIndex, "the last row");
+    }
+
+    [TestMethod]
+    public void Follow_target_is_minus_one_without_files_and_following_is_on_until_turned_off()
+    {
+        var page = NewPage();
+
+        Assert.IsTrue(page.IsFollowing);
+        Assert.AreEqual(-1, page.FollowIndex);
+        page.IsFollowing = false;
+        Assert.IsFalse(page.IsFollowing);
+    }
+
+    [TestMethod]
+    public async Task A_refused_Run_lock_is_reported_as_a_notice_and_cleared_by_the_next_Run()
+    {
+        _engine.ExitCode = ExitCodes.LockHeld;
+        _engine.Reason = "Another Run holds the lock (pid=7 user=ann since=now)";
+        var page = NewPage();
+
+        await Start(page);
+        Assert.AreEqual("Another Run holds the lock (pid=7 user=ann since=now)", page.LockRefusal);
+
+        _engine.ExitCode = 0;
+        _engine.Reason = null;
+        await Start(page);
+        Assert.AreEqual("", page.LockRefusal);
+    }
 }

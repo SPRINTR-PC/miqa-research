@@ -14,7 +14,7 @@ public sealed class HistoryPageViewModelTests
     private readonly List<Guid> _retried = [];
 
     private HistoryPageViewModel NewPage(string user = "anna") =>
-        new(_history, user, a => a(), id => { _retried.Add(id); return Task.CompletedTask; });
+        new(_history, user, a => a(), id => { _retried.Add(id); return Task.FromResult<string?>(null); });
 
     private static Dictionary<string, int> Counts(int ok = 0, int failed = 0, int skipped = 0, int pending = 0, int movedAway = 0) =>
         new[] { ("Succeeded", ok), ("Failed", failed), ("Skipped", skipped), ("Pending", pending), ("MovedAway", movedAway) }
@@ -260,7 +260,6 @@ public sealed class HistoryPageViewModelTests
         _history.Publish(run with { Summary = run.Summary with { Status = "Abandoned", ExitCode = null, EndedAt = run.Summary.Heartbeat } }, complete: true);
         await Eventually(() => item.IsAbandoned);
         Assert.IsFalse(item.IsLive);
-        Assert.IsTrue(Can(item.RetryCommand));
-        Assert.IsFalse(Can(item.CancelCommand));
+        await Eventually(() => Can(item.RetryCommand) && !Can(item.CancelCommand)); // CanExecute follows IsAbandoned asynchronously
     }
 }

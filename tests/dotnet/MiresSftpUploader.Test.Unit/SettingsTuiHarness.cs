@@ -33,6 +33,19 @@ public sealed class FakeTuiDialogs : ITuiDialogs
 
     public void ShowIssues(IReadOnlyList<string> lines) => IssueLists.Add(lines);
 
+    public int RunQuitAsked { get; private set; }
+
+    /// <summary>Runs while the Run-quit question is open, as a signal would in the real modal.</summary>
+    public Action? OnAskCancelRunAndQuit { get; set; }
+    public Queue<bool> RunQuitAnswers { get; } = new();
+
+    public bool AskCancelRunAndQuit()
+    {
+        RunQuitAsked++;
+        OnAskCancelRunAndQuit?.Invoke();
+        return RunQuitAnswers.Count > 0 && RunQuitAnswers.Dequeue();
+    }
+
     public void ShowMessage(string title, string message) => Messages.Add((title, message));
 
     public List<(string Title, ArchiveRulesViewModel Rules)> ArchiveRuleDialogs { get; } = [];
@@ -54,7 +67,7 @@ public sealed class SettingsTuiHarness : IDisposable
     public SettingsTuiHarness(Configuration configuration, int width = 100, int height = 32, FakeTuiDialogs? dialogs = null, SettingsPageViewModel? page = null)
     {
         Dialogs = dialogs ?? new FakeTuiDialogs();
-        Page = page ?? new SettingsPageViewModel(configuration);
+        Page = page ?? new SettingsPageViewModel(configuration, WritableDataDirectory.Check, _ => long.MaxValue);
         App = Application.Create();
         App.Init(DriverRegistry.Names.ANSI);
         App.Driver!.SetScreenSize(width, height);
@@ -177,4 +190,11 @@ public abstract class SettingsTuiTestBase : ConfigurationTestBase
         _open.Add(h);
         return h;
     }
+}
+
+/// <summary>A Data Directory check that always finds a writable directory, so a TUI test does not depend on the machine's real one (absent on CI).</summary>
+internal static class WritableDataDirectory
+{
+    public static MiresSftpUploader.Core.DataDirectoryAccess Check(string path) =>
+        new(path, true, true, "alice", "mires-uploader", 0, long.MaxValue, false, "", null);
 }

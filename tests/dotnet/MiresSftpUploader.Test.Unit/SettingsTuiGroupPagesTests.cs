@@ -83,6 +83,14 @@ public sealed class SettingsTuiGroupPagesTests : SettingsTuiTestBase
     }
 
     [TestMethod]
+    public void The_Appearance_page_says_the_Theme_applies_to_the_window_only()
+    {
+        var tui = Open(Start(height: 40), "Appearance");
+
+        StringAssert.Contains(tui.Screen, "Applies to the window; the terminal UI uses its own colours.");
+    }
+
+    [TestMethod]
     public void A_Lines_field_is_a_multi_line_box_with_one_entry_per_line()
     {
         var tui = Open(Start(height: 60), "Ignore Rules");

@@ -29,7 +29,7 @@ public static class Cli
             return true;
         }
 
-        if (options.Configure) return false;
+        if (options.Configure || options.Tui) return false;
 
         if (options.Version)
         {
@@ -215,6 +215,11 @@ public static class Cli
           --configure             Open the Settings TUI, a full-screen terminal editor for the settings. Needs an
                                   interactive terminal of at least 80x24; honours only --data-dir and --log-level.
                                   Supported on Linux and macOS; Windows is unverified. F5 checks the connection.
+          --tui                   Open the TUI, the whole application (Upload, History, Settings, Help) in a full-screen
+                                  terminal; for machines reached over SSH. Pages switch with F9-F12; --configure is the
+                                  shortcut that opens it on Settings. Same terminal rules as --configure (exit 2 when
+                                  stdin or stdout is redirected, TERM is dumb or unset, or below 80x24); honours only
+                                  the data directory and log level options.
           --version               Print the version and exit.
           --help                  Print this help and exit.
 
@@ -224,7 +229,7 @@ public static class Cli
         whole by the highest layer that sets it. Secrets are read only from the environment:
         MIRES_SFTP_PASSWORD, MIRES_SFTP_KEY_PASSPHRASE, MIRES_S3_<SOURCE>_ACCESS_KEY and _SECRET_KEY.
         stdout carries only the final summary line; logs go to stderr and the log file.
-        --list-runs, --export-run, --validate-config, --init-data-dir, --configure and --version imply --headless.
+        --list-runs, --export-run, --validate-config, --init-data-dir, --configure and --version imply --headless, and so does --tui.
 
         Exit codes:
           0    OK, or every file skipped as unchanged

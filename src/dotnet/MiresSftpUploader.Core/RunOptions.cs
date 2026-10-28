@@ -26,4 +26,4 @@ public sealed record RunOptions
     public ReportFormat? ReportFormat { get; init; }
 }
 
-public enum RunTrigger { Headless, Ui }
+public enum RunTrigger { Headless, Ui, Tui }

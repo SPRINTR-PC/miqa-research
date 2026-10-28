@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using MiresSftpUploader.Core;
 using MiresSftpUploader.SettingsTui;
+using MiresSftpUploader.Tui;
 using Terminal.Gui.App;
 using Terminal.Gui.Drivers;
 using Terminal.Gui.Input;
@@ -31,6 +32,15 @@ public sealed class SettingsTuiAppTests : ConfigurationTestBase
         var exit = SettingsTuiApp.Run(cfg, new CliOptions(), NullLoggerFactory.Instance, app, new FakeTuiDialogs());
 
         Assert.AreEqual(ExitCodes.Ok, exit);
+    }
+
+    [TestMethod]
+    public void An_invalid_configuration_opens_on_Settings_and_a_valid_one_on_the_requested_page()
+    {
+        Assert.AreEqual(ShellTab.Settings, SettingsTuiApp.StartPage(ShellTab.Upload, configurationValid: false));
+        Assert.AreEqual(ShellTab.Upload, SettingsTuiApp.StartPage(ShellTab.Upload, configurationValid: true));
+        Assert.AreEqual(ShellTab.Settings, SettingsTuiApp.StartPage(ShellTab.Settings, configurationValid: true));
+        Assert.AreEqual(ShellTab.History, SettingsTuiApp.StartPage(ShellTab.History, configurationValid: false));
     }
 
     [TestMethod]

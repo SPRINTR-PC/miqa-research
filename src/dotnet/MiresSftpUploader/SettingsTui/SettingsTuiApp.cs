@@ -3,13 +3,16 @@ using System.Reactive.Concurrency;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 using MiresSftpUploader.Core;
+using MiresSftpUploader.Logging;
+using ReactiveUI;
+using MiresSftpUploader.Tui;
 using MiresSftpUploader.ViewModels;
 using ReactiveUI.Builder;
 using Terminal.Gui.App;
 
 namespace MiresSftpUploader.SettingsTui;
 
-/// <summary>The Settings TUI itself. Only reached after <see cref="SettingsTuiEntry"/> has checked the terminal.</summary>
+/// <summary>The whole-app TUI (<c>--tui</c>) and its Settings shortcut (<c>--configure</c>). Only reached after <see cref="SettingsTuiEntry"/> has checked the terminal.</summary>
 public static class SettingsTuiApp
 {
     /// <summary>Runs the Settings TUI until the user quits or the session is dropped.</summary>
@@ -18,9 +21,16 @@ public static class SettingsTuiApp
     /// tests pass an application on the headless driver (ReactiveUI is then initialised by the test).
     /// </param>
     /// <param name="dialogs">The modal questions; null runs the real dialogs on <paramref name="application"/>.</param>
+    /// <param name="runtime">The Engine runtime behind the Upload page; null builds the real one (SSH.NET remotes).</param>
+    /// <param name="logTarget">The in-process log target for the Log pane; null leaves the pane empty.</param>
+    /// <param name="shutdownSignals">
+    /// The shutdown seam: registers the action to call on SIGHUP or SIGTERM (a second call exits at once) and returns what unregisters it.
+    /// Null registers the real signals; tests pass their own and call the action.
+    /// </param>
     /// <returns>The process exit code: 0, or 130 after SIGHUP or SIGTERM (nothing is saved then).</returns>
     public static int Run(Configuration configuration, CliOptions options, ILoggerFactory loggerFactory,
-        IApplication? application = null, ITuiDialogs? dialogs = null)
+        IApplication? application = null, ITuiDialogs? dialogs = null, ShellTab start = ShellTab.Settings,
+        IUploaderRuntime? runtime = null, UiLogTarget? logTarget = null, Func<Action, IDisposable>? shutdownSignals = null)
     {
         var log = loggerFactory.CreateLogger("SettingsTui");
         var owned = application is null;
@@ -35,14 +45,33 @@ public static class SettingsTuiApp
         try
         {
             var page = new SettingsPageViewModel(configuration, cli: options);
-            using var window = new SettingsTuiWindow(application!, page, dialogs ?? new TerminalGuiDialogs(application!));
-            window.ConnectionChecker = token => ConnectionCheck.CheckSavedAsync(configuration, c => new SshNetRemote(c), token, options);
-            window.Redact = text => Redactor.From(configuration.LoadSecrets()).Redact(text);
-            using var hangup = Register(PosixSignal.SIGHUP, application!, window);
-            using var terminate = Register(PosixSignal.SIGTERM, application!, window);
-            log.LogInformation("Settings TUI started.");
+            var tuiDialogs = dialogs ?? new TerminalGuiDialogs(application!);
+            runtime ??= new UploaderRuntime(configuration, new SshNetRemoteFactory(), loggerFactory, TimeProvider.System, options);
+            var upload = new UploadPageViewModel(runtime, action => application!.Invoke(action), RunTrigger.Tui);
+            page.WhenAnyValue(x => x.DataDirectoryProblem).Subscribe(problem => upload.BlockedReason = problem);
+            page.Saved += upload.Refresh;
+            var prepared = runtime.Prepare(headless: true);
+            var logLevel = AppHost.ToLogLevel(prepared.Config?.Ui.LogLevel ?? LogLevelSetting.Info);
+            var logPane = logTarget is null ? null : new LogPaneViewModel(logTarget, action => application!.Invoke(action), logLevel);
+            // Without a loadable configuration nothing can run, so the TUI opens where the Issues are; Upload stays reachable (its Run buttons are off).
+            start = StartPage(start, prepared.Config is not null);
+            using var uploadPage = new UploadTuiPage(application!, upload, logPane, tuiDialogs);
+            // Without a loadable configuration there is no Upload State path, so the Run History is empty (as in the window).
+            IRunHistory runHistory = prepared.Config is not { } loaded
+                ? new RunHistory(new StateSettings(), TimeProvider.System)
+                : new RunHistory(UploaderComposition.ToStateSettings(loaded), TimeProvider.System, UploaderComposition.ToEngineSettings(loaded).Report);
+            TuiShell? shell = null;
+            var historyVm = new HistoryPageViewModel(runHistory, Environment.UserName, action => application!.Invoke(action), id => shell!.RetryFromHistoryAsync(id, upload));
+            using var historyPage = new HistoryTuiPage(historyVm, action => application!.Invoke(action));
+            using var window = new TuiShell(application!, page, tuiDialogs, start, uploadPage, historyPage,
+                help: new HelpPage(HelpPage.CreateViewModel(_ => { })));
+            shell = window;
+            window.SettingsWindow.ConnectionChecker = token => ConnectionCheck.CheckSavedAsync(configuration, c => new SshNetRemote(c), token, options);
+            window.SettingsWindow.Redact = text => Redactor.From(configuration.LoadSecrets()).Redact(text);
+            using var signals = (shutdownSignals ?? RegisterSignals(application!))(window.Terminate);
+            log.LogInformation("TUI started on the {Page} page.", start);
             application!.Run(window);
-            log.LogInformation("Settings TUI exited with code {ExitCode}.", window.ExitCode);
+            log.LogInformation("TUI exited with code {ExitCode}.", window.ExitCode);
             return window.ExitCode;
         }
         finally
@@ -51,11 +80,28 @@ public static class SettingsTuiApp
         }
     }
 
+    /// <summary>The page to open on: Upload (<c>--tui</c>) becomes Settings when the configuration is invalid; an explicit other page stays.</summary>
+    public static ShellTab StartPage(ShellTab requested, bool configurationValid) =>
+        requested == ShellTab.Upload && !configurationValid ? ShellTab.Settings : requested;
+
     /// <summary>A dropped SSH session (SIGHUP) or a stop request (SIGTERM) ends the TUI with exit code 130 and writes nothing.</summary>
-    private static PosixSignalRegistration Register(PosixSignal signal, IApplication application, SettingsTuiWindow window) =>
-        PosixSignalRegistration.Create(signal, context =>
+    private static Func<Action, IDisposable> RegisterSignals(IApplication application) => terminate =>
+    {
+        void Handle(PosixSignalContext context)
         {
             context.Cancel = true;
-            application.Invoke(window.Terminate);
-        });
+            try { application.Invoke(terminate); }
+            catch (Exception) { /* already shut down */ }
+        }
+
+        return new Registrations(PosixSignalRegistration.Create(PosixSignal.SIGHUP, Handle), PosixSignalRegistration.Create(PosixSignal.SIGTERM, Handle));
+    };
+
+    private sealed class Registrations(params IDisposable[] items) : IDisposable
+    {
+        public void Dispose()
+        {
+            foreach (var item in items) item.Dispose();
+        }
+    }
 }

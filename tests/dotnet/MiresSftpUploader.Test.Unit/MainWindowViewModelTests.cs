@@ -88,7 +88,7 @@ public sealed class MainWindowViewModelTests
         var history = new FakeRunHistory();
         var engine = new FakeRunEngine();
         var upload = new UploadPageViewModel(new FakeUploaderRuntime(new AppConfig(), engine), a => a());
-        var historyPage = new HistoryPageViewModel(history, "anna", a => a(), _ => Task.CompletedTask);
+        var historyPage = new HistoryPageViewModel(history, "anna", a => a(), _ => Task.FromResult<string?>(null));
         var window = new MainWindowViewModel(upload, null, UiTheme.Dark, _ => null, historyPage);
         history.Add();
         Assert.IsEmpty(historyPage.Runs);
@@ -116,6 +116,28 @@ public sealed class MainWindowViewModelTests
 
         Assert.AreEqual(AppPage.Upload, window.Page);
         Assert.AreEqual(failed.Summary.RunId, engine.Calls.Single().RetryOf);
+    }
+
+    [TestMethod]
+    public async Task Retrying_from_History_while_a_Run_is_active_returns_a_notice_and_stays_on_History()
+    {
+        var history = new FakeRunHistory();
+        var engine = new FakeRunEngine { Hold = true };
+        var upload = new UploadPageViewModel(new FakeUploaderRuntime(new AppConfig { Sources = [new SourceConfig { Name = "wsi", Path = "/d" }] }, engine), a => a());
+        MainWindowViewModel? window = null;
+        var historyPage = new HistoryPageViewModel(history, "anna", a => a(), id => window!.RetryFromHistoryAsync(id));
+        window = new MainWindowViewModel(upload, null, UiTheme.Dark, _ => null, historyPage);
+        history.Add(exitCode: 1, counts: new Dictionary<string, int> { ["Failed"] = 1 });
+        var running = upload.StartCommand.Execute().ToTask();
+        window.ShowHistoryCommand.Execute().Subscribe();
+
+        await historyPage.Runs[0].RetryCommand.Execute().ToTask();
+
+        Assert.AreEqual(AppPage.History, window.Page);
+        Assert.AreEqual(UploadPageViewModel.RunActiveNotice, historyPage.Notice);
+        Assert.HasCount(1, engine.Calls);
+        engine.Release();
+        await running;
     }
 
     [TestMethod]

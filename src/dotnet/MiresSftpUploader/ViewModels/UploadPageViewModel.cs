@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Reactive;
-using Avalonia.Media;
 using MiresSftpUploader.Core;
 using ReactiveUI;
 
@@ -25,6 +24,7 @@ public enum FileFilter { None = 0, Succeeded = 1, Failed = 2, Skipped = 4, Pendi
 public sealed class UploadPageViewModel : ViewModelBase
 {
     private readonly IUploaderRuntime _runtime;
+    private readonly RunTrigger _trigger;
     private readonly Action<Action> _post;
     private readonly ConcurrentQueue<RunEvent> _incoming = new();
     private readonly Dictionary<(string Source, string Path), FileRowViewModel> _rows = [];
@@ -43,9 +43,11 @@ public sealed class UploadPageViewModel : ViewModelBase
     private string _destination = "";
 
     /// <param name="post">Runs an action on the UI thread: <c>Dispatcher.UIThread.Post</c> in the app.</param>
-    public UploadPageViewModel(IUploaderRuntime runtime, Action<Action> post)
+    /// <param name="trigger">What starts the Runs of this page: the window (<see cref="RunTrigger.Ui"/>) or the terminal interface.</param>
+    public UploadPageViewModel(IUploaderRuntime runtime, Action<Action> post, RunTrigger trigger = RunTrigger.Ui)
     {
         _runtime = runtime;
+        _trigger = trigger;
         _post = post;
 
         var idle = this.WhenAnyValue(x => x.IsRunning, x => x.IsBlocked, (running, blocked) => !running && !blocked);
@@ -89,6 +91,42 @@ public sealed class UploadPageViewModel : ViewModelBase
     public bool IsIdle => !IsRunning;
 
     private string _blockedReason = "";
+    private bool _isFollowing = true;
+    private string _lockRefusal = "";
+
+    /// <summary>
+    /// Whether a view should keep its cursor on <see cref="FollowIndex"/>. The view turns it off when the user moves the cursor and on again on request;
+    /// "cursor on the last row" cannot stand in for it, since the mouse wheel moves the cursor too.
+    /// </summary>
+    public bool IsFollowing
+    {
+        get => _isFollowing;
+        set => this.RaiseAndSetIfChanged(ref _isFollowing, value);
+    }
+
+    /// <summary>The row to follow: the first file being hashed, uploaded or verified, else the first one still Pending, else the last; -1 without files.</summary>
+    public int FollowIndex
+    {
+        get
+        {
+            var waiting = -1;
+            for (var i = 0; i < Files.Count; i++)
+            {
+                var row = Files[i];
+                if (row.IsActive) return i;
+                if (waiting < 0 && row.Outcome == FileOutcome.Pending) waiting = i;
+            }
+
+            return waiting >= 0 ? waiting : Files.Count - 1;
+        }
+    }
+
+    /// <summary>The Run-lock refusal of the last Run ("Another Run holds the lock (…)"); empty when the last Run was not refused.</summary>
+    public string LockRefusal
+    {
+        get => _lockRefusal;
+        private set => this.RaiseAndSetIfChanged(ref _lockRefusal, value);
+    }
 
     /// <summary>Why no Run can start (the Data Directory is not usable); empty when Runs may start. Shown as a banner.</summary>
     public string BlockedReason
@@ -151,12 +189,6 @@ public sealed class UploadPageViewModel : ViewModelBase
 
     public bool HasProblems => Problems.Length > 0;
 
-    /// <summary>The icons of the four tiles: the same as the ones in the file list (a Geometry, which is what PathIcon.Data takes).</summary>
-    public static Geometry SucceededIcon { get; } = Geometry.Parse(FileRowViewModel.IconFor(FileOutcome.Succeeded));
-    public static Geometry FailedIcon { get; } = Geometry.Parse(FileRowViewModel.IconFor(FileOutcome.Failed));
-    public static Geometry SkippedIcon { get; } = Geometry.Parse(FileRowViewModel.IconFor(FileOutcome.Skipped));
-    public static Geometry PendingIcon { get; } = Geometry.Parse(FileRowViewModel.IconFor(FileOutcome.Pending));
-
     public int Succeeded => Count(FileOutcome.Succeeded);
     public int Failed => Count(FileOutcome.Failed);
     public int Skipped => Count(FileOutcome.Skipped);
@@ -197,6 +229,8 @@ public sealed class UploadPageViewModel : ViewModelBase
     }
 
     /// <summary>Uploads the failed files of a Run from the Run History again, as a new Run with a fresh file list. Does nothing while a Run is going.</summary>
+    public const string RunActiveNotice = "A Run is active; follow it on Upload";
+
     public Task RetryRunAsync(Guid runId) => IsRunning ? Task.CompletedTask : RunAsync(dryRun: false, retry: true, historical: runId);
 
     private async Task RunAsync(bool dryRun, bool retry, bool scan = false, Guid? historical = null)
@@ -223,10 +257,11 @@ public sealed class UploadPageViewModel : ViewModelBase
             SourceNames = included,
             DryRun = dryRun,
             RehashAll = config.Upload.RehashAll,
-            Trigger = RunTrigger.Ui,
+            Trigger = _trigger,
             RetryOf = retry ? _retryOf : null,
         };
         _lastRunId = null;
+        LockRefusal = "";
 
         using var cancellation = new CancellationTokenSource();
         _cancellation = cancellation;
@@ -238,6 +273,7 @@ public sealed class UploadPageViewModel : ViewModelBase
             var result = await engine.RunAsync(options, new QueueProgress(this), cancellation.Token);
             Flush();
             Status = Describe(result, dryRun, scan);
+            if (result.ExitCode == ExitCodes.LockHeld) LockRefusal = result.Reason ?? "Another Run holds the lock";
             _retryOf = dryRun ? null : _lastRunId;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
