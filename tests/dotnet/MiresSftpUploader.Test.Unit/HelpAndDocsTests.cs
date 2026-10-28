@@ -83,6 +83,76 @@ public sealed class HelpAndDocsTests
     }
 
     [TestMethod]
+    public void Help_describes_tui_its_honoured_flags_exit_2_and_configure_as_the_Settings_shortcut()
+    {
+        var line = Cli.HelpText.Split('\n').Single(l => l.TrimStart().StartsWith("--tui ", StringComparison.Ordinal));
+        var block = Cli.HelpText[Cli.HelpText.IndexOf(line, StringComparison.Ordinal)..];
+
+        foreach (var expected in new[] { "F9-F12", "exit 2", "--configure is the", "shortcut", "Settings", "data directory and log level" })
+            StringAssert.Contains(block, expected);
+        StringAssert.Contains(Cli.HelpText, "and so does --tui");
+    }
+
+    [TestMethod]
+    public void The_readme_documents_the_TUI_pages_and_the_keys_of_every_page_without_placeholder_text()
+    {
+        var readme = Shipped("README.md");
+        var section = readme[readme.IndexOf("## TUI", StringComparison.Ordinal)..readme.IndexOf("## Settings TUI", StringComparison.Ordinal)];
+
+        foreach (var key in new[] { "F9", "F12", "Ctrl+Q", "Upload", "History", "Help", "Space", "End follows", "F5 refreshes", "J or C", "Log pane" })
+            StringAssert.Contains(section, key);
+        Assert.IsFalse(section.Contains("placeholder", StringComparison.OrdinalIgnoreCase), "README still describes placeholder pages");
+        Assert.IsFalse(section.Contains("This release ships", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void The_Keys_topic_lists_the_keys_of_the_Upload_and_History_pages()
+    {
+        var keys = MiresSftpUploader.Tui.KeysTopic.Markdown;
+
+        foreach (var expected in new[] { "R Run", "D Dry run", "S Scan", "X Cancel", "T Retry", "1-4", "L shows", "End follows", "1-3", "F Failed", "J / C", "F5" })
+            StringAssert.Contains(keys, expected);
+    }
+
+    [TestMethod]
+    public void The_scheduling_guide_points_at_the_TUI_for_a_headless_machine_over_SSH()
+    {
+        var text = Shipped("scheduling.md");
+
+        StringAssert.Contains(text, "--tui");
+        StringAssert.Contains(text, "SSH");
+    }
+
+    [TestMethod]
+    public void The_release_checklist_has_the_whole_app_TUI_section_with_its_manual_items()
+    {
+        var text = Shipped("release-checklist.md");
+        var section = text[text.IndexOf("## 15. Whole-app TUI", StringComparison.Ordinal)..];
+
+        foreach (var item in new[] { "gnome-terminal", "iTerm", "Guake", "WinExe", "100,000", "throttled", "Resize during a Run", "SIGHUP", "SIGTERM", "130", "cancelled",
+                     "PuTTY", "Windows Terminal", "▶ ✓ ✗ ⊘ … ●", "16-colour", "256-colour", "two operators", "linux-x64", "linux-arm64", "osx-arm64" })
+            StringAssert.Contains(section, item, StringComparison.OrdinalIgnoreCase);
+        Assert.IsFalse(section.Contains("This ticket ships", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void The_publish_scripts_smoke_test_tui_under_redirected_streams()
+    {
+        foreach (var script in new[] { "publish.sh", "publish.ps1" })
+            StringAssert.Contains(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "shipped", script)), "--tui", script);
+    }
+
+    [TestMethod]
+    public void The_glossary_defines_TUI_and_the_Settings_TUI()
+    {
+        var glossary = Shipped("GLOSSARY.md");
+
+        StringAssert.Contains(glossary, "**TUI**");
+        StringAssert.Contains(glossary, "_Avoid_");
+        StringAssert.Contains(glossary, "_Avoid_: Console UI, terminal mode");
+    }
+
+    [TestMethod]
     public void Help_lists_every_exit_code()
     {
         foreach (var code in new[] { "0", "1", "2", "3", "4", "130" })

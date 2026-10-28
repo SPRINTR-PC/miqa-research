@@ -14,7 +14,14 @@ This folder contains the executable, `appsettings.json` (the Machine Config; edi
 
 ## TUI
 
-`MiresSftpUploader --tui` opens the **TUI**, the whole application in a full-screen terminal for machines reached over SSH. It has four pages behind a tab bar: Upload, History, Settings and Help, switched with F9, F10, F11 and F12 or a mouse click. A `●` on the Settings tab marks unsaved changes; unsaved edits survive a tab switch. One status line and one key bar at the bottom are shared by all pages. This release ships the shell and the Settings page; Upload, History and Help show a placeholder until their pages arrive. Ctrl+Q or Ctrl+C quits (with unsaved Settings changes it asks Save, Discard or Cancel); SIGHUP or SIGTERM exits with code 130 and saves nothing. `--tui` has the same terminal rules as `--configure` (exit code 2 and one stderr line when stdin or stdout is redirected, `TERM` is `dumb` or unset, or the terminal is below 80x24), honours only `--data-dir` and `--log-level`, and cannot be combined with `--configure` or `--headless`. With an invalid configuration it opens on Settings.
+`MiresSftpUploader --tui` opens the **TUI**, the whole application in a full-screen terminal for machines reached over SSH. It has four pages behind a tab bar: Upload, History, Settings and Help, switched with F9, F10, F11 and F12 or a mouse click. A `●` on the Settings tab marks unsaved changes; unsaved edits survive a tab switch. One status line and one key bar at the bottom are shared by all pages. Ctrl+Q or Ctrl+C quits (with unsaved Settings changes it asks Save, Discard or Cancel); SIGHUP or SIGTERM exits with code 130 and saves nothing. `--tui` has the same terminal rules as `--configure` (exit code 2 and one stderr line when stdin or stdout is redirected, `TERM` is `dumb` or unset, or the terminal is below 80x24), honours only `--data-dir` and `--log-level`, and cannot be combined with `--configure` or `--headless`. With an invalid configuration it opens on Settings.
+
+Key bindings, besides F9-F12 and Ctrl+Q. Tab moves between the parts of a page and Enter activates the focused item; the mouse works where the terminal supports it and is never required.
+
+- **Upload:** R Run, D Dry run, S Scan, X Cancel the Run, T Retry failed files; 1-4 filter the file table (succeeded, failed, skipped, pending); Space includes or excludes the selected Source; L shows or hides the Log pane; End follows the active file again (moving the cursor stops following). Quitting during a Run asks whether to cancel the Run and quit, or go back.
+- **History:** 1-3 filter the Runs (All, Attention, Live); F shows failed outcomes only; R retries the failed files of the selected Run (opens Upload); X cancels the selected Run (a request to cancel for another user's Run); J or C exports a Report as JSON or CSV; F5 refreshes.
+- **Settings:** the keys of the Settings TUI below.
+- **Help:** Up/Down choose a topic or scroll; PageUp, PageDown, Home and End scroll; Tab switches between the topic list and the text. The Keys topic repeats this list.
 
 ## Settings TUI
 
