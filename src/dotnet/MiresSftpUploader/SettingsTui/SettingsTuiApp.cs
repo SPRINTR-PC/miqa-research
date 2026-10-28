@@ -36,7 +36,8 @@ public static class SettingsTuiApp
         try
         {
             var page = new SettingsPageViewModel(configuration, cli: options);
-            using var window = new TuiShell(application!, page, dialogs ?? new TerminalGuiDialogs(application!), start);
+            using var window = new TuiShell(application!, page, dialogs ?? new TerminalGuiDialogs(application!), start,
+                help: new HelpPage(HelpPage.CreateViewModel(_ => { })));
             window.SettingsWindow.ConnectionChecker = token => ConnectionCheck.CheckSavedAsync(configuration, c => new SshNetRemote(c), token, options);
             window.SettingsWindow.Redact = text => Redactor.From(configuration.LoadSecrets()).Redact(text);
             using var hangup = Register(PosixSignal.SIGHUP, application!, window);

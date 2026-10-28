@@ -21,6 +21,8 @@ public sealed class PlaceholderPage : View, IShellPage
 
     public string KeyHints => "";
 
+    public event System.Action? ChromeChanged { add { } remove { } }
+
     public bool HandleKey(Key key) => false;
 
     public void FocusDefault() => SetFocus();
