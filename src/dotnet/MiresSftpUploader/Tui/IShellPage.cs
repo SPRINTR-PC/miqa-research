@@ -1,3 +1,4 @@
+using System;
 using Terminal.Gui.Input;
 
 namespace MiresSftpUploader.Tui;
@@ -18,4 +19,22 @@ public interface IShellPage
 
     /// <summary>Puts the focus where the user left off (or on the page's first control); called after every switch to the page.</summary>
     void FocusDefault();
+
+    /// <summary>A short text after the page's tab label, such as <c>▶ 37%</c> while a Run is active; empty for none.</summary>
+    string Badge => "";
+
+    /// <summary>True while a Run started from this page is going: quitting then asks about it.</summary>
+    bool IsRunActive => false;
+
+    /// <summary>Asks the active Run to stop (the Run's cancellation token); returns at once.</summary>
+    void CancelRun()
+    {
+    }
+
+    /// <summary>Raised after <see cref="StatusText"/>, <see cref="KeyHints"/>, <see cref="Badge"/> or <see cref="IsRunActive"/> changed, on the UI thread.</summary>
+    event Action? Changed
+    {
+        add { }
+        remove { }
+    }
 }

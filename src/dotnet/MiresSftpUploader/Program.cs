@@ -70,7 +70,8 @@ sealed class Program
         Logging = StartLogging(configuration, headless: true, fileOnly: true);
         try
         {
-            return SettingsTuiApp.Run(configuration, options, (ILoggerFactory?)Logging?.LoggerFactory ?? NullLoggerFactory.Instance, start: start);
+            return SettingsTuiApp.Run(configuration, options, (ILoggerFactory?)Logging?.LoggerFactory ?? NullLoggerFactory.Instance, start: start,
+                logTarget: Logging?.Ui);
         }
         finally
         {

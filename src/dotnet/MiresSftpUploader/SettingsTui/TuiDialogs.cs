@@ -27,6 +27,9 @@ public interface ITuiDialogs
 
     void ShowMessage(string title, string message);
 
+    /// <summary>Quit while a Run is active: "Cancel the Run and quit" or "Back". True when the user chose to cancel and quit; Back is the default.</summary>
+    bool AskCancelRunAndQuit();
+
     /// <summary>A Source's own Archive Rules, edited in a dialog until the user closes it.</summary>
     void EditArchiveRules(string title, ArchiveRulesViewModel rules);
 }
@@ -61,6 +64,9 @@ public sealed class TerminalGuiDialogs(IApplication app) : ITuiDialogs
     }
 
     public void ShowMessage(string title, string message) => MessageBox.Query(app, title, message, "_OK");
+
+    public bool AskCancelRunAndQuit() =>
+        MessageBox.Query(app, "A Run is active", "Cancel the Run and quit, or go back to it?", "_Cancel the Run and quit", "_Back") == 0;
 
     public void EditArchiveRules(string title, ArchiveRulesViewModel rules)
     {
