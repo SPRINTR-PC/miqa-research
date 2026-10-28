@@ -229,6 +229,8 @@ public sealed class UploadPageViewModel : ViewModelBase
     }
 
     /// <summary>Uploads the failed files of a Run from the Run History again, as a new Run with a fresh file list. Does nothing while a Run is going.</summary>
+    public const string RunActiveNotice = "A Run is active; follow it on Upload";
+
     public Task RetryRunAsync(Guid runId) => IsRunning ? Task.CompletedTask : RunAsync(dryRun: false, retry: true, historical: runId);
 
     private async Task RunAsync(bool dryRun, bool retry, bool scan = false, Guid? historical = null)

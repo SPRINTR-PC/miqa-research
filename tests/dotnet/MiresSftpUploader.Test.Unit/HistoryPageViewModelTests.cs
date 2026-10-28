@@ -14,7 +14,7 @@ public sealed class HistoryPageViewModelTests
     private readonly List<Guid> _retried = [];
 
     private HistoryPageViewModel NewPage(string user = "anna") =>
-        new(_history, user, a => a(), id => { _retried.Add(id); return Task.CompletedTask; });
+        new(_history, user, a => a(), id => { _retried.Add(id); return Task.FromResult<string?>(null); });
 
     private static Dictionary<string, int> Counts(int ok = 0, int failed = 0, int skipped = 0, int pending = 0, int movedAway = 0) =>
         new[] { ("Succeeded", ok), ("Failed", failed), ("Skipped", skipped), ("Pending", pending), ("MovedAway", movedAway) }

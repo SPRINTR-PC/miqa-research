@@ -24,7 +24,7 @@ public sealed class HistoryPageViewModel : ViewModelBase, IDisposable
     private readonly IRunHistory _history;
     private readonly string _currentUser;
     private readonly Action<Action> _post;
-    private readonly Func<Guid, Task> _retry;
+    private readonly Func<Guid, Task<string?>> _retry;
     private readonly Dictionary<Guid, CancellationTokenSource> _watches = [];
     private readonly CancellationTokenSource _lifetime = new();
     private RunFilterKind _filter = RunFilterKind.All;
@@ -34,7 +34,7 @@ public sealed class HistoryPageViewModel : ViewModelBase, IDisposable
     /// <param name="currentUser">The account name of this user; Runs started by it are "own".</param>
     /// <param name="post">Runs an action on the UI thread: <c>Dispatcher.UIThread.Post</c> in the app.</param>
     /// <param name="retry">Starts a Run that uploads the failed files of the given Run again.</param>
-    public HistoryPageViewModel(IRunHistory history, string currentUser, Action<Action> post, Func<Guid, Task> retry)
+    public HistoryPageViewModel(IRunHistory history, string currentUser, Action<Action> post, Func<Guid, Task<string?>> retry)
     {
         _history = history;
         _currentUser = currentUser;
@@ -135,7 +135,10 @@ public sealed class HistoryPageViewModel : ViewModelBase, IDisposable
         if (_history.GetRun(item.RunId) is { } detail) item.Update(detail.Summary);
     }
 
-    internal Task RetryAsync(RunItemViewModel item) => _retry(item.RunId);
+    internal async Task RetryAsync(RunItemViewModel item)
+    {
+        if (await _retry(item.RunId) is { Length: > 0 } notice) Notice = notice;
+    }
 
     internal void Export(RunItemViewModel item, ReportFormat format)
     {

@@ -50,11 +50,20 @@ public static class SettingsTuiApp
             var upload = new UploadPageViewModel(runtime, action => application!.Invoke(action), RunTrigger.Tui);
             page.WhenAnyValue(x => x.DataDirectoryProblem).Subscribe(problem => upload.BlockedReason = problem);
             page.Saved += upload.Refresh;
-            var logLevel = AppHost.ToLogLevel(runtime.Prepare(headless: true).Config?.Ui.LogLevel ?? LogLevelSetting.Info);
+            var prepared = runtime.Prepare(headless: true);
+            var logLevel = AppHost.ToLogLevel(prepared.Config?.Ui.LogLevel ?? LogLevelSetting.Info);
             var logPane = logTarget is null ? null : new LogPaneViewModel(logTarget, action => application!.Invoke(action), logLevel);
             using var uploadPage = new UploadTuiPage(application!, upload, logPane, tuiDialogs);
-            using var window = new TuiShell(application!, page, tuiDialogs, start, uploadPage,
+            // Without a loadable configuration there is no Upload State path, so the Run History is empty (as in the window).
+            IRunHistory runHistory = prepared.Config is not { } loaded
+                ? new RunHistory(new StateSettings(), TimeProvider.System)
+                : new RunHistory(UploaderComposition.ToStateSettings(loaded), TimeProvider.System, UploaderComposition.ToEngineSettings(loaded).Report);
+            TuiShell? shell = null;
+            var historyVm = new HistoryPageViewModel(runHistory, Environment.UserName, action => application!.Invoke(action), id => shell!.RetryFromHistoryAsync(id, upload));
+            using var historyPage = new HistoryTuiPage(historyVm, action => application!.Invoke(action));
+            using var window = new TuiShell(application!, page, tuiDialogs, start, uploadPage, historyPage,
                 help: new HelpPage(HelpPage.CreateViewModel(_ => { })));
+            shell = window;
             window.SettingsWindow.ConnectionChecker = token => ConnectionCheck.CheckSavedAsync(configuration, c => new SshNetRemote(c), token, options);
             window.SettingsWindow.Redact = text => Redactor.From(configuration.LoadSecrets()).Redact(text);
             using var signals = (shutdownSignals ?? RegisterSignals(application!))(window.Terminate);
