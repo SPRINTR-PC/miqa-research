@@ -8,6 +8,7 @@ using Terminal.Gui.Input;
 namespace MiresSftpUploader.Test.Unit;
 
 [TestClass]
+[DoNotParallelize] // each test runs a TuiTestHost (own thread + Terminal.Gui loop); started alongside hundreds of other tests the loop starves and "the TUI did not start"
 public sealed class HistoryTuiTests : ConfigurationTestBase
 {
     private readonly List<TuiTestHost> _hosts = [];
