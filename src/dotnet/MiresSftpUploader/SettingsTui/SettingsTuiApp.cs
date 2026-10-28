@@ -53,6 +53,8 @@ public static class SettingsTuiApp
             var prepared = runtime.Prepare(headless: true);
             var logLevel = AppHost.ToLogLevel(prepared.Config?.Ui.LogLevel ?? LogLevelSetting.Info);
             var logPane = logTarget is null ? null : new LogPaneViewModel(logTarget, action => application!.Invoke(action), logLevel);
+            // Without a loadable configuration nothing can run, so the TUI opens where the Issues are; Upload stays reachable (its Run buttons are off).
+            start = StartPage(start, prepared.Config is not null);
             using var uploadPage = new UploadTuiPage(application!, upload, logPane, tuiDialogs);
             // Without a loadable configuration there is no Upload State path, so the Run History is empty (as in the window).
             IRunHistory runHistory = prepared.Config is not { } loaded
@@ -77,6 +79,10 @@ public static class SettingsTuiApp
             if (owned) application!.Dispose();
         }
     }
+
+    /// <summary>The page to open on: Upload (<c>--tui</c>) becomes Settings when the configuration is invalid; an explicit other page stays.</summary>
+    public static ShellTab StartPage(ShellTab requested, bool configurationValid) =>
+        requested == ShellTab.Upload && !configurationValid ? ShellTab.Settings : requested;
 
     /// <summary>A dropped SSH session (SIGHUP) or a stop request (SIGTERM) ends the TUI with exit code 130 and writes nothing.</summary>
     private static Func<Action, IDisposable> RegisterSignals(IApplication application) => terminate =>

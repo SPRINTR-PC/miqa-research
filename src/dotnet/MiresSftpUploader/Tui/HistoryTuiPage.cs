@@ -15,11 +15,6 @@ namespace MiresSftpUploader.Tui;
 /// <summary>The Run list as a table over the live <see cref="HistoryPageViewModel.Runs"/> (symbol, started, status); rows are never copied.</summary>
 public sealed class RunListSource(IReadOnlyList<RunItemViewModel> runs) : ITableSource
 {
-    public static string Symbol(RunItemViewModel r) => r.StatusText switch
-    {
-        "Running" => "▶", "Succeeded" => "✓", "Cancelled" => "⊘", "Abandoned" => "!", "Failed" => "✗", _ => "-",
-    };
-
     public string[] ColumnNames { get; } = ["", "Started", "Status"];
     public int Columns => 3;
     public int Rows => runs.Count;
@@ -30,7 +25,7 @@ public sealed class RunListSource(IReadOnlyList<RunItemViewModel> runs) : ITable
         {
             if (row < 0 || row >= runs.Count) return "";
             var r = runs[row];
-            return col switch { 0 => Symbol(r), 1 => r.StartedText[5..], _ => r.StatusText };
+            return col switch { 0 => OutcomeSymbols.OfRun(r.StatusText), 1 => r.StartedText[5..], _ => r.StatusText };
         }
     }
 }
@@ -38,8 +33,6 @@ public sealed class RunListSource(IReadOnlyList<RunItemViewModel> runs) : ITable
 /// <summary>The outcomes of the selected Run, read live from <see cref="RunItemViewModel.VisibleFiles"/> through a getter.</summary>
 public sealed class RunOutcomesSource(Func<IReadOnlyList<HistoryFileRow>> rows) : ITableSource
 {
-    private static string Symbol(HistoryFileRow r) => r.Outcome switch { "Succeeded" => "✓", "Failed" => "✗", "Skipped" => "⊘", "MovedAway" => "→", _ => "…" };
-
     public string[] ColumnNames { get; } = ["", "Source", "File", "Status"];
     public int Columns => 4;
     public int Rows => rows().Count;
@@ -51,7 +44,7 @@ public sealed class RunOutcomesSource(Func<IReadOnlyList<HistoryFileRow>> rows) 
             var list = rows();
             if (row < 0 || row >= list.Count) return "";
             var r = list[row];
-            return col switch { 0 => Symbol(r), 1 => r.Source, 2 => r.Path, _ => r.ReasonText.Length > 0 ? r.ReasonText : r.OutcomeText };
+            return col switch { 0 => OutcomeSymbols.OfRecorded(r.Outcome), 1 => r.Source, 2 => r.Path, _ => r.ReasonText.Length > 0 ? r.ReasonText : r.OutcomeText };
         }
     }
 }
@@ -254,7 +247,7 @@ public sealed class HistoryTuiPage : View, IShellPage
                 r.PropertyChanged += (_, _) => { if (ReferenceEquals(_watched, r)) RequestRefresh(); };
             }
 
-            _head.Text = $"{r.Title}  {RunListSource.Symbol(r)} {r.StatusText}  {r.ExitText}\n{r.Who} · {r.ModeText} · {r.StartedText[5..]} · {r.DurationText}";
+            _head.Text = $"{r.Title}  {OutcomeSymbols.OfRun(r.StatusText)} {r.StatusText}  {r.ExitText}\n{r.Who} · {r.ModeText} · {r.StartedText[5..]} · {r.DurationText}";
             _banner.Text = r.IsLiveOthers && r.ShowCancelRequested ? $"Live view of {r.StartedBy}'s Run (read-only). Cancel requested: it stops at its next cancel poll."
                 : r.IsLiveOthers ? $"Live view of {r.StartedBy}'s Run: read-only, you can watch it or ask it to stop. Heartbeat {r.HeartbeatText}."
                 : r.ShowCancelRequested ? "Cancel requested. The Run stops at its next cancel poll; in-flight .part files stay on the server."
