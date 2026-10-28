@@ -32,6 +32,8 @@ public sealed class ProbePage : View, IShellPage
 
     public string KeyHints => "R Run  1-4 Filter";
 
+    public event Action? ChromeChanged { add { } remove { } }
+
     public bool HandleKey(Key key)
     {
         if (key != Key.R && key != Key.D1) return false;

@@ -98,6 +98,7 @@ public sealed class TuiShell : Window
         _app.Keyboard.KeyDown += OnAppKey;
         FrameChanged += (_, _) => CheckSize();
         _settingsWindow.ChromeChanged += Refresh;
+        foreach (var page in new[] { _upload, _history, _help }) page.ChromeChanged += Refresh;
         Initialized += (_, _) =>
         {
             CheckSize();
