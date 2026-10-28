@@ -260,7 +260,6 @@ public sealed class HistoryPageViewModelTests
         _history.Publish(run with { Summary = run.Summary with { Status = "Abandoned", ExitCode = null, EndedAt = run.Summary.Heartbeat } }, complete: true);
         await Eventually(() => item.IsAbandoned);
         Assert.IsFalse(item.IsLive);
-        Assert.IsTrue(Can(item.RetryCommand));
-        Assert.IsFalse(Can(item.CancelCommand));
+        await Eventually(() => Can(item.RetryCommand) && !Can(item.CancelCommand)); // CanExecute follows IsAbandoned asynchronously
     }
 }

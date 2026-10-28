@@ -11,6 +11,7 @@ namespace MiresSftpUploader.Test.Unit;
 
 /// <summary>The Upload page of the whole-app TUI on the real view model, a gated fake Engine and the real <c>Application.Run</c> loop.</summary>
 [TestClass]
+[DoNotParallelize] // each test runs a TuiTestHost (own thread + Terminal.Gui loop); started alongside hundreds of other tests the loop starves and "the TUI did not start"
 public sealed class UploadTuiPageTests : ConfigurationTestBase
 {
     private static readonly AppConfig Config = new()
@@ -177,11 +178,11 @@ public sealed class UploadTuiPageTests : ConfigurationTestBase
 
         s.Host.Press(Key.CursorUp);
         Assert.IsFalse(s.Host.OnUi(() => s.Vm.IsFollowing), "a manual cursor move turns follow off");
-        Assert.Contains("End Follow", s.Shell.KeyBarText);
+        s.Host.WaitUntil(() => s.Shell.KeyBarText.Contains("End Follow"), "the key bar offers End Follow");
 
         s.Host.Press(Key.End);
         Assert.IsTrue(s.Host.OnUi(() => s.Vm.IsFollowing), "End turns it on");
-        Assert.DoesNotContain("End Follow", s.Shell.KeyBarText);
+        s.Host.WaitUntil(() => !s.Shell.KeyBarText.Contains("End Follow"), "the key bar stops offering End Follow");
         s.Engine.Release();
     }
 

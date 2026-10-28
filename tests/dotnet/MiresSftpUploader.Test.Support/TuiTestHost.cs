@@ -21,6 +21,7 @@ public sealed class TuiTestHost : IDisposable
     private Exception? _failure;
     private IApplication? _app;
     private Window? _root;
+    private volatile string _stage = "thread queued";
 
     /// <param name="create">Builds the root window on the UI thread, after the application was initialised.</param>
     public TuiTestHost(Func<IApplication, Window> create, int width = 100, int height = 32)
@@ -29,11 +30,15 @@ public sealed class TuiTestHost : IDisposable
         {
             try
             {
+                _stage = "Application.Create";
                 var app = Application.Create();
                 _app = app;
+                _stage = "Init";
                 app.Init(DriverRegistry.Names.ANSI);
                 app.Driver!.SetScreenSize(width, height);
+                _stage = "create root";
                 _root = create(app);
+                _stage = "Run (waiting for first iteration)";
                 app.Iteration += (_, _) => _ready.Set();
                 app.Run(_root);
                 _root.Dispose();
@@ -50,7 +55,7 @@ public sealed class TuiTestHost : IDisposable
             }
         }) { Name = "tui-test-host", IsBackground = true };
         _thread.Start();
-        Assert.IsTrue(_ready.Wait(DefaultTimeout), "the TUI did not start");
+        Assert.IsTrue(_ready.Wait(DefaultTimeout), $"the TUI did not start (stuck at: {_stage})");
         if (_failure is not null) throw new InvalidOperationException("the TUI failed to start", _failure);
         // One more round trip: the loop is running and the first frame was laid out.
         OnUi(() => App.LayoutAndDraw(true));

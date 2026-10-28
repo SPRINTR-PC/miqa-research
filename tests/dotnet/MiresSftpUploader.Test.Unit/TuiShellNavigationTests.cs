@@ -45,6 +45,7 @@ public sealed class ProbePage : View, IShellPage
 }
 
 [TestClass]
+[DoNotParallelize] // each test runs a TuiTestHost (own thread + Terminal.Gui loop); started alongside hundreds of other tests the loop starves and "the TUI did not start"
 public sealed class TuiShellNavigationTests : ConfigurationTestBase
 {
     private static readonly Key[] FunctionKeys = [Key.F9, Key.F10, Key.F11, Key.F12];
