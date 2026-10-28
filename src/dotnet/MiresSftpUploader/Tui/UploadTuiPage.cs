@@ -53,6 +53,9 @@ public sealed class UploadTuiPage : View, IShellPage
     private bool _disposed;
     private string _lastLockRefusal = "";
 
+    /// <summary>Called just before the lock refusal dialog opens; the whole-app shell uses it to bring Upload forward, whichever page is shown then.</summary>
+    public Action? BeforeLockRefusal { get; set; }
+
     public UploadTuiPage(IApplication app, UploadPageViewModel vm, LogPaneViewModel? log, ITuiDialogs dialogs)
     {
         _app = app;
@@ -268,6 +271,7 @@ public sealed class UploadTuiPage : View, IShellPage
         {
             _app.AddTimeout(TimeSpan.FromMilliseconds(1), () =>
             {
+                BeforeLockRefusal?.Invoke();
                 _dialogs.ShowMessage("Another Run is active", text);
                 return false;
             });

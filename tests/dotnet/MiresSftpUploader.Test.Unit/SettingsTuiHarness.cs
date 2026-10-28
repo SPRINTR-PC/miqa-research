@@ -34,11 +34,15 @@ public sealed class FakeTuiDialogs : ITuiDialogs
     public void ShowIssues(IReadOnlyList<string> lines) => IssueLists.Add(lines);
 
     public int RunQuitAsked { get; private set; }
+
+    /// <summary>Runs while the Run-quit question is open, as a signal would in the real modal.</summary>
+    public Action? OnAskCancelRunAndQuit { get; set; }
     public Queue<bool> RunQuitAnswers { get; } = new();
 
     public bool AskCancelRunAndQuit()
     {
         RunQuitAsked++;
+        OnAskCancelRunAndQuit?.Invoke();
         return RunQuitAnswers.Count > 0 && RunQuitAnswers.Dequeue();
     }
 

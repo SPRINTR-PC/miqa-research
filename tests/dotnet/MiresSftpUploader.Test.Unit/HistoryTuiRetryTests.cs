@@ -106,6 +106,23 @@ public sealed class HistoryTuiRetryTests : ConfigurationTestBase
     }
 
     [TestMethod, Timeout(60000)]
+    public void A_lock_refusal_arriving_while_another_page_is_shown_brings_Upload_forward()
+    {
+        SeedFailed();
+        var engine = new FakeRunEngine { ExitCode = ExitCodes.LockHeld, Reason = "Another Run holds the lock (pid=7)", Hold = true };
+        var s = Start(engine);
+        s.Host.Press(Key.R);
+        s.Host.WaitUntil(() => engine.Started.IsCompleted && s.Upload.IsRunning, "the Retry Run is waiting");
+        s.Host.Press(Key.F12);
+        s.Host.WaitUntil(() => s.Shell.Current == ShellTab.Help, "Help shown");
+
+        engine.Release();
+
+        s.Host.WaitUntil(() => s.Dialogs.Messages.Count == 1, "the refusal message");
+        Assert.AreEqual(ShellTab.Upload, s.Shell.Current);
+    }
+
+    [TestMethod, Timeout(60000)]
     public void Switching_tabs_mid_Run_keeps_the_Run_and_the_Upload_filter_and_follow_flag()
     {
         SeedFailed();

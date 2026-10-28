@@ -224,7 +224,11 @@ public sealed class UploadTuiPageTests : ConfigurationTestBase
         RunAndWaitForEvents(s);
         s.Host.WaitUntilShows("▶ Running…");
         s.Host.WaitUntil(() => LinesOnUi(s)[0].Contains("Upload ▶ 50%", StringComparison.Ordinal), "tab badge ▶ 50%");
-        Assert.Contains("Settings changes apply to the next Run", s.Shell.StatusText);
+        Assert.DoesNotContain("Settings changes apply", s.Shell.StatusText, "the note belongs to Settings only");
+        s.Host.Press(Key.F11);
+        s.Host.WaitUntil(() => s.Shell.StatusText.Contains("Settings changes apply to the next Run"), "the note on Settings during a Run");
+        s.Host.Press(Key.F9);
+        s.Host.WaitUntil(() => s.Shell.Current == ShellTab.Upload && !s.Shell.StatusText.Contains("Settings changes apply"), "the note gone on Upload");
         Assert.AreEqual(RunTrigger.Tui, s.Engine.Calls.Single().Trigger);
 
         s.Engine.Release();
@@ -261,6 +265,22 @@ public sealed class UploadTuiPageTests : ConfigurationTestBase
         Assert.IsFalse(s.Host.Stopped.IsSet);
         Assert.IsTrue(s.Host.OnUi(() => s.Vm.IsRunning));
         s.Engine.Release();
+    }
+
+    [TestMethod, Timeout(60000)]
+    public void A_signal_while_the_quit_question_is_open_still_cancels_and_exits_130()
+    {
+        var engine = new FakeRunEngine { Hold = true };
+        engine.Script.Add(File("a.ndpi", FileOutcome.Uploading));
+        var s = Start(engine);
+        s.Dialogs.OnAskCancelRunAndQuit = () => s.Shell.Terminate();
+        RunAndWaitForEvents(s);
+
+        s.Host.Press(Key.Q.WithCtrl);
+
+        Assert.IsTrue(s.Host.Stopped.Wait(TimeSpan.FromSeconds(10)), "the TUI exits once the Run ended");
+        Assert.AreEqual(ExitCodes.Cancelled, s.Shell.ExitCode);
+        Assert.IsFalse(s.Vm.IsRunning);
     }
 
     [TestMethod, Timeout(60000)]

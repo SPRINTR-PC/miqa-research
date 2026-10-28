@@ -24,7 +24,7 @@ public sealed class TuiShell : Window
 
     private static readonly string[] TabNames = ["Upload", "History", "Settings", "Help"];
     private static readonly Key[] TabKeys = [Key.F9, Key.F10, Key.F11, Key.F12];
-    private static readonly Rune NoHotKey = new('￿');
+    internal static readonly Rune NoHotKey = new('\uFFFF');
 
     private readonly IApplication _app;
     private readonly ITuiDialogs _dialogs;
@@ -33,8 +33,8 @@ public sealed class TuiShell : Window
     private readonly IShellPage _upload;
     private readonly IShellPage _history;
     private readonly IShellPage _help;
-    private readonly View[] _pages = new View[4];
-    private readonly Label[] _tabs = new Label[4];
+    private readonly View[] _pages = new View[TabNames.Length];
+    private readonly Label[] _tabs = new Label[TabNames.Length];
     private readonly View _tabBar = new() { X = 0, Y = 0, Width = Dim.Fill(), Height = 1 };
 
     // A plain View has CanFocus = false, which stops focus reaching anything inside it.
@@ -64,13 +64,14 @@ public sealed class TuiShell : Window
         _area.SetScheme(Theme.Base);
 
         _upload = upload ?? new PlaceholderPage("Upload");
+        if (_upload is UploadTuiPage uploadPage) uploadPage.BeforeLockRefusal = () => Show(ShellTab.Upload);
         _history = history ?? new PlaceholderPage("History");
         _help = help ?? new PlaceholderPage("Help");
         _settingsWindow = new SettingsTuiWindow(app, settings, dialogs, hosted: true);
-        _pages[0] = (View)_upload;
-        _pages[1] = (View)_history;
-        _pages[2] = _settingsWindow;
-        _pages[3] = (View)_help;
+        _pages[(int)ShellTab.Upload] = (View)_upload;
+        _pages[(int)ShellTab.History] = (View)_history;
+        _pages[(int)ShellTab.Settings] = _settingsWindow;
+        _pages[(int)ShellTab.Help] = (View)_help;
         foreach (var page in _pages)
         {
             page.X = 0;
@@ -81,7 +82,7 @@ public sealed class TuiShell : Window
             _area.Add(page);
         }
 
-        for (var i = 0; i < 4; i++)
+        for (var i = 0; i < TabNames.Length; i++)
         {
             var label = new Label { Y = 0, Height = 1, HotKeySpecifier = NoHotKey };
             var target = (ShellTab)i;
@@ -145,10 +146,20 @@ public sealed class TuiShell : Window
     {
         if (_stopping) return;
         var running = IsRunActive;
-        if (running && !_dialogs.AskCancelRunAndQuit()) return;
-        if (!_settingsWindow.ResolveUnsaved()) return;
+        if (running && !_dialogs.AskCancelRunAndQuit()) { StopIfSignalled(); return; }
+        if (!_settingsWindow.ResolveUnsaved()) { StopIfSignalled(); return; }
+        if (_signalled) return;
         if (running) CancelRunsThen(() => _settingsWindow.StopNow());
         else _settingsWindow.StopNow();
+    }
+
+    /// <summary>
+    /// A signal that arrived while a quit question was open stopped that modal, not the TUI (RequestStop closes the top-most one only), and the
+    /// question then returned "stay": stop again now that the shell is the top-most view, exit code 130.
+    /// </summary>
+    private void StopIfSignalled()
+    {
+        if (_signalled && _settingsWindow.ExitRequested) _settingsWindow.Terminate();
     }
 
     /// <summary>
@@ -207,7 +218,7 @@ public sealed class TuiShell : Window
 
     private void ShowCurrent()
     {
-        for (var i = 0; i < 4; i++) _pages[i].Visible = i == (int)Current && !_overlay.Visible;
+        for (var i = 0; i < TabNames.Length; i++) _pages[i].Visible = i == (int)Current && !_overlay.Visible;
         Refresh();
         FocusPage();
         SetNeedsLayout();
@@ -291,7 +302,7 @@ public sealed class TuiShell : Window
     private void Refresh()
     {
         var x = 0;
-        for (var i = 0; i < 4; i++)
+        for (var i = 0; i < TabNames.Length; i++)
         {
             _tabs[i].Text = TabText(i);
             _tabs[i].X = x;
@@ -303,7 +314,7 @@ public sealed class TuiShell : Window
         var onSettings = Current == ShellTab.Settings;
         var status = onSettings ? WithSaveTargets(_settingsWindow.StatusText) : PageOf(Current)?.StatusText ?? "";
         if (_statusOverride is not null) status = _statusOverride;
-        else if (IsRunActive) status += "   Settings changes apply to the next Run";
+        else if (IsRunActive && onSettings) status += "   Settings changes apply to the next Run";
         _status.Text = status;
         _status.SetScheme(onSettings && _settings.HasChanges ? Theme.Locked : Theme.Ok);
         var pageKeys = onSettings ? _settingsWindow.KeyHints : PageOf(Current)?.KeyHints ?? "";

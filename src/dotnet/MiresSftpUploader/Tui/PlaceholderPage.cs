@@ -13,7 +13,7 @@ public sealed class PlaceholderPage : View, IShellPage
         Add(new Label
         {
             X = Pos.Center(), Y = Pos.Center(), Text = title + ": not available yet in the terminal interface.",
-            HotKeySpecifier = new System.Text.Rune('￿'),
+            HotKeySpecifier = TuiShell.NoHotKey,
         });
     }
 

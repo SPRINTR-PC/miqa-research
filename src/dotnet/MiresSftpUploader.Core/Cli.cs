@@ -221,7 +221,7 @@ public static class Cli
                                   stdin or stdout is redirected, TERM is dumb or unset, or below 80x24); honours only
                                   the data directory and log level options.
           --version               Print the version and exit.
-          --help                 Print this help and exit.
+          --help                  Print this help and exit.
 
         Settings come from, highest first: command-line flags, MIRES_* environment variables
         (MIRES_Sftp__Host, MIRES_Sources__0__Path), appsettings.user.json in the per-user

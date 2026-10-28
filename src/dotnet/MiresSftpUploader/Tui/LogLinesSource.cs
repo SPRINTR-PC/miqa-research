@@ -26,7 +26,11 @@ public sealed class LogLinesSource(ObservableCollection<LogEntry> entries) : ILi
 
     public bool SuspendCollectionChangedEvent { get; set; }
 
-    public static string Format(LogEntry e) => $"{e.Time:HH:mm:ss} {e.Level.ToString().ToUpperInvariant()[..Math.Min(4, e.Level.ToString().Length)]} {e.Message}";
+    public static string Format(LogEntry e)
+    {
+        var level = e.Level.ToString().ToUpperInvariant();
+        return $"{e.Time:HH:mm:ss} {level[..Math.Min(4, level.Length)]} {e.Message}";
+    }
 
     public void Render(ListView container, bool selected, int item, int col, int line, int width, int viewportX = 0)
     {
