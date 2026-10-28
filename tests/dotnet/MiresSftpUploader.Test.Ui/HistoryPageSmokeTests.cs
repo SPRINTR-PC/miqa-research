@@ -33,7 +33,7 @@ public class HistoryPageSmokeTests
             files: [File("a", "Succeeded"), File("b", "Failed", "RemoteDenied"), File("c", "Skipped", "TooRecent"), File("d", "MovedAway")]);
         history.Add(status: "Abandoned", exitCode: null, startedBy: "bo", counts: Counts(failed: 1));
         var upload = new UploadPageViewModel(new FakeUploaderRuntime(new AppConfig(), new FakeRunEngine()), a => a());
-        var page = new HistoryPageViewModel(history, "anna", a => a(), _ => Task.CompletedTask);
+        var page = new HistoryPageViewModel(history, "anna", a => a(), _ => Task.FromResult<string?>(null));
         var vm = new MainWindowViewModel(upload, null, theme, _ => null, page);
         return (new MainWindow { DataContext = vm }, vm, history);
     }

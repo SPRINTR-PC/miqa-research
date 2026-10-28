@@ -84,11 +84,16 @@ public sealed class MainWindowViewModel : ViewModelBase
     public bool IsSettingsPage => Page == AppPage.Settings;
     public bool IsHelpPage => Page == AppPage.Help;
 
-    /// <summary>Retry from the History page: shows the Upload page, where the new Run is followed.</summary>
-    public Task RetryFromHistoryAsync(Guid runId)
+    /// <summary>
+    /// Retry from the History page: shows the Upload page, where the new Run is followed. While a Run is active nothing happens and the result is
+    /// a notice for the History page; otherwise the task ends with the Run and the result is null.
+    /// </summary>
+    public async Task<string?> RetryFromHistoryAsync(Guid runId)
     {
+        if (Upload.IsRunning) return UploadPageViewModel.RunActiveNotice;
         Page = AppPage.Upload;
-        return Upload.RetryRunAsync(runId);
+        await Upload.RetryRunAsync(runId);
+        return null;
     }
 
     public UiTheme Theme

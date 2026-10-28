@@ -37,7 +37,7 @@ public sealed class HistoryTuiTests : ConfigurationTestBase
         TuiTestHost? host = null;
         host = new TuiTestHost(app =>
         {
-            vm = new HistoryPageViewModel(_history, "anna", a => app.Invoke(a), id => { _retried.Add(id); return Task.CompletedTask; });
+            vm = new HistoryPageViewModel(_history, "anna", a => app.Invoke(a), id => { _retried.Add(id); return Task.FromResult<string?>(null); });
             page = new HistoryTuiPage(vm, a => app.Invoke(a));
             return shell = new TuiShell(app, settings, new FakeTuiDialogs(), ShellTab.History, history: page);
         }, width, height);

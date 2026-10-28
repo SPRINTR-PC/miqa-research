@@ -187,6 +187,18 @@ public sealed class TuiShell : Window
 
     private string? _statusOverride;
 
+    /// <summary>
+    /// Retry from the History page: switches to Upload and starts the Retry Run at once. While a Run is active nothing switches and the result is
+    /// a notice for History; otherwise the task ends with the Run and the result is null (a refusal by the Run-lock shows on Upload).
+    /// </summary>
+    public async System.Threading.Tasks.Task<string?> RetryFromHistoryAsync(Guid runId, UploadPageViewModel upload)
+    {
+        if (upload.IsRunning) return UploadPageViewModel.RunActiveNotice;
+        Show(ShellTab.Upload);
+        await upload.RetryRunAsync(runId);
+        return null;
+    }
+
     public void Show(ShellTab tab)
     {
         Current = tab;
