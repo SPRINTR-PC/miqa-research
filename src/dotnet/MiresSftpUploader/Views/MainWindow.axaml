@@ -89,7 +89,7 @@
                         <StackPanel>
                             <TextBlock Classes="muted" Text="Succeeded"/>
                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                <PathIcon Width="18" Height="18" VerticalAlignment="Center" Foreground="{DynamicResource MSuccess}" Data="{x:Static vm:UploadPageViewModel.SucceededIcon}"/>
+                                <PathIcon Width="18" Height="18" VerticalAlignment="Center" Foreground="{DynamicResource MSuccess}" Data="{x:Static v:OutcomeIcons.SucceededIcon}"/>
                                 <TextBlock x:Name="SucceededTile" Classes="tile" Foreground="{DynamicResource MSuccess}" Text="{Binding Upload.Succeeded}"/>
                             </StackPanel>
                         </StackPanel>
@@ -99,7 +99,7 @@
                         <StackPanel>
                             <TextBlock Classes="muted" Text="Failed"/>
                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                <PathIcon Width="18" Height="18" VerticalAlignment="Center" Foreground="{DynamicResource MDestructive}" Data="{x:Static vm:UploadPageViewModel.FailedIcon}"/>
+                                <PathIcon Width="18" Height="18" VerticalAlignment="Center" Foreground="{DynamicResource MDestructive}" Data="{x:Static v:OutcomeIcons.FailedIcon}"/>
                                 <TextBlock x:Name="FailedTile" Classes="tile" Foreground="{DynamicResource MDestructive}" Text="{Binding Upload.Failed}"/>
                             </StackPanel>
                         </StackPanel>
@@ -109,7 +109,7 @@
                         <StackPanel>
                             <TextBlock Classes="muted" Text="Skipped"/>
                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                <PathIcon Width="18" Height="18" VerticalAlignment="Center" Foreground="{DynamicResource MMuted}" Data="{x:Static vm:UploadPageViewModel.SkippedIcon}"/>
+                                <PathIcon Width="18" Height="18" VerticalAlignment="Center" Foreground="{DynamicResource MMuted}" Data="{x:Static v:OutcomeIcons.SkippedIcon}"/>
                                 <TextBlock x:Name="SkippedTile" Classes="tile" Text="{Binding Upload.Skipped}"/>
                             </StackPanel>
                         </StackPanel>
@@ -119,7 +119,7 @@
                         <StackPanel>
                             <TextBlock Classes="muted" Text="Pending"/>
                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                <PathIcon Width="18" Height="18" VerticalAlignment="Center" Foreground="{DynamicResource MInfo}" Data="{x:Static vm:UploadPageViewModel.PendingIcon}"/>
+                                <PathIcon Width="18" Height="18" VerticalAlignment="Center" Foreground="{DynamicResource MInfo}" Data="{x:Static v:OutcomeIcons.PendingIcon}"/>
                                 <TextBlock x:Name="PendingTile" Classes="tile" Foreground="{DynamicResource MInfo}" Text="{Binding Upload.Pending}"/>
                             </StackPanel>
                         </StackPanel>
