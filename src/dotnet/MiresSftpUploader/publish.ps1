@@ -39,6 +39,10 @@ function Test-Published([string]$Dir, [string]$ExeName) {
     $configureOut = @(& $exe --configure 2>$null)
     if ($LASTEXITCODE -ne 2 -or $configureOut.Count -ne 0) { throw "--configure under redirected streams exited $LASTEXITCODE with stdout '$($configureOut -join ' ')', expected 2 and no output" }
 
+    # --tui refuses the same way under redirected streams.
+    $tuiOut = @(& $exe --tui 2>$null)
+    if ($LASTEXITCODE -ne 2 -or $tuiOut.Count -ne 0) { throw "--tui under redirected streams exited $LASTEXITCODE with stdout '$($tuiOut -join ' ')', expected 2 and no output" }
+
     # The shipped appsettings.json has no host, username, host key or Sources, so --validate-config is expected to
     # report exactly those four required fields and nothing else.
     $errorLines = @(& $exe --validate-config 2>&1 | ForEach-Object { "$_" })

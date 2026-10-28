@@ -140,6 +140,20 @@ Targets: as listed per item. Modal dialogs (Unlock confirmation, unsaved changes
 - [ ] **The published binary starts the Settings TUI** on linux-x64, linux-arm64 and osx-arm64. **Do:** from the unpacked package run `--configure`. **Expect:** the TUI opens from the untrimmed single file with no missing native or driver error.
 - [ ] **Check connection (F5) against a real SFTP server.** **Do:** in `--configure` with a saved, valid Destination and the password set (environment or Secret Store), press F5; then repeat with a wrong password and with a wrong Host Key Fingerprint. **Expect:** a dialog says connected; then an authentication failure; then a host key mismatch. No secret value appears in any of them, and nothing is uploaded.
 
+## 15. Whole-app TUI (`--tui`)
+
+Targets: linux-x64, linux-arm64, osx-arm64 unless stated. Modal dialogs can be driven headlessly (see section 14). This ticket ships the shell and the Settings page; extend the list as the Upload, History and Help pages arrive.
+
+- [ ] **F9-F12 on real terminals.** **Do:** press F9-F12 in gnome-terminal (F10 menu, F11 fullscreen), macOS Terminal and iTerm without the Fn key, and Guake/Yakuake (F12). **Expect:** the pages switch; where the terminal swallows a key, note it. **Unverified.**
+- [ ] **Windows console under the `WinExe` build** (win-x64). **Never verified.** **Do:** as section 14 with `--tui`.
+- [ ] **Redirected streams and `TERM=dumb`.** **Do:** `MiresSftpUploader --tui </dev/null` and `TERM=dumb MiresSftpUploader --tui`. **Expect:** exit code 2, one line on stderr naming `--tui`, nothing on stdout.
+- [ ] **Resize.** **Do:** shrink the terminal below 80x24, press keys, enlarge it. **Expect:** an overlay, keys do nothing, the page and its focus return.
+- [ ] **Mouse** in PuTTY and Windows Terminal. **Do:** click the tab labels. **Expect:** the page switches; the keyboard works without the mouse.
+- [ ] **Unsaved quit.** **Do:** change a field, press Ctrl+Q (and Ctrl+C). **Expect:** Save, Discard or Cancel; Discard writes nothing.
+- [ ] **SIGHUP and SIGTERM.** **Do:** change a field without saving, `kill -HUP <pid>`, then `-TERM`. **Expect:** exit code 130, the terminal is restored, nothing was written.
+- [ ] **Glyphs and colours.** **Do:** check `● ✗ !` per terminal, on 16-colour and 256-colour terminals. **Expect:** no overlap; colour never carries meaning alone.
+- [ ] **The published binary starts the TUI** on linux-x64, linux-arm64 and osx-arm64. **Do:** from the unpacked package run `--tui`. **Expect:** the shell opens from the untrimmed single-file executable.
+
 ---
 
 ## Sign-off

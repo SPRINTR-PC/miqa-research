@@ -35,11 +35,17 @@ public sealed class SettingsTuiWindow : Window
     private readonly Label _overlay = new() { X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill(), Visible = false };
     private readonly List<(Key Key, string Label, Action Action)> _commands = [];
     private readonly List<SettingFieldViewModel> _hooked = [];
+    private readonly bool _hosted;
     private int _shown = -1;
     private bool _refreshing;
 
-    public SettingsTuiWindow(IApplication app, SettingsPageViewModel vm, ITuiDialogs dialogs, PageCatalog? catalog = null)
+    /// <param name="hosted">
+    /// Inside the whole-app shell: no header, status line, key bar or size overlay of its own (the shell shows <see cref="StatusText"/>
+    /// and <see cref="KeyHints"/>), the sidebar and body use the full height, and the window does not take the focus when it is initialised.
+    /// </param>
+    public SettingsTuiWindow(IApplication app, SettingsPageViewModel vm, ITuiDialogs dialogs, PageCatalog? catalog = null, bool hosted = false)
     {
+        _hosted = hosted;
         _app = app;
         _vm = vm;
         _dialogs = dialogs;
@@ -59,6 +65,14 @@ public sealed class SettingsTuiWindow : Window
         vm.Confirm = (title, message) => Task.FromResult(dialogs.Confirm(title, message));
         _sidebar = new PageSidebar(_pages, vm);
         _body.X = Pos.Right(_sidebar);
+        if (hosted)
+        {
+            _sidebar.Y = 0;
+            _sidebar.Height = Dim.Fill();
+            _body.Y = 0;
+            _body.Height = Dim.Fill();
+            foreach (var v in new View[] { _header, _status, _keyBar, _overlay }) v.Visible = false;
+        }
 
         AddCommand(Key.S.WithCtrl, "Ctrl+S Save", Save);
         AddCommand(Key.R.WithCtrl, "Ctrl+R Revert", Revert);
@@ -77,7 +91,13 @@ public sealed class SettingsTuiWindow : Window
         };
         KeyDown += OnKey;
         FrameChanged += (_, _) => CheckSize();
-        Initialized += (_, _) => { _sidebar.SetFocus(); CheckSize(); };
+        Initialized += (_, _) =>
+        {
+            // Visible inside a host, a focus change here mutates the subview list while the host is still in EndInit.
+            if (_hosted) return;
+            _sidebar.SetFocus();
+            CheckSize();
+        };
 
         _vm.PropertyChanged += OnVmChanged;
         _vm.Saved += Rebuild;
@@ -105,6 +125,15 @@ public sealed class SettingsTuiWindow : Window
     public FrameView Body => _body;
 
     public string StatusText => _status.Text;
+
+    /// <summary>The keys of this page for a host's key bar (the host adds its own Quit).</summary>
+    public string KeyHints => string.Join("   ", _commands.Where(c => c.Key != Key.Q.WithCtrl).Select(c => c.Label)) + "   Ctrl+PgUp/PgDn Page   Esc Back";
+
+    /// <summary>Raised after the status text, badges or header changed (a host redraws its own chrome).</summary>
+    public event Action? ChromeChanged;
+
+    /// <summary>Quit as the Quit key does: asks about unsaved changes, then stops the application.</summary>
+    public void RequestQuit() => Quit();
 
     public bool OverlayVisible => _overlay.Visible;
 
@@ -297,10 +326,12 @@ public sealed class SettingsTuiWindow : Window
                     : _vm.Warnings.Count > 0 ? $"! {_vm.Warnings.Count} warning(s) (F4)" : "valid",
             };
             if (_vm.SaveMessage.Length > 0) parts.Add(_vm.SaveMessage);
+            if (_hosted && _vm.HasDataDirectoryProblem) parts.Insert(0, "✗ The Data Directory cannot be used: no Run can start (Data Directory page)");
             _status.Text = string.Join("   |   ", parts);
             _status.SetScheme(errors > 0 ? Theme.Error : _vm.HasChanges ? Theme.Locked : Theme.Ok);
             _sidebar.RefreshBadges(_vm);
             SetNeedsDraw();
+            ChromeChanged?.Invoke();
         }
         finally
         {
@@ -310,6 +341,7 @@ public sealed class SettingsTuiWindow : Window
 
     private void CheckSize()
     {
+        if (_hosted) return;
         var small = Frame.Width < SettingsTuiEntry.MinimumWidth || Frame.Height < SettingsTuiEntry.MinimumHeight;
         _overlay.Text = $"The terminal is {Frame.Width}x{Frame.Height}; the Settings TUI needs at least " +
                         $"{SettingsTuiEntry.MinimumWidth}x{SettingsTuiEntry.MinimumHeight}. Make the window larger.";

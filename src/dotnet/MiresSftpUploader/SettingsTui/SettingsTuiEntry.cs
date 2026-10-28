@@ -43,27 +43,26 @@ public static class SettingsTuiEntry
     public const int MinimumWidth = 80;
     public const int MinimumHeight = 24;
 
-    private const string Prefix = "--configure needs ";
-
-    /// <summary>Why the Settings TUI cannot run here, or null when it can. One line, no line break.</summary>
-    public static string? Refusal(ITerminalEnvironment terminal)
+    /// <summary>Why the Settings TUI cannot run here, or null when it can. One line, no line break, naming the flag actually used.</summary>
+    public static string? Refusal(ITerminalEnvironment terminal, string flag = "--configure")
     {
-        if (terminal.IsInputRedirected) return Prefix + "an interactive terminal, but stdin is redirected.";
-        if (terminal.IsOutputRedirected) return Prefix + "an interactive terminal, but stdout is redirected.";
+        var prefix = flag + " needs ";
+        if (terminal.IsInputRedirected) return prefix + "an interactive terminal, but stdin is redirected.";
+        if (terminal.IsOutputRedirected) return prefix + "an interactive terminal, but stdout is redirected.";
         if (!terminal.IsWindows && (string.IsNullOrEmpty(terminal.TermVariable) || terminal.TermVariable == "dumb"))
-            return Prefix + "a terminal that supports full-screen output, but TERM is " + (string.IsNullOrEmpty(terminal.TermVariable) ? "not set." : "'dumb'.");
+            return prefix + "a terminal that supports full-screen output, but TERM is " + (string.IsNullOrEmpty(terminal.TermVariable) ? "not set." : "'dumb'.");
         if (terminal.WindowWidth is not { } width || terminal.WindowHeight is not { } height)
-            return $"--configure could not read the terminal size; it needs at least {MinimumWidth}x{MinimumHeight}.";
+            return $"{flag} could not read the terminal size; it needs at least {MinimumWidth}x{MinimumHeight}.";
         if (width < MinimumWidth || height < MinimumHeight)
-            return $"{Prefix}a terminal of at least {MinimumWidth}x{MinimumHeight}, but it is {width}x{height}.";
+            return $"{prefix}a terminal of at least {MinimumWidth}x{MinimumHeight}, but it is {width}x{height}.";
         return null;
     }
 
     /// <summary>Refuses with exit code 2 (one stderr line; stdout is never written) or runs the Settings TUI and returns its exit code.</summary>
     /// <param name="run">Runs the Settings TUI; called only after every check passed, so before it initialises the terminal.</param>
-    public static int Run(ITerminalEnvironment terminal, TextWriter stderr, Func<int> run)
+    public static int Run(ITerminalEnvironment terminal, TextWriter stderr, Func<int> run, string flag = "--configure")
     {
-        if (Refusal(terminal) is { } refusal)
+        if (Refusal(terminal, flag) is { } refusal)
         {
             stderr.WriteLine(refusal);
             return ExitCodes.ConfigurationError;

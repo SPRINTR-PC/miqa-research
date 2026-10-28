@@ -12,9 +12,13 @@ This folder contains the executable, `appsettings.json` (the Machine Config; edi
 4. Check: `MiresSftpUploader --validate-config --check-connection`, then `MiresSftpUploader --headless --dry-run`.
 5. Schedule `MiresSftpUploader --headless` with the operating system's scheduler, using the samples in `scheduler/`; `scheduling.md` has the steps for each system, how to keep Secrets out of the task, and what each exit code means.
 
+## TUI
+
+`MiresSftpUploader --tui` opens the **TUI**, the whole application in a full-screen terminal for machines reached over SSH. It has four pages behind a tab bar: Upload, History, Settings and Help, switched with F9, F10, F11 and F12 or a mouse click. A `●` on the Settings tab marks unsaved changes; unsaved edits survive a tab switch. One status line and one key bar at the bottom are shared by all pages. This release ships the shell and the Settings page; Upload, History and Help show a placeholder until their pages arrive. Ctrl+Q or Ctrl+C quits (with unsaved Settings changes it asks Save, Discard or Cancel); SIGHUP or SIGTERM exits with code 130 and saves nothing. `--tui` has the same terminal rules as `--configure` (exit code 2 and one stderr line when stdin or stdout is redirected, `TERM` is `dumb` or unset, or the terminal is below 80x24), honours only `--data-dir` and `--log-level`, and cannot be combined with `--configure` or `--headless`. With an invalid configuration it opens on Settings.
+
 ## Settings TUI
 
-On a machine without a display (for example over SSH) run `MiresSftpUploader --configure` to open the **Settings TUI**, a full-screen terminal editor with the same pages, Locked Settings, validation and save rules as the Settings page. `--configure` is supported on Linux and macOS; Windows is unverified (the Windows build is a `WinExe` and an interactive console session from it has not been tested). It needs an interactive terminal of at least 80x24 and refuses with exit code 2 and one line on stderr when stdin or stdout is redirected, when `TERM` is `dumb` or unset (Unix), or when the terminal is too small. Only `--data-dir` and `--log-level` are honoured with it.
+On a machine without a display (for example over SSH) run `MiresSftpUploader --configure` to open the **Settings TUI** (the TUI on its Settings page), a full-screen terminal editor with the same pages, Locked Settings, validation and save rules as the Settings page. `--configure` is supported on Linux and macOS; Windows is unverified (the Windows build is a `WinExe` and an interactive console session from it has not been tested). It needs an interactive terminal of at least 80x24 and refuses with exit code 2 and one line on stderr when stdin or stdout is redirected, when `TERM` is `dumb` or unset (Unix), or when the terminal is too small. Only `--data-dir` and `--log-level` are honoured with it.
 
 Key bindings:
 
