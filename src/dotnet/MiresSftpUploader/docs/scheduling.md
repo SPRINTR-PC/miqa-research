@@ -18,7 +18,7 @@ Do these in order, on the machine that will run the schedule.
 
 ## Configuring a headless machine
 
-On a server reached over SSH, edit the settings with the **Settings TUI**: `MiresSftpUploader --configure` (see the README for the key bindings). It manages the same settings as the Settings page, including Secrets, and F5 runs Check connection against the saved configuration, so it can replace steps 3 to 5 above. `--configure` is supported on Linux and macOS; Windows is unverified, so on Windows edit `appsettings.json` and use `--set-secret` instead. It refuses with exit code 2 when run from a scheduler, a pipe or a terminal below 80x24, so never put it in a scheduled task.
+On a server reached over SSH, `MiresSftpUploader --tui` opens the whole application in the terminal (the Settings page is F11). To go straight to the settings, use the **Settings TUI**: `MiresSftpUploader --configure` (see the README for the key bindings). It manages the same settings as the Settings page, including Secrets, and F5 runs Check connection against the saved configuration, so it can replace steps 3 to 5 above. `--configure` is supported on Linux and macOS; Windows is unverified, so on Windows edit `appsettings.json` and use `--set-secret` instead. It refuses with exit code 2 when run from a scheduler, a pipe or a terminal below 80x24, so never put it in a scheduled task.
 
 ## Secrets in scheduled Runs
 

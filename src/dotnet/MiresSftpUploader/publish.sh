@@ -49,6 +49,11 @@ smoke_test() {
     configure_out="$("$exe" --configure </dev/null 2>/dev/null)" || configure_rc=$?
     [ "$configure_rc" = 2 ] && [ -z "$configure_out" ] || { echo "--configure under redirected streams exited $configure_rc with stdout '$configure_out', expected 2 and no output" >&2; return 1; }
 
+    # --tui refuses the same way under redirected streams.
+    local tui_out tui_rc=0
+    tui_out="$("$exe" --tui </dev/null 2>/dev/null)" || tui_rc=$?
+    [ "$tui_rc" = 2 ] && [ -z "$tui_out" ] || { echo "--tui under redirected streams exited $tui_rc with stdout '$tui_out', expected 2 and no output" >&2; return 1; }
+
     # The shipped appsettings.json has no host, username, host key or Sources, so --validate-config is expected to
     # report exactly those four required fields and nothing else.
     local rc=0

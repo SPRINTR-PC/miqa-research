@@ -136,6 +136,10 @@ _Avoid_: Vault, keychain, credential file
 The pinned identity of the SFTP server. A connection to a server presenting a different one is refused.
 _Avoid_: Server key, known host
 
+**TUI**:
+The full-screen terminal interface of the application, with Upload, History, Settings and Help pages behind a tab bar, started with `--tui`. The **Settings TUI** is its Settings page, also opened directly by `--configure`.
+_Avoid_: Console UI, terminal mode
+
 **Settings TUI**:
 The terminal counterpart of the Settings page, for machines without a display: it manages the same settings (including Sources, rules and Secrets) with the same layering, Locked Settings and validation, and is started explicitly rather than by a Headless Run.
 _Avoid_: Config wizard, console UI

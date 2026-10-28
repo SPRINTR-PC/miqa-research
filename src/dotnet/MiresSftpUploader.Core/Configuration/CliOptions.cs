@@ -23,16 +23,19 @@ public sealed record CliOptions
 
     /// <summary>Start the Settings TUI. A mode flag: only --data-dir and --log-level may accompany it.</summary>
     public bool Configure { get; init; }
+
+    /// <summary>Start the whole-app TUI. A mode flag: only --data-dir and --log-level may accompany it.</summary>
+    public bool Tui { get; init; }
     public IReadOnlyDictionary<string, string> ConfigOverrides { get; init; } = new Dictionary<string, string>();
 
     /// <summary>Flags that start a Headless Run (or an administrative command) without a window.</summary>
-    public bool ImpliesHeadless => Headless || ListRuns || ExportRunId is not null || ValidateConfig || InitDataDir || Version || SetSecret is not null || ClearSecret is not null || ListSecrets || Configure;
+    public bool ImpliesHeadless => Headless || ListRuns || ExportRunId is not null || ValidateConfig || InitDataDir || Version || SetSecret is not null || ClearSecret is not null || ListSecrets || Configure || Tui;
 
     private static readonly HashSet<string> ValueFlags =
         ["--source", "--report", "--report-format", "--export-run", "--limit", "--log-level", "--data-dir", "--set-secret", "--clear-secret"];
 
     private static readonly HashSet<string> SwitchFlags =
-        ["--headless", "--dry-run", "--rehash-all", "--list-runs", "--validate-config", "--check-connection", "--init-data-dir", "--list-secrets", "--version", "--help", "--configure"];
+        ["--headless", "--dry-run", "--rehash-all", "--list-runs", "--validate-config", "--check-connection", "--init-data-dir", "--list-secrets", "--version", "--help", "--configure", "--tui"];
 
     public static CliParseResult Parse(IReadOnlyList<string> args)
     {
@@ -68,6 +71,7 @@ public sealed record CliOptions
                     "--list-secrets" => options with { ListSecrets = true },
                     "--version" => options with { Version = true },
                     "--configure" => options with { Configure = true },
+                    "--tui" => options with { Tui = true },
                     _ => options with { Help = true },
                 };
                 continue;
@@ -105,6 +109,8 @@ public sealed record CliOptions
             }
         }
 
+        if (options.Tui && seen.FirstOrDefault(n => n is not ("--tui" or "--data-dir" or "--log-level")) is { } otherTui)
+            return new(null, $"--tui starts the terminal interface and accepts only --data-dir and --log-level, not '{otherTui}'.");
         if (options.Configure && seen.FirstOrDefault(n => n is not ("--configure" or "--data-dir" or "--log-level")) is { } other)
             return new(null, $"--configure starts the Settings TUI and accepts only --data-dir and --log-level, not '{other}'.");
 
