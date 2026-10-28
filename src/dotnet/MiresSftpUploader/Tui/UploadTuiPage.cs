@@ -148,7 +148,7 @@ public sealed class UploadTuiPage : View, IShellPage
         RefreshAll();
     }
 
-    public event Action? Changed;
+    public event Action? ChromeChanged;
 
     public UploadPageViewModel Vm => _vm;
 
@@ -244,7 +244,7 @@ public sealed class UploadTuiPage : View, IShellPage
         _lastLockRefusal = _vm.LockRefusal;
         SetNeedsLayout();
         SetNeedsDraw();
-        Changed?.Invoke();
+        ChromeChanged?.Invoke();
     }
 
     /// <summary>The reason no Run can start, shown on the page: Data Directory, configuration problems, or no Source included.</summary>

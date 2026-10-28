@@ -17,6 +17,9 @@ public interface IShellPage
     /// <summary>Handles a page key (letters, digits) before any view sees it; true when it was used. Only called while this page is shown.</summary>
     bool HandleKey(Key key);
 
+    /// <summary>Raised when <see cref="StatusText"/>, <see cref="KeyHints"/>, <see cref="Badge"/> or <see cref="IsRunActive"/> changed; the shell then redraws its chrome. A page that never changes them while shown can leave the default (never raised).</summary>
+    event System.Action? ChromeChanged { add { } remove { } }
+
     /// <summary>Puts the focus where the user left off (or on the page's first control); called after every switch to the page.</summary>
     void FocusDefault();
 
@@ -29,12 +32,5 @@ public interface IShellPage
     /// <summary>Asks the active Run to stop (the Run's cancellation token); returns at once.</summary>
     void CancelRun()
     {
-    }
-
-    /// <summary>Raised after <see cref="StatusText"/>, <see cref="KeyHints"/>, <see cref="Badge"/> or <see cref="IsRunActive"/> changed, on the UI thread.</summary>
-    event Action? Changed
-    {
-        add { }
-        remove { }
     }
 }

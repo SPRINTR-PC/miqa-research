@@ -53,7 +53,8 @@ public static class SettingsTuiApp
             var logLevel = AppHost.ToLogLevel(runtime.Prepare(headless: true).Config?.Ui.LogLevel ?? LogLevelSetting.Info);
             var logPane = logTarget is null ? null : new LogPaneViewModel(logTarget, action => application!.Invoke(action), logLevel);
             using var uploadPage = new UploadTuiPage(application!, upload, logPane, tuiDialogs);
-            using var window = new TuiShell(application!, page, tuiDialogs, start, uploadPage);
+            using var window = new TuiShell(application!, page, tuiDialogs, start, uploadPage,
+                help: new HelpPage(HelpPage.CreateViewModel(_ => { })));
             window.SettingsWindow.ConnectionChecker = token => ConnectionCheck.CheckSavedAsync(configuration, c => new SshNetRemote(c), token, options);
             window.SettingsWindow.Redact = text => Redactor.From(configuration.LoadSecrets()).Redact(text);
             using var signals = (shutdownSignals ?? RegisterSignals(application!))(window.Terminate);
