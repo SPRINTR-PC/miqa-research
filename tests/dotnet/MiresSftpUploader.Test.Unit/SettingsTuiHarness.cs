@@ -19,7 +19,7 @@ public sealed class FakeTuiDialogs : ITuiDialogs
     public List<IReadOnlyList<string>> IssueLists { get; } = [];
     public List<(string Title, string Message)> Messages { get; } = [];
 
-    public bool Confirm(string title, string message)
+    public bool Confirm(string title, string message, string acceptLabel = "_Change")
     {
         Confirmations.Add((title, message));
         return ConfirmAnswers.Count > 0 && ConfirmAnswers.Dequeue();

@@ -94,10 +94,13 @@ services:
       - "2022:2022"
       - "8081:8080"     # web admin / REST API (8080 is taken by mires_web)
     environment:
+      # DEFAULT_ADMIN_* is ignored unless create_default_admin is on
+      - SFTPGO_DATA_PROVIDER__CREATE_DEFAULT_ADMIN=1
       - SFTPGO_DEFAULT_ADMIN_USERNAME=admin
       - SFTPGO_DEFAULT_ADMIN_PASSWORD=admin
       - SFTPGO_LOADDATA_FROM=/etc/sftpgo-init/init.json
-      - SFTPGO_LOADDATA_MODE=1 (mode 1 = only add users that don't exist yet)
+      # mode 1 = only add users that don't exist yet
+      - SFTPGO_LOADDATA_MODE=1
     volumes:
       - ./tools/sftpgo/init.json:/etc/sftpgo-init/init.json:ro
       - mires_sftpgo_data:/var/lib/sftpgo   # SQLite db + host keys

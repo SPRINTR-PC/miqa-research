@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <g filter="url(#shadow)">
+    <svg x="100" y="100" width="824" height="824" viewBox="0 0 1024 1024">
+
+  <!-- background: charcoal squircle -->
+  <rect width="1024" height="1024" rx="230" fill="#3D3D3D"/>
+
+  <g transform="translate(0,22)">
+    <!-- upload arrow, rising out of the server (same violet as body so they fuse) -->
+    <path d="M512 262 L662 410 H567 V560 H457 V410 H362 Z"
+          fill="#CE80FF" stroke="#CE80FF" stroke-width="28" stroke-linejoin="round"/>
+
+    <!-- padlock shackle: thick round-capped stroke like the logo's magnifier and DNA -->
+    <path d="M300 540 V400 A212 212 0 0 1 724 400 V540"
+          fill="none" stroke="#FFFFFF" stroke-width="64" stroke-linecap="round"/>
+
+    <!-- server / padlock body (violet, like the logo's document tile) -->
+    <rect x="196" y="520" width="632" height="310" rx="40" fill="#CE80FF"/>
+    <!-- unit divider -->
+    <rect x="196" y="666" width="632" height="16" fill="#3D3D3D"/>
+
+    <!-- text-line style slots, as on the logo's document tile -->
+    <g fill="#3D3D3D">
+      <rect x="260" y="562" width="230" height="24" rx="12"/>
+      <rect x="260" y="606" width="150" height="24" rx="12"/>
+      <rect x="260" y="724" width="230" height="24" rx="12"/>
+      <rect x="260" y="768" width="150" height="24" rx="12"/>
+    </g>
+
+    <!-- status LEDs -->
+    <circle cx="738" cy="596" r="26" fill="#FFFFFF"/>
+    <circle cx="738" cy="758" r="26" fill="#FFFFFF"/>
+  </g>
+
+    </svg>
+  </g>
+</svg>

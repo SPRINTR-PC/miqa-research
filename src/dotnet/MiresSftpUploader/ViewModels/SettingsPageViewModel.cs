@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reactive;
+using System.Threading;
 using System.Threading.Tasks;
 using MiresSftpUploader.Core;
 using ReactiveUI;
@@ -96,6 +97,8 @@ public sealed class SettingsPageViewModel : ViewModelBase
         SftpPassword = NewSecretEntry(Secrets.SftpPasswordName, "SFTP password");
         SftpKeyPassphrase = NewSecretEntry(Secrets.SftpKeyPassphraseName, "SFTP key passphrase");
         UnlockFingerprintCommand = ReactiveCommand.CreateFromTask(UnlockFingerprint);
+        CheckConnectionCommand = ReactiveCommand.CreateFromTask(async () => { await CheckConnectionAsync(); },
+            this.WhenAnyValue(x => x.IsCheckingConnection, busy => !busy));
         RecheckDataDirectoryCommand = ReactiveCommand.Create(() => CheckDataDirectory(force: true));
         CopyFixCommandCommand = ReactiveCommand.CreateFromTask(() => CopyToClipboard(DataDirectoryFixCommand));
         SaveCommand = ReactiveCommand.Create(Save, this.WhenAnyValue(x => x.HasChanges, x => x.HasErrors, (changed, errors) => changed && !errors));
@@ -124,6 +127,7 @@ public sealed class SettingsPageViewModel : ViewModelBase
     public ReactiveCommand<Unit, Unit> SaveCommand { get; }
     public ReactiveCommand<Unit, Unit> RevertCommand { get; }
     public ReactiveCommand<Unit, Unit> UnlockFingerprintCommand { get; }
+    public ReactiveCommand<Unit, Unit> CheckConnectionCommand { get; }
     public ReactiveCommand<Unit, Unit> RecheckDataDirectoryCommand { get; }
     public ReactiveCommand<Unit, Unit> CopyFixCommandCommand { get; }
     public ReactiveCommand<Unit, Unit> AddSourceCommand { get; }
@@ -134,6 +138,18 @@ public sealed class SettingsPageViewModel : ViewModelBase
 
     /// <summary>Asks the user to confirm (title, message); the view shows a dialog. The default declines.</summary>
     public Func<string, string, Task<bool>> Confirm { get; set; } = (_, _) => Task.FromResult(false);
+
+    /// <summary>Asks whether the host key a server presented is the right one (title, message); true pins it. The view shows a dialog. The default declines.</summary>
+    public Func<string, string, Task<bool>> ConfirmHostKey { get; set; } = (_, _) => Task.FromResult(false);
+
+    /// <summary>Opens the connection for a check. Tests replace it with a fake remote.</summary>
+    public Func<SftpConnection, IRemote> RemoteFactory { get; set; } = connection => new SshNetRemote(connection);
+
+    /// <summary>Reads the host key a server presents. Tests replace it.</summary>
+    public Func<SftpConfig, CancellationToken, Task<RemoteResult<PresentedHostKey>>> HostKeyProber { get; set; } = HostKeyProbe.ProbeAsync;
+
+    /// <summary>Runs an action on the thread that owns the fields. A view that checks from a background thread sets it; the default runs it in place.</summary>
+    public Action<Action> RunOnUi { get; set; } = action => action();
 
     /// <summary>Puts text on the clipboard. The view sets it.</summary>
     public Func<string, Task> CopyToClipboard { get; set; } = _ => Task.CompletedTask;
@@ -238,6 +254,99 @@ public sealed class SettingsPageViewModel : ViewModelBase
         _checkedPath = null;
         _stagingKey = null;
         Revalidate();
+    }
+
+    private bool _isCheckingConnection;
+    private string _connectionCheckMessage = "";
+    private bool _connectionCheckSucceeded;
+
+    public bool IsCheckingConnection { get => _isCheckingConnection; private set => this.RaiseAndSetIfChanged(ref _isCheckingConnection, value); }
+
+    /// <summary>What the last connection check found, or empty.</summary>
+    public string ConnectionCheckMessage
+    {
+        get => _connectionCheckMessage;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _connectionCheckMessage, value);
+            this.RaisePropertyChanged(nameof(HasConnectionCheckMessage));
+        }
+    }
+
+    public bool HasConnectionCheckMessage => _connectionCheckMessage.Length > 0;
+    public bool ConnectionCheckSucceeded { get => _connectionCheckSucceeded; private set => this.RaiseAndSetIfChanged(ref _connectionCheckSucceeded, value); }
+
+    /// <summary>
+    /// Checks the Destination as it is edited on the page, saved or not: one session, host key and credentials, no upload. With no Host Key
+    /// Fingerprint it reads the one the server presents, asks <see cref="ConfirmHostKey"/> and on yes puts it in the field (still to be saved).
+    /// </summary>
+    public async Task<ConnectionCheckResult> CheckConnectionAsync(CancellationToken cancellationToken = default)
+    {
+        RunOnUi(() =>
+        {
+            IsCheckingConnection = true;
+            ConnectionCheckMessage = "Checking the connection…";
+            ConnectionCheckSucceeded = false;
+        });
+        ConnectionCheckResult result;
+        try
+        {
+            result = await CheckDraftAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            result = new ConnectionCheckResult(ConnectionCheckOutcome.Failed, "The connection check was cancelled.");
+        }
+        catch (Exception e)
+        {
+            result = new ConnectionCheckResult(ConnectionCheckOutcome.Failed, $"Connection check failed: {e.Message}");
+        }
+
+        RunOnUi(() =>
+        {
+            ConnectionCheckSucceeded = result.IsConnected;
+            ConnectionCheckMessage = result.Message;
+            IsCheckingConnection = false;
+        });
+        return result;
+    }
+
+    private async Task<ConnectionCheckResult> CheckDraftAsync(CancellationToken cancellationToken)
+    {
+        var sftp = DraftSftp();
+        var fingerprint = Field(FingerprintKey);
+        if (string.IsNullOrWhiteSpace(sftp.HostKeyFingerprint) && !fingerprint.IsEditable)
+            return new ConnectionCheckResult(ConnectionCheckOutcome.InvalidConfiguration,
+                "The Host Key Fingerprint is not set and cannot be edited here: " + (fingerprint.LockReason ?? "it is a Locked Setting."));
+
+        return await ConnectionCheck.RunPinningAsync(sftp, _configuration.LoadSecrets(), RemoteFactory, HostKeyProber,
+            key => ConfirmHostKey("Is this the right server?", HostKeyQuestion(sftp, key)),
+            fp => RunOnUi(() => fingerprint.Value = fp), cancellationToken);
+    }
+
+    private static string HostKeyQuestion(SftpConfig sftp, PresentedHostKey key) =>
+        $"{sftp.Host}:{sftp.Port} has no Host Key Fingerprint yet and presented this {key.KeyName} key:\n\n"
+        + $"  {key.Fingerprint}\n  MD5:{key.Md5}\n\n"
+        + "Compare it with the fingerprint the server's administrator gave you (ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub on the server). "
+        + "Anyone who can intercept this connection could present a different key. Trust it and use it as the Host Key Fingerprint? "
+        + "Nothing is saved until you save the settings.";
+
+    /// <summary>The Destination settings as edited on the page.</summary>
+    private SftpConfig DraftSftp()
+    {
+        string Text(string key) => Field(key).Value.Trim();
+        int Number(string key, int fallback) => int.TryParse(Text(key), out var value) ? value : fallback;
+        return new SftpConfig
+        {
+            Host = Text("Sftp:Host"),
+            Port = Number("Sftp:Port", 22),
+            Username = Text("Sftp:Username"),
+            AuthMethod = Enum.TryParse<AuthMethod>(Text("Sftp:AuthMethod"), ignoreCase: true, out var method) ? method : AuthMethod.Password,
+            PrivateKeyPath = Text("Sftp:PrivateKeyPath") is { Length: > 0 } path ? path : null,
+            HostKeyFingerprint = Text(FingerprintKey),
+            ConnectTimeoutSeconds = Number("Sftp:ConnectTimeoutSeconds", 30),
+            KeepAliveSeconds = Number("Sftp:KeepAliveSeconds", 30),
+        };
     }
 
     private async Task UnlockFingerprint()

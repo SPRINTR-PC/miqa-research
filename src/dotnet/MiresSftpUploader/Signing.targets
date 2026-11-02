@@ -5,13 +5,15 @@
 
           SignWindows=true  needs WindowsSignCertThumbprint and WindowsSignTimestampUrl   (win-* RIDs, signtool)
           SignMac=true      needs MacSignIdentity, MacEntitlements and MacNotarizeProfile (osx-* RIDs, codesign + notarytool)
+          SignLinux=true    optional CosignKey (linux-* RIDs, cosign sign-blob; keyless OIDC when CosignKey is empty)
 
-        There is no Linux signing. The inputs are required only for the RID being published, so one set of
+        The inputs are required only for the RID being published, so one set of
         variables can drive publish.sh / publish.ps1 across all four targets.
     -->
     <PropertyGroup>
         <SignWindows Condition="'$(SignWindows)' == ''">false</SignWindows>
         <SignMac Condition="'$(SignMac)' == ''">false</SignMac>
+        <SignLinux Condition="'$(SignLinux)' == ''">false</SignLinux>
     </PropertyGroup>
 
     <!-- The RuntimeIdentifier comes from the publish profile, which is imported after this file, so the
@@ -19,8 +21,11 @@
     <Target Name="MiresGuardSigning" BeforeTargets="PrepareForPublish">
         <PropertyGroup>
             <MiresSignWindowsActive Condition="'$(SignWindows)' == 'true' And $(RuntimeIdentifier.StartsWith('win-'))">true</MiresSignWindowsActive>
+            <MiresSignLinuxActive Condition="'$(SignLinux)' == 'true' And $(RuntimeIdentifier.StartsWith('linux-'))">true</MiresSignLinuxActive>
             <MiresSignMacActive Condition="'$(SignMac)' == 'true' And $(RuntimeIdentifier.StartsWith('osx-'))">true</MiresSignMacActive>
         </PropertyGroup>
+        <Error Condition="'$(MiresSignLinuxActive)' == 'true' And '$(CosignKey)' != '' And !Exists('$(CosignKey)') And !$(CosignKey.Contains('://'))"
+               Text="SignLinux=true but CosignKey '$(CosignKey)' is neither an existing file nor a KMS/URI reference. See docs/signing.md." />
         <Error Condition="'$(MiresSignWindowsActive)' == 'true' And '$(WindowsSignCertThumbprint)' == ''"
                Text="SignWindows=true but WindowsSignCertThumbprint is not set. See docs/signing.md." />
         <Error Condition="'$(MiresSignWindowsActive)' == 'true' And '$(WindowsSignTimestampUrl)' == ''"
@@ -39,9 +44,21 @@
         <Exec Command="signtool sign /sha1 &quot;$(WindowsSignCertThumbprint)&quot; /fd SHA256 /tr &quot;$(WindowsSignTimestampUrl)&quot; /td SHA256 &quot;$(PublishDir)$(AssemblyName).exe&quot;" />
     </Target>
 
-    <Target Name="MiresSignMac" AfterTargets="Publish" Condition="'$(MiresSignMacActive)' == 'true'">
+    <!-- Detached signature: MiresSftpUploader.cosign.bundle (signature, certificate and transparency-log proof in one
+         file) next to the executable. With CosignKey set it signs with that key (file, or a KMS/URI reference);
+         otherwise cosign does keyless signing and prompts for an OIDC login (or uses the CI identity token). -->
+    <Target Name="MiresSignLinux" AfterTargets="Publish" Condition="'$(MiresSignLinuxActive)' == 'true'">
+        <PropertyGroup>
+            <MiresCosignKeyArg Condition="'$(CosignKey)' != ''">--key &quot;$(CosignKey)&quot;</MiresCosignKeyArg>
+        </PropertyGroup>
+        <Exec Command="cosign sign-blob --yes $(MiresCosignKeyArg) --bundle &quot;$(PublishDir)$(AssemblyName).cosign.bundle&quot; &quot;$(PublishDir)$(AssemblyName)&quot;" />
+    </Target>
+
+    <Target Name="MiresSignMac" AfterTargets="MiresMacBundle" Condition="'$(MiresSignMacActive)' == 'true'">
         <Exec Command="codesign --force --timestamp --options runtime --entitlements &quot;$(MacEntitlements)&quot; --sign &quot;$(MacSignIdentity)&quot; &quot;$(PublishDir)$(AssemblyName)&quot;" />
-        <Exec Command="ditto -c -k --keepParent &quot;$(PublishDir)$(AssemblyName)&quot; &quot;$(IntermediateOutputPath)notarize.zip&quot;" />
+        <Exec Command="codesign --force --timestamp --options runtime --entitlements &quot;$(MacEntitlements)&quot; --sign &quot;$(MacSignIdentity)&quot; &quot;$(PublishDir)MiresSftpUploader.app/Contents/MacOS/$(AssemblyName)&quot;" />
+        <Exec Command="codesign --force --timestamp --options runtime --entitlements &quot;$(MacEntitlements)&quot; --sign &quot;$(MacSignIdentity)&quot; &quot;$(PublishDir)MiresSftpUploader.app&quot;" />
+        <Exec Command="ditto -c -k --keepParent &quot;$(PublishDir)MiresSftpUploader.app&quot; &quot;$(IntermediateOutputPath)notarize.zip&quot;" />
         <Exec Command="xcrun notarytool submit &quot;$(IntermediateOutputPath)notarize.zip&quot; --keychain-profile &quot;$(MacNotarizeProfile)&quot; --wait" />
     </Target>
 </Project>

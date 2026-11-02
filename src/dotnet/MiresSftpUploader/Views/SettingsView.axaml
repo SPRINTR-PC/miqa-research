@@ -217,6 +217,19 @@
                     </StackPanel>
                 </Border>
 
+                <!-- Connection check -->
+                <Border Classes="card">
+                    <StackPanel Spacing="6">
+                        <TextBlock Classes="h" Text="Connection"/>
+                        <TextBlock Classes="muted" TextWrapping="Wrap"
+                                   Text="Opens one session with the Destination settings above, as edited (saved or not), to prove the server answers and the credentials work. Nothing is uploaded. If the Host Key Fingerprint is empty, you are shown the server's and asked whether to use it."/>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button x:Name="CheckConnectionButton" Content="Check connection" Command="{Binding CheckConnectionCommand}"/>
+                        </StackPanel>
+                        <TextBlock x:Name="ConnectionCheckText" TextWrapping="Wrap" IsVisible="{Binding HasConnectionCheckMessage}" Text="{Binding ConnectionCheckMessage}"/>
+                    </StackPanel>
+                </Border>
+
                 <!-- Data Directory check -->
                 <Border Classes="card">
                     <StackPanel Spacing="4">

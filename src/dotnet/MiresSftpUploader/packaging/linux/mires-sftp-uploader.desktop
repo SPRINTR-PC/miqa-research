@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=MIRES SFTP Uploader
+Comment=Upload files to MIRES over SFTP
+Exec=MiresSftpUploader
+Icon=sftp-uploader
+Terminal=false
+Categories=Network;FileTransfer;
+StartupWMClass=MiresSftpUploader

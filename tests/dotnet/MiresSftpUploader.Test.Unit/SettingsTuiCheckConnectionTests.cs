@@ -7,14 +7,17 @@ namespace MiresSftpUploader.Test.Unit;
 [TestClass]
 public sealed class SettingsTuiCheckConnectionTests : SettingsTuiTestBase
 {
-    private (SettingsTuiHarness Tui, FakeRemote Remote) StartChecking(Dictionary<string, string?>? env = null)
+    private (SettingsTuiHarness Tui, FakeRemote Remote) StartChecking(Dictionary<string, string?>? env = null, bool withoutFingerprint = false)
     {
-        File.WriteAllText(MachinePath, ValidMachine().ToJsonString());
+        var machine = ValidMachine();
+        if (withoutFingerprint) machine["Sftp"]!.AsObject().Remove("HostKeyFingerprint");
+        File.WriteAllText(MachinePath, machine.ToJsonString());
         var configuration = new Configuration(new ConfigurationLocations(MachinePath, UserPath,
             env ?? new Dictionary<string, string?> { ["MIRES_SFTP_PASSWORD"] = "pw" }));
         var tui = Start(configuration);
         var remote = new FakeRemote();
-        tui.Window.ConnectionChecker = token => ConnectionCheck.CheckSavedAsync(configuration, _ => remote, token);
+        tui.Page.RemoteFactory = _ => remote;
+        tui.Page.HostKeyProber = (_, _) => Task.FromResult(RemoteResult<PresentedHostKey>.Ok(new PresentedHostKey("ssh-ed25519", "abc123", "aa:bb")));
         tui.Window.PostToUi = action => action();
         return (tui, remote);
     }
@@ -74,27 +77,51 @@ public sealed class SettingsTuiCheckConnectionTests : SettingsTuiTestBase
     }
 
     [TestMethod]
-    public async Task F5_with_unsaved_changes_says_Save_first_and_does_not_connect()
+    public async Task F5_checks_unsaved_changes_without_saving()
     {
         var (tui, remote) = StartChecking();
         tui.Page.Field("Sftp:Port").Value = "2222";
 
-        tui.Press(Key.F5);
-        await tui.Window.PendingCheck;
+        StringAssert.Contains(await F5(tui), "Connected to");
+        Assert.AreEqual(1, remote.ConnectCount);
+        Assert.IsTrue(tui.Page.HasChanges);
+    }
 
-        StringAssert.Contains(tui.Dialogs.Messages.Last().Message, "Save first");
+    [TestMethod]
+    public async Task Without_a_fingerprint_F5_asks_and_on_yes_fills_the_field_and_connects()
+    {
+        var (tui, remote) = StartChecking(withoutFingerprint: true);
+        tui.Dialogs.ConfirmAnswers.Enqueue(true);
+
+        var message = await F5(tui);
+
+        StringAssert.Contains(tui.Dialogs.Confirmations.Single().Message, "SHA256:abc123");
+        Assert.AreEqual("SHA256:abc123", tui.Page.Field("Sftp:HostKeyFingerprint").Value);
+        StringAssert.Contains(message, "Host Key Fingerprint set to SHA256:abc123");
+        Assert.AreEqual(1, remote.ConnectCount);
+    }
+
+    [TestMethod]
+    public async Task Without_a_fingerprint_F5_on_no_leaves_the_field_empty_and_does_not_connect()
+    {
+        var (tui, remote) = StartChecking(withoutFingerprint: true);
+        tui.Dialogs.ConfirmAnswers.Enqueue(false);
+
+        var message = await F5(tui);
+
+        StringAssert.Contains(message, "not accepted");
+        Assert.AreEqual("", tui.Page.Field("Sftp:HostKeyFingerprint").Value);
         Assert.AreEqual(0, remote.ConnectCount);
     }
 
     [TestMethod]
-    public async Task F5_after_saving_checks_the_saved_configuration()
+    public async Task With_a_fingerprint_F5_does_not_ask()
     {
-        var (tui, remote) = StartChecking();
-        tui.Page.Field("Sftp:Port").Value = "2222";
-        tui.Press(Key.S.WithCtrl);
+        var (tui, _) = StartChecking();
 
-        StringAssert.Contains(await F5(tui), "Connected to");
-        Assert.AreEqual(1, remote.ConnectCount);
+        await F5(tui);
+
+        Assert.AreEqual(0, tui.Dialogs.Confirmations.Count);
     }
 
     [TestMethod]
@@ -102,7 +129,7 @@ public sealed class SettingsTuiCheckConnectionTests : SettingsTuiTestBase
     {
         var (tui, _) = StartChecking();
         tui.Window.Redact = text => text.Replace("hunter2-secret", Redactor.Mask);
-        tui.Window.ConnectionChecker = _ => throw new InvalidOperationException("login with hunter2-secret refused");
+        tui.Page.RemoteFactory = _ => throw new InvalidOperationException("login with hunter2-secret refused");
 
         var message = await F5(tui);
 

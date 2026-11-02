@@ -126,6 +126,33 @@ public sealed class HistoryPageViewModelTests
     }
 
     [TestMethod]
+    public void The_tiles_filter_the_outcomes_and_combine_like_on_the_Upload_page()
+    {
+        _history.Add(files:
+        [
+            File("a", "Succeeded"), File("b", "Failed", "RemoteDenied"), File("c", "Skipped", "TooRecent"), File("d", "MovedAway"),
+        ]);
+        var page = NewPage();
+        page.Selected = page.Runs.Single();
+        var detail = page.Selected!;
+        string[] Shown() => detail.VisibleFiles.Select(f => f.Path).ToArray();
+
+        detail.FilterSucceeded = true;
+        CollectionAssert.AreEqual(new[] { "a" }, Shown());
+
+        detail.FilterSkipped = true;
+        CollectionAssert.AreEqual(new[] { "a", "c" }, Shown());
+
+        detail.FilterSucceeded = false;
+        detail.FilterSkipped = false;
+        Assert.HasCount(4, detail.VisibleFiles);
+
+        detail.FilterFailed = true;
+        Assert.IsTrue(detail.FailedOnly);
+        CollectionAssert.AreEqual(new[] { "b" }, Shown());
+    }
+
+    [TestMethod]
     public void Expanding_a_Run_in_the_list_loads_its_outcomes_inline()
     {
         _history.Add(files: [File("a", "Succeeded")]);

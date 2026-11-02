@@ -18,7 +18,8 @@ public partial class SettingsView : UserControl
             if (DataContext is not SettingsPageViewModel vm) return;
             vm.PickFolder = PickFolderAsync;
             vm.CopyToClipboard = CopyAsync;
-            vm.Confirm = ConfirmAsync;
+            vm.Confirm = (title, message) => ConfirmAsync(title, message);
+            vm.ConfirmHostKey = (title, message) => ConfirmAsync(title, message, "Trust and use it");
         };
     }
 
@@ -34,9 +35,9 @@ public partial class SettingsView : UserControl
         if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard) await clipboard.SetTextAsync(text);
     }
 
-    private async Task<bool> ConfirmAsync(string title, string message)
+    private async Task<bool> ConfirmAsync(string title, string message, string? acceptLabel = null)
     {
         if (TopLevel.GetTopLevel(this) is not Window owner) return false;
-        return await new ConfirmDialog(title, message).ShowDialog<bool>(owner);
+        return await new ConfirmDialog(title, message, acceptLabel).ShowDialog<bool>(owner);
     }
 }
