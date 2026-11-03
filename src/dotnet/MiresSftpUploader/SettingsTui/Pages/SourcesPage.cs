@@ -54,7 +54,7 @@ public static class SourcesPage
         private void OnSourcesChanged(object? s, NotifyCollectionChangedEventArgs e)
         {
             _master.ItemsChanged();
-            _ctx.RefreshChrome();
+            _ctx.RefreshChrome?.Invoke();
         }
 
         protected override void Dispose(bool disposing)
@@ -70,7 +70,7 @@ public static class SourcesPage
             s.PropertyChanged += (_, e) =>
             {
                 _master.Reload();
-                _ctx.RefreshChrome();
+                _ctx.RefreshChrome?.Invoke();
                 if (e.PropertyName == nameof(SourceEditorViewModel.Type)) Retype(pane, s);
                 else if (e.PropertyName is nameof(SourceEditorViewModel.AccessKey) or nameof(SourceEditorViewModel.SecretKey)) Rekey(pane, s);
                 else if (e.PropertyName == nameof(SourceEditorViewModel.MoveLayout)) Relayout(pane, s);

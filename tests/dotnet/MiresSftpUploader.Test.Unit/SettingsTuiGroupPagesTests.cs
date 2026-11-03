@@ -1,3 +1,4 @@
+#pragma warning disable CS0618 // TextView: the multi-line box for Lines settings; its replacement is a separate package
 using MiresSftpUploader.SettingsTui;
 using Terminal.Gui.Input;
 using Terminal.Gui.Views;

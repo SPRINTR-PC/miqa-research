@@ -22,12 +22,12 @@ public sealed class ArchiveRulesViewModel : ViewModelBase
         AddRuleCommand = ReactiveCommand.Create(() =>
         {
             Attach(ArchiveRuleEditorViewModel.Blank());
-            Changed();
+            RulesChanged();
         }, Observable.Return(!locked));
         RemoveRuleCommand = ReactiveCommand.Create<ArchiveRuleEditorViewModel>(rule =>
         {
             Rules.Remove(rule);
-            Changed();
+            RulesChanged();
         }, Observable.Return(!locked));
     }
 
@@ -51,11 +51,11 @@ public sealed class ArchiveRulesViewModel : ViewModelBase
 
     private void Attach(ArchiveRuleEditorViewModel rule)
     {
-        rule.Edited += Changed;
+        rule.Edited += RulesChanged;
         Rules.Add(rule);
     }
 
-    private void Changed()
+    private void RulesChanged()
     {
         this.RaisePropertyChanged(nameof(IsChanged));
         this.RaisePropertyChanged(nameof(IsEmpty));

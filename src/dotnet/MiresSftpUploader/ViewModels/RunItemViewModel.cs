@@ -19,7 +19,6 @@ public sealed class RunItemViewModel : ViewModelBase
     private RunSummary _summary;
     private bool _isExpanded;
     private FileFilter _filter;
-    private bool _filesLoaded;
 
     internal RunItemViewModel(HistoryPageViewModel owner, RunSummary summary, bool isOwn)
     {
