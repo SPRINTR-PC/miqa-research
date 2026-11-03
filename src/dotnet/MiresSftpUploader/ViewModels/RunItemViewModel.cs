@@ -18,8 +18,7 @@ public sealed class RunItemViewModel : ViewModelBase
     private readonly HistoryPageViewModel _owner;
     private RunSummary _summary;
     private bool _isExpanded;
-    private bool _failedOnly;
-    private bool _filesLoaded;
+    private FileFilter _filter;
 
     internal RunItemViewModel(HistoryPageViewModel owner, RunSummary summary, bool isOwn)
     {
@@ -133,17 +132,30 @@ public sealed class RunItemViewModel : ViewModelBase
         }
     }
 
-    public bool FailedOnly
+    /// <summary>The outcomes the list is narrowed to, as on the Upload page: each of the Succeeded, Failed and Skipped tiles toggles its own flag.</summary>
+    public FileFilter Filter
     {
-        get => _failedOnly;
+        get => _filter;
         set
         {
-            this.RaiseAndSetIfChanged(ref _failedOnly, value);
+            if (_filter == value) return;
+            this.RaiseAndSetIfChanged(ref _filter, value);
+            foreach (var name in new[] { nameof(FilterSucceeded), nameof(FilterFailed), nameof(FilterSkipped), nameof(FailedOnly) })
+                this.RaisePropertyChanged(name);
             RebuildVisible();
         }
     }
 
-    /// <summary>The outcomes shown: all of them, or only the failed ones while <see cref="FailedOnly"/> is on.</summary>
+    public bool FilterSucceeded { get => Filter.HasFlag(FileFilter.Succeeded); set => SetFilter(FileFilter.Succeeded, value); }
+    public bool FilterFailed { get => Filter.HasFlag(FileFilter.Failed); set => SetFilter(FileFilter.Failed, value); }
+    public bool FilterSkipped { get => Filter.HasFlag(FileFilter.Skipped); set => SetFilter(FileFilter.Skipped, value); }
+
+    /// <summary>The Failed tile's filter under its older name (the terminal interface's "Failed only").</summary>
+    public bool FailedOnly { get => FilterFailed; set => FilterFailed = value; }
+
+    private void SetFilter(FileFilter filter, bool on) => Filter = on ? Filter | filter : Filter & ~filter;
+
+    /// <summary>The outcomes shown: all of them, or only those matching <see cref="Filter"/>.</summary>
     public ObservableCollection<HistoryFileRow> VisibleFiles { get; } = [];
 
     public string CancelLabel => IsOwn ? "Cancel" : $"Request cancel ({StartedBy}'s Run)";
@@ -177,7 +189,11 @@ public sealed class RunItemViewModel : ViewModelBase
     private void RebuildVisible()
     {
         VisibleFiles.Clear();
-        foreach (var row in Files.Where(f => !_failedOnly || f.IsFailed)) VisibleFiles.Add(row);
+        foreach (var row in Files.Where(f => _filter == FileFilter.None
+            || (_filter.HasFlag(FileFilter.Succeeded) && f.IsSucceeded)
+            || (_filter.HasFlag(FileFilter.Failed) && f.IsFailed)
+            || (_filter.HasFlag(FileFilter.Skipped) && f.Outcome == "Skipped")))
+            VisibleFiles.Add(row);
     }
 
     private int Count(string outcome) => _summary.Counts.GetValueOrDefault(outcome);

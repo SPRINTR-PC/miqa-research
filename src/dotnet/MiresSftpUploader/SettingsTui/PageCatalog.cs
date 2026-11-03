@@ -12,7 +12,7 @@ namespace MiresSftpUploader.SettingsTui;
 /// What a page needs to build its content. <paramref name="RefreshChrome"/> redraws the window's badges and status line; a page calls it when
 /// something the chrome shows changes without a field changing (a rule added, a rule's pattern edited).
 /// </summary>
-public sealed record PageContext(IApplication App, SettingsPageViewModel Vm, ITuiDialogs Dialogs, Action? RefreshChrome = null);
+public sealed record PageContext(IApplication App, SettingsPageViewModel Vm, ITuiDialogs Dialogs, Action? RefreshChrome = null, Action? CheckConnection = null);
 
 /// <summary>
 /// One page of the sidebar. <paramref name="Badge"/> returns "" , "●" (changed), "!" (error) or "L" (locked) and is evaluated on every

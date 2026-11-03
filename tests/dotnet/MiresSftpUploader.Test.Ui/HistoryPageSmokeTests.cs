@@ -89,7 +89,7 @@ public class HistoryPageSmokeTests
         Assert.True(Find<Button>(window, "HistoryCancelButton").IsEffectivelyEnabled);
         Assert.False(Find<Control>(window, "LiveBanner").IsVisible);
 
-        page.Selected.CancelCommand.Execute().Subscribe();
+        page.Selected!.CancelCommand.Execute().Subscribe();
         Dispatcher.UIThread.RunJobs();
         Assert.False(Find<Button>(window, "HistoryCancelButton").IsEffectivelyEnabled);
         Assert.True(Find<Control>(window, "CancelRequestedBanner").IsVisible);

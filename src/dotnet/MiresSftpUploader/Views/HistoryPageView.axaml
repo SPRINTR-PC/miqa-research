@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:MiresSftpUploader.ViewModels"
+             xmlns:v="using:MiresSftpUploader.Views"
              x:Class="MiresSftpUploader.Views.HistoryPageView" x:DataType="vm:HistoryPageViewModel">
     <!-- Master-detail (design H1): the Runs list on the left, each expandable to its outcomes; the selected Run in full on the right. -->
     <UserControl.Resources>
@@ -85,18 +86,36 @@
                             </StackPanel>
 
                             <Grid ColumnDefinitions="*,*,*,*">
-                                <Border Classes="card" Margin="0,0,8,0"><StackPanel>
-                                    <TextBlock Classes="muted" Text="Succeeded"/>
-                                    <TextBlock Classes="tile" Foreground="{DynamicResource MSuccess}" Text="{Binding Succeeded}"/>
-                                </StackPanel></Border>
-                                <Border Grid.Column="1" Classes="card" Margin="0,0,8,0"><StackPanel>
-                                    <TextBlock Classes="muted" Text="Failed"/>
-                                    <TextBlock Classes="tile" Foreground="{DynamicResource MDestructive}" Text="{Binding Failed}"/>
-                                </StackPanel></Border>
-                                <Border Grid.Column="2" Classes="card" Margin="0,0,8,0"><StackPanel>
-                                    <TextBlock Classes="muted" Text="{Binding TooRecent, StringFormat='Skipped (incl. {0} Too Recent)'}"/>
-                                    <TextBlock Classes="tile" Text="{Binding Skipped}"/>
-                                </StackPanel></Border>
+                                <ToggleButton Classes="tile" HorizontalAlignment="Stretch" Margin="0,0,8,0" IsChecked="{Binding FilterSucceeded}"
+                                              ToolTip.Tip="Show only the succeeded files; click again to show all">
+                                    <StackPanel>
+                                        <TextBlock Classes="muted" Text="Succeeded"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <PathIcon Width="18" Height="18" VerticalAlignment="Center" Foreground="{DynamicResource MSuccess}" Data="{x:Static v:OutcomeIcons.SucceededIcon}"/>
+                                            <TextBlock x:Name="HistorySucceededTile" Classes="tile" Foreground="{DynamicResource MSuccess}" Text="{Binding Succeeded}"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </ToggleButton>
+                                <ToggleButton Grid.Column="1" Classes="tile" HorizontalAlignment="Stretch" Margin="0,0,8,0" IsChecked="{Binding FilterFailed}"
+                                              ToolTip.Tip="Show only the failed files; click again to show all">
+                                    <StackPanel>
+                                        <TextBlock Classes="muted" Text="Failed"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <PathIcon Width="18" Height="18" VerticalAlignment="Center" Foreground="{DynamicResource MDestructive}" Data="{x:Static v:OutcomeIcons.FailedIcon}"/>
+                                            <TextBlock x:Name="HistoryFailedTile" Classes="tile" Foreground="{DynamicResource MDestructive}" Text="{Binding Failed}"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </ToggleButton>
+                                <ToggleButton Grid.Column="2" Classes="tile" HorizontalAlignment="Stretch" Margin="0,0,8,0" IsChecked="{Binding FilterSkipped}"
+                                              ToolTip.Tip="Show only the skipped files; click again to show all">
+                                    <StackPanel>
+                                        <TextBlock Classes="muted" Text="{Binding TooRecent, StringFormat='Skipped (incl. {0} Too Recent)'}"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <PathIcon Width="18" Height="18" VerticalAlignment="Center" Foreground="{DynamicResource MMuted}" Data="{x:Static v:OutcomeIcons.SkippedIcon}"/>
+                                            <TextBlock x:Name="HistorySkippedTile" Classes="tile" Foreground="{DynamicResource MMuted}" Text="{Binding Skipped}"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </ToggleButton>
                                 <Border Grid.Column="3" Classes="card"><StackPanel>
                                     <TextBlock Classes="muted" Text="Moved away"/>
                                     <TextBlock Classes="tile" Foreground="{DynamicResource MInfo}" Text="{Binding MovedAway}"/>
@@ -112,7 +131,6 @@
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <TextBlock Classes="h" Text="Outcomes" VerticalAlignment="Center"/>
-                                    <ToggleButton x:Name="HistoryFailedOnly" Content="Failed only" IsChecked="{Binding FailedOnly}"/>
                                 </StackPanel>
                             </DockPanel>
                         </StackPanel>

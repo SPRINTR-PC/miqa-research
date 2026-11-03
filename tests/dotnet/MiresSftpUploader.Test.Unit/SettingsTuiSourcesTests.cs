@@ -31,6 +31,22 @@ public sealed class SettingsTuiSourcesTests : SettingsTuiTestBase
     private const string RulesButton = "[Archive Rules for this Source (0)…]";
 
     [TestMethod]
+    public void The_form_has_a_switch_for_each_Move_and_shows_where_to_only_while_it_is_on()
+    {
+        var tui = OpenSources();
+
+        Assert.IsTrue(tui.Shows("Move uploaded files"), tui.Screen);
+        Assert.IsTrue(tui.Shows("Move failed files"), tui.Screen);
+        Assert.IsFalse(tui.Shows("Move to"), tui.Screen);
+
+        tui.Page.Sources[0].OnSuccess.Move = true;
+        tui.Draw();
+        tui.Draw();
+
+        Assert.IsTrue(tui.Shows("Move to"), tui.Screen);
+    }
+
+    [TestMethod]
     public void It_lists_the_Sources_and_shows_the_form_of_the_selected_one()
     {
         var tui = OpenSources();
@@ -76,7 +92,7 @@ public sealed class SettingsTuiSourcesTests : SettingsTuiTestBase
         var tui = OpenSources();
         tui.Press(Key.Enter);
         var order = new List<string?> { FocusedRow(tui) };
-        for (var i = 0; i < 8; i++)
+        for (var i = 0; i < 10; i++)
         {
             tui.Press(Key.Tab);
             // A directory path typed in full takes the first Tab to append its separator.
@@ -85,10 +101,10 @@ public sealed class SettingsTuiSourcesTests : SettingsTuiTestBase
         }
 
         CollectionAssert.AreEqual(
-            new[] { "<list>", "[Add]", "[Remove]", "Name", "Type", "Enabled", "Directory path", "Remote Path (optional)", RulesButton },
+            new[] { "<list>", "[Add]", "[Remove]", "Name", "Type", "Enabled", "Directory path", "Remote Path (optional)", "Move uploaded files", "Move failed files", RulesButton },
             order.ToArray(), tui.FocusPath);
 
-        for (var i = 0; i < 6; i++) tui.Press(Key.Tab.WithShift);
+        for (var i = 0; i < 8; i++) tui.Press(Key.Tab.WithShift);
         Assert.AreEqual("[Remove]", FocusedRow(tui));
     }
 

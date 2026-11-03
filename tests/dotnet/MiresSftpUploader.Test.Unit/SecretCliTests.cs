@@ -56,6 +56,21 @@ public sealed class SecretCliTests : ConfigurationTestBase
     }
 
     [TestMethod]
+    [DataRow("--set-secret", "sftp-password", Value)]
+    [DataRow("--set-secret", $"sftp-password={Value}", null)]
+    [DataRow($"--set-secret=sftp-password", Value, null)]
+    public void A_value_given_as_an_argument_is_refused_and_never_stored_or_echoed(string first, string second, string? third)
+    {
+        string[] args = third is null ? [first, second] : [first, second, third];
+
+        var r = Invoke(args, input: null);
+
+        Assert.AreNotEqual(ExitCodes.Ok, r.ExitCode, r.Out);
+        Assert.IsFalse((r.Out + r.Err).Contains(Value), "the value must not be echoed");
+        Assert.AreEqual("", Invoke(["--list-secrets"]).Out.Trim(), "nothing was stored");
+    }
+
+    [TestMethod]
     public void An_unknown_Secret_name_is_rejected()
     {
         var r = Invoke(["--set-secret", "sftp-pasword"]);

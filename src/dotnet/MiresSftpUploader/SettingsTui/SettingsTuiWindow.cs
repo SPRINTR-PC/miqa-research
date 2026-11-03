@@ -63,6 +63,14 @@ public sealed class SettingsTuiWindow : Window
         _overlay.VerticalTextAlignment = Alignment.Center;
 
         vm.Confirm = (title, message) => Task.FromResult(dialogs.Confirm(title, message));
+        vm.RunOnUi = action => PostToUi(action);
+        // The check runs on a worker thread; the question is asked on the UI thread and the worker waits for the answer.
+        vm.ConfirmHostKey = (title, message) =>
+        {
+            var answer = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            PostToUi(() => answer.SetResult(dialogs.Confirm(title, message, "_Trust")));
+            return answer.Task;
+        };
         _sidebar = new PageSidebar(_pages, vm);
         _body.X = Pos.Right(_sidebar);
         if (hosted)
@@ -205,12 +213,6 @@ public sealed class SettingsTuiWindow : Window
         Rebuild();
     }
 
-    /// <summary>
-    /// Checks the saved configuration (F5): one session, host key and credentials, no upload. Null means this window cannot check
-    /// (tests install a checker on a <c>FakeRemote</c>; the application installs the real one).
-    /// </summary>
-    public Func<CancellationToken, Task<ConnectionCheckResult>>? ConnectionChecker { get; set; }
-
     /// <summary>Hides Secret values in text from a failed check before it is shown. The application installs one built from the Secret Store.</summary>
     public Func<string, string> Redact { get; set; } = text => text;
 
@@ -220,35 +222,26 @@ public sealed class SettingsTuiWindow : Window
     /// <summary>The check in flight, or a completed task. Completes after its result dialog was shown.</summary>
     public Task PendingCheck { get; private set; } = Task.CompletedTask;
 
-    private void CheckConnection()
+    /// <summary>
+    /// Checks the Destination as edited, saved or not (F5, or the Check connection button): one session, host key and credentials, no upload.
+    /// Without a Host Key Fingerprint it asks whether the presented one is right and, on yes, fills the field in.
+    /// </summary>
+    public void CheckConnection()
     {
-        const string title = "Check connection";
-        if (_vm.HasChanges)
-        {
-            _dialogs.ShowMessage(title, "Save first (Ctrl+S): the check uses the saved configuration, not the unsaved changes.");
-            return;
-        }
-
         if (!PendingCheck.IsCompleted) return;
-        if (ConnectionChecker is not { } checker)
-        {
-            _dialogs.ShowMessage(title, "The connection check is not available.");
-            return;
-        }
-
         PendingCheck = Task.Run(async () =>
         {
             string message;
             try
             {
-                message = Redact((await checker(CancellationToken.None).ConfigureAwait(false)).Message);
+                message = Redact((await _vm.CheckConnectionAsync().ConfigureAwait(false)).Message);
             }
             catch (Exception e)
             {
                 message = Redact($"Connection check failed: {e.Message}");
             }
 
-            PostToUi(() => _dialogs.ShowMessage(title, message));
+            PostToUi(() => _dialogs.ShowMessage("Check connection", message));
         });
     }
 
@@ -299,7 +292,7 @@ public sealed class SettingsTuiWindow : Window
         foreach (var old in _body.SubViews.ToList()) { _body.Remove(old); old.Dispose(); }
         var page = _pages[_shown];
         _body.Title = page.Title;
-        var content = page.Build(new PageContext(_app, _vm, _dialogs, Refresh));
+        var content = page.Build(new PageContext(_app, _vm, _dialogs, Refresh, CheckConnection));
         _body.Add(content);
         foreach (var f in _hooked) f.PropertyChanged -= OnFieldChanged;
         _hooked.Clear();

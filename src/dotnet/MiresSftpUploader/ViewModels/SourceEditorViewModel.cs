@@ -11,15 +11,18 @@ namespace MiresSftpUploader.ViewModels;
 
 /// <summary>
 /// One Source being edited on the Settings page. The fields adapt to <see cref="Type"/>; the settings the page does not edit
-/// (Ignore Rules, Post-upload Move, scan limits) travel in <see cref="Extras"/> and are saved back unchanged.
+/// (Ignore Rules, scan limits) travel in <see cref="Extras"/> and are saved back unchanged.
 /// </summary>
 public sealed class SourceEditorViewModel : ViewModelBase
 {
     /// <summary>The keys of a Source the editor owns; everything else is kept as it was.</summary>
     internal static readonly string[] ManagedKeys =
-        ["Name", "Type", "Enabled", "RemotePath", "Path", "Endpoint", "Bucket", "Prefix", "Region", "ForcePathStyle"];
+        ["Name", "Type", "Enabled", "RemotePath", "Path", "Endpoint", "Bucket", "Prefix", "Region", "ForcePathStyle",
+            .. MoveTargetEditorViewModel.KeysOf("AfterUpload:OnSuccess"), .. MoveTargetEditorViewModel.KeysOf("AfterUpload:OnFailure")];
 
     private const string ArchiveRulesKey = "ArchiveRules";
+    private const string OnSuccessKey = "AfterUpload:OnSuccess";
+    private const string OnFailureKey = "AfterUpload:OnFailure";
 
     private string _name = "";
     private SourceType _type;
@@ -51,6 +54,8 @@ public sealed class SourceEditorViewModel : ViewModelBase
         _prefix = Get("Prefix");
         _region = Get("Region");
         _forcePathStyle = string.Equals(Get("ForcePathStyle"), "true", StringComparison.OrdinalIgnoreCase);
+        OnSuccess = new MoveTargetEditorViewModel(OnSuccessKey, "Successfully uploaded files", entry, pickFolder, MoveEdited);
+        OnFailure = new MoveTargetEditorViewModel(OnFailureKey, "Failed files", entry, pickFolder, MoveEdited);
         ArchiveRules = new ArchiveRulesViewModel(RuleEntries(entry), locked);
         ArchiveRules.Edited += () =>
         {
@@ -69,6 +74,20 @@ public sealed class SourceEditorViewModel : ViewModelBase
         new(new Dictionary<string, string> { ["Type"] = "Directory" }, locked: false, pickFolder, remoteRoot) { Original = "" };
 
     private readonly Func<string> _remoteRootAccessor;
+
+    /// <summary>Where this Source's files go after they were uploaded, and where they go when they failed for good.</summary>
+    public MoveTargetEditorViewModel OnSuccess { get; }
+    public MoveTargetEditorViewModel OnFailure { get; }
+
+    /// <summary>Raised (not meant to be read) when a Move is switched on or off, so a form that shows its fields only while it is on can rebuild.</summary>
+    public bool MoveLayout => OnSuccess.Move || OnFailure.Move;
+
+    private void MoveEdited(string property)
+    {
+        this.RaisePropertyChanged(nameof(IsChanged));
+        if (property == nameof(MoveTargetEditorViewModel.Move)) this.RaisePropertyChanged(nameof(MoveLayout));
+        Edited?.Invoke();
+    }
 
     /// <summary>This Source's own Archive Rules, tried before the global ones.</summary>
     public ArchiveRulesViewModel ArchiveRules { get; }
@@ -174,6 +193,8 @@ public sealed class SourceEditorViewModel : ViewModelBase
             if (ForcePathStyle) entry["ForcePathStyle"] = "true";
         }
         foreach (var (key, value) in ArchiveRules.ToFlat(ArchiveRulesKey)) entry[key] = value;
+        OnSuccess.Write(entry, IsDirectory);
+        OnFailure.Write(entry, IsDirectory);
         return entry;
     }
 

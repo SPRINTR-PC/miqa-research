@@ -107,7 +107,7 @@ public sealed class AppLoggingTests
         using var logging = Start(headless: true);
 
         var console = logging.LogFactory.Configuration!.AllTargets.OfType<ConsoleTarget>().Single();
-        Assert.IsTrue(console.StdErr.FixedValue);
+        Assert.IsTrue(console.StdErr!.FixedValue);
         Assert.IsNull(logging.Ui);
     }
 

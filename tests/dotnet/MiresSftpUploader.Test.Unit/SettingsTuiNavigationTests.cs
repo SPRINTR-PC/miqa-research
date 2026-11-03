@@ -100,7 +100,8 @@ public sealed class SettingsTuiNavigationTests : SettingsTuiTestBase
         tui.Press(Key.Tab.WithShift);
 
         Assert.IsNotNull(tui.Focused, "focus must land somewhere");
-        Assert.IsTrue(tui.SidebarFocused || tui.FocusedFieldLabel is not null, tui.FocusPath);
+        // Wrapping backwards from the first field lands on the page's last control, which on Destination is the Check connection button.
+        Assert.IsTrue(tui.SidebarFocused || tui.FocusedFieldLabel is not null || tui.Focused is Terminal.Gui.Views.Button, tui.FocusPath);
     }
 
     [TestMethod]

@@ -76,6 +76,13 @@ public sealed class Secrets
         return access is null || secret is null ? null : new S3Credentials(access, secret);
     }
 
+    /// <summary>True when the Secret is in the Secret Store but cannot be decrypted here, and the environment does not supply it.</summary>
+    public bool IsUnreadable(string storeName, string variable) =>
+        !(_environment.TryGetValue(variable, out var v) && !string.IsNullOrEmpty(v))
+        && _stored.TryGetValue(storeName, out var lookup) && lookup.State == SecretState.Unreadable;
+
+    public bool SftpPasswordUnreadable => IsUnreadable(SftpPasswordName, SftpPasswordVariable);
+
     public static string S3Name(string sourceName, string kind) => $"s3-{kind}:{sourceName}";
 
     /// <summary>The environment variable part for a Source name: uppercased, every non-alphanumeric character becomes <c>_</c>.</summary>

@@ -32,6 +32,9 @@ public sealed class SecretStore : IDisposable
     internal const string NoMachineIdentifierMessage =
         "This machine has no stable machine identifier, so the Secret Store is unavailable. Supply Secrets as environment variables instead.";
 
+    /// <summary>The layout of the file. Stores made before the version row existed have exactly this layout and are stamped 1 on open.</summary>
+    internal const int SchemaVersion = 1;
+
     private const int NonceSize = 12;
     private const int TagSize = 16;
 
@@ -61,9 +64,36 @@ public sealed class SecretStore : IDisposable
             }).Dispose();
         var connection = UploadStateStore.OpenConnection(path);
         using var create = connection.CreateCommand();
-        create.CommandText = "CREATE TABLE IF NOT EXISTS secret (name TEXT PRIMARY KEY, value BLOB NOT NULL); CREATE TABLE IF NOT EXISTS meta (salt BLOB NOT NULL)";
+        create.CommandText = "CREATE TABLE IF NOT EXISTS secret (name TEXT PRIMARY KEY, value BLOB NOT NULL); CREATE TABLE IF NOT EXISTS meta (salt BLOB NOT NULL); CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)";
         create.ExecuteNonQuery();
+        try
+        {
+            EnsureSchemaVersion(connection);
+        }
+        catch
+        {
+            connection.Dispose();
+            throw;
+        }
         return new SecretStore(connection, DeriveKey(connection, identity));
+    }
+
+    private static void EnsureSchemaVersion(SqliteConnection connection)
+    {
+        using var read = connection.CreateCommand();
+        read.CommandText = "SELECT version FROM schema_version";
+        if (read.ExecuteScalar() is long version)
+        {
+            if (version > SchemaVersion)
+                throw new SecretStoreUnavailableException(
+                    $"The Secret Store was written by a newer version of MiresSftpUploader (schema {version}, this one reads {SchemaVersion}). Update the program, or supply Secrets as environment variables.");
+            return;
+        }
+
+        using var insert = connection.CreateCommand();
+        insert.CommandText = "INSERT INTO schema_version (version) VALUES ($version)";
+        insert.Parameters.AddWithValue("$version", SchemaVersion);
+        insert.ExecuteNonQuery();
     }
 
     private static byte[] DeriveKey(SqliteConnection connection, IMachineIdentity identity)

@@ -5,7 +5,7 @@
         x:Class="MiresSftpUploader.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Width="1180" Height="760" MinWidth="900" MinHeight="600"
-        Icon="/Assets/avalonia-logo.ico"
+        Icon="/Assets/mires-sftp-uploader-icon/sftp-uploader.ico"
         Title="MIRES SFTP Uploader">
     <DockPanel>
         <!-- Top bar: logo and title, the four pages, then the theme toggle (as in the MiqaResearch web application). -->

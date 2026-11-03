@@ -218,6 +218,89 @@ public sealed class SettingsPageViewModelTests : ConfigurationTestBase
     }
 
     [TestMethod]
+    public void A_Source_is_set_to_move_successful_and_failed_files_to_different_directories()
+    {
+        var cfg = Create(ValidMachine().ToJsonString());
+        var page = NewPage(cfg);
+        var source = page.Sources[0];
+        Assert.IsFalse(source.OnSuccess.Move);
+        Assert.IsFalse(source.OnFailure.Move);
+
+        source.OnSuccess.Move = true;
+        source.OnSuccess.Path = Path.Combine(Dir, "done");
+        source.OnFailure.Move = true;
+        source.OnFailure.Path = Path.Combine(Dir, "failed");
+        Assert.IsTrue(page.HasChanges);
+        Save(page);
+
+        var saved = cfg.Load().Config!.Sources[0].AfterUpload;
+        Assert.AreEqual(MoveAction.Move, saved.OnSuccess.Action);
+        Assert.AreEqual(Path.Combine(Dir, "done"), saved.OnSuccess.Path);
+        Assert.AreEqual(MoveAction.Move, saved.OnFailure.Action);
+        Assert.AreEqual(Path.Combine(Dir, "failed"), saved.OnFailure.Path);
+        var reopened = NewPage(cfg).Sources[0];
+        Assert.IsTrue(reopened.OnSuccess.Move);
+        Assert.AreEqual(Path.Combine(Dir, "failed"), reopened.OnFailure.Path);
+    }
+
+    [TestMethod]
+    public void Moving_only_the_failed_files_leaves_the_successful_ones_alone()
+    {
+        var cfg = Create(ValidMachine().ToJsonString());
+        var page = NewPage(cfg);
+
+        page.Sources[0].OnFailure.Move = true;
+        page.Sources[0].OnFailure.Path = Path.Combine(Dir, "failed");
+        Save(page);
+
+        var saved = cfg.Load().Config!.Sources[0].AfterUpload;
+        Assert.AreEqual(MoveAction.None, saved.OnSuccess.Action);
+        Assert.AreEqual(MoveAction.Move, saved.OnFailure.Action);
+    }
+
+    [TestMethod]
+    public void Switching_a_Move_off_removes_it_and_a_Move_without_a_place_cannot_be_saved()
+    {
+        var machine = ValidMachine();
+        machine["Sources"]![0]!["AfterUpload"] = System.Text.Json.Nodes.JsonNode.Parse("""{ "OnSuccess": { "Action": "Move", "Path": "/tmp/done-elsewhere" } }""");
+        var cfg = Create(machine.ToJsonString());
+        var page = NewPage(cfg);
+        Assert.IsTrue(page.Sources[0].OnSuccess.Move);
+
+        page.Sources[0].OnFailure.Move = true; // no directory yet
+        Assert.IsTrue(page.HasErrors);
+        StringAssert.Contains(page.Sources[0].Error, "AfterUpload:OnFailure:Path");
+        Assert.IsFalse(CanSave(page));
+
+        page.Sources[0].OnFailure.Move = false;
+        page.Sources[0].OnSuccess.Move = false;
+        Save(page);
+
+        var saved = cfg.Load().Config!.Sources[0].AfterUpload;
+        Assert.AreEqual(MoveAction.None, saved.OnSuccess.Action);
+        Assert.IsNull(saved.OnSuccess.Path);
+    }
+
+    [TestMethod]
+    public void An_S3_Source_moves_to_a_bucket_and_prefix()
+    {
+        var machine = ValidMachine();
+        machine["Sources"]![0] = System.Text.Json.Nodes.JsonNode.Parse("""{ "Name": "bucketeer", "Type": "S3", "Endpoint": "https://s3.example.org", "Bucket": "in", "Prefix": "new/" }""");
+        var cfg = Create(machine.ToJsonString());
+        var page = NewPage(cfg);
+
+        page.Sources[0].OnSuccess.Move = true;
+        page.Sources[0].OnSuccess.Bucket = "archive";
+        page.Sources[0].OnSuccess.Prefix = "done/";
+        Save(page);
+
+        var saved = cfg.Load().Config!.Sources[0].AfterUpload.OnSuccess;
+        Assert.AreEqual(MoveAction.Move, saved.Action);
+        Assert.AreEqual("archive", saved.Bucket);
+        Assert.AreEqual("done/", saved.Prefix);
+    }
+
+    [TestMethod]
     public void A_Source_field_error_shows_on_its_row_and_disables_Save()
     {
         var page = NewPage(Create(ValidMachine().ToJsonString()));

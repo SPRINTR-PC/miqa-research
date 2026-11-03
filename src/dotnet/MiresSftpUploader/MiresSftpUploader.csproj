@@ -5,16 +5,21 @@
         <TargetFramework>net10.0</TargetFramework>
         <Nullable>enable</Nullable>
         <ApplicationManifest>app.manifest</ApplicationManifest>
+        <!-- Embedded in the Windows exe (Explorer, taskbar, Start menu). -->
+        <ApplicationIcon>Assets\mires-sftp-uploader-icon\sftp-uploader.ico</ApplicationIcon>
         <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     </PropertyGroup>
 
     <ItemGroup>
         <Folder Include="Models\" />
-        <AvaloniaResource Include="Assets\**" />
+        <!-- Only the .ico (window icon) is compiled in; the per-platform icon sets are shipped as release files below. -->
+        <AvaloniaResource Include="Assets\**" Exclude="Assets\mires-sftp-uploader-icon\**" />
+        <AvaloniaResource Include="Assets\mires-sftp-uploader-icon\sftp-uploader.ico" />
     </ItemGroup>
 
     <ItemGroup>
         <Content Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+        <Content Include="Assets\mires-sftp-uploader-icon\.DS_Store" />
     </ItemGroup>
 
     <!-- Files shipped next to the executable in artifacts/publish/<rid>/ (appsettings.json is above). Missing optional
@@ -24,6 +29,9 @@
         <ReleaseFile Include="docs/scheduling.md" TargetPath="scheduling.md" />
         <ReleaseFile Include="docs/manifest.schema.json" TargetPath="manifest.schema.json" Condition="Exists('docs/manifest.schema.json')" />
         <ReleaseFile Include="docs/scheduler/**" TargetPath="scheduler/%(RecursiveDir)%(Filename)%(Extension)" />
+        <!-- Application icon per platform: Linux gets the hicolor theme tree plus a .desktop entry, macOS the .icns. -->
+        <ReleaseFile Include="Assets/mires-sftp-uploader-icon/linux-hicolor/**" TargetPath="icons/hicolor/%(RecursiveDir)%(Filename)%(Extension)" Condition="$(RuntimeIdentifier.StartsWith('linux-'))" />
+        <ReleaseFile Include="packaging/linux/mires-sftp-uploader.desktop" TargetPath="mires-sftp-uploader.desktop" Condition="$(RuntimeIdentifier.StartsWith('linux-'))" />
     </ItemGroup>
 
     <!-- The Help page renders these two documents. -->
@@ -33,6 +41,39 @@
     </ItemGroup>
 
     <Import Project="Signing.targets" />
+
+    <!-- macOS only: wraps the published executable in MiresSftpUploader.app so Finder and the Dock show the icon.
+         The flat executable stays next to it for command-line use (configure, TUI, scheduler jobs). Signing
+         (Signing.targets) runs after this target and signs the bundle. -->
+    <Target Name="MiresMacBundle" AfterTargets="Publish" DependsOnTargets="MiresReleaseFiles" Condition="$(RuntimeIdentifier.StartsWith('osx-'))">
+        <PropertyGroup>
+            <MiresAppDir>$(PublishDir)MiresSftpUploader.app/</MiresAppDir>
+            <MiresPlist>&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"&gt;
+&lt;plist version="1.0"&gt;
+&lt;dict&gt;
+    &lt;key&gt;CFBundleName&lt;/key&gt;&lt;string&gt;MIRES SFTP Uploader&lt;/string&gt;
+    &lt;key&gt;CFBundleDisplayName&lt;/key&gt;&lt;string&gt;MIRES SFTP Uploader&lt;/string&gt;
+    &lt;key&gt;CFBundleIdentifier&lt;/key&gt;&lt;string&gt;eu.mires.sftp-uploader&lt;/string&gt;
+    &lt;key&gt;CFBundleExecutable&lt;/key&gt;&lt;string&gt;MiresSftpUploader&lt;/string&gt;
+    &lt;key&gt;CFBundleIconFile&lt;/key&gt;&lt;string&gt;sftp-uploader&lt;/string&gt;
+    &lt;key&gt;CFBundlePackageType&lt;/key&gt;&lt;string&gt;APPL&lt;/string&gt;
+    &lt;key&gt;CFBundleShortVersionString&lt;/key&gt;&lt;string&gt;$(Version)&lt;/string&gt;
+    &lt;key&gt;CFBundleVersion&lt;/key&gt;&lt;string&gt;$(Version)&lt;/string&gt;
+    &lt;key&gt;LSMinimumSystemVersion&lt;/key&gt;&lt;string&gt;12.0&lt;/string&gt;
+    &lt;key&gt;NSHighResolutionCapable&lt;/key&gt;&lt;true/&gt;
+&lt;/dict&gt;
+&lt;/plist&gt;
+</MiresPlist>
+        </PropertyGroup>
+        <RemoveDir Directories="$(MiresAppDir)" />
+        <MakeDir Directories="$(MiresAppDir)Contents/MacOS;$(MiresAppDir)Contents/Resources" />
+        <Copy SourceFiles="$(PublishDir)$(AssemblyName)" DestinationFolder="$(MiresAppDir)Contents/MacOS" />
+        <Copy SourceFiles="$(PublishDir)appsettings.json" DestinationFolder="$(MiresAppDir)Contents/MacOS" />
+        <Copy SourceFiles="Assets/mires-sftp-uploader-icon/sftp-uploader.icns" DestinationFolder="$(MiresAppDir)Contents/Resources" />
+        <WriteLinesToFile File="$(MiresAppDir)Contents/Info.plist" Lines="$(MiresPlist)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+        <Exec Command="chmod +x &quot;$(MiresAppDir)Contents/MacOS/$(AssemblyName)&quot;" Condition="!$([MSBuild]::IsOSPlatform('Windows'))" />
+    </Target>
 
     <Target Name="MiresReleaseFiles" AfterTargets="Publish">
         <Copy SourceFiles="@(ReleaseFile)" DestinationFiles="@(ReleaseFile->'$(PublishDir)%(TargetPath)')" />

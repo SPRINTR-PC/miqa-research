@@ -7,11 +7,12 @@ public partial class ConfirmDialog : Window
 {
     public ConfirmDialog() => InitializeComponent();
 
-    public ConfirmDialog(string title, string message) : this()
+    public ConfirmDialog(string title, string message, string? acceptLabel = null) : this()
     {
         Title = title;
         this.FindControl<TextBlock>("TitleText")!.Text = title;
         this.FindControl<TextBlock>("MessageText")!.Text = message;
+        if (acceptLabel is not null) this.FindControl<Button>("ConfirmButton")!.Content = acceptLabel;
         this.FindControl<Button>("CancelButton")!.Click += (_, _) => Close(false);
         this.FindControl<Button>("ConfirmButton")!.Click += (_, _) => Close(true);
     }

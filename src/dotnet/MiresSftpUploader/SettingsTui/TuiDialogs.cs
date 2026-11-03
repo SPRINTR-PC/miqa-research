@@ -16,8 +16,8 @@ public enum UnsavedChoice { Save, Discard, Cancel }
 /// </summary>
 public interface ITuiDialogs
 {
-    /// <summary>Two buttons, Cancel is the default, Esc cancels. True when the user confirmed.</summary>
-    bool Confirm(string title, string message);
+    /// <summary>Two buttons (the first is <paramref name="acceptLabel"/>), Cancel is the default, Esc cancels. True when the user confirmed.</summary>
+    bool Confirm(string title, string message, string acceptLabel = "_Change");
 
     /// <summary>Quit with unsaved changes. <paramref name="canSave"/> is false while errors exist (Save is then absent).</summary>
     UnsavedChoice AskUnsaved(bool canSave);
@@ -38,7 +38,7 @@ public interface ITuiDialogs
 public sealed class TerminalGuiDialogs(IApplication app) : ITuiDialogs
 {
     // Terminal.Gui makes the last button the default, so Cancel goes last; Esc returns null, which is not a confirmation.
-    public bool Confirm(string title, string message) => MessageBox.Query(app, title, message, "_Change", "_Cancel") == 0;
+    public bool Confirm(string title, string message, string acceptLabel = "_Change") => MessageBox.Query(app, title, message, acceptLabel, "_Cancel") == 0;
 
     public UnsavedChoice AskUnsaved(bool canSave)
     {

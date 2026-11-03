@@ -66,7 +66,6 @@ public static class SettingsTuiApp
             using var window = new TuiShell(application!, page, tuiDialogs, start, uploadPage, historyPage,
                 help: new HelpPage(HelpPage.CreateViewModel(_ => { })));
             shell = window;
-            window.SettingsWindow.ConnectionChecker = token => ConnectionCheck.CheckSavedAsync(configuration, c => new SshNetRemote(c), token, options);
             window.SettingsWindow.Redact = text => Redactor.From(configuration.LoadSecrets()).Redact(text);
             using var signals = (shutdownSignals ?? RegisterSignals(application!))(window.Terminate);
             log.LogInformation("TUI started on the {Page} page.", start);

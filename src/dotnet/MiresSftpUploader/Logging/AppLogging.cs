@@ -88,7 +88,7 @@ public sealed class AppLogging : IDisposable
         foreach (var rule in configuration.LoggingRules.ToList())
         {
             foreach (var t in rule.Targets.Where(IsTerminal).ToList()) rule.Targets.Remove(t);
-            if (rule.Targets.Count == 0 && rule.ChildRules.Count == 0) configuration.LoggingRules.Remove(rule);
+            if (rule.Targets.Count == 0) configuration.LoggingRules.Remove(rule);
         }
 
         foreach (var t in configuration.AllTargets.Where(IsTerminal).ToList()) configuration.RemoveTarget(t.Name);
