@@ -77,8 +77,9 @@ public static class ConnectionCheck
     public static async Task<ConnectionCheckResult> RunAsync(SftpConfig sftp, Secrets secrets, Func<SftpConnection, IRemote> remoteFactory, CancellationToken cancellationToken)
     {
         if (sftp.AuthMethod != AuthMethod.PrivateKey && secrets.SftpPassword is null)
-            return new ConnectionCheckResult(ConnectionCheckOutcome.MissingCredentials,
-                $"{Secrets.SftpPasswordVariable} is not set. Set it as an environment variable, or store it with --set-secret sftp-password.");
+            return new ConnectionCheckResult(ConnectionCheckOutcome.MissingCredentials, secrets.SftpPasswordUnreadable
+                ? "The stored sftp-password is unreadable on this machine (the machine or account changed since it was stored). Re-enter it with --set-secret sftp-password, or set " + Secrets.SftpPasswordVariable + "."
+                : $"{Secrets.SftpPasswordVariable} is not set. Set it as an environment variable, or store it with --set-secret sftp-password.");
 
         var connection = SftpConnection.From(sftp, secrets);
         var connect = await remoteFactory(connection).ConnectAsync(cancellationToken).ConfigureAwait(false);

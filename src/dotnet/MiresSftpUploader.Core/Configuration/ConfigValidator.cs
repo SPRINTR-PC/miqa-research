@@ -215,6 +215,14 @@ internal sealed partial class ConfigValidator
 
     private void RemotePath(string key, string path)
     {
+        var unknown = RemotePathTemplate.Unknown(path);
+        if (unknown.Count > 0)
+        {
+            Error(key, $"unknown placeholder {string.Join(", ", unknown)}; use {string.Join(", ", RemotePathTemplate.Placeholders)}.");
+            return;
+        }
+
+        path = RemotePathTemplate.Expand(path, DateTimeOffset.UnixEpoch);
         if (string.IsNullOrEmpty(path) || path[0] != '/' || path.Contains('\\') || path.Split('/').Contains(".."))
             Error(key, $"'{path}' must be an absolute POSIX path (starting with '/', using '/', without '..').");
     }

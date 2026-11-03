@@ -179,7 +179,41 @@
                                             <StackPanel>
                                                 <TextBlock Classes="muted" Text="Remote Path (optional)"/>
                                                 <TextBox Text="{Binding RemotePath}" PlaceholderText="{Binding RemotePathPlaceholder}"/>
+                                                <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap" Text="{}{date}, {time}, {year}, {month} and {day} are replaced (UTC, at the start of the Run). A retry uses the path of the Run it repeats."/>
                                             </StackPanel>
+
+                                            <Expander Header="Move files after upload" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                                                <StackPanel Spacing="10">
+                                                    <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap"
+                                                               Text="Once a Run is done, files with a final outcome leave the Source, so the next Run finds only new data. Successful and failed files can go to different places. Nothing is overwritten, and a file is only removed after its copy is checked."/>
+                                                    <StackPanel Spacing="4">
+                                                        <CheckBox Content="Move successfully uploaded files" IsChecked="{Binding OnSuccess.Move}"/>
+                                                        <StackPanel Spacing="4" IsVisible="{Binding OnSuccess.Move}">
+                                                            <DockPanel IsVisible="{Binding IsDirectory}">
+                                                                <Button DockPanel.Dock="Right" Margin="8,0,0,0" Content="Browse…" Command="{Binding OnSuccess.BrowseCommand}"/>
+                                                                <TextBox Text="{Binding OnSuccess.Path}" PlaceholderText="Directory to move them to"/>
+                                                            </DockPanel>
+                                                            <Grid IsVisible="{Binding IsS3}" ColumnDefinitions="*,*" ColumnSpacing="8">
+                                                                <TextBox Text="{Binding OnSuccess.Bucket}" PlaceholderText="Bucket to move them to"/>
+                                                                <TextBox Grid.Column="1" Text="{Binding OnSuccess.Prefix}" PlaceholderText="Prefix"/>
+                                                            </Grid>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                    <StackPanel Spacing="4">
+                                                        <CheckBox Content="Move failed files" IsChecked="{Binding OnFailure.Move}"/>
+                                                        <StackPanel Spacing="4" IsVisible="{Binding OnFailure.Move}">
+                                                            <DockPanel IsVisible="{Binding IsDirectory}">
+                                                                <Button DockPanel.Dock="Right" Margin="8,0,0,0" Content="Browse…" Command="{Binding OnFailure.BrowseCommand}"/>
+                                                                <TextBox Text="{Binding OnFailure.Path}" PlaceholderText="Directory to move them to"/>
+                                                            </DockPanel>
+                                                            <Grid IsVisible="{Binding IsS3}" ColumnDefinitions="*,*" ColumnSpacing="8">
+                                                                <TextBox Text="{Binding OnFailure.Bucket}" PlaceholderText="Bucket to move them to"/>
+                                                                <TextBox Grid.Column="1" Text="{Binding OnFailure.Prefix}" PlaceholderText="Prefix"/>
+                                                            </Grid>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                </StackPanel>
+                                            </Expander>
 
                                             <Expander Header="Archive Rules for this Source" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                                                 <ContentControl Content="{Binding ArchiveRules}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"/>

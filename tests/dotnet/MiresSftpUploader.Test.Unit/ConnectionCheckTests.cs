@@ -101,4 +101,33 @@ public sealed class ConnectionCheckTests : ConfigurationTestBase
 
         StringAssert.Contains(result.Message, "override.example.org");
     }
+
+    [TestMethod]
+    public async Task An_unreadable_stored_password_is_reported_as_unreadable_not_as_not_set()
+    {
+        File.WriteAllText(MachinePath, ValidMachine().ToJsonString());
+        var store = Path.Combine(Dir, "user", "secrets.db");
+        using (var s = SecretStore.Open(store, new Identity("machine-1")))
+            s.Set("sftp-password", "from-store");
+        var configuration = new Configuration(new ConfigurationLocations(MachinePath, UserPath, new Dictionary<string, string?>(), store, new Identity("another-machine")));
+        var remote = new FakeRemote();
+
+        var result = await ConnectionCheck.CheckSavedAsync(configuration, _ => remote, CancellationToken.None);
+
+        Assert.AreEqual(ConnectionCheckOutcome.MissingCredentials, result.Outcome);
+        StringAssert.Contains(result.Message, "unreadable");
+        StringAssert.Contains(result.Message, "--set-secret sftp-password");
+        Assert.AreEqual(0, remote.ConnectCount);
+    }
+
+    [TestMethod]
+    public async Task A_missing_password_is_still_reported_as_not_set()
+    {
+        var result = await ConnectionCheck.CheckSavedAsync(Saved(new Dictionary<string, string?>()), _ => new FakeRemote(), CancellationToken.None);
+
+        StringAssert.Contains(result.Message, "is not set");
+        Assert.DoesNotContain("unreadable", result.Message);
+    }
+
+    private sealed record Identity(string? MachineId, string Account = "alice") : IMachineIdentity;
 }

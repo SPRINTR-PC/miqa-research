@@ -249,9 +249,13 @@ public sealed partial class Engine : IRunEngine
         var participating = new List<ISource>();
         foreach (var source in candidates)
         {
-            var remotePath = RemotePathOf(source);
-            var failedPaths = failedInRun.Where(f => f.Source == source.Name && f.RemotePath == remotePath).Select(f => f.RelativePath).ToHashSet(StringComparer.Ordinal);
-            if (failedPaths.Count == 0) continue;
+            // The Remote Path of the Run being retried, as stored when it started: never worked out again, because its placeholders
+            // (a date, say) would now give another directory.
+            var failedOfSource = failedInRun.Where(f => f.Source == source.Name).ToList();
+            if (failedOfSource.Count == 0) continue;
+            var remotePath = failedOfSource[0].RemotePath;
+            run.SetRemotePath(source.Name, remotePath);
+            var failedPaths = failedOfSource.Where(f => f.RemotePath == remotePath).Select(f => f.RelativePath).ToHashSet(StringComparer.Ordinal);
             participating.Add(source);
 
             var prior = store.LoadSource(_settings.Destination, remotePath, source.Name);
@@ -316,7 +320,7 @@ public sealed partial class Engine : IRunEngine
         var connect = await _remote.ConnectAsync(ct);
         if (!connect.IsOk) return (ExitCodes.ConnectFailed, connect.Reason);
         await using var session = connect.Value!;
-        var root = Normalize(_settings.RemoteRoot);
+        var root = Normalize(RemotePathTemplate.Expand(_settings.RemoteRoot, run.StartedAt));
         const string SetExplicitly = "Set Sftp:RemoteAccess to ReadWrite or WriteOnly to skip the check.";
         var ensure = await session.EnsureDirectoryAsync(root, ct);
         if (!ensure.IsOk)
@@ -375,7 +379,7 @@ public sealed partial class Engine : IRunEngine
         else
         foreach (var source in selected)
         {
-            var remotePath = RemotePathOf(source);
+            var remotePath = RemotePathOf(source, run);
             var store = run.Store;
             if (store is not null && options.ResetSources.Contains(source.Name))
                 await store.ResetSourceAsync(_settings.Destination, remotePath, source.Name);
@@ -436,7 +440,7 @@ public sealed partial class Engine : IRunEngine
         }
 
         if (WriteOnlyVerificationConflict(run) is { } conflict) return conflict;
-        if (await ProbeVerificationAsync(ct) is { } unavailable) return unavailable;
+        if (await ProbeVerificationAsync(run.StartedAt, ct) is { } unavailable) return unavailable;
 
         foreach (var item in work.OfType<FileWork>()) run.Set(item, FileOutcome.Pending, null);
 
@@ -576,7 +580,7 @@ public sealed partial class Engine : IRunEngine
         await using var session = connect.Value!;
         foreach (var source in sources)
         {
-            var remotePath = RemotePathOf(source);
+            var remotePath = RemotePathOf(source, run);
             var marker = Join(remotePath, _settings.ManifestName + _settings.InProgressSuffix);
             var probe = marker + ".probe";
             var ensure = await session.EnsureDirectoryAsync(remotePath, ct);
@@ -807,7 +811,7 @@ public sealed partial class Engine : IRunEngine
 
     private async Task<RemoteResult> UploadManifestAsync(IRemoteSession session, ISource source, RunState run, RunOptions options, string? incomplete, CancellationToken ct)
     {
-        var remotePath = RemotePathOf(source);
+        var remotePath = RemotePathOf(source, run);
 
         var ensure = await session.EnsureDirectoryAsync(remotePath, ct);
         if (!ensure.IsOk) return ensure;
@@ -979,8 +983,18 @@ public sealed partial class Engine : IRunEngine
         return [name, name + "-wal", name + "-shm", name + "-journal", name + ".lock"];
     }
 
-    private string RemotePathOf(ISource source) =>
-        Normalize(source.RemotePath ?? Join(_settings.RemoteRoot, source.Name));
+    /// <summary>
+    /// The Source's directory on the server for this Run: its Remote Path, or the Remote Root plus its name, with the placeholders
+    /// replaced by the start of the Run. Worked out once per Run and Source, so every step of the Run uses the same directory
+    /// even if the Run crosses midnight.
+    /// </summary>
+    private string RemotePathOf(ISource source, RunState run) =>
+        run.RemotePathOf(source.Name, () =>
+        {
+            var resolved = Normalize(RemotePathTemplate.Expand(source.RemotePath ?? Join(_settings.RemoteRoot, source.Name), run.StartedAt));
+            _logger.LogInformation("{Source}: Remote Path {RemotePath}", source.Name, resolved);
+            return resolved;
+        });
 
     private static string Normalize(string path)
     {
@@ -1013,8 +1027,26 @@ public sealed partial class Engine : IRunEngine
         private readonly object _gate = new();
         private readonly Dictionary<(string Source, string Path), FileEntry> _entries = new();
 
+        private readonly Dictionary<string, string> _remotePaths = new(StringComparer.Ordinal);
+
         public Guid RunId { get; } = runId;
         public DateTimeOffset StartedAt { get; } = startedAt;
+
+        /// <summary>The Source's Remote Path for this Run: the one set with <see cref="SetRemotePath"/>, else <paramref name="resolve"/> once.</summary>
+        internal string RemotePathOf(string source, Func<string> resolve)
+        {
+            lock (_gate)
+            {
+                if (!_remotePaths.TryGetValue(source, out var path)) _remotePaths[source] = path = resolve();
+                return path;
+            }
+        }
+
+        /// <summary>Fixes the Source's Remote Path for this Run, as a retry does with the path of the Run it repeats.</summary>
+        internal void SetRemotePath(string source, string path)
+        {
+            lock (_gate) _remotePaths[source] = path;
+        }
         public UploadStateStore? Store { get; set; }
         /// <summary>The account has Write-only Access: the Run trusts the Upload State instead of the server.</summary>
         public bool WriteOnly { get; set; }

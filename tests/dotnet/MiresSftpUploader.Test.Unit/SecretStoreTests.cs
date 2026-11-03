@@ -83,6 +83,49 @@ public sealed class SecretStoreTests
         Assert.AreEqual(SecretState.Unreadable, reopened.Get("sftp-password").State);
     }
 
+    private long? SchemaVersionOnDisk()
+    {
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={StorePath};Pooling=False");
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT version FROM schema_version";
+        return command.ExecuteScalar() as long?;
+    }
+
+    [TestMethod]
+    public void A_new_store_records_its_schema_version()
+    {
+        using (SecretStore.Open(StorePath, Alice)) { }
+
+        Assert.AreEqual(SecretStore.SchemaVersion, SchemaVersionOnDisk());
+    }
+
+    [TestMethod]
+    public void A_store_made_before_the_version_row_existed_is_stamped_and_keeps_its_secrets()
+    {
+        using (var store = SecretStore.Open(StorePath, Alice))
+            store.Set("sftp-password", "hunter2-very-secret");
+        Tamper("DROP TABLE schema_version");
+
+        using var reopened = SecretStore.Open(StorePath, Alice);
+
+        Assert.AreEqual("hunter2-very-secret", reopened.Get("sftp-password").Value);
+        Assert.AreEqual(SecretStore.SchemaVersion, SchemaVersionOnDisk());
+    }
+
+    [TestMethod]
+    public void A_store_from_a_newer_version_is_unavailable_and_left_alone()
+    {
+        using (var store = SecretStore.Open(StorePath, Alice))
+            store.Set("sftp-password", "hunter2-very-secret");
+        Tamper("UPDATE schema_version SET version = 99");
+
+        var e = Assert.ThrowsExactly<SecretStoreUnavailableException>(() => SecretStore.Open(StorePath, Alice));
+
+        StringAssert.Contains(e.Message, "newer version");
+        Assert.AreEqual(99, SchemaVersionOnDisk());
+    }
+
     private void Tamper(string sql)
     {
         using var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={StorePath};Pooling=False");

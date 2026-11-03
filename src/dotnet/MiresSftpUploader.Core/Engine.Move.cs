@@ -25,7 +25,7 @@ public sealed partial class Engine
 
         foreach (var (source, config) in configured)
         {
-            var remotePath = RemotePathOf(source);
+            var remotePath = RemotePathOf(source, run);
             var entries = run.OwnEntries(source.Name);
             foreach (var entry in entries)
             {

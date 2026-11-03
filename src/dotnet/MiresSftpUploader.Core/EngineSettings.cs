@@ -61,7 +61,7 @@ public sealed record EngineSettings
     public RemoteAccess RemoteAccess { get; init; } = RemoteAccess.Auto;
     /// <summary>How a file reaches its final name: through a <c>.part</c> and a rename, or written straight to it.</summary>
     public UploadStrategy UploadStrategy { get; init; } = UploadStrategy.PartThenRename;
-    /// <summary>Remote directory under which each Source gets its own directory unless it sets a Remote Path.</summary>
+    /// <summary>Remote directory under which each Source gets its own directory unless it sets a Remote Path. May hold <see cref="RemotePathTemplate"/> placeholders.</summary>
     public string RemoteRoot { get; init; } = "/";
     /// <summary>host:port of the SFTP server; part of the Upload State key, so a different server counts as new.</summary>
     public string Destination { get; init; } = "";

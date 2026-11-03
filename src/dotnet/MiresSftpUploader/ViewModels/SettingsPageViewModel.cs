@@ -29,7 +29,7 @@ public sealed class SettingsPageViewModel : ViewModelBase
         ("Sftp:AuthMethod", "Authentication", "Destination", FieldKind.Choice, ["Password", "PrivateKey"], "The password or key passphrase is a Secret: set it under Secrets below, or in the environment."),
         ("Sftp:PrivateKeyPath", "Private key file", "Destination", FieldKind.Text, null, null),
         (FingerprintKey, "Host Key Fingerprint", "Destination", FieldKind.Text, null, "The pinned identity of the server. A server presenting a different one is refused."),
-        ("Sftp:RemoteRoot", "Remote root", "Destination", FieldKind.Text, null, "The server directory every Source is uploaded under, unless the Source has its own Remote Path."),
+        ("Sftp:RemoteRoot", "Remote root", "Destination", FieldKind.Text, null, "The server directory every Source is uploaded under, unless the Source has its own Remote Path. {date} (yyyyMMdd), {time} (HHmmss), {year}, {month} and {day} (UTC, at the start of the Run) are replaced, so /incoming/{date} gives a new directory each day. A retry uses the path of the Run it repeats."),
         ("Sftp:RemoteAccess", "Remote access", "Destination", FieldKind.Choice, ["Auto", "ReadWrite", "WriteOnly"], "WriteOnly: the account can upload but not read, list, delete or overwrite."),
         ("Sftp:UploadStrategy", "Upload strategy", "Destination", FieldKind.Choice, ["PartThenRename", "Direct"], null),
         ("Sftp:ConnectTimeoutSeconds", "Connect timeout (seconds)", "Destination", FieldKind.Number, null, null),

@@ -73,6 +73,7 @@ public static class SourcesPage
                 _ctx.RefreshChrome();
                 if (e.PropertyName == nameof(SourceEditorViewModel.Type)) Retype(pane, s);
                 else if (e.PropertyName is nameof(SourceEditorViewModel.AccessKey) or nameof(SourceEditorViewModel.SecretKey)) Rekey(pane, s);
+                else if (e.PropertyName == nameof(SourceEditorViewModel.MoveLayout)) Relayout(pane, s);
             };
             return pane;
         }
@@ -95,6 +96,16 @@ public static class SourcesPage
                 var shown = pane.Rows.OfType<SecretRow>().Select(r => r.Entry).ToList();
                 var wanted = new[] { s.AccessKey, s.SecretKey }.OfType<SecretEntryViewModel>().ToList();
                 if (shown.SequenceEqual(wanted) && (wanted.Count > 0 || pane.Rows.Any(KeysNote))) return;
+                var focused = pane.MostFocused;
+                var at = focused is null ? -1 : pane.Rows.ToList().FindIndex(r => r == focused || r.SubViews.Contains(focused) || focused.SuperView == r);
+                pane.ReplaceRows(Rows(s));
+                if (at >= 0 && at < pane.Rows.Count) FocusLevels.FocusFirstInput(pane.Rows[at]);
+            });
+
+        /// <summary>A Move was switched on or off: show or hide its fields on the next loop iteration, keeping the focus on the row that was focused.</summary>
+        private void Relayout(FormPane pane, SourceEditorViewModel s) =>
+            _ctx.App.Invoke(() =>
+            {
                 var focused = pane.MostFocused;
                 var at = focused is null ? -1 : pane.Rows.ToList().FindIndex(r => r == focused || r.SubViews.Contains(focused) || focused.SuperView == r);
                 pane.ReplaceRows(Rows(s));
@@ -125,11 +136,32 @@ public static class SourcesPage
             }
 
             rows.Add(FormRows.TextRow("Remote Path (optional)", () => s.RemotePath, v => s.RemotePath = v, e));
+            rows.Add(FormRows.Note("{date}, {time}, {year}, {month} and {day} are replaced (UTC, start of the Run)."));
             if (s.IsS3) rows.AddRange(S3KeyRows(s));
+            rows.AddRange(MoveRows(s, s.OnSuccess, "Move uploaded files", "successfully uploaded files"));
+            rows.AddRange(MoveRows(s, s.OnFailure, "Move failed files", "files that failed"));
             rows.Add(FormRows.Btn($"Archive Rules for this Source ({s.ArchiveRules.Rules.Count})…",
                 () => _ctx.Dialogs.EditArchiveRules("Archive Rules for " + (s.Name.Length == 0 ? "(new Source)" : s.Name), s.ArchiveRules)));
             rows.Add(Problem(s));
             return rows;
+        }
+
+        /// <summary>
+        /// The Post-upload Move of one outcome: a switch and, while it is on, where the files go (a directory, or an S3 bucket and prefix).
+        /// Each outcome has its own location, so successful and failed files can be kept apart.
+        /// </summary>
+        private static IEnumerable<View> MoveRows(SourceEditorViewModel s, MoveTargetEditorViewModel m, string label, string what)
+        {
+            var e = s.IsEditable;
+            yield return FormRows.ToggleRow(label, () => m.Move, v => m.Move = v, e);
+            if (!m.Move) yield break;
+            if (s.IsDirectory) yield return FormRows.PathRow("  Move to", () => m.Path, v => m.Path = v, e);
+            else
+            {
+                yield return FormRows.TextRow("  Bucket", () => m.Bucket, v => m.Bucket = v, e);
+                yield return FormRows.TextRow("  Prefix", () => m.Prefix, v => m.Prefix = v, e);
+            }
+            yield return FormRows.Note($"  The {what} leave the Source for here once the Run is done; nothing is overwritten.");
         }
 
         /// <summary>

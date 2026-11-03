@@ -76,7 +76,7 @@ public sealed partial class Engine
     /// Start of a Run: every Verification level that is configured must work on this server. An unavailable level ends the Run
     /// with exit code 2 and the cause; it is never lowered silently. Returns null when all levels work.
     /// </summary>
-    private async Task<(int ExitCode, string? Reason)?> ProbeVerificationAsync(CancellationToken ct)
+    private async Task<(int ExitCode, string? Reason)?> ProbeVerificationAsync(DateTimeOffset runStartedAt, CancellationToken ct)
     {
         var settings = _settings.Verification;
         var wanted = new List<(string Setting, VerificationLevel Level)>();
@@ -89,14 +89,14 @@ public sealed partial class Engine
         await using var session = connect.Value!;
         foreach (var (setting, level) in wanted)
         {
-            var problem = await ProbeAsync(session, level, ct);
+            var problem = await ProbeAsync(session, level, runStartedAt, ct);
             if (problem is not null)
                 return (ExitCodes.ConfigurationError, $"{setting} is {level}, which this server cannot do: {problem}");
         }
         return null;
     }
 
-    private async Task<string?> ProbeAsync(IRemoteSession session, VerificationLevel level, CancellationToken ct)
+    private async Task<string?> ProbeAsync(IRemoteSession session, VerificationLevel level, DateTimeOffset runStartedAt, CancellationToken ct)
     {
         if (level == VerificationLevel.Hash)
         {
@@ -109,7 +109,7 @@ public sealed partial class Engine
         }
 
         // Size and ReadBack both need to look at objects, which a write-only account cannot.
-        var root = Normalize(_settings.RemoteRoot);
+        var root = Normalize(RemotePathTemplate.Expand(_settings.RemoteRoot, runStartedAt));
         var ensure = await session.EnsureDirectoryAsync(root, ct);
         if (!ensure.IsOk) return $"cannot prepare {root}: {ensure.Reason}";
         var stat = await session.StatAsync(root, ct);

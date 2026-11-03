@@ -11,7 +11,7 @@ A named place files are read from: either a local directory or a prefix in an S3
 _Avoid_: Location, input folder, bucket (as a generic term)
 
 **Remote Path**:
-The server directory a Source is uploaded into, including the Source's own directory. Defaults to the configured remote root plus the Source name; can be set per Source.
+The server directory a Source is uploaded into, including the Source's own directory. Defaults to the configured remote root plus the Source name; can be set per Source. The remote root and the Remote Path may contain `{date}`, `{time}`, `{year}`, `{month}` and `{day}` (UTC, the start of the Run), worked out once per Run; a retry uses the Remote Path of the Run it repeats.
 _Avoid_: Destination, target folder
 
 **Ignore Rule**:
