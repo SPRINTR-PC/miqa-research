@@ -23,9 +23,13 @@ public sealed record MinioServerInfo(string Endpoint, string AccessKey, string S
         ForcePathStyle = true,
     };
 
-    /// <summary>A client for seeding and inspecting buckets independently of the adapter under test.</summary>
+    /// <summary>
+    /// A client for seeding and inspecting buckets independently of the adapter under test. Retries more than the SDK's
+    /// default: seeding thousands of objects in parallel can make the throwaway container drop a connection mid-request
+    /// (HttpIOException "response ended prematurely"), which is a transient network error the SDK retries.
+    /// </summary>
     public AmazonS3Client AdminClient() => new(new BasicAWSCredentials(AccessKey, SecretKey),
-        new AmazonS3Config { ServiceURL = Endpoint, ForcePathStyle = true, AuthenticationRegion = "us-east-1",
+        new AmazonS3Config { ServiceURL = Endpoint, ForcePathStyle = true, AuthenticationRegion = "us-east-1", MaxErrorRetry = 8,
             RequestChecksumCalculation = RequestChecksumCalculation.WHEN_REQUIRED, ResponseChecksumValidation = ResponseChecksumValidation.WHEN_REQUIRED });
 
     /// <summary>Creates a fresh bucket holding exactly <paramref name="objects"/> (key to content).</summary>
