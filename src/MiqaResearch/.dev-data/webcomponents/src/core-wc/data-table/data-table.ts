@@ -579,7 +579,9 @@ export class DataTable extends LitElement {
                                 ? (this._resolveAccessor(row, column.accessor) as number[])
                                 : [],
                               column.hslColor ?? { hue: 200, saturation: 100, lightness: 50 })
-                            : html`<td>${this._formatCellValue(column, this._resolveAccessor(row, column.accessor))}</td>`;
+                            : column.dataType === "button"
+                              ? this._renderButtonCell(column, row)
+                              : html`<td>${this._formatCellValue(column, this._resolveAccessor(row, column.accessor))}</td>`;
                 })}
               </tr>
             `
@@ -588,6 +590,27 @@ export class DataTable extends LitElement {
       </table>
       ${this._renderPager()}
     `;
+  }
+
+  /** A button cell: empty unless the row has a value for the column; the click is reported as a composed `row-action`. */
+  private _renderButtonCell(column: ColumnDefinition, row: DataRow) {
+    const value = this._resolveAccessor(row, column.accessor);
+    if (value === null || value === undefined || value === "") {
+      return html`<td></td>`;
+    }
+    return html`<td>
+      <button
+        type="button"
+        @click=${() =>
+          this.dispatchEvent(
+            new CustomEvent("row-action", {
+              detail: { accessor: column.accessor, value, row },
+              bubbles: true,
+              composed: true,
+            })
+          )}
+      >${column.buttonLabel ?? column.label}</button>
+    </td>`;
   }
 
   private _formatCellValue(column: ColumnDefinition, value: unknown) {

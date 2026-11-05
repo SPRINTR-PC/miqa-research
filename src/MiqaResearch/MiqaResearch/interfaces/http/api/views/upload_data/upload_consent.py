@@ -25,7 +25,7 @@ async def upload_consent_v1(request, data: list[UploadConsentSchema]):
     try:
         logger.info("Handling participant consent upload request with upsert method")
         created_count, updated_count = await create_participant_consents(new_consents=data)
-    except Exception as e:
+    except Exception:
         logger.error("Error during participant consent upsertion", exc_info=True)
         return HttpError(
             status_code=500,

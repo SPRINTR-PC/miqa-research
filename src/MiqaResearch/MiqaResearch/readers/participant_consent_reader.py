@@ -1,25 +1,23 @@
 import logging
-from itertools import accumulate, chain, groupby
+from itertools import accumulate, groupby
 from operator import itemgetter
 from typing import Any
 from uuid import UUID
 
-from django.db.models import (
-    Count,
-    F,
-    IntegerField,
-    OuterRef,
-    Q,
-    Subquery
-)
+from django.db.models import Count, F
 from django.utils.translation import gettext
 from ninja.errors import HttpError
 
-from MiqaResearch.data.models import ParticipantConsent, ResearchProject, ConsentDailyActiveSummary
+from contract.constants.research_project_role import (
+    PROJECT_ROLE_ADMIN,
+    PROJECT_ROLE_PARTICIPANT_RECRUITER,
+    PROJECT_ROLE_PI,
+)
+from MiqaResearch.data.models import ConsentDailyActiveSummary, ParticipantConsent, ResearchProject
 from MiqaResearch.data.serializers.charts.bar import (
-    BarChartResponseSchema,
     BarChartConfigSchema,
     BarChartDataSchema,
+    BarChartResponseSchema,
     BarSeriesSchema,
 )
 from MiqaResearch.data.serializers.charts.base import ChartGroupingLabelsSchema, ChartGroupingSchema
@@ -45,8 +43,6 @@ from MiqaResearch.readers.research_project_reader import (
     get_user_project_connected_clinics,
     get_user_project_role_list,
 )
-from contract.constants.research_project_role import PROJECT_ROLE_ADMIN, PROJECT_ROLE_PI, \
-    PROJECT_ROLE_PARTICIPANT_RECRUITER
 
 logger = logging.getLogger("mires")
 

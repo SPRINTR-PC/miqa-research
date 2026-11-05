@@ -1,5 +1,5 @@
 from django.utils.translation import gettext as _
-from ninja import Schema, Router
+from ninja import Router, Schema
 
 router = Router()
 

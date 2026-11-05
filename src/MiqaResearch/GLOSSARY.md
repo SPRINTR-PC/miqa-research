@@ -550,8 +550,11 @@ to the database themselves.
 _Avoid_: Data type (ambiguous with column/field types)
 
 ### ETL Script
-A user-authored program (Python or R, picked by the uploaded file's extension)
-that takes staged input files and produces rows for one ETL Datatype. Both
+A user-authored program (Python or R, chosen explicitly by the author; loading
+a file preselects it from the file's extension) that takes staged input files and
+produces rows for one ETL Datatype. The author enters the code in an editor,
+typed, pasted or loaded from a file; loaded code is treated exactly like typed
+code, so the original filename is not kept. Both
 languages follow the same contract: `main(ctx)` yields (Python) or `emit()`s
 (R) rows, which are validated against the Datatype's schema in the sandbox. Belongs to a Research Project, managed by
 its Admins and Data Managers. **Native Scripts** are the exception: global and
@@ -591,10 +594,20 @@ the project's location grants. Its bucket and prefix are fixed once created;
 only its name changes. See ADR 0034.
 
 ### Location Grant
-A bucket, with an optional prefix, that a Research Project may read from and
-move raw copies to (`EtlLocationGrant`). It is the per-project isolation
-boundary for the one platform-wide ETL credential, so only staff and
-superusers manage grants. See ADR 0034.
+A bucket, with an optional prefix, on one Connected Storage, that a Research
+Project may read from and move raw copies to (`EtlLocationGrant`). It is the
+per-project isolation boundary for that storage's credential, so only staff and
+superusers manage grants. When creating one they may browse the storage's
+buckets and folders instead of typing them. See ADR 0034.
+
+### Connected Storage
+A named, S3-compatible object store the platform's ETL can reach, with the
+endpoint and the credential used to reach it. The credential is held as the
+*names* of environment variables, never as a stored secret. Either declared in
+settings (read-only in the admin) or created in the admin. Staff and superusers
+manage them. Every Location Grant, Source Location and Pipeline Binding belongs
+to exactly one. Directories are not a kind of Connected Storage yet.
+_Avoid_: Bucket (a Connected Storage holds buckets), data source, connection
 
 ### Raw Bucket
 The bucket where source files are moved (copy, verify, then delete source) after

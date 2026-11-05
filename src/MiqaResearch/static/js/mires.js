@@ -94,6 +94,10 @@ function initAppModal() {
     }
   });
 
+  document.body.addEventListener('close-app-modal', function() {
+    modal.close();
+  });
+
   modal.addEventListener('close', function() {
     if (trigger) {
       trigger.focus();
@@ -101,6 +105,17 @@ function initAppModal() {
     }
   });
 }
+
+// A <data-table> button column reports a click as `row-action`; a table that declares `data-row-action-url` gets the
+// modal content for that row loaded from the URL, in which the nil UUID stands in for the row's value.
+const NIL_UUID = '00000000-0000-0000-0000-000000000000';
+
+document.addEventListener('row-action', function(evt) {
+  const table = evt.target.closest('[data-row-action-url]');
+  if (!table || !window.htmx) return;
+  const url = table.dataset.rowActionUrl.replace(NIL_UUID, encodeURIComponent(evt.detail.value));
+  htmx.ajax('GET', url, { target: '#app-modal-content', swap: 'innerHTML', source: table });
+});
 
 document.addEventListener('DOMContentLoaded', function() {
   setActiveMenuItem();

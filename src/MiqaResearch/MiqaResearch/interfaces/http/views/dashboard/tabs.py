@@ -4,24 +4,19 @@ from django.http import Http404, HttpResponse
 from django.shortcuts import render
 from django.template.loader import render_to_string
 
-from MiqaResearch.etl_datatypes import registered_datatype_names
 from MiqaResearch.interfaces.http.forms.etl import (
     EtlBindingCreateForm,
     EtlBindingEditForm,
     EtlLocationGrantForm,
     EtlProjectSettingsForm,
-    EtlScriptCreateForm,
-    EtlScriptVersionCreateForm,
     EtlSourceLocationForm,
 )
 from MiqaResearch.readers.etl_reader import (
     get_bindable_script_versions,
     get_native_scripts,
     get_project_bindings,
-    get_project_custom_scripts,
     get_project_jobs,
     get_project_location_grants,
-    get_project_max_script_source_bytes,
     get_project_settings,
     get_project_source_locations,
     script_version_choices,
@@ -236,15 +231,7 @@ async def etl_section_context(project, permissions, section) -> dict:
     context = {'etl_permissions': permissions}
 
     if section == ETL_SECTION_SCRIPTS:
-        context['custom_scripts'] = await get_project_custom_scripts(project)
         context['native_scripts'] = await get_native_scripts()
-        if permissions.can_manage:
-            max_source_bytes = await get_project_max_script_source_bytes(project)
-            context['script_create_form'] = EtlScriptCreateForm(max_source_bytes=max_source_bytes)
-            # One unbound form rendered into every custom Script's "Add version" (no ids: many per page).
-            context['script_version_form'] = EtlScriptVersionCreateForm(
-                max_source_bytes=max_source_bytes, auto_id=False)
-            context['datatype_names'] = registered_datatype_names()
 
     elif section == ETL_SECTION_BINDINGS:
         context['bindings'] = await get_project_bindings(project)

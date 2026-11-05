@@ -1,10 +1,12 @@
 from uuid import uuid7
+
 from django.db import models
-from .study_participant import StudyParticipant
+
 from .concept import Concept
-from .etl_job import EtlJob
-from .visit_occurrence import VisitOccurrence
 from .dicom_series import DicomSeries
+from .etl_job import EtlJob
+from .study_participant import StudyParticipant
+from .visit_occurrence import VisitOccurrence
 
 
 class Measurement(models.Model):

@@ -1,9 +1,9 @@
 import re
 
 from django import template
-from django.utils.safestring import mark_safe
-from django.contrib.staticfiles import finders
 from django.conf import settings
+from django.contrib.staticfiles import finders
+from django.utils.safestring import mark_safe
 
 register = template.Library()
 
@@ -15,13 +15,13 @@ def svg(icon_name: str, icon_classes: str = None):
 
     if not absolute_path:
         if settings.DEBUG:
-            return f""
+            return ""
         return ""
 
     # Open and read the SVG file
-    with open(absolute_path, 'r', encoding='utf-8') as file:
+    with open(absolute_path, encoding='utf-8') as file:
         svg_content = file.read()
-    
+
     # Add the provided classes to the SVG element. If the SVG already has classes, append the icon_classes to the already present classes.
     if icon_classes:
         # Check if the svg already has a class attribute

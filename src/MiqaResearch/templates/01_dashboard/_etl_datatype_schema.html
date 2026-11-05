@@ -1,0 +1,20 @@
+{% if description %}
+<div class="etl-schema-preview">
+  <p class="font-medium">{% blocktranslate with name=description.name %}Rows a script must emit for “{{ name }}”{% endblocktranslate %}</p>
+  <table>
+    <thead><tr><th>{% translate "Field" %}</th><th>{% translate "Type" %}</th><th></th><th>{% translate "Description" %}</th></tr></thead>
+    <tbody>
+      {% for field in description.fields %}
+      <tr>
+        <td><code>{{ field.name }}</code></td>
+        <td>{{ field.type }}</td>
+        <td>{% if field.required %}{% translate "required" %}{% else %}{% translate "optional" %}{% endif %}</td>
+        <td>{{ field.description }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="text-sm text-muted-foreground">{% translate "Example row (pretty-printed here; emit each row as one JSON object on a single line):" %}</p>
+  <pre class="etl-schema-example">{{ description.example_row }}</pre>
+</div>
+{% endif %}

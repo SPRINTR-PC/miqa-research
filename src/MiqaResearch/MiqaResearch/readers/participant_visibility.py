@@ -19,8 +19,8 @@ e.g. `Exists(visible_participants(u, p).filter(pk=OuterRef(...)))`. The per-Site
 """
 from django.db.models import Exists, OuterRef, Q, QuerySet
 
-from MiqaResearch.data.models import ClientBinding, ParticipantConsent, ResearchProjectUserRoleMap, StudyParticipant
 from contract.constants.research_project_role import PROJECT_ROLE_ADMIN, PROJECT_ROLE_PI
+from MiqaResearch.data.models import ClientBinding, ParticipantConsent, ResearchProjectUserRoleMap, StudyParticipant
 
 ALL_SITES_ROLES = (PROJECT_ROLE_ADMIN, PROJECT_ROLE_PI)
 

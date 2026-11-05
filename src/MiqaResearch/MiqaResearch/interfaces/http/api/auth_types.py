@@ -3,8 +3,6 @@ from ninja.errors import HttpError
 from ninja.security import HttpBearer
 from oauth2_provider.models import AccessToken
 
-from MiqaResearch.data.models import BearerToken
-
 
 class ClientCredentialsAuth(HttpBearer):
     def __init__(self, required_scopes: list[str]):

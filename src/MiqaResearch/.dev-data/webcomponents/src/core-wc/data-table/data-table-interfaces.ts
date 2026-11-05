@@ -1,4 +1,4 @@
-export type ColumnDataType = "string" | "number" | "date"  | "datetime" | "boolean" | "mini-barchart";
+export type ColumnDataType = "string" | "number" | "date"  | "datetime" | "boolean" | "mini-barchart" | "button";
 export type SortDirection = "asc" | "desc";
 export type FilterKind = "text" | "text-exact" | "numeric" | "numeric-range" | "dropdown" | "multi-select" | "date-range" | "boolean";
 
@@ -30,6 +30,7 @@ export interface ColumnDefinition {
   sortable?: boolean;
   dataType?: ColumnDataType;
   hslColor?: HslColor; // for mini-barchart
+  buttonLabel?: string; // for button: the cell shows a button with this text when the value is set; clicking it dispatches `row-action`
   width?: string;
   defaultSort?: SortDirection;
   defaultSortOrder?: number;

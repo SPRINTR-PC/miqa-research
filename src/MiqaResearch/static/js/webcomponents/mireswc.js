@@ -967,13 +967,18 @@ import{_ as e,b as t,c as n,d as r,f as i,g as a,h as o,i as s,l as c,m as l,n a
         <tbody>
           ${r.map(e=>v`
               <tr>
-                ${n.map(t=>t.dataType===`mini-barchart`?this._renderMiniBarChart(Array.isArray(this._resolveAccessor(e,t.accessor))?this._resolveAccessor(e,t.accessor):[],t.hslColor??{hue:200,saturation:100,lightness:50}):v`<td>${this._formatCellValue(t,this._resolveAccessor(e,t.accessor))}</td>`)}
+                ${n.map(t=>t.dataType===`mini-barchart`?this._renderMiniBarChart(Array.isArray(this._resolveAccessor(e,t.accessor))?this._resolveAccessor(e,t.accessor):[],t.hslColor??{hue:200,saturation:100,lightness:50}):t.dataType===`button`?this._renderButtonCell(t,e):v`<td>${this._formatCellValue(t,this._resolveAccessor(e,t.accessor))}</td>`)}
               </tr>
             `)}
         </tbody>
       </table>
       ${this._renderPager()}
-    `}_formatCellValue(t,n){switch(t.dataType){case`date`:return z(n);case`datetime`:return B(n);default:return n??e}}_renderHeader(e){if(!e.sortable)return e.htmlLabel?v`<th >${M(e.label)}</th>`:v`<th>${e.label}</th>`;let t=this._sortState.findIndex(t=>t.column===e.accessor),n=t>=0?this._sortState[t]:void 0,r=t>=0&&this._sortState.length>1?t+1:void 0,i=n?n.direction===`asc`?`▲ `:`▼ `:`▶ `;return v`<th
+    `}_renderButtonCell(e,t){let n=this._resolveAccessor(t,e.accessor);return n==null||n===``?v`<td></td>`:v`<td>
+      <button
+        type="button"
+        @click=${()=>this.dispatchEvent(new CustomEvent(`row-action`,{detail:{accessor:e.accessor,value:n,row:t},bubbles:!0,composed:!0}))}
+      >${e.buttonLabel??e.label}</button>
+    </td>`}_formatCellValue(t,n){switch(t.dataType){case`date`:return z(n);case`datetime`:return B(n);default:return n??e}}_renderHeader(e){if(!e.sortable)return e.htmlLabel?v`<th >${M(e.label)}</th>`:v`<th>${e.label}</th>`;let t=this._sortState.findIndex(t=>t.column===e.accessor),n=t>=0?this._sortState[t]:void 0,r=t>=0&&this._sortState.length>1?t+1:void 0,i=n?n.direction===`asc`?`▲ `:`▼ `:`▶ `;return v`<th
       class="sortable"
       @click=${t=>this._handleHeaderClick(e,t.shiftKey)}
       ><div class="header-content"><span>${i}${e.htmlLabel?M(e.label):e.label}</span><span>${r}</span></div></th

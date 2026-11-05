@@ -8,7 +8,9 @@ import json
 
 from django import forms
 from django.conf import settings
+from django.core.files.base import ContentFile
 from django.forms.fields import InvalidJSONInput
+from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 
 from contract.constants.etl import (
@@ -20,45 +22,114 @@ from contract.constants.etl import (
 )
 from MiqaResearch.etl_config_schema import ConfigSchema, ConfigSchemaInvalid, parse_config_schema
 
+_LANGUAGE_LABELS = {".py": "Python", ".r": "R"}
+
+
+def language_choices() -> list[tuple[str, str]]:
+    """The languages a sandbox image runs (`MIRES_ETL_SCRIPT_IMAGE_KEYS`), keyed by extension (#393)."""
+    return [(extension, _LANGUAGE_LABELS.get(extension, extension.lstrip(".").upper()))
+            for extension in sorted(settings.ETL_SCRIPT_IMAGE_KEYS)]
+
+
+_SCRIPT_TEMPLATES = {
+    ".py": '''import csv
+
+
+def main(ctx):
+    # Yield one dict per row, with the datatype's field names as keys.
+    # ctx.input_dir: folder with the input files; ctx.datatype: datatype name; ctx.config: Binding config.
+    pass
+''',
+    ".r": '''library(jsonlite)
+
+main <- function(ctx) {
+  # Call emit(row) once per row, with a named list holding the datatype's field names.
+  # ctx$input_dir: folder with the input files; ctx$datatype: datatype name; ctx$config: Binding config.
+}
+''',
+}
+
+
+def script_template(extension: str) -> str:
+    """The starter code a new Script begins with in the editor, per language (#393); empty for a
+    language without one."""
+    return _SCRIPT_TEMPLATES.get(extension.lower(), "")
+
+
+def script_source_filename(script_name: str, extension: str) -> str:
+    """The stored filename for editor-entered code (#393): the slugified Script name plus the language's
+    extension, so typed, pasted and file-loaded code are stored identically. Falls back to `script`."""
+    return f"{slugify(script_name) or 'script'}{extension}"
+
+
+def _with_help(field, popover_id, help_label):
+    """Marks a field as having a help popover (#393): the template then renders its label row with a "?"
+    button outside any <label> -- inside one, a click on the field or the label text would be forwarded
+    to the button and open the popover."""
+    field.help_popover = popover_id
+    field.help_label = help_label
+    return field
+
+
+def _code_fields():
+    return (
+        _with_help(
+            forms.CharField(label=_("Script code"), widget=forms.Textarea(
+                attrs={"data-etl-code-editor": "", "rows": 16, "spellcheck": "false"})),
+            "etl-script-code-help", _("How is a script written?")),
+        forms.ChoiceField(label=_("Language"), widget=forms.Select(attrs={"data-etl-language": ""})),
+    )
+
 
 class _ScriptVersionUploadMixin:
-    """Shared checks for the two forms that upload an EtlScriptVersion: the `source` file's size,
-    and that its extension names a language a sandbox image runs (#166); and the optional config
-    schema (#238), which must be a valid JSON Schema object."""
+    """Shared checks for the two forms that create an EtlScriptVersion from editor code (#393): the
+    code's size, and its language (which picks the sandbox image, #166); `cleaned_data["source"]`
+    is then the code as a named file, so Actions stay oblivious to how it was entered. Also the
+    optional config schema (#238), which must be a valid JSON Schema object."""
 
-    def __init__(self, *args, max_source_bytes, **kwargs):
+    def __init__(self, *args, max_source_bytes, script_name=None, **kwargs):
         self.max_source_bytes = max_source_bytes
+        self.script_name = script_name
         super().__init__(*args, **kwargs)
+        choices = language_choices()
+        self.fields["language"].choices = choices
+        # The editor starts from the first language's skeleton and swaps it when the language changes
+        # while the code is still untouched (static/js/etl-code-editor.js).
+        self.fields["source_code"].initial = script_template(choices[0][0]) if choices else ""
+        self.fields["source_code"].widget.attrs["data-etl-templates"] = json.dumps(
+            {extension: script_template(extension) for extension, _ in choices})
 
-    def clean_source(self):
-        from MiqaResearch.etl_sandbox.images import image_key_for_script_filename
-
-        source = self.cleaned_data["source"]
-        if image_key_for_script_filename(source.name) is None:
-            supported = " or ".join(sorted(settings.ETL_SCRIPT_IMAGE_KEYS))
-            raise forms.ValidationError(
-                _("Script source must be a %(extensions)s file.") % {"extensions": supported})
-        if source.size > self.max_source_bytes:
-            raise forms.ValidationError(
-                _("Script source must be at most %(max_bytes)d bytes for this project.")
-                % {"max_bytes": self.max_source_bytes})
-        return source
+    def clean(self):
+        cleaned = super().clean()
+        code, extension = cleaned.get("source_code"), cleaned.get("language")
+        if code is None or extension is None:
+            return cleaned
+        data = code.encode()
+        if len(data) > self.max_source_bytes:
+            self.add_error("source_code", _("Script source must be at most %(max_bytes)d bytes for this project.")
+                           % {"max_bytes": self.max_source_bytes})
+            return cleaned
+        name = self.script_name if self.script_name is not None else cleaned.get("name", "")
+        cleaned["source"] = ContentFile(data, name=script_source_filename(name, extension))
+        return cleaned
 
     def clean_config_schema(self):
-        upload = self.cleaned_data["config_schema"]
-        if not upload:
+        text = self.cleaned_data["config_schema"].strip()
+        if not text:
             return None
         try:
-            return parse_config_schema(upload.read())
+            return parse_config_schema(text.encode())
         except ConfigSchemaInvalid as error:
             raise forms.ValidationError(str(error))
 
 
 def _config_schema_field():
-    return forms.FileField(
+    return _with_help(forms.CharField(
         label=_("Config schema (optional JSON Schema)"), required=False,
         help_text=_("Bindings' config must satisfy it; leave empty to keep config free-form."),
-        widget=forms.ClearableFileInput(attrs={"accept": ".json,application/json"}))
+        widget=forms.Textarea(attrs={
+            "data-etl-code-editor": "", "data-etl-fixed-language": ".json", "rows": 10, "spellcheck": "false"})),
+        "etl-config-schema-help", _("What is a config schema?"))
 
 
 def _datatype_choices() -> list[tuple[str, str]]:
@@ -72,7 +143,7 @@ class EtlScriptCreateForm(_ScriptVersionUploadMixin, forms.Form):
     name = forms.CharField(max_length=100)
     description = forms.CharField(required=False, widget=forms.Textarea)
     datatype = forms.ChoiceField(label=_("Datatype"))
-    source = forms.FileField()
+    source_code, language = _code_fields()
     config_schema = _config_schema_field()
 
     def __init__(self, *args, **kwargs):
@@ -91,7 +162,7 @@ class EtlScriptEditForm(forms.Form):
 
 
 class EtlScriptVersionCreateForm(_ScriptVersionUploadMixin, forms.Form):
-    source = forms.FileField(label=_("Source file"))
+    source_code, language = _code_fields()
     config_schema = _config_schema_field()
 
 

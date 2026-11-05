@@ -1,83 +1,23 @@
+{% load static %}
 {% get_current_language as LANGUAGE_CODE %}
 <p class="text-sm text-muted-foreground">{% translate "Native scripts ship with the codebase and are read-only. Custom scripts are project-owned and editable." %}</p>
 {% if manage_error %}<p class="etl-form-error">{{ manage_error }}</p>{% endif %}
 
-{% if script_create_form %}
-<details>
-  <summary class="btn" style="display:inline-flex;width:fit-content;cursor:pointer;">{% include 'components/icon.html' with icon_name='plus' icon_classes='h-4 w-4' %}{% translate "New script" %}</summary>
-  <form style="margin-top:.75rem;" method="post" enctype="multipart/form-data"
-    hx-post="{% url 'dashboard_tab_etl_scripts_create' project.id %}" hx-target="#etl-section-panel" hx-swap="innerHTML" hx-encoding="multipart/form-data">
-    {% csrf_token %}
-    {% for field in script_create_form %}
-      <label class="etl-field"><span>{{ field.label }}</span>{{ field }}
-        {% for error in field.errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
-      </label>
-    {% endfor %}
-    {% for error in script_create_form.non_field_errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
-    <button class="btn" type="submit">{% translate "Create script" %}</button>
-  </form>
-</details>
+{% if etl_permissions.can_manage %}
+<button type="button" class="btn" style="display:inline-flex;width:fit-content;"
+  hx-get="{% url 'dashboard_tab_etl_scripts_create' project.id %}" hx-target="#app-modal-content" hx-swap="innerHTML">{% include 'components/icon.html' with icon_name='plus' icon_classes='h-4 w-4' %}{% translate "New script" %}</button>
 {% endif %}
 
 <div class="rounded-lg border bg-card text-card-foreground shadow-sm">
-  {% if custom_scripts %}
-    <ul class="etl-list">
-      {% for script in custom_scripts %}
-        <li>
-          <div>
-            <p class="font-medium">{{ script.name }}{% if script.archived_at %} <span class="text-sm text-muted-foreground">({% translate "archived" %})</span>{% endif %}</p>
-            <p class="text-sm text-muted-foreground">{{ script.description }}</p>
-            <p class="text-sm text-muted-foreground">{% translate "Datatype" %}: {% if script.datatype_name %}{{ script.datatype_name }}{% else %}{% translate "not set" %}{% endif %}</p>
-            <p class="text-sm text-muted-foreground">{% blocktranslate count count=script.version_count %}{{ count }} version{% plural %}{{ count }} versions{% endblocktranslate %}</p>
-            {% include '01_dashboard/_etl_script_config_schema_note.html' %}
-          </div>
-          {% if etl_permissions.can_manage and not script.archived_at %}
-          <div class="etl-manage-actions">
-            <details>
-              <summary class="btn">{% translate "Edit" %}</summary>
-              <form method="post" hx-post="{% url 'dashboard_tab_etl_script_edit' project.id script.id %}" hx-target="#etl-section-panel" hx-swap="innerHTML">
-                {% csrf_token %}
-                <label class="etl-field"><span>{% translate "Name" %}</span><input type="text" name="name" value="{{ script.name }}" required></label>
-                <label class="etl-field"><span>{% translate "Description" %}</span><textarea name="description">{{ script.description }}</textarea></label>
-                {% if not script.datatype_name %}
-                <label class="etl-field"><span>{% translate "Datatype" %}</span>
-                  <select name="datatype" required>
-                    <option value=""></option>
-                    {% for datatype_name in datatype_names %}<option value="{{ datatype_name }}">{{ datatype_name }}</option>{% endfor %}
-                  </select>
-                </label>
-                {% endif %}
-                <button class="btn" type="submit">{% translate "Save" %}</button>
-              </form>
-            </details>
-            <details>
-              <summary class="btn">{% translate "Add version" %}</summary>
-              <form method="post" enctype="multipart/form-data" hx-post="{% url 'dashboard_tab_etl_script_version_create' project.id script.id %}" hx-target="#etl-section-panel" hx-swap="innerHTML" hx-encoding="multipart/form-data">
-                {% csrf_token %}
-                {% for field in script_version_form %}
-                <label class="etl-field"><span>{{ field.label }}</span>{{ field }}</label>
-                {% endfor %}
-                <button class="btn" type="submit">{% translate "Upload version" %}</button>
-              </form>
-            </details>
-            {% if etl_permissions.can_manage_admin_only %}
-            <form method="post" hx-post="{% url 'dashboard_tab_etl_script_archive' project.id script.id %}" hx-target="#etl-section-panel" hx-swap="innerHTML">
-              {% csrf_token %}
-              <button class="btn" type="submit">{% include 'components/icon.html' with icon_name='trash' icon_classes='h-4 w-4' %}{% translate "Archive" %}</button>
-            </form>
-            {% endif %}
-          </div>
-          {% endif %}
-        </li>
-      {% endfor %}
-    </ul>
-  {% else %}
-    <div class="p-6 py-16 text-center text-muted-foreground space-y-2">
-      {% include "components/icon.html" with icon_name="pencil" %}
-      <p class="font-medium">{% translate "No scripts registered yet" %}</p>
-      <p class="text-sm">{% translate "Create a custom script above, or customize a native script below." %}</p>
-    </div>
-  {% endif %}
+  {# `row-action` from the Edit buttons opens the Edit script modal (mires.js); the nil UUID stands in for the row's id #}
+  <data-table
+    id="etl-custom-scripts-table"
+    dataUrl="{% url 'api-v1:etl_scripts_table' project.id %}"
+    data-row-action-url="{% url 'dashboard_tab_etl_script_edit' project.id '00000000-0000-0000-0000-000000000000' %}"
+    noDataMessage="{% translate 'No scripts registered yet. Create a custom script above, or customize a native script below.' %}"
+    loadingMessage="{% translate 'Loading data...' %}"
+    striped="true"
+  ></data-table>
 </div>
 
 <p class="text-sm text-muted-foreground">{% translate "Built-in scripts ship with every project. Manage log retention and size overrides for them under Defaults." %}</p>
@@ -111,3 +51,6 @@
     </div>
   {% endif %}
 </div>
+
+{% if etl_permissions.can_manage %}{% include '01_dashboard/_etl_config_schema_help.html' %}{% include '01_dashboard/_etl_script_code_help.html' %}{% endif %}
+<script src="{% static 'js/etl-code-editor.js' %}"></script>
