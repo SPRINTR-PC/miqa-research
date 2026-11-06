@@ -14,7 +14,6 @@ from datetime import date
 import docker
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
-from docker.errors import ImageNotFound
 
 from contract.constants.etl import ETL_SCRIPT_ORIGIN_CUSTOM
 from MiqaResearch.data.models import (
@@ -31,25 +30,14 @@ from MiqaResearch.etl_datatypes import load_jsonl
 from MiqaResearch.etl_sandbox import SandboxLimits, SandboxRunSpec, resolve_limits
 from MiqaResearch.etl_sandbox.compose_backend import ComposeSandboxBackend
 from MiqaResearch.etl_shim import contract
+from tests.sandbox_docker import docker_client_for
 
 IMAGE_REF = "mires-etl-sandbox-python:dev"
-DOCKER_HOST = "unix:///var/run/docker.sock"
 
 
 @pytest.fixture
-def docker_client():
-    client = docker.DockerClient(base_url=DOCKER_HOST)
-    try:
-        client.ping()
-    except Exception as exc:
-        pytest.skip(f"no Docker/Podman daemon reachable at {DOCKER_HOST}: {exc}")
-    try:
-        client.images.get(IMAGE_REF)
-    except ImageNotFound:
-        pytest.skip(
-            f"{IMAGE_REF} not built locally -- run "
-            "`docker compose --profile etl-sandbox-build build mires_etl_sandbox_python` first")
-    return client
+def docker_client(settings):
+    return docker_client_for(IMAGE_REF, settings=settings)
 
 
 @pytest.fixture(autouse=True)

@@ -11,6 +11,13 @@ To open it for one run, override the option on the command line (the last value 
 uv run pytest --should-open-report=always   # or: failed
 ```
 
+#### Sandbox container tests (Docker, Docker Desktop or Podman)
+The real-container ETL sandbox tests are `long_running`, so they are excluded by default. Run them with `uv run pytest tests/test_etl_sandbox_compose_integration.py tests/test_etl_sandbox_r_integration.py -m ""`.
+
+- The daemon socket is found automatically (`MIRES_SANDBOX_DOCKER_HOST`, then `DOCKER_HOST`, then the active Docker context, then `/var/run/docker.sock`). Set `MIRES_SANDBOX_DOCKER_HOST` only to override it, e.g. `unix://$HOME/.docker/run/docker.sock`.
+- Missing images (`mires-etl-sandbox-python:dev`, `mires-etl-sandbox-r:dev`) are built on first use with `docker build`, which takes a few minutes. Set `MIRES_TEST_BUILD_SANDBOX_IMAGES=0` to skip those tests instead of building.
+- No reachable daemon, or a failed build, skips the tests rather than failing them.
+
 ### Consent fixture (dev/test data)
 2000 fake participant consents, 10 clinics, 1 research project (`SPRiNTR`). Generator: `src/MiqaResearch/MiqaResearch/data/fixtures/consent_data.py`. Output: `consent_data.json` next to it.
 
