@@ -1,0 +1,30 @@
+<div class="etl-storage-browse rounded-md border p-3 space-y-2" id="etl-storage-browser">
+  <p class="text-sm text-muted-foreground">{% blocktranslate with name=storage.name %}Browsing “{{ name }}” (read-only). File contents are never shown.{% endblocktranslate %}</p>
+  {% if browse_error %}
+    <p class="etl-form-error">{{ browse_error }} {% translate "You can still type the bucket and prefix." %}</p>
+  {% elif listing %}
+    {% if not bucket %}
+      <p class="font-medium">{% translate "Buckets" %}</p>
+      <ul>
+        {% for name in listing.buckets %}
+          <li><button type="button" class="btn" hx-get="{% url 'dashboard_tab_etl_storage_browse' project.id storage.id %}?bucket={{ name|urlencode }}" hx-target="#etl-storage-browser" hx-swap="outerHTML">{{ name }}</button></li>
+        {% empty %}<li class="text-sm text-muted-foreground">{% translate "No buckets found." %}</li>{% endfor %}
+      </ul>
+    {% else %}
+      <p class="font-medium">{{ bucket }}/{{ prefix }}</p>
+      <p>
+        <button type="button" class="btn" hx-get="{% url 'dashboard_tab_etl_storage_browse' project.id storage.id %}{% if prefix %}?bucket={{ bucket|urlencode }}&prefix={{ parent_prefix|urlencode }}{% endif %}" hx-target="#etl-storage-browser" hx-swap="outerHTML">{% translate "Up" %}</button>
+        <button type="button" class="btn" data-etl-pick data-bucket="{{ bucket }}" data-prefix="{{ prefix }}">{% translate "Use this folder" %}</button>
+      </p>
+      <ul>
+        {% for folder in listing.folders %}
+          <li><button type="button" class="btn" hx-get="{% url 'dashboard_tab_etl_storage_browse' project.id storage.id %}?bucket={{ bucket|urlencode }}&prefix={{ folder|urlencode }}" hx-target="#etl-storage-browser" hx-swap="outerHTML">{{ folder }}</button></li>
+        {% endfor %}
+        {% for name in listing.objects %}
+          <li class="text-sm text-muted-foreground">{{ name }}</li>
+        {% endfor %}
+        {% if listing.objects_truncated %}<li class="text-sm text-muted-foreground">…</li>{% endif %}
+      </ul>
+    {% endif %}
+  {% endif %}
+</div>

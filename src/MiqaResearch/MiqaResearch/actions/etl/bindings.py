@@ -43,12 +43,13 @@ async def create_pipeline_binding(
     _require_config_fits(script_version, config or {})
 
     already_bound = await PipelineBinding.objects.filter(
-        source_bucket=source_bucket, source_prefix=source_prefix).aexists()
+        storage_id=source_location.storage_id, source_bucket=source_bucket, source_prefix=source_prefix).aexists()
     if already_bound:
         raise EtlBindingConflict("A Binding for that source bucket/prefix already exists.")
 
     binding = await PipelineBinding.objects.acreate(
-        project=project, source_bucket=source_bucket, source_prefix=source_prefix, source_location=source_location,
+        project=project, storage_id=source_location.storage_id, source_bucket=source_bucket,
+        source_prefix=source_prefix, source_location=source_location,
         script_version=script_version, raw_retention=raw_retention, raw_bucket=raw_bucket, raw_prefix=raw_prefix,
         grouping_mode=grouping_mode, **_quiescence_kwargs(quiescence_seconds), config=config or {},
         timeout_seconds_override=timeout_seconds_override, memory_mb_override=memory_mb_override,

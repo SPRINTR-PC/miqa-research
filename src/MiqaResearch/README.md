@@ -2,6 +2,15 @@
 
 ## Developers
 
+### Running tests
+Run from `src/MiqaResearch/`: `uv run pytest`. The HTML report (`report_output/`) is written on every run but is not opened automatically: `pyproject.toml` sets `--should-open-report=never` in `addopts`.
+
+To open it for one run, override the option on the command line (the last value wins):
+
+```
+uv run pytest --should-open-report=always   # or: failed
+```
+
 ### Consent fixture (dev/test data)
 2000 fake participant consents, 10 clinics, 1 research project (`SPRiNTR`). Generator: `src/MiqaResearch/MiqaResearch/data/fixtures/consent_data.py`. Output: `consent_data.json` next to it.
 

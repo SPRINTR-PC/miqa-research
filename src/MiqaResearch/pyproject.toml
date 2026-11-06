@@ -88,7 +88,7 @@ known-first-party = ["MiqaResearch", "data", "documentation"]
 DJANGO_SETTINGS_MODULE = "MiqaResearch.settings"
 python_files = ["tests.py", "test_*.py", "*_tests.py"]
 testpaths = ["tests"]
-addopts = "--reuse-db -m 'not vlm and not long_running and not ocr and not manuals'"
+addopts = "--reuse-db --should-open-report=never -m 'not vlm and not long_running and not ocr and not manuals'"
 asyncio_mode = "auto"
 markers = [
     "slow: mark a test as slow",

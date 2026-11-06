@@ -13,6 +13,7 @@ from contract.constants.etl import (
 
 from .etl_script import EtlScriptVersion
 from .etl_source_location import EtlSourceLocation
+from .etl_storage import EtlStorage, default_storage_id
 from .research_project import ResearchProject
 
 
@@ -21,6 +22,9 @@ class PipelineBinding(models.Model):
     project = models.ForeignKey(
         ResearchProject, on_delete=models.CASCADE, related_name="etl_pipeline_bindings",
         blank=False, null=False, db_index=True)
+    storage = models.ForeignKey(
+        EtlStorage, on_delete=models.PROTECT, related_name="pipeline_bindings", blank=False, null=False,
+        default=default_storage_id)
     source_bucket = models.CharField(max_length=200, blank=False, null=False)
     source_prefix = models.CharField(max_length=500, blank=True, default="")
     source_location = models.ForeignKey(
@@ -69,7 +73,7 @@ class PipelineBinding(models.Model):
     class Meta:
         db_table = "mires_etl_pipeline_binding"
         ordering = ["project", "source_bucket", "source_prefix"]
-        unique_together = [("source_bucket", "source_prefix")]
+        unique_together = [("storage", "source_bucket", "source_prefix")]
         constraints = [
             # "move" needs somewhere to move to; "delete" keeps no raw destination at all (#246).
             models.CheckConstraint(

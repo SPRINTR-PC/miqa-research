@@ -5,8 +5,8 @@ Move = copy with a SHA-256 checksum, then verify size and hash against the copy 
 ETag alone), then delete the source.
 Raw-bucket keys nest by Job id, so re-runs never overwrite prior history.
 
-Plain boto3 against the one platform-wide `MIRES_ETL_S3_*` service credential (client built by
-`s3.build_etl_s3_client`, independent of the sandbox runner's/DICOM pipeline's own S3 wrappers),
+Plain boto3 against the Binding's own Connected Storage (#394; client built by
+`s3.build_storage_client`, independent of the sandbox runner's/DICOM pipeline's own S3 wrappers),
 with per-project bucket isolation enforced in application code via `location_grant_allows`
 (readers/etl_reader.py) -- not per-project RustFS IAM. Within a folder-grouped Job, each input's
 move is independent: one bad file's move failure doesn't block the others.
@@ -33,7 +33,7 @@ from contract.constants.etl import (
 from contract.constants.research_project_role import PROJECT_ROLE_ADMIN, PROJECT_ROLE_DATA_MANAGER
 from MiqaResearch.data.models import AuditLog, EtlJob, EtlJobInput, EtlLocationGrant
 from MiqaResearch.readers.etl_reader import location_grant_allows
-from MiqaResearch.tasks.etl_orchestrator.s3 import build_etl_s3_client
+from MiqaResearch.tasks.etl_orchestrator.s3 import build_storage_client
 
 User = get_user_model()
 
@@ -56,8 +56,8 @@ def move_job_inputs(job: EtlJob) -> None:
     if job.status != ETL_JOB_STATUS_SUCCEEDED:
         return
     binding = job.binding
-    grants = list(EtlLocationGrant.objects.filter(project_id=binding.project_id))
-    client = build_etl_s3_client()
+    grants = list(EtlLocationGrant.objects.filter(project_id=binding.project_id, storage_id=binding.storage_id))
+    client = build_storage_client(binding.storage)
 
     terminal_statuses = (
         ETL_JOB_INPUT_SOURCE_STATUS_MOVED, ETL_JOB_INPUT_SOURCE_STATUS_DELETED,

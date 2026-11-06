@@ -18,6 +18,12 @@ def _sync_native_etl_scripts(sender, **kwargs):
     sync_native_etl_scripts()
 
 
+def _sync_etl_storages(sender, **kwargs):
+    from MiqaResearch.actions.etl.storages import sync_etl_storages
+
+    sync_etl_storages()
+
+
 class DataConfig(AppConfig):
     name = "MiqaResearch.data"
 
@@ -30,3 +36,4 @@ class DataConfig(AppConfig):
         post_migrate.connect(
             _sync_native_etl_scripts, sender=self, dispatch_uid="data.sync_native_etl_scripts"
         )
+        post_migrate.connect(_sync_etl_storages, sender=self, dispatch_uid="data.sync_etl_storages")

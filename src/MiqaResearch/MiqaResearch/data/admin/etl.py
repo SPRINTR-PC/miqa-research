@@ -16,6 +16,7 @@ from MiqaResearch.data.models import (
     EtlScript,
     EtlScriptVersion,
     EtlSourceLocation,
+    EtlStorage,
     PipelineBinding,
 )
 
@@ -94,12 +95,12 @@ class EtlLocationGrantAdmin(ModelAdmin):
     audited, a grant a Source Location or Binding needs isn't deleted, and an existing grant's
     project/bucket/prefix are fixed (delete and re-add instead). No bulk delete, which would skip
     the check."""
-    list_display = ("project", "bucket", "prefix")
-    list_filter = ("project",)
+    list_display = ("project", "storage", "bucket", "prefix")
+    list_filter = ("project", "storage")
     search_fields = ("bucket", "prefix")
 
     def get_readonly_fields(self, request, obj=None):
-        return ("project", "bucket", "prefix") if obj else ()
+        return ("project", "storage", "bucket", "prefix") if obj else ()
 
     def get_actions(self, request):
         actions = super().get_actions(request)
@@ -110,7 +111,8 @@ class EtlLocationGrantAdmin(ModelAdmin):
         if change:
             return
         created = async_to_sync(create_location_grant)(
-            project=obj.project, user=request.user, request=request, bucket=obj.bucket, prefix=obj.prefix)
+            project=obj.project, user=request.user, request=request, bucket=obj.bucket, prefix=obj.prefix,
+            storage=obj.storage)
         obj.pk = created.pk
 
     def delete_view(self, request, object_id, extra_context=None):
@@ -160,3 +162,46 @@ class EtlPendingGroupAdmin(ModelAdmin):
 
     class Meta:
         model = EtlPendingGroup
+
+
+@admin.register(EtlStorage)
+class EtlStorageAdmin(ModelAdmin):
+    """Connected Storages (#394), managed by staff. Only env-var *names* are stored, never a secret.
+    The Default storage (the MIRES_ETL_S3_* settings) and storages declared in MIRES_ETL_STORAGES
+    are read-only here; the Default can't be deleted either."""
+    list_display = ("name", "kind", "endpoint_url", "region", "source", "credentials")
+    search_fields = ("name", "endpoint_url")
+
+    @admin.display(description="Managed by")
+    def source(self, obj):
+        if obj.is_default:
+            return "MIRES_ETL_S3_* settings"
+        if obj.managed_by_settings:
+            return "no longer in settings" if obj.no_longer_in_settings else "MIRES_ETL_STORAGES"
+        return "admin"
+
+    @admin.display(description="Credentials")
+    def credentials(self, obj):
+        return "configured" if obj.credentials_configured else "credentials not configured"
+
+    @staticmethod
+    def _locked(obj) -> bool:
+        return obj is not None and (obj.is_default or obj.managed_by_settings)
+
+    def has_module_permission(self, request):
+        return request.user.is_active and request.user.is_staff
+
+    def has_view_permission(self, request, obj=None):
+        return request.user.is_active and request.user.is_staff
+
+    def has_add_permission(self, request):
+        return request.user.is_active and request.user.is_staff
+
+    def has_change_permission(self, request, obj=None):
+        return request.user.is_active and request.user.is_staff and not self._locked(obj)
+
+    def has_delete_permission(self, request, obj=None):
+        return request.user.is_active and request.user.is_staff and not self._locked(obj)
+
+    class Meta:
+        model = EtlStorage

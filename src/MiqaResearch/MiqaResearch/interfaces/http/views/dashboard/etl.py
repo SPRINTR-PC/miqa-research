@@ -32,7 +32,8 @@ from MiqaResearch.actions.etl.sources import (
     delete_source_location,
     rename_source_location,
 )
-from MiqaResearch.data.models import EtlLocationGrant, EtlScript, EtlSourceLocation, PipelineBinding
+from MiqaResearch.actions.etl.storages import browse_storage
+from MiqaResearch.data.models import EtlLocationGrant, EtlScript, EtlSourceLocation, EtlStorage, PipelineBinding
 from MiqaResearch.etl_datatypes import DatatypeNotRegistered
 from MiqaResearch.etl_datatypes.describe import describe_datatype
 from MiqaResearch.interfaces.http.forms.etl import (
@@ -52,6 +53,7 @@ from MiqaResearch.readers.etl_reader import (
     get_project_max_script_source_bytes,
     get_project_source_locations,
 )
+from MiqaResearch.readers.etl_storage_browser import EtlStorageBrowseError
 
 from .htmx_auth import htmx_login_required
 from .project import get_user_etl_project_or_404
@@ -287,7 +289,8 @@ async def etl_binding_edit(request, project_id, binding_id):
     user = await request.auser()
     form = EtlBindingEditForm(
         request.POST, **await binding_form_kwargs(research_project, permissions),
-        current_raw_retention=binding.raw_retention, auto_id=binding_edit_auto_id(binding))
+        current_raw_retention=binding.raw_retention, storage_id=binding.storage_id,
+        auto_id=binding_edit_auto_id(binding))
     if form.is_valid():
         error = await _attempt(update_pipeline_binding(
             project=research_project, user=user, request=request, binding=binding,
@@ -421,9 +424,10 @@ async def etl_source_locations_create(request, project_id):
     form = EtlSourceLocationForm(request.POST)
     error = None
     if form.is_valid():
+        storage = await _chosen_storage(form.cleaned_data['storage'])
         error = await _attempt(create_source_location(
             project=research_project, user=await request.auser(), request=request, name=form.cleaned_data['name'],
-            bucket=form.cleaned_data['bucket'], prefix=form.cleaned_data['prefix']))
+            bucket=form.cleaned_data['bucket'], prefix=form.cleaned_data['prefix'], storage=storage))
     failed = error or not form.is_valid()
     return await _rerender_section(
         request, research_project, permissions, ETL_SECTION_SOURCES,
@@ -461,9 +465,10 @@ async def etl_location_grants_create(request, project_id):
     form = EtlLocationGrantForm(request.POST)
     error = None
     if form.is_valid():
+        storage = await _chosen_storage(form.cleaned_data['storage'])
         error = await _attempt(create_location_grant(
             project=research_project, user=await request.auser(), request=request,
-            bucket=form.cleaned_data['bucket'], prefix=form.cleaned_data['prefix']))
+            bucket=form.cleaned_data['bucket'], prefix=form.cleaned_data['prefix'], storage=storage))
     failed = error or not form.is_valid()
     return await _rerender_section(
         request, research_project, permissions, ETL_SECTION_SOURCES,
@@ -479,6 +484,36 @@ async def etl_location_grant_delete(request, project_id, grant_id):
     error = await _attempt(delete_location_grant(
         project=research_project, user=await request.auser(), request=request, grant=grant))
     return await _rerender_section(request, research_project, permissions, ETL_SECTION_SOURCES, manage_error=error)
+
+
+async def _chosen_storage(storage_id) -> EtlStorage | None:
+    """The Connected Storage a form named, 404 if it doesn't exist; None when none was chosen."""
+    return await aget_object_or_404(EtlStorage, id=storage_id) if storage_id else None
+
+
+@htmx_login_required
+async def etl_storage_browse(request, project_id, storage_id):
+    """Read-only browse step in the Location Grant form (#394): buckets, or one folder level of
+    `?bucket=` under `?prefix=`. Staff and superusers only; a failure renders inline so the
+    bucket/prefix can still be typed."""
+    research_project, permissions = await _get_sources_project_or_404(request, project_id)
+    if not permissions.can_manage_location_grants:
+        return HttpResponseForbidden()
+    storage = await aget_object_or_404(EtlStorage, id=storage_id)
+    bucket = request.GET.get('bucket', '')
+    prefix = request.GET.get('prefix', '')
+    listing = error = None
+    try:
+        listing = await browse_storage(
+            user=await request.auser(), request=request, project=research_project, storage=storage,
+            bucket=bucket or None, prefix=prefix)
+    except EtlStorageBrowseError as exc:
+        error = str(exc)
+    return render(request, '01_dashboard/_etl_storage_browse.html', {
+        'project': research_project, 'storage': storage, 'bucket': bucket, 'prefix': prefix,
+        'listing': listing, 'browse_error': error,
+        'parent_prefix': prefix[:prefix.rstrip('/').rfind('/') + 1] if prefix else '',
+    })
 
 
 @htmx_login_required

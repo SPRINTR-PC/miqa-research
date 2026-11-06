@@ -13,6 +13,7 @@ from MiqaResearch.interfaces.http.forms.etl import (
 )
 from MiqaResearch.readers.etl_reader import (
     get_bindable_script_versions,
+    get_etl_storages,
     get_native_scripts,
     get_project_bindings,
     get_project_jobs,
@@ -242,7 +243,7 @@ async def etl_section_context(project, permissions, section) -> dict:
                 **form_kwargs, source_locations=context['source_locations'])
             for binding in context['bindings']:
                 binding.edit_form = EtlBindingEditForm(
-                    **form_kwargs, current_raw_retention=binding.raw_retention,
+                    **form_kwargs, current_raw_retention=binding.raw_retention, storage_id=binding.storage_id,
                     initial=_binding_edit_initial(binding), auto_id=binding_edit_auto_id(binding),
                 )
 
@@ -262,6 +263,8 @@ async def etl_section_context(project, permissions, section) -> dict:
     elif section == ETL_SECTION_SOURCES:
         context['location_grants'] = await get_project_location_grants(project)
         context['source_locations'] = await get_project_source_locations(project)
+        context['storages'] = await get_etl_storages()
+        context['nil_uuid'] = '00000000-0000-0000-0000-000000000000'
         if permissions.can_manage_source_locations:
             context['source_location_form'] = EtlSourceLocationForm()
         if permissions.can_manage_location_grants:

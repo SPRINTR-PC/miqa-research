@@ -9,7 +9,7 @@ from django.test import Client
 from django.urls import reverse
 
 from contract.constants.audit_log import EVENT_TYPE_ETL_LOCATION_GRANT_CREATED, EVENT_TYPE_ETL_LOCATION_GRANT_DELETED
-from MiqaResearch.data.models import AuditLog, EtlLocationGrant, EtlSourceLocation, ResearchProject
+from MiqaResearch.data.models import AuditLog, EtlLocationGrant, EtlSourceLocation, EtlStorage, ResearchProject
 
 User = get_user_model()
 
@@ -37,9 +37,12 @@ def _url(name, *args):
 
 @pytest.mark.django_db
 def test_adding_a_grant_in_the_admin_is_audited(admin_client, project):
-    admin_client.post(_url("etllocationgrant_add"), {"project": project.id, "bucket": "lab", "prefix": ""})
+    storage = EtlStorage.objects.create(name="Lab store", access_key_id_env="A", secret_access_key_env="B")
+    admin_client.post(
+        _url("etllocationgrant_add"), {"project": project.id, "storage": storage.id, "bucket": "lab", "prefix": ""})
 
     grant = EtlLocationGrant.objects.get(bucket="lab")
+    assert grant.storage == storage
     [event] = AuditLog.objects.filter(event_type=EVENT_TYPE_ETL_LOCATION_GRANT_CREATED)
     assert event.metadata == {"etl_location_grant_id": str(grant.id)}
 

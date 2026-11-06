@@ -240,8 +240,10 @@ class EtlBindingEditForm(forms.Form):
     cpu_millicores_override = forms.IntegerField(label=_("CPU override (millicores)"), required=False, min_value=1)
 
     def __init__(self, *args, location_grants, script_version_choices, can_choose_delete,
-                 current_raw_retention=None, config_schemas=None, config_version_id=None, **kwargs):
+                 current_raw_retention=None, config_schemas=None, config_version_id=None, storage_id=None,
+                 **kwargs):
         self.location_grants = location_grants
+        self.storage_id = storage_id  # the Binding's Connected Storage (#394); grants count only on it
         self.can_choose_delete = can_choose_delete
         self.current_raw_retention = current_raw_retention
         super().__init__(*args, **kwargs)
@@ -388,11 +390,16 @@ class EtlBindingEditForm(forms.Form):
         if not raw_bucket:
             self.add_error("raw_bucket", _("A raw bucket is required when inputs are moved to a Raw Bucket."))
         elif not location_grant_allows(
-                self.location_grants, raw_bucket, cleaned.get("raw_prefix") or ""):
+                self.location_grants, raw_bucket, cleaned.get("raw_prefix") or "",
+                storage_id=self._binding_storage_id(cleaned)):
             self.add_error(
                 "raw_bucket",
                 _("This project has not been granted access to that raw bucket/prefix."))
         return cleaned
+
+
+    def _binding_storage_id(self, cleaned):
+        return self.storage_id
 
 
 class EtlBindingCreateForm(EtlBindingEditForm):
@@ -410,17 +417,23 @@ class EtlBindingCreateForm(EtlBindingEditForm):
             for location_id, location in self.source_locations.items()
         ]
 
+    def _binding_storage_id(self, cleaned):
+        location = cleaned.get("source_location")
+        return location.storage_id if location is not None else None
+
     def clean_source_location(self):
         from MiqaResearch.readers.etl_reader import location_grant_allows
 
         location = self.source_locations[self.cleaned_data["source_location"]]
         # A location is created inside a grant, but a grant can still be removed in the Django admin.
-        if not location_grant_allows(self.location_grants, location.bucket, location.prefix):
+        if not location_grant_allows(
+                self.location_grants, location.bucket, location.prefix, storage_id=location.storage_id):
             raise forms.ValidationError(_("This project has not been granted access to that source bucket/prefix."))
         return location
 
 
 class EtlSourceLocationForm(forms.Form):
+    storage = forms.UUIDField(required=False)  # blank: taken from the grant that allows the location
     name = forms.CharField(max_length=100)
     bucket = forms.CharField(max_length=200)
     prefix = forms.CharField(max_length=500, required=False)
@@ -431,6 +444,7 @@ class EtlSourceLocationRenameForm(forms.Form):
 
 
 class EtlLocationGrantForm(forms.Form):
+    storage = forms.UUIDField(required=False)  # blank: the Default storage
     bucket = forms.CharField(max_length=200)
     prefix = forms.CharField(
         max_length=500, required=False, help_text=_("Empty grants access to the whole bucket."))

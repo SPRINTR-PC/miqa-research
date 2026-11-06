@@ -90,6 +90,7 @@ env = environ.Env(
     MIRES_ETL_SCRIPT_MAX_SOURCE_BYTES=(int, 256 * 1024),
     MIRES_ETL_SCRIPT_IMAGE_KEYS=(str, '{".py": "python-etl-v1", ".r": "r-etl-v1"}'),
     MIRES_ETL_SYNC_NATIVE_SCRIPTS_ON_MIGRATE=(bool, True),
+    MIRES_ETL_STORAGES=(str, "[]"),
     MIRES_SANDBOX_BACKEND=(str, "compose"),
     MIRES_SANDBOX_DOCKER_HOST=(str, "unix:///var/run/docker.sock"),
     MIRES_SANDBOX_IMAGE_ALLOWLIST=(str, "{}"),
@@ -219,6 +220,11 @@ ETL_SCRIPT_IMAGE_KEYS: dict[str, str] = json.loads(env("MIRES_ETL_SCRIPT_IMAGE_K
 # Native ETL Scripts (#226) are synced from the codebase after every migrate (ADR 0013's
 # post_migrate precedent); `manage.py sync_native_etl_scripts` does the same on demand.
 ETL_SYNC_NATIVE_SCRIPTS_ON_MIGRATE: bool = env("MIRES_ETL_SYNC_NATIVE_SCRIPTS_ON_MIGRATE")
+# Connected Storages (#394): a JSON list of {name, kind, endpoint_url, region, access_key_id_env,
+# secret_access_key_env}, synced into the database after every migrate (and by
+# `manage.py sync_etl_storages`). The env-var *names* are declared here, never a secret value.
+# The built-in "Default" storage is the MIRES_ETL_S3_* settings above and needs no entry.
+ETL_STORAGES: list[dict] = json.loads(env("MIRES_ETL_STORAGES"))
 
 # ETL sandbox runner (#161, #165): MIRES_SANDBOX_BACKEND selects the SandboxBackend implementation
 # ("compose" or "kubernetes"). MIRES_SANDBOX_DOCKER_HOST is where the Compose backend's

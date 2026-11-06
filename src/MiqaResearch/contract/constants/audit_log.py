@@ -17,6 +17,7 @@ EVENT_TYPE_ETL_SOURCE_LOCATION_RENAMED = "etl_source_location_renamed"
 EVENT_TYPE_ETL_SOURCE_LOCATION_DELETED = "etl_source_location_deleted"
 EVENT_TYPE_ETL_LOCATION_GRANT_CREATED = "etl_location_grant_created"
 EVENT_TYPE_ETL_LOCATION_GRANT_DELETED = "etl_location_grant_deleted"
+EVENT_TYPE_ETL_STORAGE_BROWSED = "etl_storage_browsed"
 EVENT_TYPE_ANNOTATION_CREATED = "annotation_created"
 EVENT_TYPE_ANNOTATION_SUPERSEDED = "annotation_superseded"
 EVENT_TYPE_ANNOTATION_RETIRED = "annotation_retired"
@@ -55,6 +56,7 @@ EVENT_TYPE_CHOICES = [
     (EVENT_TYPE_ETL_SOURCE_LOCATION_DELETED, "ETL source location deleted"),
     (EVENT_TYPE_ETL_LOCATION_GRANT_CREATED, "ETL location grant created"),
     (EVENT_TYPE_ETL_LOCATION_GRANT_DELETED, "ETL location grant deleted"),
+    (EVENT_TYPE_ETL_STORAGE_BROWSED, "ETL connected storage browsed"),
     (EVENT_TYPE_ANNOTATION_CREATED, "Annotation created"),
     (EVENT_TYPE_ANNOTATION_SUPERSEDED, "Annotation superseded"),
     (EVENT_TYPE_ANNOTATION_RETIRED, "Annotation retired"),

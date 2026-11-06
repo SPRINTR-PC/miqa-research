@@ -16,6 +16,7 @@ from MiqaResearch.data.models import (
     EtlScript,
     EtlScriptVersion,
     EtlSourceLocation,
+    EtlStorage,
     PipelineBinding,
     ResearchProject,
 )
@@ -131,15 +132,20 @@ async def get_project_job(project: ResearchProject, job_id) -> EtlJob | None:
     return job
 
 
+async def get_etl_storages() -> list[EtlStorage]:
+    return [storage async for storage in EtlStorage.objects.all()]
+
+
 async def get_project_location_grants(project: ResearchProject) -> list[EtlLocationGrant]:
-    return [grant async for grant in EtlLocationGrant.objects.filter(project=project)]
+    return [grant async for grant in EtlLocationGrant.objects.filter(project=project).select_related("storage")]
 
 
 async def get_project_source_locations(project: ResearchProject) -> list[EtlSourceLocation]:
     """The project's Source Locations (#268), each annotated with `binding_count`."""
     return [
         location async for location in
-        EtlSourceLocation.objects.filter(project=project).annotate(binding_count=Count("bindings"))
+        EtlSourceLocation.objects.filter(project=project).select_related("storage")
+        .annotate(binding_count=Count("bindings"))
     ]
 
 
@@ -181,12 +187,15 @@ async def get_project_max_script_source_bytes(project: ResearchProject) -> int:
     return override if override is not None else django_settings.ETL_SCRIPT_MAX_SOURCE_BYTES
 
 
-def location_grant_allows(grants: list[EtlLocationGrant], bucket: str, prefix: str) -> bool:
+def location_grant_allows(
+        grants: list[EtlLocationGrant], bucket: str, prefix: str, *, storage_id=None) -> bool:
     """Whether `bucket`/`prefix` falls within at least one of the project's `EtlLocationGrant`s.
     A grant with an empty prefix covers the whole bucket; otherwise the requested prefix must be
-    that grant's prefix or a deeper path under it."""
+    that grant's prefix or a deeper path under it. With `storage_id`, only grants on that
+    Connected Storage count (#394): the same bucket name in another storage is another place."""
     return any(
         grant.bucket == bucket and (grant.prefix == "" or prefix.startswith(grant.prefix))
+        and (storage_id is None or grant.storage_id == storage_id)
         for grant in grants
     )
 

@@ -117,6 +117,24 @@ document.addEventListener('row-action', function(evt) {
   htmx.ajax('GET', url, { target: '#app-modal-content', swap: 'innerHTML', source: table });
 });
 
+// Location Grant form (#394): "Browse storage" loads the chosen storage's buckets/folders into the form;
+// "Use this folder" copies the bucket and prefix being browsed into the form's own inputs.
+document.addEventListener('click', function(evt) {
+  const browse = evt.target.closest('[data-etl-browse]');
+  if (browse && window.htmx) {
+    const select = document.getElementById(browse.dataset.select);
+    const url = browse.dataset.url.replace(NIL_UUID, encodeURIComponent(select.value));
+    htmx.ajax('GET', url, { target: '#etl-storage-browser', swap: 'outerHTML', source: browse });
+    return;
+  }
+  const pick = evt.target.closest('[data-etl-pick]');
+  if (pick) {
+    const form = pick.closest('form');
+    form.querySelector('[name=bucket]').value = pick.dataset.bucket;
+    form.querySelector('[name=prefix]').value = pick.dataset.prefix;
+  }
+});
+
 document.addEventListener('DOMContentLoaded', function() {
   setActiveMenuItem();
   setDarkLightModeIcon();

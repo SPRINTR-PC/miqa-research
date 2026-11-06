@@ -130,6 +130,8 @@ erDiagram
     PipelineBinding ||--o{ EtlProcessedFile : "seen files"
     PipelineBinding ||--o{ EtlPendingGroup : "folders awaiting quiescence"
     ResearchProject ||--o{ EtlLocationGrant : "bucket grants"
+    EtlStorage ||--o{ EtlLocationGrant : "granted on"
+    EtlStorage ||--o{ PipelineBinding : "reads via"
     ResearchProject ||--o{ EtlSourceLocation : "named sources"
     EtlSourceLocation ||--o{ PipelineBinding : "source of"
     ResearchProject ||--o| EtlProjectSettings : overrides
@@ -593,8 +595,37 @@ an Admin). Staff and superusers still need project membership (any role) to open
 Views first resolve the project with `get_user_etl_project_or_404`. A view that performs a
 manage action then checks the relevant permission itself and responds 403 if it is missing.
 
-The platform reads and writes every project's source and raw buckets with one S3 service
-credential (`MIRES_ETL_S3_*`). Per-project isolation is enforced in application code through `EtlLocationGrant`:
+(heading-etl-connected-storages)=
+### Connected Storages
+
+A Connected Storage (`EtlStorage`) is an S3-compatible store: a unique name, endpoint URL, region and
+the *names* of the env vars holding its access key id and secret (`access_key_id_env`,
+`secret_access_key_env`). No secret value is stored, logged or rendered. A storage whose env vars are
+unset shows as "credentials not configured" and fails to browse or poll with that message.
+
+Every `EtlLocationGrant`, `EtlSourceLocation` and `PipelineBinding` belongs to one storage (a location
+and Binding take it from their grant). Unique keys include the storage, so the same bucket and prefix in
+two storages are two places. Every S3 call for a Binding or Job (polling, source fetch, raw-bucket move
+and cleanup) builds its client from that Binding's storage (`s3.build_storage_client`), and a grant
+only authorises its own storage.
+
+- **Default**: created by migration and attached to all pre-existing rows. It is the platform-wide
+  `MIRES_ETL_S3_*` settings read *live* (endpoint, region and credentials), so an existing deployment
+  behaves as before. It is read-only in the admin and can't be deleted.
+- **Settings**: `MIRES_ETL_STORAGES` is a JSON list of `{name, kind, endpoint_url, region,
+  access_key_id_env, secret_access_key_env}`, synced after every `migrate` and by
+  `manage.py sync_etl_storages` (`actions/etl/storages.py`). These are read-only in the admin. One
+  removed from settings is deleted if nothing references it, otherwise kept and flagged "no longer in
+  settings". A declared name that clashes with an admin-created storage is skipped and logged.
+- **Admin**: staff and superusers create, edit and delete the rest (env-var names only).
+- **Browsing**: in the Location Grant form, staff and superusers pick a storage, then a bucket
+  (`ListBuckets`; type it instead if the credential can't list), then drill into folders one level at a
+  time, with up to 50 object names per folder for orientation, never contents (`readers/etl_storage_browser.py`,
+  `GET .../etl-pipelines/storages/<id>/browse/`). Choosing a folder fills in the grant's prefix. Errors
+  show inline and typing stays possible. Each browse writes an `etl_storage_browsed` audit event with the
+  storage id and bucket (none for the bucket list), never a prefix or object name.
+
+Per-project isolation is enforced in application code through `EtlLocationGrant`:
 
 - A Source Location can only be created inside a grant, and the wizard re-checks the chosen
   one and the raw location against the grants.
@@ -803,7 +834,8 @@ they are loaded.
 |---|---|---|
 | `MIRES_ETL_S3_ENDPOINT_URL` | *(none)* | S3-compatible endpoint for source and raw buckets. |
 | `MIRES_ETL_S3_REGION_NAME` | `us-east-1` | Region for that endpoint. |
-| `MIRES_ETL_S3_ACCESS_KEY_ID` / `MIRES_ETL_S3_SECRET_ACCESS_KEY` | *(none)* | The single platform-wide ETL service credential. |
+| `MIRES_ETL_S3_ACCESS_KEY_ID` / `MIRES_ETL_S3_SECRET_ACCESS_KEY` | *(none)* | The credential of the built-in `Default` Connected Storage (these `MIRES_ETL_S3_*` settings are read live). |
+| `MIRES_ETL_STORAGES` | `[]` | JSON list of additional Connected Storages (`name`, `kind`, `endpoint_url`, `region`, `access_key_id_env`, `secret_access_key_env`), synced after every `migrate`. See [Connected Storages](#heading-etl-connected-storages). |
 | `MIRES_ETL_POLL_INTERVAL_SECONDS` | `30` | How often every Binding is polled. |
 | `MIRES_ETL_JOB_MAX_AUTO_RETRIES` | `3` | Maximum number of attempts for infra-class failures. |
 | `MIRES_ETL_JOB_STUCK_GRACE_SECONDS` | `300` | Grace period on top of the sandbox timeout before a running Job counts as stuck. |

@@ -49,3 +49,9 @@ ETL_JOB_INPUT_SOURCE_STATUS_CHOICES = [
     (ETL_JOB_INPUT_SOURCE_STATUS_SOURCE_CLEANUP_PENDING, gettext_lazy("Source cleanup pending (retrying)")),
     (ETL_JOB_INPUT_SOURCE_STATUS_SOURCE_CLEANUP_STUCK, gettext_lazy("Source cleanup stuck (needs manual handling)")),
 ]
+
+ETL_STORAGE_KIND_S3 = "s3"
+
+ETL_STORAGE_KIND_CHOICES = [
+    (ETL_STORAGE_KIND_S3, gettext_lazy("S3-compatible")),
+]

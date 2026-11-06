@@ -6,11 +6,12 @@ import boto3
 import pytest
 from moto import mock_aws
 
+from MiqaResearch.data.models.etl_storage import default_storage
 from MiqaResearch.tasks.etl_orchestrator.s3 import EtlBucketSource, EtlBucketSourceError
 
 
 @pytest.fixture(autouse=True)
-def etl_s3_settings(settings):
+def etl_s3_settings(settings, db):
     settings.ETL_S3_ENDPOINT_URL = None
     settings.ETL_S3_REGION_NAME = "us-east-1"
     settings.ETL_S3_ACCESS_KEY_ID = "testing"
@@ -25,7 +26,7 @@ def test_list_objects_returns_every_object_under_the_prefix_recursively():
     client.put_object(Bucket="incoming", Key="redcap/sub/b.csv", Body=b"b")
     client.put_object(Bucket="incoming", Key="other/c.csv", Body=b"c")
 
-    refs = EtlBucketSource("incoming", "redcap/").list_objects()
+    refs = EtlBucketSource("incoming", "redcap/", default_storage()).list_objects()
 
     assert sorted(ref.key for ref in refs) == ["redcap/a.csv", "redcap/sub/b.csv"]
 
@@ -37,7 +38,7 @@ def test_list_objects_excludes_zero_byte_directory_markers():
     client.put_object(Bucket="incoming", Key="redcap/", Body=b"")
     client.put_object(Bucket="incoming", Key="redcap/a.csv", Body=b"a")
 
-    refs = EtlBucketSource("incoming", "redcap/").list_objects()
+    refs = EtlBucketSource("incoming", "redcap/", default_storage()).list_objects()
 
     assert [ref.key for ref in refs] == ["redcap/a.csv"]
 
@@ -49,7 +50,7 @@ def test_list_objects_with_no_prefix_lists_the_whole_bucket():
     client.put_object(Bucket="incoming", Key="a.csv", Body=b"a")
     client.put_object(Bucket="incoming", Key="deep/nest/b.csv", Body=b"b")
 
-    refs = EtlBucketSource("incoming", "").list_objects()
+    refs = EtlBucketSource("incoming", "", default_storage()).list_objects()
 
     assert sorted(ref.key for ref in refs) == ["a.csv", "deep/nest/b.csv"]
 
@@ -60,7 +61,7 @@ def test_list_objects_carries_etag_and_last_modified():
     client.create_bucket(Bucket="incoming")
     client.put_object(Bucket="incoming", Key="redcap/a.csv", Body=b"a")
 
-    [ref] = EtlBucketSource("incoming", "redcap/").list_objects()
+    [ref] = EtlBucketSource("incoming", "redcap/", default_storage()).list_objects()
 
     assert ref.etag
     assert '"' not in ref.etag
@@ -70,7 +71,7 @@ def test_list_objects_carries_etag_and_last_modified():
 @mock_aws
 def test_list_objects_raises_for_a_missing_bucket():
     with pytest.raises(EtlBucketSourceError):
-        EtlBucketSource("no-such-bucket", "redcap/").list_objects()
+        EtlBucketSource("no-such-bucket", "redcap/", default_storage()).list_objects()
 
 
 @mock_aws
@@ -79,7 +80,7 @@ def test_read_returns_the_objects_bytes():
     client.create_bucket(Bucket="incoming")
     client.put_object(Bucket="incoming", Key="redcap/a.csv", Body=b"hello world")
 
-    data = EtlBucketSource("incoming", "redcap/").read("redcap/a.csv")
+    data = EtlBucketSource("incoming", "redcap/", default_storage()).read("redcap/a.csv")
 
     assert data == b"hello world"
 
@@ -90,4 +91,4 @@ def test_read_raises_for_a_missing_key():
     client.create_bucket(Bucket="incoming")
 
     with pytest.raises(EtlBucketSourceError):
-        EtlBucketSource("incoming", "redcap/").read("redcap/does-not-exist.csv")
+        EtlBucketSource("incoming", "redcap/", default_storage()).read("redcap/does-not-exist.csv")

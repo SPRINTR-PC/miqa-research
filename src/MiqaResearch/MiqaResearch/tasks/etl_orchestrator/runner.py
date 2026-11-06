@@ -48,7 +48,7 @@ def run_job(job_id: str) -> EtlJob:
     job.save(update_fields=["status", "started_at"])
 
     binding = job.binding
-    source = EtlBucketSource(binding.source_bucket, binding.source_prefix)
+    source = EtlBucketSource(binding.source_bucket, binding.source_prefix, binding.storage)
     input_files = {}
     for job_input in job.inputs.all():
         data = source.read(job_input.key)

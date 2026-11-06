@@ -7,11 +7,17 @@
   <summary class="btn" style="display:inline-flex;width:fit-content;cursor:pointer;">{% include 'components/icon.html' with icon_name='plus' icon_classes='h-4 w-4' %}{% translate "New source location" %}</summary>
   <form style="margin-top:.75rem;" method="post" hx-post="{% url 'dashboard_tab_etl_source_locations_create' project.id %}" hx-target="#etl-section-panel" hx-swap="innerHTML">
     {% csrf_token %}
-    {% for field in source_location_form %}
+    <label class="etl-field"><span>{% translate "Storage" %}</span>
+      <select name="storage">
+        <option value="">{% translate "From the matching grant" %}</option>
+        {% for storage in storages %}<option value="{{ storage.id }}">{{ storage.name }}</option>{% endfor %}
+      </select>
+    </label>
+    {% for field in source_location_form %}{% if field.name != "storage" %}
       <label class="etl-field"><span>{{ field.label }}</span>{{ field }}
         {% for error in field.errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
       </label>
-    {% endfor %}
+    {% endif %}{% endfor %}
     <button class="btn" type="submit">{% translate "Create source location" %}</button>
   </form>
 </details>
@@ -24,7 +30,7 @@
         <li>
           <div>
             <p class="font-medium">{{ location.name }}</p>
-            <p class="text-sm text-muted-foreground">{{ location.bucket }}/{{ location.prefix }}</p>
+            <p class="text-sm text-muted-foreground">{{ location.storage.name }}: {{ location.bucket }}/{{ location.prefix }}</p>
             <p class="text-sm text-muted-foreground">{% blocktranslate count count=location.binding_count %}Used by {{ count }} binding{% plural %}Used by {{ count }} bindings{% endblocktranslate %}</p>
           </div>
           {% if etl_permissions.can_manage_source_locations %}
@@ -64,11 +70,18 @@
   <summary class="btn" style="display:inline-flex;width:fit-content;cursor:pointer;">{% include 'components/icon.html' with icon_name='plus' icon_classes='h-4 w-4' %}{% translate "New location grant" %}</summary>
   <form style="margin-top:.75rem;" method="post" hx-post="{% url 'dashboard_tab_etl_location_grants_create' project.id %}" hx-target="#etl-section-panel" hx-swap="innerHTML">
     {% csrf_token %}
-    {% for field in location_grant_form %}
+    <label class="etl-field"><span>{% translate "Storage" %}</span>
+      <select name="storage" id="etl-grant-storage">
+        {% for storage in storages %}<option value="{{ storage.id }}">{{ storage.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <button type="button" class="btn" data-etl-browse data-url="{% url 'dashboard_tab_etl_storage_browse' project.id nil_uuid %}" data-select="etl-grant-storage">{% translate "Browse storage" %}</button>
+    <div id="etl-storage-browser"></div>
+    {% for field in location_grant_form %}{% if field.name != "storage" %}
       <label class="etl-field"><span>{{ field.label }}</span>{{ field }}
         {% for error in field.errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
       </label>
-    {% endfor %}
+    {% endif %}{% endfor %}
     <button class="btn" type="submit">{% translate "Create grant" %}</button>
   </form>
 </details>
@@ -78,7 +91,7 @@
     <ul class="etl-list">
       {% for grant in location_grants %}
         <li>
-          <div><p class="font-medium">{{ grant.bucket }}/{{ grant.prefix }}</p></div>
+          <div><p class="font-medium">{{ grant.bucket }}/{{ grant.prefix }}</p><p class="text-sm text-muted-foreground">{{ grant.storage.name }}</p></div>
           {% if etl_permissions.can_manage_location_grants %}
           <div class="etl-manage-actions">
             <form method="post" hx-post="{% url 'dashboard_tab_etl_location_grant_delete' project.id grant.id %}" hx-target="#etl-section-panel" hx-swap="innerHTML"
