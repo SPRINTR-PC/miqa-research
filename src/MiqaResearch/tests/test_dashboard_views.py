@@ -25,7 +25,8 @@ def other_user(db):
 
 @pytest.fixture
 def role(db):
-    return ResearchProjectRole.objects.create(name="Investigator", description="Investigator role")
+    return ResearchProjectRole.objects.get_or_create(
+        name="Investigator", defaults={"description": "Investigator role"})[0]
 
 
 @pytest.fixture
