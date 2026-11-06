@@ -20,7 +20,7 @@ User = get_user_model()
 SECTIONS = ["bindings", "scripts", "jobs", "defaults"]
 SECTION_ICON = {
     "bindings": ">No pipelines connected yet<",
-    "scripts": ">No scripts registered yet<",
+    "scripts": 'noDataMessage="No scripts registered yet.',
     "jobs": ">No jobs yet<",
     "defaults": ">No built-in scripts registered yet<",
 }

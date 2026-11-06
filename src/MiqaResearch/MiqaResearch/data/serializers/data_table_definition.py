@@ -1,7 +1,7 @@
 import logging
 import re
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -56,6 +56,7 @@ class DataTableColumn:
     default_sort: SortDirection | None = None
     default_sort_order: int | None = None
     filter: DataTableFilter | None = None
+    button_label: str | None = None
 
 
 @dataclass(frozen=True)
@@ -78,6 +79,7 @@ class DataTableDefinition:
                 default_sort=column.default_sort,
                 default_sort_order=column.default_sort_order,
                 filter=_filter_schema(column.filter),
+                button_label=column.button_label,
             )
             for column in self.columns
         ]
@@ -230,7 +232,7 @@ def _parse_number(raw: str) -> int | Decimal | None:
 
 def _serialize_value(value: Any) -> Any:
     if isinstance(value, datetime):
-        return value.astimezone(timezone.utc).isoformat()
+        return value.astimezone(UTC).isoformat()
     if isinstance(value, date):
         return value.isoformat()
     return value

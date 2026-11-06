@@ -1,7 +1,9 @@
-from django.db import models
-from django.conf import settings
-from django.contrib.auth.hashers import make_password, check_password
 import secrets
+
+from django.conf import settings
+from django.contrib.auth.hashers import check_password, make_password
+from django.db import models
+
 
 class BearerToken(models.Model):
     token_hash = models.CharField(max_length=255, unique=True, db_index=True)

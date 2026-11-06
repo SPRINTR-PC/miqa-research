@@ -1,0 +1,31 @@
+<div id="etl-config-schema-help" popover class="etl-help-popover">
+  <button type="button" class="btn etl-help-close" popovertarget="etl-config-schema-help" popovertargetaction="hide" aria-label="{% translate 'Close' %}"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M3 3l10 10M13 3L3 13" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg></button>
+  <h3 class="font-medium">{% translate "Config schema" %}</h3>
+  <p>{% translate "Optional. It describes the settings your script accepts, such as a CSV delimiter, file encoding or column names. Those settings belong to the Pipeline Binding, not to the script; the script reads them at run time as ctx.config." %}</p>
+  <p>{% translate "Without a schema, a Binding's config is free-form JSON and nothing is checked until the script fails. With one, the Binding forms show one field per top-level property, using its title as the label and its description as the help text, and a config that does not fit is rejected when the Binding is created, edited or re-pinned to this version. Each script version can carry its own schema." %}</p>
+  <p>{% translate "Write a JSON Schema (Draft 2020-12) whose top level is an object, or load it from a .json file. For example:" %}</p>
+  <pre data-etl-highlight="json">{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "delimiter": {
+      "type": "string", "minLength": 1, "maxLength": 1,
+      "title": "Delimiter",
+      "description": "CSV field delimiter. Default: \",\"."
+    },
+    "encoding": {
+      "type": "string",
+      "title": "Encoding",
+      "description": "File encoding."
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}</pre>
+  <ul>
+    <li><code>properties</code>: {% translate "the settings; each title and description becomes the form label and help text." %}</li>
+    <li><code>required</code>: {% translate "keys that must be set." %}</li>
+    <li><code>additionalProperties: false</code>: {% translate "rejects keys the schema does not list, which catches typos." %}</li>
+  </ul>
+  <p>{% translate "If your script has no per-source settings, leave this empty. You can add a schema later by saving a new version." %}</p>
+</div>

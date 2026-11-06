@@ -6,11 +6,14 @@ resolves the project through `get_user_etl_project_or_404` first, which 404s a u
 view the tab; a view whose action needs more than that (manage, or admin-only manage) then checks
 `etl_permissions` itself and responds 403 -- the page exists for them, the action doesn't.
 """
+import json
 from uuid import UUID
 
-from django.http import Http404, HttpResponseForbidden
+from django.http import Http404, HttpResponse, HttpResponseForbidden
 from django.shortcuts import aget_object_or_404, render
+from django.template.loader import render_to_string
 
+from contract.constants.etl import ETL_SCRIPT_ORIGIN_CUSTOM
 from MiqaResearch.actions.etl.bindings import create_pipeline_binding, update_pipeline_binding
 from MiqaResearch.actions.etl.exceptions import EtlActionError
 from MiqaResearch.actions.etl.jobs import retry_failed_job
@@ -30,6 +33,8 @@ from MiqaResearch.actions.etl.sources import (
     rename_source_location,
 )
 from MiqaResearch.data.models import EtlLocationGrant, EtlScript, EtlSourceLocation, PipelineBinding
+from MiqaResearch.etl_datatypes import DatatypeNotRegistered
+from MiqaResearch.etl_datatypes.describe import describe_datatype
 from MiqaResearch.interfaces.http.forms.etl import (
     EtlBindingCreateForm,
     EtlBindingEditForm,
@@ -42,6 +47,7 @@ from MiqaResearch.interfaces.http.forms.etl import (
     EtlSourceLocationRenameForm,
 )
 from MiqaResearch.readers.etl_reader import (
+    get_latest_version_code,
     get_project_job,
     get_project_max_script_source_bytes,
     get_project_source_locations,
@@ -63,17 +69,22 @@ from .tabs import (
 )
 
 
-async def _rerender_section(request, project, permissions, section, *, manage_error=None, **bound_forms):
+async def _rerender_section(
+        request, project, permissions, section, *, manage_error=None, close_modal=False, **bound_forms):
     """Re-renders `section` after an action; `bound_forms` replace the section's unbound forms
-    (a form that failed validation keeps what was typed)."""
+    (a form that failed validation keeps what was typed). `close_modal` tells the page to close the app modal
+    the action was submitted from (`close-app-modal`, handled in mires.js)."""
     section_context = await etl_section_context(project, permissions, section)
     section_context |= {name: form for name, form in bound_forms.items() if form is not None}
     if manage_error:
         section_context['manage_error'] = manage_error
-    return _htmx_tab_response(
+    response = _htmx_tab_response(
         request, _ETL_SECTION_PANELS[section], project, 'etl-pipelines',
         extra_context={'etl_section': section} | section_context, with_sidebar=True,
     )
+    if close_modal:
+        response['HX-Trigger'] = 'close-app-modal'
+    return response
 
 
 async def _attempt(action) -> str | None:
@@ -91,50 +102,90 @@ def _form_errors(form) -> str:
     return " ".join(message for messages in form.errors.values() for message in messages)
 
 
+async def _script_modal(
+        request, project, permissions, script=None, *, create_form=None, edit_form=None, version_form=None,
+        invalid=False):
+    """The New script (no `script`) or Edit script modal body. A form that failed validation comes back bound, and
+    the response then retargets the modal itself so the errors show where the user is working."""
+    max_source_bytes = await get_project_max_script_source_bytes(project)
+    if script is None:
+        create_form = create_form or EtlScriptCreateForm(max_source_bytes=max_source_bytes)
+    else:
+        edit_form = edit_form or EtlScriptEditForm(initial={'name': script.name, 'description': script.description})
+        if version_form is None:
+            latest = await get_latest_version_code(script)
+            version_form = EtlScriptVersionCreateForm(
+                max_source_bytes=max_source_bytes, script_name=script.name, auto_id=False,
+                initial={
+                    'source_code': latest.code, 'language': latest.extension,
+                    'config_schema': json.dumps(latest.config_schema, indent=2) if latest.config_schema else '',
+                } if latest else None)
+    response = HttpResponse(render_to_string('01_dashboard/_etl_script_modal.html', {
+        'project': project, 'etl_permissions': permissions, 'script': script,
+        'create_form': create_form, 'edit_form': edit_form, 'version_form': version_form,
+    }, request=request))
+    if invalid:
+        response['HX-Retarget'] = '#app-modal-content'
+        response['HX-Reswap'] = 'innerHTML'
+    return response
+
+
+async def _get_editable_custom_script_or_404(project, script_id) -> EtlScript:
+    """A not-archived custom script of this project -- the only kind the Edit modal may open (it carries the
+    script's code, so another project's script must 404 rather than render)."""
+    return await aget_object_or_404(
+        EtlScript, id=script_id, project=project, origin=ETL_SCRIPT_ORIGIN_CUSTOM, archived_at__isnull=True)
+
+
 @htmx_login_required
 async def etl_scripts_create(request, project_id):
+    """GET: the New script modal. POST: creates the script."""
     research_project, permissions = await get_user_etl_project_or_404(request, project_id)
     if not permissions.can_manage:
         return HttpResponseForbidden()
+
+    if request.method == 'GET':
+        return await _script_modal(request, research_project, permissions)
 
     user = await request.auser()
     max_source_bytes = await get_project_max_script_source_bytes(research_project)
     form = EtlScriptCreateForm(request.POST, request.FILES, max_source_bytes=max_source_bytes)
-    if form.is_valid():
-        await create_custom_script(
-            project=research_project, user=user, request=request,
-            name=form.cleaned_data['name'], description=form.cleaned_data['description'],
-            datatype_name=form.cleaned_data['datatype'], source=form.cleaned_data['source'],
-            config_schema=form.cleaned_data['config_schema'],
-        )
-        form = EtlScriptCreateForm(max_source_bytes=max_source_bytes)
+    if not form.is_valid():
+        return await _script_modal(request, research_project, permissions, create_form=form, invalid=True)
 
-    section_context = await etl_section_context(research_project, permissions, ETL_SECTION_SCRIPTS)
-    section_context['script_create_form'] = form
-    return _htmx_tab_response(
-        request, _ETL_SECTION_PANELS[ETL_SECTION_SCRIPTS], research_project, 'etl-pipelines',
-        extra_context={'etl_section': ETL_SECTION_SCRIPTS} | section_context, with_sidebar=True,
+    await create_custom_script(
+        project=research_project, user=user, request=request,
+        name=form.cleaned_data['name'], description=form.cleaned_data['description'],
+        datatype_name=form.cleaned_data['datatype'], source=form.cleaned_data['source'],
+        config_schema=form.cleaned_data['config_schema'],
     )
+    return await _rerender_section(request, research_project, permissions, ETL_SECTION_SCRIPTS, close_modal=True)
 
 
 @htmx_login_required
 async def etl_script_edit(request, project_id, script_id):
+    """GET: the Edit script modal (settings, code and config schema). POST: saves the settings."""
     research_project, permissions = await get_user_etl_project_or_404(request, project_id)
     if not permissions.can_manage:
         return HttpResponseForbidden()
 
+    if request.method == 'GET':
+        script = await _get_editable_custom_script_or_404(research_project, script_id)
+        return await _script_modal(request, research_project, permissions, script)
+
     script = await aget_object_or_404(EtlScript, id=script_id)
     user = await request.auser()
     form = EtlScriptEditForm(request.POST)
-    error = None
-    if form.is_valid():
-        error = await _attempt(update_custom_script(
-            project=research_project, user=user, request=request, script=script,
-            name=form.cleaned_data['name'], description=form.cleaned_data['description'],
-            datatype_name=form.cleaned_data['datatype'],
-        ))
+    if not form.is_valid():
+        return await _script_modal(request, research_project, permissions, script, edit_form=form, invalid=True)
 
-    return await _rerender_section(request, research_project, permissions, ETL_SECTION_SCRIPTS, manage_error=error)
+    error = await _attempt(update_custom_script(
+        project=research_project, user=user, request=request, script=script,
+        name=form.cleaned_data['name'], description=form.cleaned_data['description'],
+        datatype_name=form.cleaned_data['datatype'],
+    ))
+    return await _rerender_section(
+        request, research_project, permissions, ETL_SECTION_SCRIPTS, manage_error=error, close_modal=True)
 
 
 @htmx_login_required
@@ -146,17 +197,17 @@ async def etl_script_version_create(request, project_id, script_id):
     script = await aget_object_or_404(EtlScript, id=script_id)
     user = await request.auser()
     max_source_bytes = await get_project_max_script_source_bytes(research_project)
-    form = EtlScriptVersionCreateForm(request.POST, request.FILES, max_source_bytes=max_source_bytes)
-    error = None
-    if form.is_valid():
-        error = await _attempt(create_script_version(
-            project=research_project, user=user, request=request, script=script,
-            source=form.cleaned_data['source'], config_schema=form.cleaned_data['config_schema'],
-        ))
-    else:
-        error = _form_errors(form)
+    form = EtlScriptVersionCreateForm(
+        request.POST, request.FILES, max_source_bytes=max_source_bytes, script_name=script.name, auto_id=False)
+    if not form.is_valid():
+        return await _script_modal(request, research_project, permissions, script, version_form=form, invalid=True)
 
-    return await _rerender_section(request, research_project, permissions, ETL_SECTION_SCRIPTS, manage_error=error)
+    error = await _attempt(create_script_version(
+        project=research_project, user=user, request=request, script=script,
+        source=form.cleaned_data['source'], config_schema=form.cleaned_data['config_schema'],
+    ))
+    return await _rerender_section(
+        request, research_project, permissions, ETL_SECTION_SCRIPTS, manage_error=error, close_modal=True)
 
 
 @htmx_login_required
@@ -169,7 +220,8 @@ async def etl_script_archive(request, project_id, script_id):
     user = await request.auser()
     error = await _attempt(archive_custom_script(project=research_project, user=user, request=request, script=script))
 
-    return await _rerender_section(request, research_project, permissions, ETL_SECTION_SCRIPTS, manage_error=error)
+    return await _rerender_section(
+        request, research_project, permissions, ETL_SECTION_SCRIPTS, manage_error=error, close_modal=True)
 
 
 @htmx_login_required
@@ -427,3 +479,16 @@ async def etl_location_grant_delete(request, project_id, grant_id):
     error = await _attempt(delete_location_grant(
         project=research_project, user=await request.auser(), request=request, grant=grant))
     return await _rerender_section(request, research_project, permissions, ETL_SECTION_SOURCES, manage_error=error)
+
+
+@htmx_login_required
+async def etl_datatype_schema(request, project_id):
+    """The schema preview shown under the Datatype picker (#393): fields plus an example row."""
+    _, permissions = await get_user_etl_project_or_404(request, project_id)
+    if not permissions.can_manage:
+        return HttpResponseForbidden()
+    try:
+        description = describe_datatype(request.GET.get('datatype', ''))
+    except DatatypeNotRegistered:
+        description = None
+    return render(request, '01_dashboard/_etl_datatype_schema.html', {'description': description})

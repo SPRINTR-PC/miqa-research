@@ -1,0 +1,21 @@
+{
+  "name": "etl-code-editor",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Bundles CodeMirror 6 into static/js/etl-code-editor.js (vendored, no CDN). Run: npm install && npm run build",
+  "scripts": {
+    "build": "esbuild src/index.js --bundle --minify --format=iife --outfile=../../static/js/etl-code-editor.js"
+  },
+  "dependencies": {
+    "@codemirror/commands": "6.8.1",
+    "@codemirror/lang-python": "6.2.1",
+    "@codemirror/language": "6.11.0",
+    "@codemirror/legacy-modes": "6.5.1",
+    "@codemirror/state": "6.5.2",
+    "@codemirror/view": "6.36.8",
+    "@lezer/highlight": "1.2.5"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.4"
+  }
+}

@@ -1,0 +1,20 @@
+{% load i18n %}{% comment %}One form field with its label row, required asterisk, optional help popover button and errors. Needs `field`.{% endcomment %}
+{% if field.field.help_popover %}
+{# A group, not a <label>: a button inside a label receives clicks meant for the label's field #}
+<div class="etl-field" role="group" aria-label="{{ field.label }}"><span>{{ field.label }}{% if field.field.required %}<span class="etl-required" aria-hidden="true">*</span>{% endif %} {% include '01_dashboard/_etl_help_button.html' with popover_id=field.field.help_popover help_label=field.field.help_label %}</span>{{ field }}
+  {% for error in field.errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
+</div>
+{% else %}
+<label class="etl-field"><span>{{ field.label }}{% if field.field.required %}<span class="etl-required" aria-hidden="true">*</span>{% endif %}</span>{{ field }}
+  {% for error in field.errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
+</label>
+{% endif %}
+{% if field.name == "datatype" %}
+<div id="etl-schema-preview" hx-get="{% url 'dashboard_tab_etl_datatype_schema' project.id %}" hx-trigger="change from:previous select" hx-include="previous select" hx-target="this" hx-swap="innerHTML"></div>
+{% elif field.name == "language" %}
+<label class="etl-field"><span>{% translate "Load from file" %}</span>
+  <input type="file" data-etl-load-file="source_code" accept=".py,.r,.R" data-unsupported-message="{% translate 'Only Python (.py) and R (.R) files can be loaded.' %}"></label>
+{% elif field.name == "config_schema" %}
+<label class="etl-field"><span>{% translate "Load config schema from file" %}</span>
+  <input type="file" data-etl-load-file="config_schema" accept=".json,application/json" data-unsupported-message="{% translate 'Only JSON (.json) files can be loaded.' %}"></label>
+{% endif %}

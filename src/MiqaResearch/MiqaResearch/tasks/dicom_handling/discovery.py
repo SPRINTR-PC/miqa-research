@@ -19,9 +19,9 @@ the pipeline's concern and are reported per file, never raised from here.
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
 
 import boto3
 from botocore.exceptions import ClientError

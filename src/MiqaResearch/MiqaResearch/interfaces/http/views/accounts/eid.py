@@ -14,9 +14,9 @@ def bankid_login_redirect(request):
     """
     client_id = getattr(settings, 'EID_CLIENT_ID', 'test-client-id')
     redirect_uri = request.build_absolute_uri(reverse('eid_callback'))
-    
+
     base_url = "https://server.e-identitet.se/v1/auth/openid"
-    
+
     params = {
         'client_id': client_id,
         'redirect_uri': redirect_uri,
@@ -25,7 +25,7 @@ def bankid_login_redirect(request):
         'method': 'bankid', # Specific for BankID
         'state': 'bankid', # Using state to remember method
     }
-    
+
     return redirect(f"{base_url}?{urlencode(params)}")
 
 def eid_callback(request):
@@ -37,12 +37,12 @@ def eid_callback(request):
 
     if not code:
         return redirect('account_login')
-    
+
     # Use action to authenticate
     user = authenticate_with_eid(code, method)
-    
+
     if user:
         auth_login(request, user, backend='django.contrib.auth.backends.ModelBackend')
         return redirect('home')
-    
+
     return redirect('account_login')

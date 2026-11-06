@@ -1,5 +1,4 @@
 import logging
-from http.client import HTTPResponse
 from typing import Any
 from uuid import UUID
 
@@ -9,9 +8,10 @@ from ninja import Router
 from ninja.errors import HttpError
 from ninja.pagination import paginate
 
+from contract.constants.audit_log import EVENT_TYPE_PID_VIEW
 from MiqaResearch.data.models import AuditLog, ResearchProject
 from MiqaResearch.data.serializers.charts.bar import BarChartResponseSchema
-from MiqaResearch.data.serializers.charts.xy import FilledAreaChartResponseSchema, LineChartResponseSchema
+from MiqaResearch.data.serializers.charts.xy import LineChartResponseSchema
 from MiqaResearch.data.serializers.participant_consent import ProjectConsentHistoryByClinicSchema
 from MiqaResearch.interfaces.http.api.pagination import DataTablePagination
 from MiqaResearch.readers.participant_consent_reader import (
@@ -22,7 +22,6 @@ from MiqaResearch.readers.participant_consent_reader import (
     get_consent_table_data_for_project,
 )
 from MiqaResearch.readers.research_project_reader import check_user_project_role_by_name
-from contract.constants.audit_log import EVENT_TYPE_PID_VIEW
 
 logger = logging.getLogger("mires")
 

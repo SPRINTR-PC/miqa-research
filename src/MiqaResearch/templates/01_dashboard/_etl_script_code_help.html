@@ -1,0 +1,54 @@
+<div id="etl-script-code-help" popover class="etl-help-popover">
+  <button type="button" class="btn etl-help-close" popovertarget="etl-script-code-help" popovertargetaction="hide" aria-label="{% translate 'Close' %}"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M3 3l10 10M13 3L3 13" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg></button>
+  <h3 class="font-medium">{% translate "Script code" %}</h3>
+  <p>{% translate "A script reads the files staged for one job and produces rows for the chosen datatype (see the schema shown under the Datatype picker). It runs in an isolated sandbox: no network, no database, no credentials. It never writes to the database; the platform validates the rows and loads them afterwards." %}</p>
+  <p>{% translate "Choose Python or R, and define a function called main that takes one argument, ctx. The platform calls main(ctx) once per job." %}</p>
+
+  <h4 class="font-medium">{% translate "The ctx object" %}</h4>
+  <table>
+    <thead><tr><th>Python</th><th>R</th><th></th></tr></thead>
+    <tbody>
+      <tr><td><code>ctx.input_dir</code></td><td><code>ctx$input_dir</code></td><td>{% translate "Folder with the job's input files (a Path in Python, a string in R). Read-only." %}</td></tr>
+      <tr><td><code>ctx.datatype</code></td><td><code>ctx$datatype</code></td><td>{% translate "Name of the datatype the rows must match, e.g. participant_consent." %}</td></tr>
+      <tr><td><code>ctx.config</code></td><td><code>ctx$config</code></td><td>{% translate "The Pipeline Binding's config (a dict in Python, a list in R); empty if none was set. The config schema itself is not passed." %}</td></tr>
+    </tbody>
+  </table>
+  <p>{% translate "Nothing else is available. The ctx object is built from manifest.json, which the platform copies into the sandbox together with your script and the input files before it starts." %}</p>
+
+  <h4 class="font-medium">Python</h4>
+  <p>{% translate "main returns or yields one dict per row, with the datatype's field names as keys." %}</p>
+  <pre data-etl-highlight="python">import csv
+
+def main(ctx):
+    delimiter = ctx.config.get("delimiter", ",")
+    for path in sorted(ctx.input_dir.glob("*.csv")):
+        with path.open(newline="", encoding="utf-8-sig") as file:
+            for record in csv.DictReader(file, delimiter=delimiter):
+                yield {
+                    "person_source_value": record["Personnummer"],
+                    # ... the other fields of the datatype
+                }</pre>
+
+  <h4 class="font-medium">R</h4>
+  <p>{% translate "main calls emit(row) once per row, where row is a named list (or a one-row data.frame) with the datatype's field names. jsonlite is available." %}</p>
+  <pre data-etl-highlight="r">main &lt;- function(ctx) {
+  delimiter &lt;- if (is.null(ctx$config$delimiter)) "," else ctx$config$delimiter
+  for (path in list.files(ctx$input_dir, pattern = "\\.csv$", full.names = TRUE)) {
+    data &lt;- read.csv(path, sep = delimiter, check.names = FALSE)
+    for (i in seq_len(nrow(data))) {
+      emit(list(
+        person_source_value = data[["Personnummer"]][i]
+        # ... the other fields of the datatype
+      ))
+    }
+  }
+}</pre>
+
+  <h4 class="font-medium">{% translate "What makes a job fail" %}</h4>
+  <ul>
+    <li>{% translate "The script raises an error, or has no main function, or is not valid Python or R." %}</li>
+    <li>{% translate "A row does not match the datatype's schema (a missing required field or a wrong type)." %}</li>
+    <li>{% translate "The job runs longer than its time limit." %}</li>
+  </ul>
+  <p>{% translate "A failed job loads nothing: either every row is loaded or none. Anything the script prints is kept in the job's log." %}</p>
+</div>

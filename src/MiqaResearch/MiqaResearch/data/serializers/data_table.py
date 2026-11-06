@@ -2,7 +2,7 @@ from typing import Literal
 
 from ninja import Schema
 
-ColumnDataType = Literal["string", "number", "date", "datetime", "boolean", "mini-barchart"]
+ColumnDataType = Literal["string", "number", "date", "datetime", "boolean", "mini-barchart", "button"]
 SortDirection = Literal["asc", "desc"]
 FilterKind = Literal["text", "text-exact", "numeric", "numeric-range", "dropdown", "multi-select", "date-range", "boolean"]
 
@@ -34,4 +34,5 @@ class DataTableColumnSchema(Schema):
     default_sort: SortDirection | None = None
     default_sort_order: int | None = None
     filter: DataTableFilterSchema | None = None
+    button_label: str | None = None  # data_type "button": the cell shows a button with this text when the value is set
 

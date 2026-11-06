@@ -72,7 +72,7 @@ async def get_project_connected_clinics(project_id: UUID) -> list[dict[str, str 
             .values("clinic_id", "clinic_name").distinct()
             .order_by("clinic_name")
         )
-    except Exception as e:
+    except Exception:
         logger.error("Error fetching connected clinics for project %s", project_id, exc_info=True)
         raise
 
@@ -113,7 +113,7 @@ async def get_user_project_connected_clinics(request, project_id: UUID) -> list[
             .distinct()
             .order_by("clinic_name")
         )
-    except Exception as e:
+    except Exception:
         logger.error("Error fetching connected clinics for project %s", project_id, exc_info=True)
         raise
 

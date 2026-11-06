@@ -1,5 +1,11 @@
 """Read-only queries backing the ETL Pipelines tab's Scripts/Bindings/Defaults sections (#158)."""
-from django.db.models import Count, Q
+import logging
+from pathlib import PurePath
+from typing import NamedTuple
+
+from asgiref.sync import sync_to_async
+from django.db.models import Case, Count, F, Q, When
+from django.utils.translation import gettext
 
 from contract.constants.etl import ETL_SCRIPT_ORIGIN_CUSTOM, ETL_SCRIPT_ORIGIN_NATIVE
 from MiqaResearch.data.models import (
@@ -13,6 +19,14 @@ from MiqaResearch.data.models import (
     PipelineBinding,
     ResearchProject,
 )
+from MiqaResearch.data.serializers.data_table_definition import (
+    DataTableColumn,
+    DataTableDefinition,
+    DataTableFilter,
+    DataTableSource,
+)
+
+logger = logging.getLogger(__name__)
 
 
 async def get_project_custom_scripts(project: ResearchProject) -> list[EtlScript]:
@@ -23,6 +37,41 @@ async def get_project_custom_scripts(project: ResearchProject) -> list[EtlScript
         EtlScript.objects.filter(project=project, origin=ETL_SCRIPT_ORIGIN_CUSTOM)
         .annotate(version_count=Count("versions"), **_config_schema_version_count())
     ]
+
+
+async def get_project_custom_scripts_table_source(project: ResearchProject, *, can_edit: bool) -> DataTableSource:
+    """The project's custom scripts as a Data Table source. `edit_id` is the script's id while it can be edited (the
+    viewer may manage scripts and the script is not archived), else null, so the table shows no Edit button. The
+    Datatype filter offers the datatypes in use, sorted alphabetically."""
+    datatype_names = sorted({
+        name async for name in
+        EtlScript.objects.filter(project=project, origin=ETL_SCRIPT_ORIGIN_CUSTOM)
+        .exclude(datatype_name="")
+        .values_list("datatype_name", flat=True)
+    })
+    columns = [
+        DataTableColumn("name", gettext("Name"), "string", sortable=True, default_sort="asc",
+                        filter=DataTableFilter("text")),
+        DataTableColumn("description", gettext("Description"), "string"),
+        DataTableColumn("datatype_name", gettext("Datatype"), "string", sortable=True,
+                        filter=DataTableFilter("dropdown", options=tuple((name, name) for name in datatype_names))),
+        DataTableColumn("version_count", gettext("Versions"), "number", sortable=True),
+    # DataTableColumn("config_schema_version_count", gettext("Versions with config schema"), "number", sortable=True),
+        DataTableColumn("archived_at", gettext("Archived"), "datetime", sortable=True),
+    ]
+    if can_edit:
+        columns.append(DataTableColumn("edit_id", "", "button", button_label=gettext("Edit")))
+    definition = DataTableDefinition(columns=tuple(columns))
+    queryset = (
+        EtlScript.objects.filter(project=project, origin=ETL_SCRIPT_ORIGIN_CUSTOM)
+        .annotate(
+            version_count=Count("versions"),
+            **_config_schema_version_count(),
+            edit_id=Case(When(archived_at__isnull=True, then=F("id")), default=None),
+        )
+        .values(*definition.values_fields)
+    )
+    return DataTableSource(queryset, definition)
 
 
 async def get_native_scripts() -> list[EtlScript]:
@@ -140,3 +189,30 @@ def location_grant_allows(grants: list[EtlLocationGrant], bucket: str, prefix: s
         grant.bucket == bucket and (grant.prefix == "" or prefix.startswith(grant.prefix))
         for grant in grants
     )
+
+
+class LatestVersionDraft(NamedTuple):
+    """What the "Add version" editors start from: the latest Version's code, its language
+    extension (e.g. ".py") and its config schema (None when it declares none)."""
+    code: str
+    extension: str
+    config_schema: dict | None
+
+
+async def get_latest_version_code(script: EtlScript) -> LatestVersionDraft | None:
+    """The latest Version's editable content, to prefill the editors when adding a Version (#393);
+    None for a Script without versions, or whose source cannot be read."""
+    latest = await script.versions.order_by("-version").afirst()
+    if latest is None:
+        return None
+
+    def read() -> str:
+        with latest.source.open("rb") as source:
+            return source.read().decode(errors="replace")
+
+    try:
+        code = await sync_to_async(read)()
+    except Exception:  # missing file, unreachable storage: prefill is a convenience, never fatal
+        logger.warning("Could not read source of ETL script version %s for editor prefill", latest.id, exc_info=True)
+        return None
+    return LatestVersionDraft(code, PurePath(latest.source.name).suffix.lower(), latest.config_schema)

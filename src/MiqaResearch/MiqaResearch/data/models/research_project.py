@@ -5,7 +5,6 @@ from django.core.exceptions import ValidationError
 from django.db import models
 
 from contract.constants.research_project_role import PROJECT_ROLE_SITE_PI
-
 from helpers.db_fields import EncryptedCharField
 
 from .clinic import Clinic

@@ -9,6 +9,14 @@ dialog {
     max-width: 28rem;
     width: 90%;
 
+    // Modals holding a code editor (ETL script forms) need room for it.
+    &:has(.etl-script-modal) {
+      width: 95%;
+      max-width: calc(var(--container-max, 1400px) * 0.95);
+      max-height: calc(100vh - 6rem);
+      overflow-y: auto;
+    }
+
     &[open] {
       display: flex;
       flex-direction: column;

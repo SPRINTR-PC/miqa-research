@@ -1250,4 +1250,53 @@ describe("DataTable", () => {
       document.body.removeChild(el);
     });
   });
+
+  describe("button columns", () => {
+    async function mountWithButtonColumn() {
+      const mockResponse: DataTableWireResponse = {
+        columns: [
+          { accessor: "name", label: "Name" },
+          { accessor: "edit_id", label: "", data_type: "button", button_label: "Edit" } as any,
+        ],
+        rows: [
+          { name: "Script A", edit_id: "id-a" },
+          { name: "Archived", edit_id: null },
+        ],
+        pagination: { page: 1, page_size: 50, total_items: 2, total_pages: 1, has_next: false, has_previous: false },
+      };
+      vi.spyOn(ApiService, "getData").mockResolvedValue({ success: true, data: mockResponse, message: "ok" });
+      const el = new DataTable();
+      el.dataUrl = "https://api.example.com/table-data";
+      document.body.appendChild(el);
+      await new Promise((r) => setTimeout(r, 10));
+      await el.updateComplete;
+      return el;
+    }
+
+    it("renders a labelled button only for rows whose value is set", async () => {
+      const el = await mountWithButtonColumn();
+
+      const buttons = el.shadowRoot!.querySelectorAll("tbody button");
+      expect(buttons).toHaveLength(1);
+      expect(buttons[0].textContent?.trim()).toBe("Edit");
+      document.body.removeChild(el);
+    });
+
+    it("dispatches a composed row-action event with the column, value and row when clicked", async () => {
+      const el = await mountWithButtonColumn();
+      const handler = vi.fn();
+      document.body.addEventListener("row-action", handler);
+
+      (el.shadowRoot!.querySelector("tbody button") as HTMLButtonElement).click();
+
+      expect(handler).toHaveBeenCalledOnce();
+      expect((handler.mock.calls[0][0] as CustomEvent).detail).toEqual({
+        accessor: "edit_id",
+        value: "id-a",
+        row: { name: "Script A", edit_id: "id-a" },
+      });
+      document.body.removeEventListener("row-action", handler);
+      document.body.removeChild(el);
+    });
+  });
 });
