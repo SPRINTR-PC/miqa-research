@@ -401,3 +401,70 @@ body.dark .etl-help-popover {
     }
   }
 }
+
+.etl-storage-browse {
+  margin-top: 0.5rem;
+  background-color: var(--color-background);
+}
+#etl-storage-browser:not(:empty) {
+  margin-top: 0.5rem;
+}
+.etl-browse-path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.875rem;
+  color: var(--color-muted-foreground);
+  word-break: break-all;
+}
+.etl-browse-toolbar {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.875rem;
+}
+.etl-browse-tool {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--color-foreground);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.etl-browse-tool:hover {
+  text-decoration: none;
+}
+.etl-browse-list {
+  max-height: 16rem;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  > li {
+    border-bottom: 1px solid var(--color-border);
+    &:last-child {
+      border-bottom: 0;
+    }
+  }
+}
+.etl-browse-entry,
+.etl-browse-file {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.375rem 0.75rem;
+  font-size: 0.875rem;
+  text-align: left;
+}
+.etl-browse-entry {
+  background: none;
+  border: 0;
+  color: var(--color-foreground);
+  cursor: pointer;
+  &:hover {
+    background-color: hsl(var(--color-muted-parts) / 0.25);
+  }
+}
+.etl-browse-file {
+  color: var(--color-muted-foreground);
+}

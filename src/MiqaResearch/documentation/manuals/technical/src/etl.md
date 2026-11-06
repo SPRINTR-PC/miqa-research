@@ -834,6 +834,7 @@ they are loaded.
 |---|---|---|
 | `MIRES_ETL_S3_ENDPOINT_URL` | *(none)* | S3-compatible endpoint for source and raw buckets. |
 | `MIRES_ETL_S3_REGION_NAME` | `us-east-1` | Region for that endpoint. |
+| `MIRES_ETL_S3_VAULT_PATH` | `mires/etl-s3` | With `MIRES_USE_VAULT`, the Vault KV path holding `AccessKeyId` and `SecretAccessKey` for the Default storage. Used only when the two `MIRES_ETL_S3_*` credential vars are unset. |
 | `MIRES_ETL_S3_ACCESS_KEY_ID` / `MIRES_ETL_S3_SECRET_ACCESS_KEY` | *(none)* | The credential of the built-in `Default` Connected Storage (these `MIRES_ETL_S3_*` settings are read live). |
 | `MIRES_ETL_STORAGES` | `[]` | JSON list of additional Connected Storages (`name`, `kind`, `endpoint_url`, `region`, `access_key_id_env`, `secret_access_key_env`), synced after every `migrate`. See [Connected Storages](#heading-etl-connected-storages). |
 | `MIRES_ETL_POLL_INTERVAL_SECONDS` | `30` | How often every Binding is polled. |

@@ -109,6 +109,7 @@ env = environ.Env(
     MIRES_ETL_S3_REGION_NAME=(str, "us-east-1"),
     MIRES_ETL_S3_ACCESS_KEY_ID=(str, None),
     MIRES_ETL_S3_SECRET_ACCESS_KEY=(str, None),
+    MIRES_ETL_S3_VAULT_PATH=(str, "mires/etl-s3"),
     MIRES_ETL_POLL_INTERVAL_SECONDS=(int, 30),
     MIRES_ETL_LOG_RETENTION_DAYS=(int, 30),
     MIRES_ETL_JOB_MAX_AUTO_RETRIES=(int, 3),
@@ -273,8 +274,28 @@ SANDBOX_K8S_EGRESS_PROBE_PORT: int = env("MIRES_SANDBOX_K8S_EGRESS_PROBE_PORT")
 # in "running" (its worker vanished mid-run, with no heartbeat mechanism) is recovered.
 ETL_S3_ENDPOINT_URL: str | None = env("MIRES_ETL_S3_ENDPOINT_URL")
 ETL_S3_REGION_NAME: str | None = env("MIRES_ETL_S3_REGION_NAME")
-ETL_S3_ACCESS_KEY_ID: str | None = env("MIRES_ETL_S3_ACCESS_KEY_ID")
-ETL_S3_SECRET_ACCESS_KEY: str | None = env("MIRES_ETL_S3_SECRET_ACCESS_KEY")
+
+
+def _get_etl_s3_credentials() -> tuple[str | None, str | None]:
+    """The Default Connected Storage's access key id and secret (#394). The MIRES_ETL_S3_* env vars win;
+    otherwise, with Vault on, `AccessKeyId`/`SecretAccessKey` at MIRES_ETL_S3_VAULT_PATH. An unreachable or
+    unseeded Vault leaves them unset (the browse/poll then reports missing credentials) instead of failing startup."""
+    access_key_id = env("MIRES_ETL_S3_ACCESS_KEY_ID")
+    secret_access_key = env("MIRES_ETL_S3_SECRET_ACCESS_KEY")
+    if (access_key_id and secret_access_key) or not env("MIRES_USE_VAULT"):
+        return access_key_id, secret_access_key
+    try:
+        vault_client = vault.get_vault_client(url=env("MIRES_VAULT_URL"), token=env("MIRES_VAULT_TOKEN"))
+        path = env("MIRES_ETL_S3_VAULT_PATH")
+        return (
+            access_key_id or vault.get_vault_secret(vault_client, path, "AccessKeyId"),
+            secret_access_key or vault.get_vault_secret(vault_client, path, "SecretAccessKey"),
+        )
+    except Exception:
+        return access_key_id, secret_access_key
+
+
+ETL_S3_ACCESS_KEY_ID, ETL_S3_SECRET_ACCESS_KEY = _get_etl_s3_credentials()
 ETL_POLL_INTERVAL_SECONDS: int = env("MIRES_ETL_POLL_INTERVAL_SECONDS")
 ETL_LOG_RETENTION_DAYS: int = env("MIRES_ETL_LOG_RETENTION_DAYS")
 ETL_JOB_MAX_AUTO_RETRIES: int = env("MIRES_ETL_JOB_MAX_AUTO_RETRIES")

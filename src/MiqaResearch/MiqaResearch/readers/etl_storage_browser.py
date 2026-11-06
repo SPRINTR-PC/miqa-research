@@ -4,7 +4,7 @@ Every failure is an `EtlStorageBrowseError` with a message safe to show staff in
 from dataclasses import dataclass, field
 
 from botocore.config import Config
-from botocore.exceptions import BotoCoreError, ClientError
+from botocore.exceptions import BotoCoreError, ClientError, NoCredentialsError
 
 from MiqaResearch.tasks.etl_orchestrator.s3 import EtlStorageCredentialsNotConfigured, build_storage_client
 
@@ -65,4 +65,6 @@ def _browse_error(exc: Exception, action: str) -> EtlStorageBrowseError:
         if code in ("NoSuchBucket", "404"):
             return EtlStorageBrowseError("That bucket does not exist.")
         return EtlStorageBrowseError(f"The storage refused the request ({code or 'error'}).")
+    if isinstance(exc, NoCredentialsError):
+        return EtlStorageBrowseError("No credentials are configured for this storage.")
     return EtlStorageBrowseError("Could not reach the storage.")
