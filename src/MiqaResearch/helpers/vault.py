@@ -13,10 +13,10 @@ def get_vault_secret(vault_client: hvac.Client, path: str, secret_name: str):
     try:
         read_response = vault_client.secrets.kv.v2.read_secret_version(path=path)
         secret = read_response["data"]["data"][secret_name]
-    except Exception as e:
-        logger.error(f"Error reading secret from Vault", exc_info=True)
+    except Exception:
+        logger.error("Error reading secret from Vault", exc_info=True)
         raise
-    
+
     return secret
 
 

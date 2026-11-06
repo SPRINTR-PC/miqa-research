@@ -19,8 +19,8 @@ def main():
     # Add custom functionality to ignore directories in collectstatic
     if 'collectstatic' in sys.argv:
         try:
-            from django.conf import settings
             import django
+            from django.conf import settings
             django.setup()
             ignore_dirs = getattr(settings, 'STATIC_ROOT_IGNORES', [])
             for ignore_dir in ignore_dirs:

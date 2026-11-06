@@ -105,7 +105,8 @@ def test_a_grant_on_another_storage_does_not_authorise_the_raw_move(
     binding = _binding(project, script_version, lab_storage)  # lab storage has no grants
     job = EtlJob.objects.create(binding=binding, script_version=script_version, status=ETL_JOB_STATUS_SUCCEEDED)
     s3.put_object(Bucket="incoming", Key="in/a.csv", Body=b"data")
-    job_input = EtlJobInput.objects.create(job=job, bucket="incoming", key="in/a.csv", sha256=hashlib.sha256(b"data").hexdigest(), size_bytes=4)
+    job_input = EtlJobInput.objects.create(
+        job=job, bucket="incoming", key="in/a.csv", sha256=hashlib.sha256(b"data").hexdigest(), size_bytes=4)
 
     raw_bucket_mover.move_job_inputs(job)
 

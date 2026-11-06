@@ -42,9 +42,6 @@ from .dashboard.etl import (
     etl_location_grants_create as dashboard_tab_etl_location_grants_create,
 )
 from .dashboard.etl import (
-    etl_storage_browse as dashboard_tab_etl_storage_browse,
-)
-from .dashboard.etl import (
     etl_script_archive as dashboard_tab_etl_script_archive,
 )
 from .dashboard.etl import (
@@ -67,6 +64,9 @@ from .dashboard.etl import (
 )
 from .dashboard.etl import (
     etl_source_locations_create as dashboard_tab_etl_source_locations_create,
+)
+from .dashboard.etl import (
+    etl_storage_browse as dashboard_tab_etl_storage_browse,
 )
 from .dashboard.index import index as dashboard_index
 from .dashboard.project import project as dashboard_project

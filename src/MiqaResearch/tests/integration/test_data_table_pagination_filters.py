@@ -2,7 +2,7 @@
 Filter kinds the consent table does not declare (dropdown, multi-select) exercised through DataTablePagination against a
 real queryset, using a synthetic Definition over ParticipantConsent.
 """
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from django.test import RequestFactory
@@ -41,7 +41,7 @@ def source(transactional_db):
         participant = StudyParticipant.objects.create(alias1=f"fk-{i}", research_project=project)
         ParticipantConsent.objects.create(
             study_participant=participant, status=status, clinic=clinic, consent_type=consent_type,
-            consent_signed_date=datetime(2026, 1, 1 + i, 8, 0, tzinfo=timezone.utc))
+            consent_signed_date=datetime(2026, 1, 1 + i, 8, 0, tzinfo=UTC))
     definition = DataTableDefinition(columns=(
         DataTableColumn("study_participant__alias1", "Alias", "string", sortable=True),
         DataTableColumn("status", "Status", "string", filter=DataTableFilter("dropdown", _OPTIONS)),

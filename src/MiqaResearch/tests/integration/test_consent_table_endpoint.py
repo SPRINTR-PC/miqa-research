@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -6,6 +6,13 @@ from django.contrib.auth import get_user_model
 from django.test import Client
 from django.urls import reverse
 
+from contract.constants.audit_log import EVENT_TYPE_PID_VIEW
+from contract.constants.research_project_role import (
+    PROJECT_ROLE_ADMIN,
+    PROJECT_ROLE_INVESTIGATOR,
+    PROJECT_ROLE_PARTICIPANT_RECRUITER,
+    PROJECT_ROLE_PI,
+)
 from MiqaResearch.data.models import (
     AuditLog,
     Clinic,
@@ -17,13 +24,6 @@ from MiqaResearch.data.models import (
     StudyParticipant,
 )
 from MiqaResearch.data.models.research_project import ResearchProjectClinicMap
-from contract.constants.audit_log import EVENT_TYPE_PID_VIEW
-from contract.constants.research_project_role import (
-    PROJECT_ROLE_ADMIN,
-    PROJECT_ROLE_INVESTIGATOR,
-    PROJECT_ROLE_PARTICIPANT_RECRUITER,
-    PROJECT_ROLE_PI,
-)
 
 User = get_user_model()
 
@@ -46,7 +46,7 @@ def project_with_consents(db):
         participant = StudyParticipant.objects.create(alias1=f"p-{code}", research_project=project)
         ParticipantConsent.objects.create(
             study_participant=participant, status="Signerat", clinic=clinic, consent_type=consent_type,
-            consent_signed_date=datetime(2026, 1, 1, 9, 0, tzinfo=timezone.utc),
+            consent_signed_date=datetime(2026, 1, 1, 9, 0, tzinfo=UTC),
         )
         clinics[code] = clinic
     return project, clinics
@@ -146,7 +146,7 @@ def _project_with_n_consents(n):
         participant = StudyParticipant.objects.create(alias1=f"paging-{n}-{i}", research_project=project)
         ParticipantConsent.objects.create(
             study_participant=participant, status="Signerat", clinic=clinic, consent_type=consent_type,
-            consent_signed_date=datetime(2026, 3, 1, 10, 15, tzinfo=timezone.utc),
+            consent_signed_date=datetime(2026, 3, 1, 10, 15, tzinfo=UTC),
         )
     return project
 
@@ -307,7 +307,7 @@ def sortable_project(db):
         participant = StudyParticipant.objects.create(alias1=f"sort-{i}", research_project=project)
         ParticipantConsent.objects.create(
             study_participant=participant, status=status, clinic=clinics[clinic], consent_type=consent_type,
-            consent_signed_date=datetime(2026, 2, day, 8, 0, tzinfo=timezone.utc),
+            consent_signed_date=datetime(2026, 2, day, 8, 0, tzinfo=UTC),
         )
     return project
 
@@ -516,7 +516,7 @@ def pid_project(db):
             research_project=project)
         ParticipantConsent.objects.create(
             study_participant=participant, status="Signerat", clinic=clinic, consent_type=consent_type,
-            consent_signed_date=datetime(2026, 1, 1, 9, 0, tzinfo=timezone.utc))
+            consent_signed_date=datetime(2026, 1, 1, 9, 0, tzinfo=UTC))
         clinics[code] = clinic
     return project, clinics
 

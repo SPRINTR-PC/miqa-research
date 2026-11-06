@@ -1,5 +1,5 @@
 """Participant Visibility (#272): the one shared rule for which Study Participants a user may see."""
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -9,16 +9,6 @@ from django.db import connection
 from django.db.models import Exists, OuterRef
 from django.test.utils import CaptureQueriesContext
 
-from MiqaResearch.data.models import (
-    Clinic,
-    ParticipantConsent,
-    ParticipantConsentType,
-    ResearchProject,
-    ResearchProjectRole,
-    ResearchProjectUserRoleMap,
-    StudyParticipant,
-)
-from MiqaResearch.readers.participant_visibility import can_see_participant, visible_participants
 from contract.constants.research_project_role import (
     PROJECT_ROLE_ADMIN,
     PROJECT_ROLE_ANNOTATOR,
@@ -29,6 +19,16 @@ from contract.constants.research_project_role import (
     PROJECT_ROLE_PI,
     PROJECT_ROLE_SITE_PI,
 )
+from MiqaResearch.data.models import (
+    Clinic,
+    ParticipantConsent,
+    ParticipantConsentType,
+    ResearchProject,
+    ResearchProjectRole,
+    ResearchProjectUserRoleMap,
+    StudyParticipant,
+)
+from MiqaResearch.readers.participant_visibility import can_see_participant, visible_participants
 
 SITE_SCOPABLE_ROLES = [
     PROJECT_ROLE_ANNOTATOR, PROJECT_ROLE_CONTRIBUTOR, PROJECT_ROLE_DATA_MANAGER, PROJECT_ROLE_INVESTIGATOR,
@@ -61,8 +61,8 @@ def world(db):
 def _consent(participant, clinic, consent_type, revoked=False):
     return ParticipantConsent.objects.create(
         study_participant=participant, status="Signerat", clinic=clinic, consent_type=consent_type,
-        consent_signed_date=datetime(2026, 1, 1, 9, 0, tzinfo=timezone.utc),
-        consent_revoked_date=datetime(2026, 2, 1, 9, 0, tzinfo=timezone.utc) if revoked else None,
+        consent_signed_date=datetime(2026, 1, 1, 9, 0, tzinfo=UTC),
+        consent_revoked_date=datetime(2026, 2, 1, 9, 0, tzinfo=UTC) if revoked else None,
     )
 
 

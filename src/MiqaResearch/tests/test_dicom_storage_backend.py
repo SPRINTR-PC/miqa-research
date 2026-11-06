@@ -113,7 +113,7 @@ def test_real_rustfs_endpoint_hostname_is_valid_for_boto3():
 
 
 @pytest.mark.long_running
-def test_real_multipart_upload_round_trip_against_rustfs(settings):
+def test_real_multipart_upload_round_trip_against_rustfs(settings, rustfs_endpoint):
     """AC #4: a real multipart upload against the dev-test RustFS container.
 
     Targets the `mires_fs` service from docker-compose.dev-test.yml, by its
@@ -127,7 +127,7 @@ def test_real_multipart_upload_round_trip_against_rustfs(settings):
     """
     settings.DICOM_STORAGE_BACKEND = "s3"
     settings.DICOM_S3_BUCKET = "dicom-long-running-test"
-    settings.DICOM_S3_ENDPOINT_URL = os.environ.get("MIRES_TEST_DICOM_S3_ENDPOINT_URL", "http://miresfs:9000")
+    settings.DICOM_S3_ENDPOINT_URL = rustfs_endpoint
     settings.DICOM_S3_REGION_NAME = "us-east-1"
     settings.DICOM_S3_ACCESS_KEY_ID = "MiresAccessKey"
     settings.DICOM_S3_SECRET_ACCESS_KEY = "MiresSecretKey"

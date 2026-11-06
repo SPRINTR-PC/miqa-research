@@ -18,7 +18,7 @@ import pytest
 
 from MiqaResearch.data.models import DicomFile, DicomSeries, DicomStudy, ResearchProject
 from MiqaResearch.tasks.dicom_handling.pipeline import run_ingestion
-from tests.dicom_fixtures import DEFAULT_PATIENT_ID, build_ct_image, write_dicom
+from tests.dicom_fixtures import build_ct_image, write_dicom
 
 
 @pytest.fixture(autouse=True)

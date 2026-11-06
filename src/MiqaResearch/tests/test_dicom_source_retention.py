@@ -232,7 +232,8 @@ def test_s3_source_object_deleted_after_verified_storage(research_project, tmp_p
     settings.DICOM_DELETE_ORIGINALS_AFTER_STORAGE = True
     client = boto3.client("s3", region_name="us-east-1")
     client.create_bucket(Bucket="ingest-bucket")
-    client.put_object(Bucket="ingest-bucket", Key="a.dcm", Body=write_dicom(build_ct_image(), tmp_path / "a.dcm").read_bytes())
+    client.put_object(
+        Bucket="ingest-bucket", Key="a.dcm", Body=write_dicom(build_ct_image(), tmp_path / "a.dcm").read_bytes())
     client.put_object(Bucket="ingest-bucket", Key="notes.txt", Body=b"not a dicom file" * 20)
 
     report = run_ingestion(research_project, "s3://ingest-bucket")
@@ -248,7 +249,8 @@ def test_s3_source_object_kept_when_retention_disabled(research_project, tmp_pat
     settings.MEDIA_ROOT = tmp_path / "media"
     client = boto3.client("s3", region_name="us-east-1")
     client.create_bucket(Bucket="ingest-bucket")
-    client.put_object(Bucket="ingest-bucket", Key="a.dcm", Body=write_dicom(build_ct_image(), tmp_path / "a.dcm").read_bytes())
+    client.put_object(
+        Bucket="ingest-bucket", Key="a.dcm", Body=write_dicom(build_ct_image(), tmp_path / "a.dcm").read_bytes())
 
     run_ingestion(research_project, "s3://ingest-bucket")
 

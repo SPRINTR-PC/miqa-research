@@ -29,7 +29,8 @@ def research_project(db):
     return ResearchProject.objects.create(name="Task wrapper project", description="Project for #126 tests")
 
 
-def test_ingest_dicom_source_ingests_the_file_and_returns_counts_and_per_file_results(research_project, tmp_path, settings):
+def test_ingest_dicom_source_ingests_the_file_and_returns_counts_and_per_file_results(
+        research_project, tmp_path, settings):
     """Per #103's resolution: the task's result carries per-file counts *and*
     reasons (matching the OCR PipelineResult precedent), not just counts."""
     settings.MEDIA_ROOT = tmp_path / "media"

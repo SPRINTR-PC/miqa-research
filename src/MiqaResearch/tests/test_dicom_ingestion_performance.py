@@ -7,10 +7,11 @@ concurrent runs (real task dispatch, #116's one deliberate exception to
 "call run_ingestion directly"). All against fully synthetic data.
 """
 import itertools
-import os
 import shutil
+import socket
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 import boto3
 import pytest
@@ -28,6 +29,17 @@ from tests.dicom_fixtures import build_ct_image, build_wsi, write_dicom
 def encryption_keys(settings):
     settings.FERNET_KEY = b"EiGdHopiKZdBZwVCP4dVJitPrrDnOuGAd94W4EZpwQc="
     settings.SENSITIVE_DATA_HASH_KEY = "H2QCB14temR-C2JnLORSE5TxPwLd8iy3YygNPQ-corA="
+
+
+def _skip_unless_broker_reachable():
+    """The concurrency test needs the compose network's broker and a worker sharing this checkout and
+    the test database, i.e. it runs inside `mires_testrunner` (docker-compose.dev-test.yml)."""
+    broker = urlparse(django_settings.CELERY_BROKER_URL)
+    try:
+        socket.create_connection((broker.hostname, broker.port or 5672), timeout=3).close()
+    except OSError as exc:
+        pytest.skip(f"Celery broker {broker.hostname}:{broker.port} not reachable ({exc}); "
+                    "run this test inside mires_testrunner")
 
 
 @pytest.mark.long_running
@@ -71,7 +83,8 @@ def test_throughput_many_small_files_meets_acceptance_threshold(benchmark, setti
 
 
 @pytest.mark.long_running
-def test_large_series_via_s3_backend_meets_acceptance_threshold(benchmark, settings, tmp_path, db):
+def test_large_series_via_s3_backend_meets_acceptance_threshold(
+        benchmark, settings, tmp_path, db, rustfs_endpoint):
     """AC #2: one very large synthetic file/series, ingested through the real
     S3-compatible backend (RustFS, docker-compose.dev-test.yml's mires_fs
     service, reached by its `miresfs` hostname -- same real-backend
@@ -81,7 +94,7 @@ def test_large_series_via_s3_backend_meets_acceptance_threshold(benchmark, setti
     settings.DICOM_ALLOWED_SOURCE_ROOTS = [tmp_path]
     settings.DICOM_STORAGE_BACKEND = "s3"
     settings.DICOM_S3_BUCKET = "dicom-perf-large-file-test"
-    settings.DICOM_S3_ENDPOINT_URL = os.environ.get("MIRES_TEST_DICOM_S3_ENDPOINT_URL", "http://miresfs:9000")
+    settings.DICOM_S3_ENDPOINT_URL = rustfs_endpoint
     settings.DICOM_S3_REGION_NAME = "us-east-1"
     settings.DICOM_S3_ACCESS_KEY_ID = "MiresAccessKey"
     settings.DICOM_S3_SECRET_ACCESS_KEY = "MiresSecretKey"
@@ -157,6 +170,7 @@ def test_concurrent_ingestion_runs_via_real_task_dispatch_complete_correctly_and
     the literal 2-character string `"{}"` instead -- ValueError). `enqueue()`
     dispatch is unaffected; only that particular result-reading path is.
     """
+    _skip_unless_broker_reachable()
     # Undo tests/conftest.py's autouse dummy-backend override so this run
     # actually goes through django_tasks_celery.CeleryBackend.
     settings.TASKS = {
