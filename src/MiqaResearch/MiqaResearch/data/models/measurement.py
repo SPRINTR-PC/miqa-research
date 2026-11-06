@@ -30,7 +30,9 @@ class Measurement(models.Model):
         help_text="A foreign key to the standard measurement concept identifier."
     )
     measurement_date = models.DateField(help_text="The date of the Measurement.")
-    measurement_datetime = models.DateTimeField(null=True, blank=True, help_text="The date and time of the Measurement.")
+    measurement_datetime = models.DateTimeField(
+        null=True, blank=True, help_text="The date and time of the Measurement."
+    )
     measurement_type_concept = models.ForeignKey(
         Concept,
         on_delete=models.CASCADE,
@@ -45,7 +47,9 @@ class Measurement(models.Model):
         related_name="measurement_operators",
         help_text="The mathematical operator applied to the value_as_number (e.g., <, =, >)."
     )
-    value_as_number = models.FloatField(null=True, blank=True, help_text="The numerical value of the Measurement result.")
+    value_as_number = models.FloatField(
+        null=True, blank=True, help_text="The numerical value of the Measurement result."
+    )
     value_as_concept = models.ForeignKey(
         Concept,
         on_delete=models.SET_NULL,
@@ -74,7 +78,7 @@ class Measurement(models.Model):
         help_text="The Visit during which the Measurement was recorded."
     )
     # visit_detail_id omitted
-    measurement_source_value = models.CharField(
+    measurement_source_value = models.CharField(  # noqa: DJ001
         max_length=50,
         blank=True,
         null=True,
@@ -88,7 +92,9 @@ class Measurement(models.Model):
         related_name="measurement_source_concepts",
         help_text="The Concept used in the source data."
     )
-    unit_source_value = models.CharField(max_length=50, blank=True, null=True, help_text="The source value for the unit.")
+    unit_source_value = models.CharField(  # noqa: DJ001
+        max_length=50, blank=True, null=True, help_text="The source value for the unit."
+    )
     unit_source_concept = models.ForeignKey(
         Concept,
         on_delete=models.SET_NULL,
@@ -97,7 +103,9 @@ class Measurement(models.Model):
         related_name="unit_source_concepts",
         help_text="The Concept representing the unit in the source data."
     )
-    value_source_value = models.CharField(max_length=50, blank=True, null=True, help_text="The source value for the measurement result.")
+    value_source_value = models.CharField(  # noqa: DJ001
+        max_length=50, blank=True, null=True, help_text="The source value for the measurement result."
+    )
     measurement_event_id = models.UUIDField(
         null=True,
         blank=True,
@@ -109,7 +117,10 @@ class Measurement(models.Model):
         null=True,
         blank=True,
         related_name="meas_event_fields",
-        help_text="The Concept representing the field in the event table (e.g. Image_Occurrence) that this measurement is related to."
+        help_text=(
+            "The Concept representing the field in the event table (e.g. Image_Occurrence) "
+            "that this measurement is related to."
+        ),
     )
 
     # Extension: Linking to DicomSeries (Image_Occurrence)
@@ -139,4 +150,6 @@ class Measurement(models.Model):
         verbose_name_plural = "Measurements"
 
     def __str__(self):
-        return f"Measurement {self.measurement_concept} for {self.person}: {self.value_as_number or self.value_as_concept}"
+        return (
+            f"Measurement {self.measurement_concept} for {self.person}: {self.value_as_number or self.value_as_concept}"
+        )

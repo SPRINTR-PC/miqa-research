@@ -34,7 +34,9 @@ def matches_if_none_match(request, etag: str) -> bool:
     return "*" in candidates or etag in {candidate.removeprefix("W/") for candidate in candidates}
 
 
-def with_cache_headers(response: HttpResponse, etag: str, cache_control: str, vary: tuple[str, ...] = ()) -> HttpResponse:
+def with_cache_headers(
+    response: HttpResponse, etag: str, cache_control: str, vary: tuple[str, ...] = ()
+) -> HttpResponse:
     response["ETag"] = etag
     response["Cache-Control"] = cache_control
     if vary:

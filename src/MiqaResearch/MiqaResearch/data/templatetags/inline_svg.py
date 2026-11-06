@@ -22,7 +22,8 @@ def svg(icon_name: str, icon_classes: str = None):
     with open(absolute_path, encoding='utf-8') as file:
         svg_content = file.read()
 
-    # Add the provided classes to the SVG element. If the SVG already has classes, append the icon_classes to the already present classes.
+    # Add the provided classes to the SVG element.
+    # If the SVG already has classes, append the icon_classes to the already present classes.
     if icon_classes:
         # Check if the svg already has a class attribute
         class_match = re.search(r'<svg[^>]*\sclass=["\']([^"\']*)["\']', svg_content)

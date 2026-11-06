@@ -30,7 +30,9 @@ def project(db):
 
 @pytest.fixture
 def lab(db):
-    return EtlStorage.objects.create(name="Lab", access_key_id_env="LAB_VIEW_KEY", secret_access_key_env="LAB_VIEW_SECRET")
+    return EtlStorage.objects.create(
+        name="Lab", access_key_id_env="LAB_VIEW_KEY", secret_access_key_env="LAB_VIEW_SECRET"
+    )
 
 
 def _member(project, role_name, **flags):

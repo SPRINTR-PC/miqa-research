@@ -119,7 +119,8 @@ def test_a_read_only_role_sees_the_section_but_no_create_form(project):
 
     body = client.get(_scripts_url(project)).content.decode()
 
-    assert "hx-get" not in body.split("<data-table")[0].split("Custom scripts are project-owned")[1]  # no New script button
+    # no New script button
+    assert "hx-get" not in body.split("<data-table")[0].split("Custom scripts are project-owned")[1]
     assert 'name="name"' not in body
 
 
@@ -866,7 +867,10 @@ def test_the_script_code_label_has_a_help_button_describing_the_script_format(pr
 
     popover = re.search(r'<div[^>]*id="etl-script-code-help"[^>]*popover[^>]*>.*?</div>', body, re.S)
     assert popover is not None
-    for expected in ("main(ctx)", "ctx.input_dir", "ctx.datatype", "ctx.config", "emit(", "ctx$input_dir", "manifest.json"):
+    expected_snippets = (
+        "main(ctx)", "ctx.input_dir", "ctx.datatype", "ctx.config", "emit(", "ctx$input_dir", "manifest.json",
+    )
+    for expected in expected_snippets:
         assert expected in popover.group(0)
     for modal in (_new_modal(client, project), _edit_modal(client, project, script)):  # New script, Add version
         buttons = re.findall(r'<button[^>]*popovertarget="etl-script-code-help"[^>]*>', modal)
@@ -988,7 +992,8 @@ def test_add_version_prefills_the_config_schema_editor_with_the_latest_versions_
     body = _edit_modal(_client_as(_user_with_role(project, "Data Manager")), project, script)
 
     version_form = re.search(r'<form[^>]*/versions/"[^>]*>.*?</form>', body, re.S).group(0)
-    prefilled = html.unescape(re.search(r'<textarea[^>]*name="config_schema"[^>]*>(.*?)</textarea>', version_form, re.S).group(1))
+    textarea = re.search(r'<textarea[^>]*name="config_schema"[^>]*>(.*?)</textarea>', version_form, re.S)
+    prefilled = html.unescape(textarea.group(1))
     assert json.loads(prefilled) == DELIMITER_SCHEMA
     assert "\n  " in prefilled  # pretty-printed, not one long line
 
@@ -1017,4 +1022,5 @@ def test_help_buttons_are_not_inside_a_label_so_clicking_the_field_or_its_label_
         assert not [label for label in labels if "popovertarget" in label]
         # the buttons are still there, one per popover in each modal
         for popover in ("etl-script-code-help", "etl-config-schema-help"):
-            assert len(re.findall(rf'<button[^>]*popovertarget="{popover}"(?![^>]*popovertargetaction)[^>]*>', body)) == 1
+            opener = rf'<button[^>]*popovertarget="{popover}"(?![^>]*popovertargetaction)[^>]*>'
+            assert len(re.findall(opener, body)) == 1

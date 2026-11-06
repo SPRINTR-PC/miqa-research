@@ -387,7 +387,10 @@ def test_unknown_or_too_many_sort_columns_are_a_400(sortable_project, admin_of, 
 
 @pytest.mark.django_db
 def test_six_sort_columns_are_accepted(sortable_project, admin_of):
-    sort = "study_participant__alias1,clinic__clinic_name,clinic__clinic_code,status,consent_signed_date,consent_revoked_date"
+    sort = (
+        "study_participant__alias1,clinic__clinic_name,clinic__clinic_code,"
+        "status,consent_signed_date,consent_revoked_date"
+    )
 
     response = _get_table(admin_of(sortable_project), sortable_project.id, sort=sort)
 
@@ -610,7 +613,8 @@ def test_include_pid_is_refused_with_403_for_a_table_viewer_who_may_not_see_pid(
     {"study_participant__person_source_value_hash": "abc"},  # the hash field is an implementation detail
 ])
 def test_pid_columns_can_never_be_sorted_or_substring_filtered(pid_project, include_pid, query):
-    """Encrypted with a random IV: the database can neither order nor substring-match them, so the request is refused."""
+    """Encrypted with a random IV: the database can neither order nor substring-match them,
+    so the request is refused."""
     project, clinics = pid_project
     admin = _eligible_users(project, clinics)["admin"]
 

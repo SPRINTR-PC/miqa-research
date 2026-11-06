@@ -539,11 +539,14 @@ LOGGING = {
     "disable_existing_loggers": False,
     "formatters": {
         "jsonlog": {
-            "format": '{"timestamp":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","file":"%(filename)s","line":%(lineno)d,"message":"%(message)s"}',
+            "format": (
+                '{"timestamp":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s",'
+                '"file":"%(filename)s","line":%(lineno)d,"message":"%(message)s"}'
+            ),
         },
-        "conventional":{
+        "conventional": {
             "format": "%(asctime)s | %(levelname)s | [%(name)s] [%(filename)s:%(lineno)d] | %(message)s",
-        }
+        },
     },
     "handlers": {
         "console": {

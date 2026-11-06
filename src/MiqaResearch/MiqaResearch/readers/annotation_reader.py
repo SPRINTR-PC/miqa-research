@@ -24,7 +24,9 @@ def version_item(provenance: DerivedObjectProvenance) -> dict:
         "retired": provenance.retired,
         "source_series_uids": sources,
         # The series it's drawn on (the Fusion base); ingested objects record none, so their first source.
-        "base_series_uid": provenance.base_series.series_instance_uid if provenance.base_series_id else next(iter(sources), None),
+        "base_series_uid": provenance.base_series.series_instance_uid
+        if provenance.base_series_id
+        else next(iter(sources), None),
     }
 
 

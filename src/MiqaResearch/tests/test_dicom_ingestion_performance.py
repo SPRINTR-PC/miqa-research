@@ -54,7 +54,9 @@ def test_throughput_many_small_files_meets_acceptance_threshold(benchmark, setti
 
     def setup():
         n = next(project_counter)
-        project = ResearchProject.objects.create(name=f"Throughput perf project {n}", description="Project for #126 throughput test")
+        project = ResearchProject.objects.create(
+            name=f"Throughput perf project {n}", description="Project for #126 throughput test"
+        )
         folder = tmp_path / f"batch-{n}"
         for i in range(files_per_round):
             write_dicom(
@@ -121,7 +123,9 @@ def test_large_series_via_s3_backend_meets_acceptance_threshold(
 
     def setup():
         n = next(project_counter)
-        project = ResearchProject.objects.create(name=f"Large-file perf project {n}", description="Project for #126 large-file test")
+        project = ResearchProject.objects.create(
+            name=f"Large-file perf project {n}", description="Project for #126 large-file test"
+        )
         return (project, large_file), {}
 
     def run(project, source):
@@ -136,7 +140,9 @@ def test_large_series_via_s3_backend_meets_acceptance_threshold(
 
 
 @pytest.mark.long_running
-def test_concurrent_ingestion_runs_via_real_task_dispatch_complete_correctly_and_within_threshold(settings, transactional_db):
+def test_concurrent_ingestion_runs_via_real_task_dispatch_complete_correctly_and_within_threshold(
+    settings, transactional_db
+):
     """AC #3: concurrent ingestion dispatched as real tasks on the actual
     queue (#116's one deliberate exception to calling run_ingestion
     directly) -- not in-process calls.
@@ -188,10 +194,13 @@ def test_concurrent_ingestion_runs_via_real_task_dispatch_complete_correctly_and
     shutil.rmtree(scratch_root, ignore_errors=True)
     scratch_root.mkdir(parents=True, exist_ok=True)
     try:
-        project = ResearchProject.objects.create(name="Concurrency perf project", description="Project for #126 concurrency test")
+        project = ResearchProject.objects.create(
+            name="Concurrency perf project", description="Project for #126 concurrency test"
+        )
         run_count = 4
         files_per_run = 10
-        acceptance_seconds = 60  # generous: dispatch + queue + worker pickup + ingest + result round-trip, over docker-compose
+        # generous: dispatch + queue + worker pickup + ingest + result round-trip, over docker-compose
+        acceptance_seconds = 60
 
         sources = []
         for run in range(run_count):
@@ -221,7 +230,9 @@ def test_concurrent_ingestion_runs_via_real_task_dispatch_complete_correctly_and
         assert all(ar.successful() for ar in async_results), [
             (ar.id, ar.state, ar.result) for ar in async_results if not ar.successful()
         ]
-        assert elapsed < acceptance_seconds, f"{run_count} concurrent runs took {elapsed:.1f}s, over the {acceptance_seconds}s threshold"
+        assert elapsed < acceptance_seconds, (
+            f"{run_count} concurrent runs took {elapsed:.1f}s, over the {acceptance_seconds}s threshold"
+        )
 
         for ar in async_results:
             payload = ar.get()

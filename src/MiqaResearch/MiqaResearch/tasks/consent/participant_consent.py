@@ -96,7 +96,13 @@ async def _get_access_token(client: AsyncClient):
 
 
 async def _get_csv_data(
-        client: AsyncClient, access_token: str, form_id: str, from_date: str | None = None, to_date: str | None = None, separator: str = ",") -> Response:
+    client: AsyncClient,
+    access_token: str,
+    form_id: str,
+    from_date: str | None = None,
+    to_date: str | None = None,
+    separator: str = ",",
+) -> Response:
     base_url = settings.TASK_CONSENT_BASE_URL
     export_url = f"{base_url}/api/formular/{form_id}/export-csv"
 

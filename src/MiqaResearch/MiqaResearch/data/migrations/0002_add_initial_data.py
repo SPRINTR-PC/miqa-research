@@ -152,7 +152,7 @@ def add_default_users(apps, schema_editor):
             project=project,
             role=ResearchProjectRole.objects.get(name=PROJECT_ROLE_ADMIN),
         )
-    project_roles = ResearchProjectUserRoleMap.objects.bulk_create([
+    ResearchProjectUserRoleMap.objects.bulk_create([
         ResearchProjectUserRoleMap(
             user=development_users[1],
             project=project,

@@ -93,7 +93,8 @@ async def api_client_issue(request, project_id):
 
 async def _binding_or_404(project, binding_id) -> ClientBinding:
     return await aget_object_or_404(
-        ClientBinding.objects.select_related("application", "research_project"), research_project=project, id=binding_id)
+        ClientBinding.objects.select_related("application", "research_project"), research_project=project, id=binding_id
+    )
 
 
 @require_POST

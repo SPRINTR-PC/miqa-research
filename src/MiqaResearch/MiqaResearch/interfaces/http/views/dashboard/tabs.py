@@ -136,8 +136,9 @@ async def consent_statistics(request, project_id):
 
     return render(
         request,
-        '01_dashboard/project.html',
-        {'project': research_project, 'active_tab': 'consent-statistics', 'active_subtab': active_subtab} | site_options,
+        "01_dashboard/project.html",
+        {"project": research_project, "active_tab": "consent-statistics", "active_subtab": active_subtab}
+        | site_options,
     )
 
 @htmx_login_required
