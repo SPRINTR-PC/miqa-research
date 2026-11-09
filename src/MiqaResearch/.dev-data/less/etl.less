@@ -354,7 +354,7 @@ body.dark .etl-help-popover {
 
 // Action buttons in the ETL Pipelines panel (#393): primary colour, padding, icon inline with text.
 // Real <button>s only -- <summary class="btn"> toggles keep their disclosure arrow.
-#etl-section-panel button.btn:not(.etl-help-close) {
+:is(#etl-section-panel, #api-clients-panel) button.btn:not(.etl-help-close) {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
@@ -544,16 +544,16 @@ body.dark .etl-help-popover {
 
 // The global `p, li { max-width: 70ch }` and the icon's block display would leave card content off-centre and
 // short of the card's width: let text span the card, and centre the icon in empty states.
-#etl-section-panel .rounded-lg :is(p, li) {
+:is(#etl-section-panel, #api-clients-panel) .rounded-lg :is(p, li) {
   max-width: none;
 }
-#etl-section-panel .rounded-lg .text-center .icon {
+:is(#etl-section-panel, #api-clients-panel) .rounded-lg .text-center .icon {
   display: flex;
   justify-content: center;
 }
 
 // Destructive action (Delete) in the ETL panel: error red, whiteish text.
-#etl-section-panel button.btn.btn-danger:not(.etl-help-close) {
+:is(#etl-section-panel, #api-clients-panel) button.btn.btn-danger:not(.etl-help-close) {
   background-color: var(--color-chart-error);
   border-color: var(--color-chart-error);
   color: hsl(0 0% 98%);

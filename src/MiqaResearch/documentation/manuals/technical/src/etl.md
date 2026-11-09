@@ -12,7 +12,7 @@ under the Binding's "delete" **Raw Retention**.
 The end-to-end flow:
 
 ```{mermaid}
-flowchart LR
+flowchart TD
     SRC[(Source bucket)] -->|poll + diff| ORCH[Orchestrator]
     ORCH -->|queue| JOB[ETL Job]
     JOB -->|SandboxRunSpec| SB[Sandbox Runner]

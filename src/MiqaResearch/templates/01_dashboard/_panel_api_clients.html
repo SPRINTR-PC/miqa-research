@@ -57,7 +57,7 @@
               <form method="post" hx-post="{% url 'dashboard_tab_api_client_revoke' project.id binding.id %}" hx-target="#dashboard-tab-panel" hx-swap="innerHTML"
                 hx-confirm="{% translate 'Revoke this client? It is deleted and its tokens stop working at once.' %}">
                 {% csrf_token %}
-                <button class="btn" type="submit">{% translate "Revoke" %}</button>
+                <button class="btn btn-danger" type="submit">{% translate "Revoke" %}</button>
               </form>
             </div>
           </li>
