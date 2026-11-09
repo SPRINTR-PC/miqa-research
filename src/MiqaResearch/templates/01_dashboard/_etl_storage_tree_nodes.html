@@ -1,0 +1,21 @@
+{% comment %}One folder level of the storage tree (#394): sub-folders (lazy-expanding) then object names.{% endcomment %}
+{% if browse_error %}
+  <li class="etl-form-error text-sm">{{ browse_error }}</li>
+{% else %}
+  {% for folder in listing.folders %}
+    <li class="etl-tree-node">
+      <div class="etl-tree-row">
+        <button type="button" class="etl-tree-toggle" aria-expanded="false" aria-label="{% translate 'Expand' %}" data-etl-tree-toggle
+                hx-get="{% url 'dashboard_tab_etl_storage_browse' project.id storage.id %}?bucket={{ bucket|urlencode }}&prefix={{ folder|urlencode }}&nodes=1"
+                hx-target="next .etl-tree-children" hx-swap="innerHTML" hx-trigger="click once">▸</button>
+        <button type="button" class="etl-tree-label" data-etl-pick data-bucket="{{ bucket }}" data-prefix="{{ folder }}"><span class="etl-browse-icon" aria-hidden="true">📁</span>{{ folder|cut:prefix }}</button>
+      </div>
+      <ul class="etl-tree-children" hidden></ul>
+    </li>
+  {% endfor %}
+  {% for name in listing.objects %}
+    <li class="etl-tree-node"><div class="etl-tree-row etl-tree-file"><span class="etl-tree-toggle"></span><span class="etl-browse-icon" aria-hidden="true">📄</span>{{ name|cut:prefix }}</div></li>
+  {% endfor %}
+  {% if listing.objects_truncated %}<li class="etl-tree-node etl-tree-file"><div class="etl-tree-row">…</div></li>{% endif %}
+  {% if not listing.folders and not listing.objects %}<li class="etl-tree-node etl-tree-file"><div class="etl-tree-row">{% translate "Empty." %}</div></li>{% endif %}
+{% endif %}

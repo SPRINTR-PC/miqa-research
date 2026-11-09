@@ -8,3 +8,12 @@
     justify-content: center;
   }
 }
+.btn.btn-danger {
+  background-color: var(--color-chart-error);
+  border-color: var(--color-chart-error);
+  color: hsl(0, 0%, 98%); // whiteish on the error red
+}
+
+.btn.btn-danger:hover {
+  background-color: hsl(var(--color-chart-error-parts) / 0.85);
+}

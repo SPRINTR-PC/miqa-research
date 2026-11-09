@@ -84,10 +84,6 @@ def _edit_url(project, script):
     return reverse("dashboard_tab_etl_script_edit", args=[project.id, script.id])
 
 
-def _version_url(project, script):
-    return reverse("dashboard_tab_etl_script_version_create", args=[project.id, script.id])
-
-
 def _archive_url(project, script):
     return reverse("dashboard_tab_etl_script_archive", args=[project.id, script.id])
 
@@ -278,7 +274,8 @@ def test_a_data_manager_can_edit_a_custom_scripts_name_and_description(project):
     script = EtlScript.objects.create(name="Old name", origin=ETL_SCRIPT_ORIGIN_CUSTOM, project=project)
     client = _client_as(_user_with_role(project, "Data Manager"))
 
-    response = client.post(_edit_url(project, script), {"name": "New name", "description": "Updated"}, **HTMX)
+    response = client.post(
+        _edit_url(project, script), {"name": "New name", "description": "Updated", **_code()}, **HTMX)
 
     script.refresh_from_db()
     assert response.status_code == 200
@@ -293,7 +290,8 @@ def test_a_script_created_without_a_datatype_can_have_one_set_by_editing_it(proj
     client = _client_as(_user_with_role(project, "Data Manager"))
 
     client.post(
-        _edit_url(project, script), {"name": "Legacy import", "description": "", "datatype": "measurement"}, **HTMX)
+        _edit_url(project, script), {"name": "Legacy import", "description": "", "datatype": "measurement", **_code()},
+        **HTMX)
 
     script.refresh_from_db()
     assert script.datatype_name == "measurement"
@@ -306,7 +304,8 @@ def test_a_scripts_datatype_cannot_be_changed_once_set(project):
     client = _client_as(_user_with_role(project, "Data Manager"))
 
     client.post(
-        _edit_url(project, script), {"name": "Visit import", "description": "", "datatype": "measurement"}, **HTMX)
+        _edit_url(project, script), {"name": "Visit import", "description": "", "datatype": "measurement", **_code()},
+        **HTMX)
 
     script.refresh_from_db()
     assert script.datatype_name == "visit_occurrence"
@@ -332,7 +331,7 @@ def test_a_data_manager_can_add_a_new_version_to_a_custom_script(project):
     script.versions.create(version=1, source=_upload(), sha256="0" * 64)
     client = _client_as(_user_with_role(project, "Data Manager"))
 
-    response = client.post(_version_url(project, script), _code("v2 source"), **HTMX)
+    response = client.post(_edit_url(project, script), {"name": "Script", **_code("v2 source")}, **HTMX)
 
     assert response.status_code == 200
     assert list(script.versions.order_by("version").values_list("version", flat=True)) == [1, 2]
@@ -340,11 +339,48 @@ def test_a_data_manager_can_add_a_new_version_to_a_custom_script(project):
 
 
 @pytest.mark.django_db
+def test_saving_the_edit_form_without_touching_the_code_adds_no_version(project):
+    script = EtlScript.objects.create(name="Script", origin=ETL_SCRIPT_ORIGIN_CUSTOM, project=project)
+    script.versions.create(version=1, source=_upload(b"print('hi')\n"), sha256="0" * 64)
+    client = _client_as(_user_with_role(project, "Data Manager"))
+
+    # browsers post textarea newlines as CRLF
+    client.post(
+        _edit_url(project, script), {"name": "Renamed", **_code("print('hi')\r\n")}, **HTMX)
+
+    script.refresh_from_db()
+    assert script.name == "Renamed"
+    assert script.versions.count() == 1
+
+
+@pytest.mark.django_db
+def test_changing_only_the_config_schema_adds_a_version(project):
+    script = EtlScript.objects.create(name="Script", origin=ETL_SCRIPT_ORIGIN_CUSTOM, project=project)
+    script.versions.create(version=1, source=_upload(b"print('hi')"), sha256="0" * 64)
+    client = _client_as(_user_with_role(project, "Data Manager"))
+
+    client.post(
+        _edit_url(project, script),
+        {"name": "Script", **_code("print('hi')"), "config_schema": '{"type": "object"}'}, **HTMX)
+
+    assert script.versions.count() == 2
+
+
+@pytest.mark.django_db
+def test_the_edit_modal_has_a_single_form_with_one_save_button(project):
+    script = EtlScript.objects.create(name="Script", origin=ETL_SCRIPT_ORIGIN_CUSTOM, project=project)
+    body = _edit_modal(_client_as(_user_with_role(project, "Data Manager")), project, script)
+
+    assert body.count('hx-post="' + _edit_url(project, script)) == 1
+    assert "Save as new version" not in body
+
+
+@pytest.mark.django_db
 def test_a_native_script_cannot_be_edited_even_by_an_admin(project):
     native = EtlScript.objects.create(name="Native", origin=ETL_SCRIPT_ORIGIN_NATIVE, project=None)
     client = _client_as(_user_with_role(project, "Admin"))
 
-    response = client.post(_edit_url(project, native), {"name": "Hijacked", "description": ""}, **HTMX)
+    response = client.post(_edit_url(project, native), {"name": "Hijacked", "description": "", **_code()}, **HTMX)
 
     native.refresh_from_db()
     assert response.status_code == 200
@@ -442,7 +478,7 @@ def test_a_saved_edit_closes_the_modal(project):
     script = EtlScript.objects.create(name="Old", origin=ETL_SCRIPT_ORIGIN_CUSTOM, project=project)
     client = _client_as(_user_with_role(project, "Data Manager"))
 
-    response = client.post(_edit_url(project, script), {"name": "New", "description": ""}, **HTMX)
+    response = client.post(_edit_url(project, script), {"name": "New", "description": "", **_code()}, **HTMX)
 
     assert response["HX-Trigger"] == "close-app-modal"
 
@@ -481,7 +517,8 @@ def test_a_new_version_runs_on_the_image_for_its_own_source_files_language(proje
     script = EtlScript.objects.create(name="Lab import", origin=ETL_SCRIPT_ORIGIN_CUSTOM, project=project)
     client = _client_as(_user_with_role(project, "Data Manager"))
 
-    client.post(_version_url(project, script), _code("main <- function(ctx) NULL", ".r"), **HTMX)
+    client.post(
+        _edit_url(project, script), {"name": "Lab import", **_code("main <- function(ctx) NULL", ".r")}, **HTMX)
 
     assert EtlScriptVersion.objects.get(script=script).image_key == "r-etl-v1"
 
@@ -611,8 +648,8 @@ def test_a_new_version_can_declare_its_own_config_schema(project):
     client = _client_as(_user_with_role(project, "Data Manager"))
 
     client.post(
-        _version_url(project, script),
-        {**_code("v2"), "config_schema": _schema_upload(
+        _edit_url(project, script),
+        {"name": "Script", **_code("v2"), "config_schema": _schema_upload(
             b'{"type": "object", "properties": {"delimiter": {"type": "string"}}}')},
         **HTMX,
     )
@@ -648,7 +685,8 @@ def test_a_malformed_config_schema_on_a_new_version_is_rejected(project):
     client = _client_as(_user_with_role(project, "Data Manager"))
 
     response = client.post(
-        _version_url(project, script), {**_code("v2"), "config_schema": _schema_upload(b"{nope")}, **HTMX)
+        _edit_url(project, script),
+        {"name": "Script", **_code("v2"), "config_schema": _schema_upload(b"{nope")}, **HTMX)
 
     assert script.versions.count() == 1
     assert "not valid JSON" in response.content.decode()
@@ -684,7 +722,7 @@ def test_add_version_offers_a_required_code_editor_and_an_optional_config_schema
 
     body = _edit_modal(_client_as(_user_with_role(project, "Data Manager")), project, script)
 
-    version_form = re.search(r'<form[^>]*/versions/"[^>]*>.*?</form>', body, re.S)
+    version_form = re.search(rf'<form[^>]*{re.escape(_edit_url(project, script))}.*?</form>', body, re.S)
     assert version_form is not None
     assert re.search(r'<textarea[^>]*name="source_code"[^>]*required', version_form.group(0))
     config_schema_input = re.search(r'<textarea[^>]*name="config_schema"[^>]*>', version_form.group(0))
@@ -915,12 +953,12 @@ def test_the_editor_is_given_a_starter_template_for_every_language(project, sett
 
 
 @pytest.mark.django_db
-def test_add_version_starts_from_the_skeleton_when_the_script_has_no_version_yet(project):
+def test_the_edit_form_starts_from_the_skeleton_when_the_script_has_no_version_yet(project):
     script = EtlScript.objects.create(name="Fresh", origin=ETL_SCRIPT_ORIGIN_CUSTOM, project=project)
 
     body = _edit_modal(_client_as(_user_with_role(project, "Data Manager")), project, script)
 
-    assert "def main(ctx):" in html.unescape(_textarea_html(body, "Add version").group(1))
+    assert "def main(ctx):" in html.unescape(_textarea_html(body, "Edit script").group(1))
 
 
 def test_there_is_a_starter_template_for_each_configured_language():
@@ -991,7 +1029,7 @@ def test_add_version_prefills_the_config_schema_editor_with_the_latest_versions_
 
     body = _edit_modal(_client_as(_user_with_role(project, "Data Manager")), project, script)
 
-    version_form = re.search(r'<form[^>]*/versions/"[^>]*>.*?</form>', body, re.S).group(0)
+    version_form = re.search(rf'<form[^>]*{re.escape(_edit_url(project, script))}.*?</form>', body, re.S).group(0)
     textarea = re.search(r'<textarea[^>]*name="config_schema"[^>]*>(.*?)</textarea>', version_form, re.S)
     prefilled = html.unescape(textarea.group(1))
     assert json.loads(prefilled) == DELIMITER_SCHEMA
@@ -1005,7 +1043,7 @@ def test_add_version_leaves_the_config_schema_editor_empty_when_the_latest_versi
 
     body = _edit_modal(_client_as(_user_with_role(project, "Data Manager")), project, script)
 
-    version_form = re.search(r'<form[^>]*/versions/"[^>]*>.*?</form>', body, re.S).group(0)
+    version_form = re.search(rf'<form[^>]*{re.escape(_edit_url(project, script))}.*?</form>', body, re.S).group(0)
     assert re.search(r'<textarea[^>]*name="config_schema"[^>]*>\s*</textarea>', version_form)
 
 

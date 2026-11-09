@@ -774,7 +774,7 @@ with no transition flag. The consent upload API keeps `create_participant_consen
 
 A Script Version can carry a config schema (#238): a JSON Schema, Draft 2020-12, stored as
 `EtlScriptVersion.config_schema`. A custom Script's version gets one from the optional
-**Config schema** upload on **New script** and **Add version**. A Native Script gets one from
+**Config schema** upload on **New script** and **Edit script** (saved as a new Version when it, the code or the language changed). A Native Script gets one from
 its sidecar file. The upload must be a JSON object that passes `check_schema`
 (`MiqaResearch/etl_config_schema.py`); otherwise it is a form error.
 

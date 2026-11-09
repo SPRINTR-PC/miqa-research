@@ -95,12 +95,12 @@ class EtlLocationGrantAdmin(ModelAdmin):
     audited, a grant a Source Location or Binding needs isn't deleted, and an existing grant's
     project/bucket/prefix are fixed (delete and re-add instead). No bulk delete, which would skip
     the check."""
-    list_display = ("project", "storage", "bucket", "prefix")
+    list_display = ("name", "project", "storage", "bucket", "prefix")
     list_filter = ("project", "storage")
-    search_fields = ("bucket", "prefix")
+    search_fields = ("name", "bucket", "prefix")
 
     def get_readonly_fields(self, request, obj=None):
-        return ("project", "storage", "bucket", "prefix") if obj else ()
+        return ("project", "name", "storage", "bucket", "prefix") if obj else ()
 
     def get_actions(self, request):
         actions = super().get_actions(request)
@@ -112,7 +112,7 @@ class EtlLocationGrantAdmin(ModelAdmin):
             return
         created = async_to_sync(create_location_grant)(
             project=obj.project, user=request.user, request=request, bucket=obj.bucket, prefix=obj.prefix,
-            storage=obj.storage)
+            storage=obj.storage, name=obj.name)
         obj.pk = created.pk
 
     def delete_view(self, request, object_id, extra_context=None):

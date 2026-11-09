@@ -12,9 +12,11 @@ from django.db import transaction
 from contract.constants.audit_log import (
     EVENT_TYPE_ETL_LOCATION_GRANT_CREATED,
     EVENT_TYPE_ETL_LOCATION_GRANT_DELETED,
+    EVENT_TYPE_ETL_LOCATION_GRANT_UPDATED,
     EVENT_TYPE_ETL_SOURCE_LOCATION_CREATED,
     EVENT_TYPE_ETL_SOURCE_LOCATION_DELETED,
     EVENT_TYPE_ETL_SOURCE_LOCATION_RENAMED,
+    EVENT_TYPE_ETL_SOURCE_LOCATION_UPDATED,
 )
 from MiqaResearch.data.models import EtlLocationGrant, EtlSourceLocation, PipelineBinding
 from MiqaResearch.data.models.etl_storage import default_storage_id
@@ -40,6 +42,21 @@ async def rename_source_location(*, project, user, request, location, name) -> E
     return location
 
 
+async def update_source_location(
+        *, project, user, request, location, name, storage=None, bucket=None, prefix=None) -> EtlSourceLocation:
+    """Edit a Source Location: its name always; its storage/bucket/prefix only while no Binding reads from it
+    (a Binding keeps reading what it was set up on), and always inside one of the project's grants."""
+    moved = storage is not None and (storage.id, bucket, prefix) != (
+        location.storage_id, location.bucket, location.prefix)
+    if not moved:
+        return await rename_source_location(project=project, user=user, request=request, location=location, name=name)
+    if await location.bindings.aexists():
+        raise EtlLocationInUse("A Binding reads from this Source Location, so only its name can change.")
+    await sync_to_async(_move_source_location_locked)(project, location, name, storage.id, bucket, prefix)
+    await _record(EVENT_TYPE_ETL_SOURCE_LOCATION_UPDATED, location, user=user, request=request, project=project)
+    return location
+
+
 async def delete_source_location(*, project, user, request, location) -> None:
     if await location.bindings.aexists():
         raise EtlLocationInUse("A Binding reads from this Source Location, so it can't be deleted.")
@@ -47,14 +64,24 @@ async def delete_source_location(*, project, user, request, location) -> None:
     await location.adelete()
 
 
-async def create_location_grant(*, project, user, request, bucket, prefix, storage=None) -> EtlLocationGrant:
+async def create_location_grant(
+        *, project, user, request, bucket, prefix, storage=None, name="") -> EtlLocationGrant:
     storage_id = storage.id if storage is not None else await sync_to_async(default_storage_id)()
     if await EtlLocationGrant.objects.filter(
             project=project, storage_id=storage_id, bucket=bucket, prefix=prefix).aexists():
         raise EtlLocationConflict("That location grant already exists.")
     grant = await EtlLocationGrant.objects.acreate(
-        project=project, storage_id=storage_id, bucket=bucket, prefix=prefix)
+        project=project, storage_id=storage_id, name=name, bucket=bucket, prefix=prefix)
     await _record(EVENT_TYPE_ETL_LOCATION_GRANT_CREATED, grant, user=user, request=request, project=project)
+    return grant
+
+
+async def update_location_grant(*, project, user, request, grant, name) -> EtlLocationGrant:
+    """Edit a grant. Only its name can change: its storage, bucket and prefix are what Source Locations and Bindings
+    were checked against, so a different location is a delete and re-add."""
+    grant.name = name
+    await grant.asave(update_fields=["name"])
+    await _record(EVENT_TYPE_ETL_LOCATION_GRANT_UPDATED, grant, user=user, request=request, project=project)
     return grant
 
 
@@ -82,6 +109,19 @@ def _create_source_location_locked(project, storage_id, name, bucket, prefix) ->
             raise EtlLocationConflict("A Source Location for that bucket/prefix already exists.")
         return EtlSourceLocation.objects.create(
             project=project, storage_id=storage_id, name=name, bucket=bucket, prefix=prefix)
+
+
+def _move_source_location_locked(project, location, name, storage_id, bucket, prefix) -> None:
+    with transaction.atomic():
+        grants = _locked_grants(project)
+        if not location_grant_allows(grants, bucket, prefix, storage_id=storage_id):
+            raise EtlLocationOutsideGrant("That bucket/prefix is not inside any of this project's location grants.")
+        _require_free_name(project, name, excluding=location)
+        if EtlSourceLocation.objects.filter(
+                project=project, storage_id=storage_id, bucket=bucket, prefix=prefix).exclude(id=location.id).exists():
+            raise EtlLocationConflict("A Source Location for that bucket/prefix already exists.")
+        location.name, location.storage_id, location.bucket, location.prefix = name, storage_id, bucket, prefix
+        location.save(update_fields=["name", "storage", "bucket", "prefix"])
 
 
 def _storage_allowing(grants, bucket, prefix):

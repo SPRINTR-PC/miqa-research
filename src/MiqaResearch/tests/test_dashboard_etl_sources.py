@@ -9,8 +9,13 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client
 from django.urls import reverse
 
+from contract.constants.audit_log import (
+    EVENT_TYPE_ETL_LOCATION_GRANT_UPDATED,
+    EVENT_TYPE_ETL_SOURCE_LOCATION_UPDATED,
+)
 from contract.constants.etl import ETL_SCRIPT_ORIGIN_NATIVE
 from MiqaResearch.data.models import (
+    AuditLog,
     EtlLocationGrant,
     EtlScript,
     EtlScriptVersion,
@@ -20,6 +25,7 @@ from MiqaResearch.data.models import (
     ResearchProjectRole,
     ResearchProjectUserRoleMap,
 )
+from tests.test_etl_source_locations import _binding
 
 User = get_user_model()
 
@@ -116,7 +122,7 @@ def test_admins_see_grants_read_only_and_staff_get_the_grant_form(project, grant
 def test_an_admin_creates_a_source_location_inside_a_grant(project, grant):
     response = _admin(project).post(
         _url("dashboard_tab_etl_source_locations_create", project),
-        {"name": "REDCap B", "bucket": "incoming", "prefix": "redcap/b/"}, **HTMX)
+        {"name": "REDCap B", "grant": str(grant.id), "subpath": "b/"}, **HTMX)
 
     assert response.status_code == 200
     assert EtlSourceLocation.objects.filter(project=project, name="REDCap B", prefix="redcap/b/").exists()
@@ -124,20 +130,46 @@ def test_an_admin_creates_a_source_location_inside_a_grant(project, grant):
 
 
 @pytest.mark.django_db
-def test_a_source_location_outside_the_grants_is_shown_as_an_error(project, grant):
-    response = _admin(project).post(
+def test_a_source_location_takes_storage_bucket_and_prefix_from_its_grant(project, grant):
+    _admin(project).post(
         _url("dashboard_tab_etl_source_locations_create", project),
-        {"name": "Outside", "bucket": "elsewhere", "prefix": ""}, **HTMX)
+        {"name": "Whole grant", "grant": str(grant.id), "subpath": ""}, **HTMX)
 
-    assert not EtlSourceLocation.objects.exists()
-    assert "not inside any of this project" in response.content.decode()
+    created = EtlSourceLocation.objects.get(project=project, name="Whole grant")
+    assert (created.storage_id, created.bucket, created.prefix) == (grant.storage_id, "incoming", "redcap/")
 
 
 @pytest.mark.django_db
-def test_an_admin_renames_and_deletes_a_source_location(project, location):
+@pytest.mark.parametrize("subpath", ["../other/", "/abs/", "a/../b/"])
+def test_a_source_location_subpath_cannot_leave_the_grant(project, grant, subpath):
+    response = _admin(project).post(
+        _url("dashboard_tab_etl_source_locations_create", project),
+        {"name": "Escape", "grant": str(grant.id), "subpath": subpath}, **HTMX)
+
+    assert not EtlSourceLocation.objects.exists()
+    assert "relative path" in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_a_source_location_needs_one_of_this_projects_grants(project, grant):
+    other = ResearchProject.objects.create(name="Other", description="x")
+    foreign = EtlLocationGrant.objects.create(project=other, bucket="theirs", prefix="")
+
+    response = _admin(project).post(
+        _url("dashboard_tab_etl_source_locations_create", project),
+        {"name": "Theirs", "grant": str(foreign.id), "subpath": ""}, **HTMX)
+
+    assert not EtlSourceLocation.objects.exists()
+    assert "Choose one of the project" in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_an_admin_renames_and_deletes_a_source_location(project, location, grant):
     client = _admin(project)
 
-    client.post(_url("dashboard_tab_etl_source_location_rename", project, location.id), {"name": "Renamed"}, **HTMX)
+    client.post(
+        _url("dashboard_tab_etl_source_location_edit", project, location.id),
+        {"name": "Renamed", "grant": str(grant.id), "subpath": "a/"}, **HTMX)
     location.refresh_from_db()
     assert location.name == "Renamed"
 
@@ -147,13 +179,14 @@ def test_an_admin_renames_and_deletes_a_source_location(project, location):
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("role", ["Data Manager", "PI", "Contributor"])
-def test_non_admin_members_cannot_change_source_locations(project, location, role):
+def test_non_admin_members_cannot_change_source_locations(project, location, grant, role):
     client = _member(project, role)
 
     responses = [
         client.post(_url("dashboard_tab_etl_source_locations_create", project),
-                    {"name": "X", "bucket": "incoming", "prefix": "redcap/x/"}, **HTMX),
-        client.post(_url("dashboard_tab_etl_source_location_rename", project, location.id), {"name": "Y"}, **HTMX),
+                    {"name": "X", "grant": str(grant.id), "subpath": "x/"}, **HTMX),
+        client.post(_url("dashboard_tab_etl_source_location_edit", project, location.id),
+                    {"name": "Y", "grant": str(grant.id), "subpath": "a/"}, **HTMX),
         client.post(_url("dashboard_tab_etl_source_location_delete", project, location.id), **HTMX),
     ]
 
@@ -172,6 +205,56 @@ def test_staff_create_and_delete_location_grants(project):
     client.post(_url("dashboard_tab_etl_location_grant_delete", project, created.id), **HTMX)
 
     assert not EtlLocationGrant.objects.exists()
+
+
+@pytest.mark.django_db
+def test_a_location_grant_can_be_named_and_the_name_is_listed(project):
+    client = _staff(project)
+
+    response = client.post(
+        _url("dashboard_tab_etl_location_grants_create", project),
+        {"name": "Lab drop box", "bucket": "lab", "prefix": "in/"}, **HTMX)
+
+    assert EtlLocationGrant.objects.get(project=project, bucket="lab").name == "Lab drop box"
+    assert "Lab drop box" in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_each_create_modal_renders_exactly_one_name_field(project, grant):
+    client = _staff(project)
+
+    for route in ("dashboard_tab_etl_location_grants_create", "dashboard_tab_etl_source_locations_create"):
+        modal = client.get(_url(route, project), **HTMX).content.decode()
+        assert modal.count('name="name"') == 1
+
+
+@pytest.mark.django_db
+def test_the_sources_panel_offers_buttons_that_open_the_create_modals(project, grant):
+    page = _staff(project).get(_sources_url(project), **HTMX).content.decode()
+
+    for route in ("dashboard_tab_etl_location_grants_create", "dashboard_tab_etl_source_locations_create"):
+        assert f'hx-get="{_url(route, project)}" hx-target="#app-modal-content"' in page
+
+
+@pytest.mark.django_db
+def test_a_failed_create_keeps_the_modal_open_and_a_successful_one_closes_it(project, grant):
+    client = _staff(project)
+    url = _url("dashboard_tab_etl_location_grants_create", project)
+
+    failed = client.post(url, {"bucket": "", "prefix": ""}, **HTMX)
+    created = client.post(url, {"bucket": "lab", "prefix": ""}, **HTMX)
+
+    assert failed["HX-Retarget"] == "#app-modal-content"
+    assert "HX-Trigger" not in failed
+    assert created["HX-Trigger"] == "close-app-modal"
+
+
+@pytest.mark.django_db
+def test_a_location_grant_name_is_optional(project):
+    _staff(project).post(
+        _url("dashboard_tab_etl_location_grants_create", project), {"bucket": "lab", "prefix": ""}, **HTMX)
+
+    assert EtlLocationGrant.objects.get(project=project, bucket="lab").name == ""
 
 
 @pytest.mark.django_db
@@ -241,3 +324,78 @@ def test_another_projects_source_location_cannot_be_chosen(project, location, na
         _url("dashboard_tab_etl_bindings_create", project), _binding_payload(native_version, theirs.id), **HTMX)
 
     assert not PipelineBinding.objects.exists()
+
+
+# Edit modals
+
+@pytest.mark.django_db
+def test_the_edit_modal_is_prefilled_with_the_locations_grant_and_prefix(project, location, grant):
+    modal = _admin(project).get(_url("dashboard_tab_etl_source_location_edit", project, location.id), **HTMX)
+
+    html = modal.content.decode()
+    assert "Edit source location" in html and 'value="REDCap A"' in html
+    assert f'value="{grant.id}"' in html and "selected" in html and 'value="a/"' in html
+
+
+@pytest.mark.django_db
+def test_editing_a_source_location_can_move_it_within_the_grant(project, location, grant):
+    _admin(project).post(
+        _url("dashboard_tab_etl_source_location_edit", project, location.id),
+        {"name": "REDCap Z", "grant": str(grant.id), "subpath": "z/"}, **HTMX)
+
+    location.refresh_from_db()
+    assert (location.name, location.prefix) == ("REDCap Z", "redcap/z/")
+    assert AuditLog.objects.filter(event_type=EVENT_TYPE_ETL_SOURCE_LOCATION_UPDATED).count() == 1
+
+
+@pytest.mark.django_db
+def test_a_source_location_a_binding_reads_from_can_only_be_renamed(project, location, grant):
+    _binding(project, source_location=location)
+    client = _admin(project)
+
+    modal = client.get(_url("dashboard_tab_etl_source_location_edit", project, location.id), **HTMX)
+    response = client.post(
+        _url("dashboard_tab_etl_source_location_edit", project, location.id),
+        {"name": "Renamed", "grant": str(grant.id), "subpath": "elsewhere/"}, **HTMX)
+
+    location.refresh_from_db()
+    assert "only its name can change" in modal.content.decode()
+    assert (location.name, location.prefix) == ("Renamed", "redcap/a/")
+    assert response["HX-Trigger"] == "close-app-modal"
+
+
+@pytest.mark.django_db
+def test_an_edit_that_collides_with_another_location_is_shown_in_the_modal(project, location, grant):
+    EtlSourceLocation.objects.create(project=project, name="Other", bucket="incoming", prefix="redcap/b/")
+
+    response = _admin(project).post(
+        _url("dashboard_tab_etl_source_location_edit", project, location.id),
+        {"name": "REDCap A", "grant": str(grant.id), "subpath": "b/"}, **HTMX)
+
+    location.refresh_from_db()
+    assert "already exists" in response.content.decode() and response["HX-Retarget"] == "#app-modal-content"
+    assert location.prefix == "redcap/a/"
+
+
+@pytest.mark.django_db
+def test_staff_can_rename_a_location_grant_but_nothing_else(project, grant):
+    client = _staff(project)
+    url = _url("dashboard_tab_etl_location_grant_edit", project, grant.id)
+
+    modal = client.get(url, **HTMX).content.decode()
+    response = client.post(url, {"name": "Lab drop box", "bucket": "other", "prefix": "x/"}, **HTMX)
+
+    grant.refresh_from_db()
+    assert "Edit location grant" in modal and "incoming/redcap/" in modal
+    assert (grant.name, grant.bucket, grant.prefix) == ("Lab drop box", "incoming", "redcap/")
+    assert response["HX-Trigger"] == "close-app-modal"
+    assert AuditLog.objects.filter(event_type=EVENT_TYPE_ETL_LOCATION_GRANT_UPDATED).count() == 1
+
+
+@pytest.mark.django_db
+def test_an_admin_without_staff_cannot_edit_a_location_grant(project, grant):
+    response = _admin(project).post(
+        _url("dashboard_tab_etl_location_grant_edit", project, grant.id), {"name": "X"}, **HTMX)
+
+    grant.refresh_from_db()
+    assert response.status_code == 403 and grant.name == ""

@@ -140,8 +140,9 @@ def _datatype_choices() -> list[tuple[str, str]]:
 
 
 class EtlScriptCreateForm(_ScriptVersionUploadMixin, forms.Form):
-    name = forms.CharField(max_length=100)
-    description = forms.CharField(required=False, widget=forms.Textarea)
+    name = forms.CharField(max_length=100, widget=forms.TextInput(attrs={"placeholder": _("Enter name...")}))
+    description = forms.CharField(
+        required=False, widget=forms.Textarea(attrs={"placeholder": _("Enter description...")}))
     datatype = forms.ChoiceField(label=_("Datatype"))
     source_code, language = _code_fields()
     config_schema = _config_schema_field()
@@ -151,19 +152,20 @@ class EtlScriptCreateForm(_ScriptVersionUploadMixin, forms.Form):
         self.fields["datatype"].choices = _datatype_choices()
 
 
-class EtlScriptEditForm(forms.Form):
-    name = forms.CharField(max_length=100)
-    description = forms.CharField(required=False, widget=forms.Textarea)
+class EtlScriptEditForm(_ScriptVersionUploadMixin, forms.Form):
+    """The Edit script modal's single form: settings plus the code and config schema. The view adds a new
+    Version only when the code, language or config schema differ from the latest Version."""
+
+    name = forms.CharField(max_length=100, widget=forms.TextInput(attrs={"placeholder": _("Enter name...")}))
+    description = forms.CharField(
+        required=False, widget=forms.Textarea(attrs={"placeholder": _("Enter description...")}))
     datatype = forms.ChoiceField(required=False)
+    source_code, language = _code_fields()
+    config_schema = _config_schema_field()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["datatype"].choices = [("", ""), *_datatype_choices()]
-
-
-class EtlScriptVersionCreateForm(_ScriptVersionUploadMixin, forms.Form):
-    source_code, language = _code_fields()
-    config_schema = _config_schema_field()
 
 
 CONFIG_FIELD_PREFIX = "config__"
@@ -432,22 +434,52 @@ class EtlBindingCreateForm(EtlBindingEditForm):
         return location
 
 
+def source_location_prefix(grant_prefix: str, subpath: str) -> str:
+    """The Source Location's prefix: the grant's prefix with the sub-path added after it."""
+    if not subpath:
+        return grant_prefix
+    separator = "/" if grant_prefix and not grant_prefix.endswith("/") else ""
+    return f"{grant_prefix}{separator}{subpath}"
+
+
 class EtlSourceLocationForm(forms.Form):
-    storage = forms.UUIDField(required=False)  # blank: taken from the grant that allows the location
-    name = forms.CharField(max_length=100)
-    bucket = forms.CharField(max_length=200)
-    prefix = forms.CharField(max_length=500, required=False)
+    """A Source Location is based on one of the project's location grants: the grant fixes the storage,
+    bucket and prefix, and the sub-path can only extend that prefix."""
+    grant = forms.UUIDField()
+    name = forms.CharField(max_length=100, widget=forms.TextInput(attrs={"placeholder": _("Enter name...")}))
+    subpath = forms.CharField(
+        max_length=500, required=False, label=_("Additional prefix"),
+        widget=forms.TextInput(attrs={"placeholder": _("Enter prefix...")}),
+        help_text=_("Added after the grant's prefix, e.g. redcap/a/."))
+
+    def __init__(self, *args, locked=False, **kwargs):
+        """`locked`: editing a location a Binding reads from, where only the name can change."""
+        super().__init__(*args, **kwargs)
+        if locked:
+            self.fields["grant"].required = False
+
+    def clean_subpath(self):
+        subpath = self.cleaned_data["subpath"].strip()
+        if subpath.startswith("/") or "\\" in subpath or ".." in subpath.split("/"):
+            raise forms.ValidationError(_("Use a relative path without '..'."))
+        return subpath
 
 
-class EtlSourceLocationRenameForm(forms.Form):
-    name = forms.CharField(max_length=100)
+class EtlLocationGrantEditForm(forms.Form):
+    name = forms.CharField(
+        max_length=100, required=False, help_text=_("Optional label for this grant."),
+        widget=forms.TextInput(attrs={"placeholder": _("Enter name...")}))
 
 
 class EtlLocationGrantForm(forms.Form):
+    name = forms.CharField(
+        max_length=100, required=False, help_text=_("Optional label for this grant."),
+        widget=forms.TextInput(attrs={"placeholder": _("Enter name...")}))
     storage = forms.UUIDField(required=False)  # blank: the Default storage
-    bucket = forms.CharField(max_length=200)
+    bucket = forms.CharField(max_length=200, widget=forms.TextInput(attrs={"placeholder": _("Enter bucket path...")}))
     prefix = forms.CharField(
-        max_length=500, required=False, help_text=_("Empty grants access to the whole bucket."))
+        max_length=500, required=False, help_text=_("Empty grants access to the whole bucket."),
+        widget=forms.TextInput(attrs={"placeholder": _("Enter prefix...")}))
 
 
 class EtlProjectSettingsForm(forms.Form):

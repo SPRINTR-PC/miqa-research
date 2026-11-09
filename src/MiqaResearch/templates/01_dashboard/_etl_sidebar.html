@@ -3,23 +3,23 @@
   <a class="etl-sidebar-link{% if etl_section == 'bindings' %} active{% endif %}" aria-current="{% if etl_section == 'bindings' %}page{% else %}false{% endif %}"
     href="{% url 'dashboard_tab_etl_pipelines_content' project.id %}?section=bindings"
     hx-get="{% url 'dashboard_tab_etl_pipelines_content' project.id %}?section=bindings" hx-target="#etl-section-panel" hx-swap="innerHTML" hx-push-url="true" hx-sync="#dashboard-tab-panel:replace"
-    hx-indicator="#dashboard-tab-loading, #etl-section-panel">{% include 'components/icon.html' with icon_name='database' icon_classes='h-4 w-4' %}{% translate "Bindings" %}</a>
+    hx-indicator="#dashboard-tab-loading, #etl-section-panel">{% include 'components/icon.html' with icon_name='database' icon_classes='h-4 w-4 text-primary' %}{% translate "Bindings" %}</a>
   <a class="etl-sidebar-link{% if etl_section == 'scripts' %} active{% endif %}" aria-current="{% if etl_section == 'scripts' %}page{% else %}false{% endif %}"
     href="{% url 'dashboard_tab_etl_pipelines_content' project.id %}?section=scripts"
     hx-get="{% url 'dashboard_tab_etl_pipelines_content' project.id %}?section=scripts" hx-target="#etl-section-panel" hx-swap="innerHTML" hx-push-url="true" hx-sync="#dashboard-tab-panel:replace"
-    hx-indicator="#dashboard-tab-loading, #etl-section-panel">{% include 'components/icon.html' with icon_name='pencil' icon_classes='h-4 w-4' %}{% translate "Scripts" %}</a>
+    hx-indicator="#dashboard-tab-loading, #etl-section-panel">{% include 'components/icon.html' with icon_name='pencil' icon_classes='h-4 w-4 text-primary' %}{% translate "Scripts" %}</a>
   <a class="etl-sidebar-link{% if etl_section == 'jobs' %} active{% endif %}" aria-current="{% if etl_section == 'jobs' %}page{% else %}false{% endif %}"
     href="{% url 'dashboard_tab_etl_pipelines_content' project.id %}?section=jobs"
     hx-get="{% url 'dashboard_tab_etl_pipelines_content' project.id %}?section=jobs" hx-target="#etl-section-panel" hx-swap="innerHTML" hx-push-url="true" hx-sync="#dashboard-tab-panel:replace"
-    hx-indicator="#dashboard-tab-loading, #etl-section-panel">{% include 'components/icon.html' with icon_name='scroll-text' icon_classes='h-4 w-4' %}{% translate "Jobs" %}</a>
+    hx-indicator="#dashboard-tab-loading, #etl-section-panel">{% include 'components/icon.html' with icon_name='scroll-text' icon_classes='h-4 w-4 text-primary' %}{% translate "Jobs" %}</a>
   <a class="etl-sidebar-link{% if etl_section == 'defaults' %} active{% endif %}" aria-current="{% if etl_section == 'defaults' %}page{% else %}false{% endif %}"
     href="{% url 'dashboard_tab_etl_pipelines_content' project.id %}?section=defaults"
     hx-get="{% url 'dashboard_tab_etl_pipelines_content' project.id %}?section=defaults" hx-target="#etl-section-panel" hx-swap="innerHTML" hx-push-url="true" hx-sync="#dashboard-tab-panel:replace"
-    hx-indicator="#dashboard-tab-loading, #etl-section-panel">{% include 'components/icon.html' with icon_name='shield-check' icon_classes='h-4 w-4' %}{% translate "Defaults" %}</a>
+    hx-indicator="#dashboard-tab-loading, #etl-section-panel">{% include 'components/icon.html' with icon_name='shield-check' icon_classes='h-4 w-4 text-primary' %}{% translate "Defaults" %}</a>
   {% if etl_permissions.can_manage_source_locations %}
   <a class="etl-sidebar-link{% if etl_section == 'sources' %} active{% endif %}" aria-current="{% if etl_section == 'sources' %}page{% else %}false{% endif %}"
     href="{% url 'dashboard_tab_etl_pipelines_content' project.id %}?section=sources"
     hx-get="{% url 'dashboard_tab_etl_pipelines_content' project.id %}?section=sources" hx-target="#etl-section-panel" hx-swap="innerHTML" hx-push-url="true" hx-sync="#dashboard-tab-panel:replace"
-    hx-indicator="#dashboard-tab-loading, #etl-section-panel">{% include 'components/icon.html' with icon_name='folder-kanban' icon_classes='h-4 w-4' %}{% translate "Sources" %}</a>
+    hx-indicator="#dashboard-tab-loading, #etl-section-panel">{% include 'components/icon.html' with icon_name='folder-kanban' icon_classes='h-4 w-4 text-primary' %}{% translate "Sources" %}</a>
   {% endif %}
 </nav>

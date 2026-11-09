@@ -61,9 +61,10 @@ The tab has four sections, listed in the sidebar on its left: **Bindings**, **Sc
      schema, the binding's config is free-form JSON. The technical manual describes the format.
 3. Click **Create script**. The script appears in the list as version 1.
 
-To change the name or description, click **Edit** next to the script. To change the code
-itself, use **Add version**, choose the new file (and, optionally, a new config schema) and click
-**Upload version**. A version keeps only the config schema uploaded with it. Bindings that
+To change a script, click **Edit** next to it. The Edit window holds the name, description,
+code and config schema in one form; click **Save**. If the code, language or config schema
+changed, Save also adds them as a new version; otherwise only the name and description are
+updated. A version keeps only the config schema it was saved with. Bindings that
 already use an older version continue to use it. A new binding can use the new version right
 away. To switch an existing binding to it, see
 [Editing a binding](#heading-etl-pipelines-binding-edit).
@@ -292,12 +293,12 @@ The **Sources** section holds the places bindings read new files from.
 
 - **Source locations** are named folders, a bucket plus an optional prefix, for example
   *REDCap exports* at `incoming/redcap/`. The binding form offers them by name. An Admin adds
-  one with **New source location**, and can **Rename** it later. Its bucket and prefix can't be
-  changed afterwards; create a new location instead. A location that a binding uses can't be
-  deleted.
-- **Location grants** are the buckets and prefixes the project may use at all. Every source
+  one with **New source location**, and can change it later with **Edit**: the name always, and
+  the location grant and additional prefix as long as no binding reads from it. A location that
+  a binding uses can't be deleted.
+- **Location grants** (optionally given a name) are the buckets and prefixes the project may use at all. Every source
   location, and every raw bucket, must lie inside one. Admins see the grants; only platform
-  staff can add or delete them. A grant can't be deleted while a source location or binding
+  staff can add, rename (**Edit**) or delete them; a grant's bucket and prefix can't change. A grant can't be deleted while a source location or binding
   still needs it.
 
 Every change is recorded in the project's audit log.

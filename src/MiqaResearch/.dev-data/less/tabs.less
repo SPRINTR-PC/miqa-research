@@ -4,14 +4,30 @@
   .tab {
     border-width: 0;
     background-color: transparent;
+    color: inherit; // buttons don't inherit the track's text colour by default
 
     &[aria-selected="true"] {
       background-color: var(--color-background);
+      color: var(--color-foreground);
     }
 
     svg {
       height: 1rem;
       width: 1rem;
     }
+  }
+}
+// Dark mode: the dashboard tab track is darker than the muted grey so inactive tab text and icons keep contrast.
+.dark #dashboard-tablist {
+  background-color: hsl(0 0% 20%);
+}
+
+// Light mode: the lavender primary is nearly the same luminance as the muted grey, so the tab track is lighter
+// and its icons use a deeper shade of the primary hue.
+body:not(.dark) #dashboard-tablist {
+  background-color: hsl(0 0% 85%);
+
+  .tab svg {
+    color: hsl(277 60% 38%);
   }
 }

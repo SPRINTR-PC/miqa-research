@@ -69,9 +69,19 @@ def test_staff_browse_buckets_then_folders_and_never_see_contents(project, s3):
     folders = client.get(_browse_url(project, default_storage()) + "?bucket=alpha&prefix=a/", **HTMX).content.decode()
 
     assert "alpha" in buckets
-    assert "a/x/" in folders and "a/top.csv" in folders
+    assert "a/x/" in folders and "top.csv" in folders
     assert "top secret contents" not in folders
     assert AuditLog.objects.filter(event_type=EVENT_TYPE_ETL_STORAGE_BROWSED).count() == 2
+
+
+def test_expanding_a_tree_folder_loads_only_its_children_as_a_fragment(project, s3):
+    url = _browse_url(project, default_storage()) + "?bucket=alpha&prefix=a/&nodes=1"
+
+    fragment = _staff(project).get(url, **HTMX).content.decode()
+
+    assert "<div" in fragment and "etl-storage-browse" not in fragment
+    assert 'data-prefix="a/x/"' in fragment and "top.csv" in fragment
+    assert "top secret contents" not in fragment
 
 
 @pytest.mark.parametrize("role", ["Admin", "Data Manager", "PI"])
@@ -92,8 +102,9 @@ def test_a_browse_failure_is_shown_inline_with_the_typed_fallback_still_possible
 
 
 def test_the_grant_form_offers_every_storage(project, lab):
+    default_storage()
     page = _staff(project).get(
-        reverse("dashboard_tab_etl_pipelines_content", args=[project.id]) + "?section=sources", **HTMX
+        reverse("dashboard_tab_etl_location_grants_create", args=[project.id]), **HTMX
     ).content.decode()
 
     assert 'name="storage"' in page and "Lab" in page and "Default" in page

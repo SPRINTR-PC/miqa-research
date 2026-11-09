@@ -11,19 +11,14 @@
         {% empty %}<li class="text-sm text-muted-foreground">{% translate "No buckets found." %}</li>{% endfor %}
       </ul>
     {% else %}
-      <p class="etl-browse-path">{{ bucket }}/{{ prefix }}</p>
       <p class="etl-browse-toolbar">
-        <button type="button" class="etl-browse-tool" hx-get="{% url 'dashboard_tab_etl_storage_browse' project.id storage.id %}{% if prefix %}?bucket={{ bucket|urlencode }}&prefix={{ parent_prefix|urlencode }}{% endif %}" hx-target="#etl-storage-browser" hx-swap="outerHTML">{% translate "Up" %}</button>
-        <button type="button" class="etl-browse-tool" data-etl-pick data-bucket="{{ bucket }}" data-prefix="{{ prefix }}">{% translate "Use this folder" %}</button>
+        <button type="button" class="etl-browse-tool" hx-get="{% url 'dashboard_tab_etl_storage_browse' project.id storage.id %}" hx-target="#etl-storage-browser" hx-swap="outerHTML">{% translate "All buckets" %}</button>
       </p>
-      <ul class="etl-browse-list">
-        {% for folder in listing.folders %}
-          <li><button type="button" class="etl-browse-entry" hx-get="{% url 'dashboard_tab_etl_storage_browse' project.id storage.id %}?bucket={{ bucket|urlencode }}&prefix={{ folder|urlencode }}" hx-target="#etl-storage-browser" hx-swap="outerHTML"><span class="etl-browse-icon" aria-hidden="true">📁</span>{{ folder }}</button></li>
-        {% endfor %}
-        {% for name in listing.objects %}
-          <li class="etl-browse-file"><span class="etl-browse-icon" aria-hidden="true">📄</span>{{ name }}</li>
-        {% endfor %}
-        {% if listing.objects_truncated %}<li class="text-sm text-muted-foreground">…</li>{% endif %}
+      <ul class="etl-browse-list etl-tree" role="tree">
+        <li class="etl-tree-node">
+          <div class="etl-tree-row"><span class="etl-tree-toggle"></span><button type="button" class="etl-tree-label" data-etl-pick data-bucket="{{ bucket }}" data-prefix=""><span class="etl-browse-icon" aria-hidden="true">🪣</span>{{ bucket }}</button></div>
+          <ul class="etl-tree-children">{% include "01_dashboard/_etl_storage_tree_nodes.html" %}</ul>
+        </li>
       </ul>
     {% endif %}
   {% endif %}

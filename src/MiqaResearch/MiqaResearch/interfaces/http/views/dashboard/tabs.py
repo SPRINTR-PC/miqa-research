@@ -7,13 +7,10 @@ from django.template.loader import render_to_string
 from MiqaResearch.interfaces.http.forms.etl import (
     EtlBindingCreateForm,
     EtlBindingEditForm,
-    EtlLocationGrantForm,
     EtlProjectSettingsForm,
-    EtlSourceLocationForm,
 )
 from MiqaResearch.readers.etl_reader import (
     get_bindable_script_versions,
-    get_etl_storages,
     get_native_scripts,
     get_project_bindings,
     get_project_jobs,
@@ -264,12 +261,6 @@ async def etl_section_context(project, permissions, section) -> dict:
     elif section == ETL_SECTION_SOURCES:
         context['location_grants'] = await get_project_location_grants(project)
         context['source_locations'] = await get_project_source_locations(project)
-        context['storages'] = await get_etl_storages()
-        context['nil_uuid'] = '00000000-0000-0000-0000-000000000000'
-        if permissions.can_manage_source_locations:
-            context['source_location_form'] = EtlSourceLocationForm()
-        if permissions.can_manage_location_grants:
-            context['location_grant_form'] = EtlLocationGrantForm()
 
     return context
 

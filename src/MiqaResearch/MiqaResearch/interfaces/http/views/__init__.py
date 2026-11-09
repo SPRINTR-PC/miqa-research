@@ -39,6 +39,9 @@ from .dashboard.etl import (
     etl_location_grant_delete as dashboard_tab_etl_location_grant_delete,
 )
 from .dashboard.etl import (
+    etl_location_grant_edit as dashboard_tab_etl_location_grant_edit,
+)
+from .dashboard.etl import (
     etl_location_grants_create as dashboard_tab_etl_location_grants_create,
 )
 from .dashboard.etl import (
@@ -51,16 +54,13 @@ from .dashboard.etl import (
     etl_script_edit as dashboard_tab_etl_script_edit,
 )
 from .dashboard.etl import (
-    etl_script_version_create as dashboard_tab_etl_script_version_create,
-)
-from .dashboard.etl import (
     etl_scripts_create as dashboard_tab_etl_scripts_create,
 )
 from .dashboard.etl import (
     etl_source_location_delete as dashboard_tab_etl_source_location_delete,
 )
 from .dashboard.etl import (
-    etl_source_location_rename as dashboard_tab_etl_source_location_rename,
+    etl_source_location_edit as dashboard_tab_etl_source_location_edit,
 )
 from .dashboard.etl import (
     etl_source_locations_create as dashboard_tab_etl_source_locations_create,
