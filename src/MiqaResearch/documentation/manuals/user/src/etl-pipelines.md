@@ -293,12 +293,18 @@ The **Sources** section holds the places bindings read new files from.
 
 - **Source locations** are named folders, a bucket plus an optional prefix, for example
   *REDCap exports* at `incoming/redcap/`. The binding form offers them by name. An Admin adds
-  one with **New source location**, and can change it later with **Edit**: the name always, and
+  one with **New source location**: pick a location grant as the base, which fills in its
+  storage, bucket and prefix, then optionally add a sub-path after the grant's prefix. The
+  location always lies inside a grant. Change it later with **Edit**: the name always, and
   the location grant and additional prefix as long as no binding reads from it. A location that
   a binding uses can't be deleted.
 - **Location grants** (optionally given a name) are the buckets and prefixes the project may use at all. Every source
   location, and every raw bucket, must lie inside one. Admins see the grants; only platform
-  staff can add, rename (**Edit**) or delete them; a grant's bucket and prefix can't change. A grant can't be deleted while a source location or binding
+  staff can add, rename (**Edit**) or delete them; a grant's bucket and prefix can't change.
+  When adding a grant, **Browse storage** lists the storage's buckets and lets you open
+  folders as a tree; click a bucket or folder to fill in the bucket and prefix. Browsing only
+  shows names, never file contents, and you can still type the values by hand if the storage
+  can't be reached. A grant can't be deleted while a source location or binding
   still needs it.
 
 Every change is recorded in the project's audit log.
