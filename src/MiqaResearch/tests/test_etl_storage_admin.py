@@ -39,10 +39,13 @@ def test_staff_can_create_edit_and_delete_a_storage(staff_client):
     assert not EtlStorage.objects.filter(name="Lab").exists()
 
 
-def test_the_form_has_env_var_names_but_no_secret_value_field(staff_client):
+def test_the_form_has_env_var_names_and_vault_refs_but_no_secret_value_field(staff_client):
     fields = set(staff_client.get(_url("add")).context["adminform"].form.fields)
 
-    assert fields == {"name", "kind", "endpoint_url", "region", "access_key_id_env", "secret_access_key_env"}
+    assert fields == {
+        "name", "kind", "endpoint_url", "region", "access_key_id_env", "secret_access_key_env",
+        "access_key_id_vault_path", "access_key_id_vault_key",
+        "secret_access_key_vault_path", "secret_access_key_vault_key"}
 
 
 def test_the_default_storage_is_read_only_and_cannot_be_deleted(staff_client):

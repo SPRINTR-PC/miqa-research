@@ -223,7 +223,8 @@ ETL_SCRIPT_IMAGE_KEYS: dict[str, str] = json.loads(env("MIRES_ETL_SCRIPT_IMAGE_K
 ETL_SYNC_NATIVE_SCRIPTS_ON_MIGRATE: bool = env("MIRES_ETL_SYNC_NATIVE_SCRIPTS_ON_MIGRATE")
 # Connected Storages (#394): a JSON list of {name, kind, endpoint_url, region, access_key_id_env,
 # secret_access_key_env}, synced into the database after every migrate (and by
-# `manage.py sync_etl_storages`). The env-var *names* are declared here, never a secret value.
+# `manage.py sync_etl_storages`). Env-var *names* and Vault paths/key names are declared here, never a
+# secret value (#396: access_key_id_vault_path/_vault_key, secret_access_key_vault_path/_vault_key).
 # The built-in "Default" storage is the MIRES_ETL_S3_* settings above and needs no entry.
 ETL_STORAGES: list[dict] = json.loads(env("MIRES_ETL_STORAGES"))
 
@@ -272,6 +273,9 @@ SANDBOX_K8S_EGRESS_PROBE_PORT: int = env("MIRES_SANDBOX_K8S_EGRESS_PROBE_PORT")
 # runner error (unknown image key, oversized input) never auto-retries. ETL_JOB_STUCK_GRACE_SECONDS
 # is the extra grace period, on top of the Job's own resolved sandbox timeout, before a Job stuck
 # in "running" (its worker vanished mid-run, with no heartbeat mechanism) is recovered.
+USE_VAULT: bool = env("MIRES_USE_VAULT")
+VAULT_URL: str | None = env("MIRES_VAULT_URL")
+VAULT_TOKEN: str | None = env("MIRES_VAULT_TOKEN")
 ETL_S3_ENDPOINT_URL: str | None = env("MIRES_ETL_S3_ENDPOINT_URL")
 ETL_S3_REGION_NAME: str | None = env("MIRES_ETL_S3_REGION_NAME")
 

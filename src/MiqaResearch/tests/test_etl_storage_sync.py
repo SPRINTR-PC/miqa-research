@@ -84,3 +84,14 @@ def test_the_sync_runs_after_migrate(db):
                       interactive=False, using="default", apps=apps, plan=[])
 
     assert EtlStorage.objects.filter(name="Lab", managed_by_settings=True).exists()
+
+
+def test_vault_fields_are_synced_from_settings(db, settings):
+    settings.ETL_STORAGES = [{
+        "name": "Vaulted",
+        "access_key_id_vault_path": "mires/lab", "access_key_id_vault_key": "Id",
+        "secret_access_key_vault_path": "mires/lab", "secret_access_key_vault_key": "Secret"}]
+    sync_etl_storages()
+    storage = EtlStorage.objects.get(name="Vaulted")
+    assert (storage.access_key_id_vault_path, storage.access_key_id_vault_key) == ("mires/lab", "Id")
+    assert (storage.secret_access_key_vault_path, storage.secret_access_key_vault_key) == ("mires/lab", "Secret")
