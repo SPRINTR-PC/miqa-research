@@ -37,7 +37,9 @@ def multipart_related_response(items, boundary="boundary", content_type_item="ap
 # WADO-URI
 @router.get("/wado")
 @machine_only
-def wado_uri(request, requestType: str, studyUID: str, seriesUID: str, objectUID: str, contentType: str = "application/dicom"):
+def wado_uri(
+    request, requestType: str, studyUID: str, seriesUID: str, objectUID: str, contentType: str = "application/dicom"
+):
     if requestType != "WADO":
         return HttpResponse("Invalid requestType", status=400)
 

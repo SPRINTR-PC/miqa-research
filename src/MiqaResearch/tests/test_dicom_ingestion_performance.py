@@ -7,10 +7,11 @@ concurrent runs (real task dispatch, #116's one deliberate exception to
 "call run_ingestion directly"). All against fully synthetic data.
 """
 import itertools
-import os
 import shutil
+import socket
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 import boto3
 import pytest
@@ -30,6 +31,17 @@ def encryption_keys(settings):
     settings.SENSITIVE_DATA_HASH_KEY = "H2QCB14temR-C2JnLORSE5TxPwLd8iy3YygNPQ-corA="
 
 
+def _skip_unless_broker_reachable():
+    """The concurrency test needs the compose network's broker and a worker sharing this checkout and
+    the test database, i.e. it runs inside `mires_testrunner` (docker-compose.dev-test.yml)."""
+    broker = urlparse(django_settings.CELERY_BROKER_URL)
+    try:
+        socket.create_connection((broker.hostname, broker.port or 5672), timeout=3).close()
+    except OSError as exc:
+        pytest.skip(f"Celery broker {broker.hostname}:{broker.port} not reachable ({exc}); "
+                    "run this test inside mires_testrunner")
+
+
 @pytest.mark.long_running
 def test_throughput_many_small_files_meets_acceptance_threshold(benchmark, settings, tmp_path, db):
     """AC #1: many small synthetic files, explicit throughput threshold."""
@@ -42,7 +54,9 @@ def test_throughput_many_small_files_meets_acceptance_threshold(benchmark, setti
 
     def setup():
         n = next(project_counter)
-        project = ResearchProject.objects.create(name=f"Throughput perf project {n}", description="Project for #126 throughput test")
+        project = ResearchProject.objects.create(
+            name=f"Throughput perf project {n}", description="Project for #126 throughput test"
+        )
         folder = tmp_path / f"batch-{n}"
         for i in range(files_per_round):
             write_dicom(
@@ -71,7 +85,8 @@ def test_throughput_many_small_files_meets_acceptance_threshold(benchmark, setti
 
 
 @pytest.mark.long_running
-def test_large_series_via_s3_backend_meets_acceptance_threshold(benchmark, settings, tmp_path, db):
+def test_large_series_via_s3_backend_meets_acceptance_threshold(
+        benchmark, settings, tmp_path, db, rustfs_endpoint):
     """AC #2: one very large synthetic file/series, ingested through the real
     S3-compatible backend (RustFS, docker-compose.dev-test.yml's mires_fs
     service, reached by its `miresfs` hostname -- same real-backend
@@ -81,7 +96,7 @@ def test_large_series_via_s3_backend_meets_acceptance_threshold(benchmark, setti
     settings.DICOM_ALLOWED_SOURCE_ROOTS = [tmp_path]
     settings.DICOM_STORAGE_BACKEND = "s3"
     settings.DICOM_S3_BUCKET = "dicom-perf-large-file-test"
-    settings.DICOM_S3_ENDPOINT_URL = os.environ.get("MIRES_TEST_DICOM_S3_ENDPOINT_URL", "http://miresfs:9000")
+    settings.DICOM_S3_ENDPOINT_URL = rustfs_endpoint
     settings.DICOM_S3_REGION_NAME = "us-east-1"
     settings.DICOM_S3_ACCESS_KEY_ID = "MiresAccessKey"
     settings.DICOM_S3_SECRET_ACCESS_KEY = "MiresSecretKey"
@@ -108,7 +123,9 @@ def test_large_series_via_s3_backend_meets_acceptance_threshold(benchmark, setti
 
     def setup():
         n = next(project_counter)
-        project = ResearchProject.objects.create(name=f"Large-file perf project {n}", description="Project for #126 large-file test")
+        project = ResearchProject.objects.create(
+            name=f"Large-file perf project {n}", description="Project for #126 large-file test"
+        )
         return (project, large_file), {}
 
     def run(project, source):
@@ -123,7 +140,9 @@ def test_large_series_via_s3_backend_meets_acceptance_threshold(benchmark, setti
 
 
 @pytest.mark.long_running
-def test_concurrent_ingestion_runs_via_real_task_dispatch_complete_correctly_and_within_threshold(settings, transactional_db):
+def test_concurrent_ingestion_runs_via_real_task_dispatch_complete_correctly_and_within_threshold(
+    settings, transactional_db
+):
     """AC #3: concurrent ingestion dispatched as real tasks on the actual
     queue (#116's one deliberate exception to calling run_ingestion
     directly) -- not in-process calls.
@@ -157,6 +176,7 @@ def test_concurrent_ingestion_runs_via_real_task_dispatch_complete_correctly_and
     the literal 2-character string `"{}"` instead -- ValueError). `enqueue()`
     dispatch is unaffected; only that particular result-reading path is.
     """
+    _skip_unless_broker_reachable()
     # Undo tests/conftest.py's autouse dummy-backend override so this run
     # actually goes through django_tasks_celery.CeleryBackend.
     settings.TASKS = {
@@ -174,10 +194,13 @@ def test_concurrent_ingestion_runs_via_real_task_dispatch_complete_correctly_and
     shutil.rmtree(scratch_root, ignore_errors=True)
     scratch_root.mkdir(parents=True, exist_ok=True)
     try:
-        project = ResearchProject.objects.create(name="Concurrency perf project", description="Project for #126 concurrency test")
+        project = ResearchProject.objects.create(
+            name="Concurrency perf project", description="Project for #126 concurrency test"
+        )
         run_count = 4
         files_per_run = 10
-        acceptance_seconds = 60  # generous: dispatch + queue + worker pickup + ingest + result round-trip, over docker-compose
+        # generous: dispatch + queue + worker pickup + ingest + result round-trip, over docker-compose
+        acceptance_seconds = 60
 
         sources = []
         for run in range(run_count):
@@ -207,7 +230,9 @@ def test_concurrent_ingestion_runs_via_real_task_dispatch_complete_correctly_and
         assert all(ar.successful() for ar in async_results), [
             (ar.id, ar.state, ar.result) for ar in async_results if not ar.successful()
         ]
-        assert elapsed < acceptance_seconds, f"{run_count} concurrent runs took {elapsed:.1f}s, over the {acceptance_seconds}s threshold"
+        assert elapsed < acceptance_seconds, (
+            f"{run_count} concurrent runs took {elapsed:.1f}s, over the {acceptance_seconds}s threshold"
+        )
 
         for ar in async_results:
             payload = ar.get()

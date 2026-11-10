@@ -140,8 +140,9 @@ def _datatype_choices() -> list[tuple[str, str]]:
 
 
 class EtlScriptCreateForm(_ScriptVersionUploadMixin, forms.Form):
-    name = forms.CharField(max_length=100)
-    description = forms.CharField(required=False, widget=forms.Textarea)
+    name = forms.CharField(max_length=100, widget=forms.TextInput(attrs={"placeholder": _("Enter name...")}))
+    description = forms.CharField(
+        required=False, widget=forms.Textarea(attrs={"placeholder": _("Enter description...")}))
     datatype = forms.ChoiceField(label=_("Datatype"))
     source_code, language = _code_fields()
     config_schema = _config_schema_field()
@@ -151,19 +152,20 @@ class EtlScriptCreateForm(_ScriptVersionUploadMixin, forms.Form):
         self.fields["datatype"].choices = _datatype_choices()
 
 
-class EtlScriptEditForm(forms.Form):
-    name = forms.CharField(max_length=100)
-    description = forms.CharField(required=False, widget=forms.Textarea)
+class EtlScriptEditForm(_ScriptVersionUploadMixin, forms.Form):
+    """The Edit script modal's single form: settings plus the code and config schema. The view adds a new
+    Version only when the code, language or config schema differ from the latest Version."""
+
+    name = forms.CharField(max_length=100, widget=forms.TextInput(attrs={"placeholder": _("Enter name...")}))
+    description = forms.CharField(
+        required=False, widget=forms.Textarea(attrs={"placeholder": _("Enter description...")}))
     datatype = forms.ChoiceField(required=False)
+    source_code, language = _code_fields()
+    config_schema = _config_schema_field()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["datatype"].choices = [("", ""), *_datatype_choices()]
-
-
-class EtlScriptVersionCreateForm(_ScriptVersionUploadMixin, forms.Form):
-    source_code, language = _code_fields()
-    config_schema = _config_schema_field()
 
 
 CONFIG_FIELD_PREFIX = "config__"
@@ -240,8 +242,10 @@ class EtlBindingEditForm(forms.Form):
     cpu_millicores_override = forms.IntegerField(label=_("CPU override (millicores)"), required=False, min_value=1)
 
     def __init__(self, *args, location_grants, script_version_choices, can_choose_delete,
-                 current_raw_retention=None, config_schemas=None, config_version_id=None, **kwargs):
+                 current_raw_retention=None, config_schemas=None, config_version_id=None, storage_id=None,
+                 **kwargs):
         self.location_grants = location_grants
+        self.storage_id = storage_id  # the Binding's Connected Storage (#394); grants count only on it
         self.can_choose_delete = can_choose_delete
         self.current_raw_retention = current_raw_retention
         super().__init__(*args, **kwargs)
@@ -388,11 +392,16 @@ class EtlBindingEditForm(forms.Form):
         if not raw_bucket:
             self.add_error("raw_bucket", _("A raw bucket is required when inputs are moved to a Raw Bucket."))
         elif not location_grant_allows(
-                self.location_grants, raw_bucket, cleaned.get("raw_prefix") or ""):
+                self.location_grants, raw_bucket, cleaned.get("raw_prefix") or "",
+                storage_id=self._binding_storage_id(cleaned)):
             self.add_error(
                 "raw_bucket",
                 _("This project has not been granted access to that raw bucket/prefix."))
         return cleaned
+
+
+    def _binding_storage_id(self, cleaned):
+        return self.storage_id
 
 
 class EtlBindingCreateForm(EtlBindingEditForm):
@@ -410,30 +419,67 @@ class EtlBindingCreateForm(EtlBindingEditForm):
             for location_id, location in self.source_locations.items()
         ]
 
+    def _binding_storage_id(self, cleaned):
+        location = cleaned.get("source_location")
+        return location.storage_id if location is not None else None
+
     def clean_source_location(self):
         from MiqaResearch.readers.etl_reader import location_grant_allows
 
         location = self.source_locations[self.cleaned_data["source_location"]]
         # A location is created inside a grant, but a grant can still be removed in the Django admin.
-        if not location_grant_allows(self.location_grants, location.bucket, location.prefix):
+        if not location_grant_allows(
+                self.location_grants, location.bucket, location.prefix, storage_id=location.storage_id):
             raise forms.ValidationError(_("This project has not been granted access to that source bucket/prefix."))
         return location
 
 
+def source_location_prefix(grant_prefix: str, subpath: str) -> str:
+    """The Source Location's prefix: the grant's prefix with the sub-path added after it."""
+    if not subpath:
+        return grant_prefix
+    separator = "/" if grant_prefix and not grant_prefix.endswith("/") else ""
+    return f"{grant_prefix}{separator}{subpath}"
+
+
 class EtlSourceLocationForm(forms.Form):
-    name = forms.CharField(max_length=100)
-    bucket = forms.CharField(max_length=200)
-    prefix = forms.CharField(max_length=500, required=False)
+    """A Source Location is based on one of the project's location grants: the grant fixes the storage,
+    bucket and prefix, and the sub-path can only extend that prefix."""
+    grant = forms.UUIDField()
+    name = forms.CharField(max_length=100, widget=forms.TextInput(attrs={"placeholder": _("Enter name...")}))
+    subpath = forms.CharField(
+        max_length=500, required=False, label=_("Additional prefix"),
+        widget=forms.TextInput(attrs={"placeholder": _("Enter prefix...")}),
+        help_text=_("Added after the grant's prefix, e.g. redcap/a/."))
+
+    def __init__(self, *args, locked=False, **kwargs):
+        """`locked`: editing a location a Binding reads from, where only the name can change."""
+        super().__init__(*args, **kwargs)
+        if locked:
+            self.fields["grant"].required = False
+
+    def clean_subpath(self):
+        subpath = self.cleaned_data["subpath"].strip()
+        if subpath.startswith("/") or "\\" in subpath or ".." in subpath.split("/"):
+            raise forms.ValidationError(_("Use a relative path without '..'."))
+        return subpath
 
 
-class EtlSourceLocationRenameForm(forms.Form):
-    name = forms.CharField(max_length=100)
+class EtlLocationGrantEditForm(forms.Form):
+    name = forms.CharField(
+        max_length=100, required=False, help_text=_("Optional label for this grant."),
+        widget=forms.TextInput(attrs={"placeholder": _("Enter name...")}))
 
 
 class EtlLocationGrantForm(forms.Form):
-    bucket = forms.CharField(max_length=200)
+    name = forms.CharField(
+        max_length=100, required=False, help_text=_("Optional label for this grant."),
+        widget=forms.TextInput(attrs={"placeholder": _("Enter name...")}))
+    storage = forms.UUIDField(required=False)  # blank: the Default storage
+    bucket = forms.CharField(max_length=200, widget=forms.TextInput(attrs={"placeholder": _("Enter bucket path...")}))
     prefix = forms.CharField(
-        max_length=500, required=False, help_text=_("Empty grants access to the whole bucket."))
+        max_length=500, required=False, help_text=_("Empty grants access to the whole bucket."),
+        widget=forms.TextInput(attrs={"placeholder": _("Enter prefix...")}))
 
 
 class EtlProjectSettingsForm(forms.Form):

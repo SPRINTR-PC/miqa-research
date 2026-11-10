@@ -12,6 +12,7 @@ from uuid import UUID
 from django.http import Http404, HttpResponse, HttpResponseForbidden
 from django.shortcuts import aget_object_or_404, render
 from django.template.loader import render_to_string
+from django.utils.translation import gettext as _
 
 from contract.constants.etl import ETL_SCRIPT_ORIGIN_CUSTOM
 from MiqaResearch.actions.etl.bindings import create_pipeline_binding, update_pipeline_binding
@@ -30,28 +31,33 @@ from MiqaResearch.actions.etl.sources import (
     create_source_location,
     delete_location_grant,
     delete_source_location,
-    rename_source_location,
+    update_location_grant,
+    update_source_location,
 )
-from MiqaResearch.data.models import EtlLocationGrant, EtlScript, EtlSourceLocation, PipelineBinding
+from MiqaResearch.actions.etl.storages import browse_storage
+from MiqaResearch.data.models import EtlLocationGrant, EtlScript, EtlSourceLocation, EtlStorage, PipelineBinding
 from MiqaResearch.etl_datatypes import DatatypeNotRegistered
 from MiqaResearch.etl_datatypes.describe import describe_datatype
 from MiqaResearch.interfaces.http.forms.etl import (
     EtlBindingCreateForm,
     EtlBindingEditForm,
+    EtlLocationGrantEditForm,
     EtlLocationGrantForm,
     EtlProjectSettingsForm,
     EtlScriptCreateForm,
     EtlScriptEditForm,
-    EtlScriptVersionCreateForm,
     EtlSourceLocationForm,
-    EtlSourceLocationRenameForm,
+    source_location_prefix,
 )
 from MiqaResearch.readers.etl_reader import (
+    get_etl_storages,
     get_latest_version_code,
     get_project_job,
+    get_project_location_grants,
     get_project_max_script_source_bytes,
     get_project_source_locations,
 )
+from MiqaResearch.readers.etl_storage_browser import EtlStorageBrowseError
 
 from .htmx_auth import htmx_login_required
 from .project import get_user_etl_project_or_404
@@ -103,31 +109,48 @@ def _form_errors(form) -> str:
 
 
 async def _script_modal(
-        request, project, permissions, script=None, *, create_form=None, edit_form=None, version_form=None,
-        invalid=False):
+        request, project, permissions, script=None, *, create_form=None, edit_form=None, invalid=False):
     """The New script (no `script`) or Edit script modal body. A form that failed validation comes back bound, and
     the response then retargets the modal itself so the errors show where the user is working."""
     max_source_bytes = await get_project_max_script_source_bytes(project)
     if script is None:
         create_form = create_form or EtlScriptCreateForm(max_source_bytes=max_source_bytes)
     else:
-        edit_form = edit_form or EtlScriptEditForm(initial={'name': script.name, 'description': script.description})
-        if version_form is None:
+        if edit_form is None:
             latest = await get_latest_version_code(script)
-            version_form = EtlScriptVersionCreateForm(
-                max_source_bytes=max_source_bytes, script_name=script.name, auto_id=False,
+            edit_form = EtlScriptEditForm(
+                max_source_bytes=max_source_bytes,
                 initial={
-                    'source_code': latest.code, 'language': latest.extension,
-                    'config_schema': json.dumps(latest.config_schema, indent=2) if latest.config_schema else '',
-                } if latest else None)
+                    'name': script.name, 'description': script.description,
+                    **({
+                        'source_code': latest.code, 'language': latest.extension,
+                        'config_schema': json.dumps(latest.config_schema, indent=2) if latest.config_schema else '',
+                    } if latest else {}),
+                })
     response = HttpResponse(render_to_string('01_dashboard/_etl_script_modal.html', {
         'project': project, 'etl_permissions': permissions, 'script': script,
-        'create_form': create_form, 'edit_form': edit_form, 'version_form': version_form,
+        'create_form': create_form, 'edit_form': edit_form,
     }, request=request))
     if invalid:
         response['HX-Retarget'] = '#app-modal-content'
         response['HX-Reswap'] = 'innerHTML'
     return response
+
+
+def _version_changed(latest, cleaned) -> bool:
+    """Whether the posted code, language or config schema differ from the latest Version's, i.e. whether
+    saving should add a Version. Code is compared with CRLF normalised and stripped: browsers post
+    textareas with CRLF and the form strips."""
+    if latest is None:
+        return True
+
+    def normalised(code):
+        return code.replace('\r\n', '\n').strip()
+
+    return (
+        normalised(cleaned['source_code']) != normalised(latest.code)
+        or cleaned['language'] != latest.extension
+        or cleaned['config_schema'] != latest.config_schema)
 
 
 async def _get_editable_custom_script_or_404(project, script_id) -> EtlScript:
@@ -175,7 +198,8 @@ async def etl_script_edit(request, project_id, script_id):
 
     script = await aget_object_or_404(EtlScript, id=script_id)
     user = await request.auser()
-    form = EtlScriptEditForm(request.POST)
+    max_source_bytes = await get_project_max_script_source_bytes(research_project)
+    form = EtlScriptEditForm(request.POST, request.FILES, max_source_bytes=max_source_bytes)
     if not form.is_valid():
         return await _script_modal(request, research_project, permissions, script, edit_form=form, invalid=True)
 
@@ -184,28 +208,11 @@ async def etl_script_edit(request, project_id, script_id):
         name=form.cleaned_data['name'], description=form.cleaned_data['description'],
         datatype_name=form.cleaned_data['datatype'],
     ))
-    return await _rerender_section(
-        request, research_project, permissions, ETL_SECTION_SCRIPTS, manage_error=error, close_modal=True)
-
-
-@htmx_login_required
-async def etl_script_version_create(request, project_id, script_id):
-    research_project, permissions = await get_user_etl_project_or_404(request, project_id)
-    if not permissions.can_manage:
-        return HttpResponseForbidden()
-
-    script = await aget_object_or_404(EtlScript, id=script_id)
-    user = await request.auser()
-    max_source_bytes = await get_project_max_script_source_bytes(research_project)
-    form = EtlScriptVersionCreateForm(
-        request.POST, request.FILES, max_source_bytes=max_source_bytes, script_name=script.name, auto_id=False)
-    if not form.is_valid():
-        return await _script_modal(request, research_project, permissions, script, version_form=form, invalid=True)
-
-    error = await _attempt(create_script_version(
-        project=research_project, user=user, request=request, script=script,
-        source=form.cleaned_data['source'], config_schema=form.cleaned_data['config_schema'],
-    ))
+    if error is None and _version_changed(await get_latest_version_code(script), form.cleaned_data):
+        error = await _attempt(create_script_version(
+            project=research_project, user=user, request=request, script=script,
+            source=form.cleaned_data['source'], config_schema=form.cleaned_data['config_schema'],
+        ))
     return await _rerender_section(
         request, research_project, permissions, ETL_SECTION_SCRIPTS, manage_error=error, close_modal=True)
 
@@ -287,7 +294,8 @@ async def etl_binding_edit(request, project_id, binding_id):
     user = await request.auser()
     form = EtlBindingEditForm(
         request.POST, **await binding_form_kwargs(research_project, permissions),
-        current_raw_retention=binding.raw_retention, auto_id=binding_edit_auto_id(binding))
+        current_raw_retention=binding.raw_retention, storage_id=binding.storage_id,
+        auto_id=binding_edit_auto_id(binding))
     if form.is_valid():
         error = await _attempt(update_pipeline_binding(
             project=research_project, user=user, request=request, binding=binding,
@@ -415,33 +423,115 @@ async def _get_sources_project_or_404(request, project_id):
     return research_project, permissions
 
 
+NIL_UUID = '00000000-0000-0000-0000-000000000000'
+
+
+async def _sources_modal(request, project, template, *, form, error=None, **extra):
+    """The New source location / New location grant modal body. A POST that failed comes back here with the bound
+    form and the error, retargeting the modal itself so the message shows where the user is working."""
+    response = HttpResponse(render_to_string(template, {
+        'project': project, 'form': form, 'modal_error': error, 'nil_uuid': NIL_UUID,
+        'location_grants': await get_project_location_grants(project), 'storages': await get_etl_storages(),
+        **extra,
+    }, request=request))
+    if form.is_bound:
+        response['HX-Retarget'] = '#app-modal-content'
+        response['HX-Reswap'] = 'innerHTML'
+    return response
+
+
 @htmx_login_required
 async def etl_source_locations_create(request, project_id):
+    """GET: the New source location modal. POST: creates the location."""
     research_project, permissions = await _get_sources_project_or_404(request, project_id)
+    template = '01_dashboard/_etl_source_location_modal.html'
+    if request.method == 'GET':
+        return await _sources_modal(request, research_project, template, form=EtlSourceLocationForm())
     form = EtlSourceLocationForm(request.POST)
     error = None
     if form.is_valid():
-        error = await _attempt(create_source_location(
-            project=research_project, user=await request.auser(), request=request, name=form.cleaned_data['name'],
-            bucket=form.cleaned_data['bucket'], prefix=form.cleaned_data['prefix']))
-    failed = error or not form.is_valid()
-    return await _rerender_section(
-        request, research_project, permissions, ETL_SECTION_SOURCES,
-        manage_error=error, source_location_form=form if failed else None)
+        grant = await EtlLocationGrant.objects.select_related('storage').filter(
+            project=research_project, id=form.cleaned_data['grant']).afirst()
+        if grant is None:
+            form.add_error('grant', _('Choose one of the project\'s location grants.'))
+        else:
+            error = await _attempt(create_source_location(
+                project=research_project, user=await request.auser(), request=request,
+                name=form.cleaned_data['name'], storage=grant.storage, bucket=grant.bucket,
+                prefix=source_location_prefix(grant.prefix, form.cleaned_data['subpath'])))
+    if error or not form.is_valid():
+        return await _sources_modal(request, research_project, template, form=form, error=error)
+    return await _rerender_section(request, research_project, permissions, ETL_SECTION_SOURCES, close_modal=True)
+
+
+async def _grant_of_location(project, location) -> EtlLocationGrant | None:
+    """The project's grant a Source Location sits in: same storage and bucket, the longest prefix of the location's."""
+    grants = [
+        grant async for grant in EtlLocationGrant.objects.select_related('storage').filter(
+            project=project, storage_id=location.storage_id, bucket=location.bucket)
+        if location.prefix.startswith(grant.prefix)]
+    return max(grants, key=lambda grant: len(grant.prefix), default=None)
 
 
 @htmx_login_required
-async def etl_source_location_rename(request, project_id, location_id):
+async def etl_source_location_edit(request, project_id, location_id):
+    """GET: the Edit source location modal. POST: saves it. The name always changes; the grant and prefix only while
+    no Binding reads from the location."""
     research_project, permissions = await _get_sources_project_or_404(request, project_id)
-    location = await aget_object_or_404(EtlSourceLocation, project=research_project, id=location_id)
-    form = EtlSourceLocationRenameForm(request.POST)
+    location = await aget_object_or_404(
+        EtlSourceLocation.objects.select_related('storage'), project=research_project, id=location_id)
+    locked = await location.bindings.aexists()
+    template = '01_dashboard/_etl_source_location_modal.html'
+    extra = {'location': location, 'locked': locked}
+    if request.method == 'GET':
+        grant = await _grant_of_location(research_project, location)
+        initial = {'name': location.name}
+        if grant is not None:
+            initial |= {'grant': grant.id, 'subpath': location.prefix[len(grant.prefix):].lstrip('/')}
+        return await _sources_modal(
+            request, research_project, template, form=EtlSourceLocationForm(initial=initial, locked=locked), **extra)
+    form = EtlSourceLocationForm(request.POST, locked=locked)
+    error = None
     if form.is_valid():
-        error = await _attempt(rename_source_location(
-            project=research_project, user=await request.auser(), request=request, location=location,
-            name=form.cleaned_data['name']))
-    else:
-        error = _form_errors(form)
-    return await _rerender_section(request, research_project, permissions, ETL_SECTION_SOURCES, manage_error=error)
+        target = {}
+        if not locked:
+            grant = await EtlLocationGrant.objects.select_related('storage').filter(
+                project=research_project, id=form.cleaned_data['grant']).afirst()
+            if grant is None:
+                form.add_error('grant', _('Choose one of the project\'s location grants.'))
+            else:
+                target = {
+                    'storage': grant.storage, 'bucket': grant.bucket,
+                    'prefix': source_location_prefix(grant.prefix, form.cleaned_data['subpath'])}
+        if form.is_valid():
+            error = await _attempt(update_source_location(
+                project=research_project, user=await request.auser(), request=request, location=location,
+                name=form.cleaned_data['name'], **target))
+    if error or not form.is_valid():
+        return await _sources_modal(request, research_project, template, form=form, error=error, **extra)
+    return await _rerender_section(request, research_project, permissions, ETL_SECTION_SOURCES, close_modal=True)
+
+
+@htmx_login_required
+async def etl_location_grant_edit(request, project_id, grant_id):
+    """GET: the Edit location grant modal. POST: saves it -- only the name can change."""
+    research_project, permissions = await _get_sources_project_or_404(request, project_id)
+    if not permissions.can_manage_location_grants:
+        return HttpResponseForbidden()
+    grant = await aget_object_or_404(
+        EtlLocationGrant.objects.select_related('storage'), project=research_project, id=grant_id)
+    template = '01_dashboard/_etl_location_grant_modal.html'
+    if request.method == 'GET':
+        return await _sources_modal(
+            request, research_project, template, form=EtlLocationGrantEditForm(initial={'name': grant.name}),
+            grant=grant)
+    form = EtlLocationGrantEditForm(request.POST)
+    if not form.is_valid():
+        return await _sources_modal(request, research_project, template, form=form, grant=grant)
+    await update_location_grant(
+        project=research_project, user=await request.auser(), request=request, grant=grant,
+        name=form.cleaned_data['name'].strip())
+    return await _rerender_section(request, research_project, permissions, ETL_SECTION_SOURCES, close_modal=True)
 
 
 @htmx_login_required
@@ -455,19 +545,24 @@ async def etl_source_location_delete(request, project_id, location_id):
 
 @htmx_login_required
 async def etl_location_grants_create(request, project_id):
+    """GET: the New location grant modal. POST: creates the grant."""
     research_project, permissions = await _get_sources_project_or_404(request, project_id)
     if not permissions.can_manage_location_grants:
         return HttpResponseForbidden()
+    template = '01_dashboard/_etl_location_grant_modal.html'
+    if request.method == 'GET':
+        return await _sources_modal(request, research_project, template, form=EtlLocationGrantForm())
     form = EtlLocationGrantForm(request.POST)
     error = None
     if form.is_valid():
+        storage = await _chosen_storage(form.cleaned_data['storage'])
         error = await _attempt(create_location_grant(
             project=research_project, user=await request.auser(), request=request,
-            bucket=form.cleaned_data['bucket'], prefix=form.cleaned_data['prefix']))
-    failed = error or not form.is_valid()
-    return await _rerender_section(
-        request, research_project, permissions, ETL_SECTION_SOURCES,
-        manage_error=error, location_grant_form=form if failed else None)
+            bucket=form.cleaned_data['bucket'], prefix=form.cleaned_data['prefix'], storage=storage,
+            name=form.cleaned_data['name'].strip()))
+    if error or not form.is_valid():
+        return await _sources_modal(request, research_project, template, form=form, error=error)
+    return await _rerender_section(request, research_project, permissions, ETL_SECTION_SOURCES, close_modal=True)
 
 
 @htmx_login_required
@@ -479,6 +574,40 @@ async def etl_location_grant_delete(request, project_id, grant_id):
     error = await _attempt(delete_location_grant(
         project=research_project, user=await request.auser(), request=request, grant=grant))
     return await _rerender_section(request, research_project, permissions, ETL_SECTION_SOURCES, manage_error=error)
+
+
+async def _chosen_storage(storage_id) -> EtlStorage | None:
+    """The Connected Storage a form named, 404 if it doesn't exist; None when none was chosen."""
+    return await aget_object_or_404(EtlStorage, id=storage_id) if storage_id else None
+
+
+@htmx_login_required
+async def etl_storage_browse(request, project_id, storage_id):
+    """Read-only browse step in the Location Grant form (#394): buckets, or one folder level of
+    `?bucket=` under `?prefix=`. Staff and superusers only; a failure renders inline so the
+    bucket/prefix can still be typed."""
+    research_project, permissions = await _get_sources_project_or_404(request, project_id)
+    if not permissions.can_manage_location_grants:
+        return HttpResponseForbidden()
+    storage = await aget_object_or_404(EtlStorage, id=storage_id)
+    bucket = request.GET.get('bucket', '')
+    prefix = request.GET.get('prefix', '')
+    listing = error = None
+    try:
+        listing = await browse_storage(
+            user=await request.auser(), request=request, project=research_project, storage=storage,
+            bucket=bucket or None, prefix=prefix)
+    except EtlStorageBrowseError as exc:
+        error = str(exc)
+    # `nodes=1` is a tree folder expanding: just its children, not the whole browser.
+    template = '01_dashboard/_etl_storage_browse.html'
+    if request.GET.get('nodes'):
+        template = '01_dashboard/_etl_storage_tree_nodes.html'
+    return render(request, template, {
+        'project': research_project, 'storage': storage, 'bucket': bucket, 'prefix': prefix,
+        'listing': listing, 'browse_error': error,
+        'parent_prefix': prefix[:prefix.rstrip('/').rfind('/') + 1] if prefix else '',
+    })
 
 
 @htmx_login_required

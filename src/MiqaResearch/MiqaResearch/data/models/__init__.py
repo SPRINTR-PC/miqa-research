@@ -16,6 +16,7 @@ from .etl_processed_file import EtlProcessedFile
 from .etl_project_settings import EtlProjectSettings
 from .etl_script import EtlScript, EtlScriptVersion
 from .etl_source_location import EtlSourceLocation
+from .etl_storage import EtlStorage
 from .measurement import Measurement
 from .oidc_role_mapping import OIDCRoleMapping
 from .prom_data import ParsedPromForm, PromData, PromFormTemplate

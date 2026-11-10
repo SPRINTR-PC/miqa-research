@@ -46,8 +46,8 @@ class AuditLog(models.Model):
     user = models.ForeignKey(User, on_delete=models.PROTECT, null=True, blank=True, db_index=True)
     event_type = models.CharField(max_length=32, choices=EVENT_TYPE_CHOICES)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
-    session_key = models.CharField(max_length=40, null=True, blank=True)
-    auth_method = models.CharField(max_length=16, choices=AUTH_METHOD_CHOICES, null=True, blank=True)
+    session_key = models.CharField(max_length=40, null=True, blank=True)  # noqa: DJ001
+    auth_method = models.CharField(max_length=16, choices=AUTH_METHOD_CHOICES, null=True, blank=True)  # noqa: DJ001
     metadata = models.JSONField(default=dict, blank=True)
     project = models.ForeignKey(
         ResearchProject, on_delete=models.SET_NULL, null=True, blank=True, db_index=True,

@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from asgiref.sync import sync_to_async
@@ -11,7 +11,6 @@ from MiqaResearch.data.models import (
     ParticipantConsentType,
     ResearchProject,
     StudyParticipant,
-    study_participant,
 )
 from MiqaResearch.data.models.research_project import ResearchProjectClinicMap
 from MiqaResearch.data.serializers.charts.base import ChartGroupingSchema

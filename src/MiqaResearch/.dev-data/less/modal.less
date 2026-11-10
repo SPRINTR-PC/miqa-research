@@ -1,31 +1,109 @@
 dialog {
   &.modal {
-    background-color: var(--color-popover);
+    background-color: hsl(var(--color-background-parts) / 0.78);
+    -webkit-backdrop-filter: blur(18px);
+    backdrop-filter: blur(18px);
     color: var(--color-popover-foreground);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow-lg);
-    padding: 1.5rem;
-    max-width: 28rem;
-    width: 90%;
+    border: 1px solid hsl(var(--color-foreground-parts) / 0.12);
+    border-radius: 1rem;
+    box-shadow: 0 24px 64px hsl(0 0% 0% / 0.45);
+    padding: 2rem;
+    max-width: 32rem;
+    width: 92%;
+    max-height: calc(100vh - 4rem);
+    overflow-y: auto;
 
     // Modals holding a code editor (ETL script forms) need room for it.
     &:has(.etl-script-modal) {
-      width: 95%;
-      max-width: calc(var(--container-max, 1400px) * 0.95);
-      max-height: calc(100vh - 6rem);
-      overflow-y: auto;
+      max-width: min(56rem, 95vw);
     }
 
     &[open] {
       display: flex;
       flex-direction: column;
       gap: 1rem;
-      margin: 4rem auto auto auto;
+      margin: auto;
     }
 
     &::backdrop {
-      background-color: hsla(0, 0%, 0%, 0.5);
+      background-color: hsl(0 0% 0% / 0.6);
+      -webkit-backdrop-filter: blur(6px);
+      backdrop-filter: blur(6px);
     }
   }
+}
+
+.app-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+.app-modal-body .etl-field {
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+.app-modal-body .etl-field > span:first-child {
+  font-weight: 500;
+}
+.app-modal-body .etl-field :is(select, input:not([type="file"]), textarea) {
+  border: 1px solid hsl(var(--color-foreground-parts) / 0.2);
+  background-color: hsl(var(--color-foreground-parts) / 0.05);
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.app-modal-body .etl-field :is(select, input, textarea)::placeholder {
+  color: hsl(var(--color-foreground-parts) / 0.4);
+}
+.app-modal-body .etl-field :is(select, input, textarea):focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px hsl(var(--color-primary-parts) / 0.28);
+}
+.app-modal-body .modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.75rem;
+}
+.app-modal-body .modal-cancel {
+  background: none;
+  border: 0;
+  padding: 0.5rem 0.75rem;
+  color: var(--color-muted-foreground);
+  font: inherit;
+  cursor: pointer;
+}
+.app-modal-body .modal-cancel:hover {
+  color: var(--color-foreground);
+}
+.app-modal-body .btn.btn-outline {
+  background-color: hsl(var(--color-foreground-parts) / 0.06);
+  border: 1px solid hsl(var(--color-foreground-parts) / 0.2);
+  color: var(--color-foreground);
+  width: fit-content;
+  margin-bottom: 0.5rem;
+}
+.app-modal-body .btn.btn-outline:hover {
+  background-color: hsl(var(--color-foreground-parts) / 0.12);
+}
+.app-modal-body .btn.etl-modal-close {
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border-radius: 0.5rem;
+  background-color: hsl(var(--color-foreground-parts) / 0.1);
+  border: 0;
+}
+.app-modal-body .btn.etl-modal-close:hover {
+  background-color: hsl(var(--color-foreground-parts) / 0.2);
+}
+
+.app-modal-body h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+.app-modal-body .etl-grant-base {
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.75rem;
 }

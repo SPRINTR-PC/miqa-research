@@ -247,8 +247,30 @@ def test_s3_prefix_ingests_every_file_recursively(research_project, tmp_path, se
     settings.MEDIA_ROOT = tmp_path / "media"
     client = boto3.client("s3", region_name="us-east-1")
     client.create_bucket(Bucket="ingest-bucket")
-    _put(client, "ingest-bucket", "study1/a.dcm", build_ct_image(patient_id="P-A", study_instance_uid=STUDY_UIDS["a"][0], series_instance_uid=STUDY_UIDS["a"][1], sop_instance_uid=STUDY_UIDS["a"][2]), tmp_path, "a.dcm")
-    _put(client, "ingest-bucket", "study1/sub/b.dcm", build_ct_image(patient_id="P-B", study_instance_uid=STUDY_UIDS["b"][0], series_instance_uid=STUDY_UIDS["b"][1], sop_instance_uid=STUDY_UIDS["b"][2]), tmp_path, "b.dcm")
+    _put(
+        client,
+        "ingest-bucket",
+        "study1/a.dcm",
+        build_ct_image(
+            patient_id="P-A",
+            study_instance_uid=STUDY_UIDS["a"][0],
+            series_instance_uid=STUDY_UIDS["a"][1],
+            sop_instance_uid=STUDY_UIDS["a"][2],
+        ),
+        tmp_path, "a.dcm",
+    )
+    _put(
+        client,
+        "ingest-bucket",
+        "study1/sub/b.dcm",
+        build_ct_image(
+            patient_id="P-B",
+            study_instance_uid=STUDY_UIDS["b"][0],
+            series_instance_uid=STUDY_UIDS["b"][1],
+            sop_instance_uid=STUDY_UIDS["b"][2],
+        ),
+        tmp_path, "b.dcm",
+    )
     client.put_object(Bucket="ingest-bucket", Key="study1/notes.txt", Body=b"not a dicom file" * 50)
 
     report = run_ingestion(research_project, "s3://ingest-bucket/study1")
@@ -266,7 +288,18 @@ def test_s3_bucket_without_prefix_ingests_whole_bucket(research_project, tmp_pat
     client = boto3.client("s3", region_name="us-east-1")
     client.create_bucket(Bucket="whole-bucket")
     _put(client, "whole-bucket", "root.dcm", build_ct_image(patient_id="P-A"), tmp_path, "root.dcm")
-    _put(client, "whole-bucket", "deep/nest/x.dcm", build_ct_image(patient_id="P-B", study_instance_uid=STUDY_UIDS["b"][0], series_instance_uid=STUDY_UIDS["b"][1], sop_instance_uid=STUDY_UIDS["b"][2]), tmp_path, "x.dcm")
+    _put(
+        client,
+        "whole-bucket",
+        "deep/nest/x.dcm",
+        build_ct_image(
+            patient_id="P-B",
+            study_instance_uid=STUDY_UIDS["b"][0],
+            series_instance_uid=STUDY_UIDS["b"][1],
+            sop_instance_uid=STUDY_UIDS["b"][2],
+        ),
+        tmp_path, "x.dcm",
+    )
 
     report = run_ingestion(research_project, "s3://whole-bucket")
 

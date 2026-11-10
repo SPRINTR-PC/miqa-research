@@ -3,7 +3,6 @@ from .etl import (
     EtlProjectSettingsForm,
     EtlScriptCreateForm,
     EtlScriptEditForm,
-    EtlScriptVersionCreateForm,
 )
 
 __all__ = [
@@ -11,5 +10,4 @@ __all__ = [
     "EtlProjectSettingsForm",
     "EtlScriptCreateForm",
     "EtlScriptEditForm",
-    "EtlScriptVersionCreateForm",
 ]

@@ -28,7 +28,7 @@ dependencies = [
     "numpy>=2.4.6",
     "httpx2>=2.7.0",
     "django-kpforms>=0.1.28",
-    "pymupdf>=1.27.2.3",
+    "pymupdf>=2.1",
     "granian>=2.8.2",
     "pytesseract>=0.3.13",
     "opencv-python-headless>=4.12.0.88",
@@ -81,6 +81,12 @@ select = [
 ]
 ignore = []
 
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"] # re-exports
+"MiqaResearch/urls.py" = ["E501"]
+"*/migrations/*.py" = ["E501"]
+"helpers/study_participant_alias.py" = ["E501"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["MiqaResearch", "data", "documentation"]
 
@@ -88,7 +94,7 @@ known-first-party = ["MiqaResearch", "data", "documentation"]
 DJANGO_SETTINGS_MODULE = "MiqaResearch.settings"
 python_files = ["tests.py", "test_*.py", "*_tests.py"]
 testpaths = ["tests"]
-addopts = "--reuse-db -m 'not vlm and not long_running and not ocr and not manuals'"
+addopts = "--reuse-db --should-open-report=never -m 'not vlm and not long_running and not ocr and not manuals'"
 asyncio_mode = "auto"
 markers = [
     "slow: mark a test as slow",

@@ -149,8 +149,12 @@ def test_switching_to_the_table_subtab_returns_only_the_table_panel(client, proj
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("table, expected, panel", [(False, "Plots", "<mires-chart-bar"), (True, "Table", "<data-table")])
-def test_switching_to_the_consent_tab_highlights_the_subtab_and_renders_its_panel(client, project, table, expected, panel):
+@pytest.mark.parametrize(
+    "table, expected, panel", [(False, "Plots", "<mires-chart-bar"), (True, "Table", "<data-table")]
+)
+def test_switching_to_the_consent_tab_highlights_the_subtab_and_renders_its_panel(
+    client, project, table, expected, panel
+):
     response = client.get(_url(project, "consent", table=table), **HTMX)
     page = parse(response)
 

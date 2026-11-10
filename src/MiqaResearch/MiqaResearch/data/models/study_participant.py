@@ -20,7 +20,9 @@ class StudyParticipant(models.Model):
     gender = models.CharField(
         max_length=10, choices=[('M', 'Male'), ('F', 'Female'), ('O', 'Other'), ('U', 'Unknown')],
         blank=False, null=False, default='U')
-    research_project = models.ForeignKey(ResearchProject, on_delete=models.PROTECT, blank=True, null=True, db_index=True)
+    research_project = models.ForeignKey(
+        ResearchProject, on_delete=models.PROTECT, blank=True, null=True, db_index=True
+    )
 
     objects = StudyParticipantManager()
 

@@ -25,6 +25,7 @@ services:
       - MIRES_AUTHENTICATION_FRAMEWORK=adfs,local
       - MIRES_ADFS_AUTHORITY=https://adfs.test.umu.se
       - MIRES_OIDC_CLIENT_ID=1c3de344-d6d8-43b9-9b6c-61aa8ce33419
+      - MIRES_ETL_S3_ENDPOINT_URL=http://miresfs:9000
     depends_on:
       - mires_db
       - mires_vault
@@ -122,11 +123,14 @@ services:
       - CONSENT_CLIENT_SECRET=replace-me-client-secret
       - FERNET_KEY=EiGdHopiKZdBZwVCP4dVJitPrrDnOuGAd94W4EZpwQc=
       - SENSITIVE_DATA_HASH_KEY=H2QCB14temR-C2JnLORSE5TxPwLd8iy3YygNPQ-corA=
+      - ETL_S3_ACCESS_KEY_ID=MiresAccessKey
+      - ETL_S3_SECRET_ACCESS_KEY=MiresSecretKey
     command: >
       sh -c "vault server -dev -dev-root-token-id=$$VAULT_DEV_ROOT_TOKEN_ID -dev-listen-address=0.0.0.0:8200 &
       until vault status >/dev/null 2>&1; do sleep 1; done;
       vault kv put secret/mires/consent ConsentClientId=$$CONSENT_CLIENT_ID ConsentClientSecret=$$CONSENT_CLIENT_SECRET;
       vault kv put secret/mires/datahashing FernetKey=$$FERNET_KEY SensitiveDataHashKey=$$SENSITIVE_DATA_HASH_KEY;
+      vault kv put secret/mires/etl-s3 AccessKeyId=$$ETL_S3_ACCESS_KEY_ID SecretAccessKey=$$ETL_S3_SECRET_ACCESS_KEY;
       wait"
     networks:
       - mires

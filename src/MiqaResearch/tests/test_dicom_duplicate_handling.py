@@ -18,7 +18,7 @@ import pytest
 
 from MiqaResearch.data.models import DicomFile, DicomSeries, DicomStudy, ResearchProject
 from MiqaResearch.tasks.dicom_handling.pipeline import run_ingestion
-from tests.dicom_fixtures import DEFAULT_PATIENT_ID, build_ct_image, write_dicom
+from tests.dicom_fixtures import build_ct_image, write_dicom
 
 
 @pytest.fixture(autouse=True)
@@ -34,7 +34,9 @@ def allow_tmp_sources(settings, tmp_path):
 
 @pytest.fixture
 def research_project(db):
-    return ResearchProject.objects.create(name="Ingestion duplicates project", description="Project for #120 duplicate tests")
+    return ResearchProject.objects.create(
+        name="Ingestion duplicates project", description="Project for #120 duplicate tests"
+    )
 
 
 @pytest.fixture
@@ -93,7 +95,9 @@ def test_rerun_of_identical_file_is_noop_duplicate_update_mode(research_project,
 # --- Conflicting duplicates -------------------------------------------------------
 
 
-def test_conflicting_duplicate_is_distinct_outcome_skip_mode_writes_nothing(research_project, tmp_path, settings, same_sop_pair):
+def test_conflicting_duplicate_is_distinct_outcome_skip_mode_writes_nothing(
+    research_project, tmp_path, settings, same_sop_pair
+):
     settings.MEDIA_ROOT = tmp_path / "media"
     original, rescan = same_sop_pair
     src = write_dicom(build_ct_image(), tmp_path / "a.dcm")
@@ -118,7 +122,9 @@ def test_conflicting_duplicate_is_distinct_outcome_skip_mode_writes_nothing(rese
     assert dcm_file.file.read() == stored_before
 
 
-def test_conflicting_duplicate_update_mode_replaces_record_in_place(research_project, tmp_path, settings, same_sop_pair):
+def test_conflicting_duplicate_update_mode_replaces_record_in_place(
+    research_project, tmp_path, settings, same_sop_pair
+):
     settings.MEDIA_ROOT = tmp_path / "media"
     research_project.dicom_duplicate_handling = "update"
     original, rescan = same_sop_pair
@@ -211,7 +217,9 @@ def test_per_run_override_forces_skip_on_update_project(research_project, tmp_pa
 # --- Legacy records without a stored hash -------------------------------------------
 
 
-def test_legacy_record_without_hash_falls_back_to_stored_bytes_comparison(research_project, tmp_path, settings, same_sop_pair):
+def test_legacy_record_without_hash_falls_back_to_stored_bytes_comparison(
+    research_project, tmp_path, settings, same_sop_pair
+):
     settings.MEDIA_ROOT = tmp_path / "media"
     original, _ = same_sop_pair
     src = write_dicom(build_ct_image(), tmp_path / "a.dcm")

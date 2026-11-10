@@ -26,7 +26,7 @@ from .s3 import EtlBucketSource
 def poll_binding(binding) -> EtlJob | None:
     """Poll `binding`'s source bucket once. Returns the EtlJob queued this poll, or None if
     nothing was queued (nothing new/quiescent yet, or the Binding already has an active Job)."""
-    source = EtlBucketSource(binding.source_bucket, binding.source_prefix)
+    source = EtlBucketSource(binding.source_bucket, binding.source_prefix, binding.storage)
     new_files = _record_new_files(binding, source.list_objects())
 
     if binding.grouping_mode == PIPELINE_BINDING_GROUPING_FOLDER:

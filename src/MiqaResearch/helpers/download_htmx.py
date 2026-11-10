@@ -1,6 +1,6 @@
-import os
-import requests
 from pathlib import Path
+
+import requests
 
 # Configuration
 # Fetch latest version or use latest stable version known.

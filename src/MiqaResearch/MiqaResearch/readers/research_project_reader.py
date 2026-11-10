@@ -18,7 +18,9 @@ async def check_user_project_role_by_name(
         logger.warning("User project role check requested with empty required_role for project %s", project_id)
         raise ValueError("required_role must not be empty")
 
-    user, research_project, project_roles = await get_user_project_role_list_from_request_and_project(request, project_id)
+    user, research_project, project_roles = await get_user_project_role_list_from_request_and_project(
+        request, project_id
+    )
 
     if research_project is None:
         logger.warning("User project role check requested for non-existent project %s", project_id)
@@ -42,7 +44,9 @@ async def check_user_project_role_by_id(
         logger.error("check_user_project_role_by_id called with empty required_role for project %s", project_id)
         raise ValueError("required_role must not be empty")
 
-    user, research_project, project_roles = await get_user_project_role_list_from_request_and_project(request, project_id)
+    user, research_project, project_roles = await get_user_project_role_list_from_request_and_project(
+        request, project_id
+    )
 
     if research_project is None:
         logger.warning("User project role check requested for non-existent project %s", project_id)

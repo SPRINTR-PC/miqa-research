@@ -3,7 +3,7 @@
 Seam: the WADO HTTP endpoints, fed by `run_ingestion`. A session caller is a
 logged-in user (`client.force_login`); a client caller sends a Bearer token.
 """
-from datetime import datetime, timezone as dt_timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -12,6 +12,7 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
 from contract.constants.audit_log import DATA_ACCESS_EVENT_TYPES, EVENT_TYPE_VIEWER_SERIES_OPENED
+from contract.constants.research_project_role import PROJECT_ROLE_ANNOTATOR, PROJECT_ROLE_PI
 from MiqaResearch.data.models import (
     AuditLog,
     Clinic,
@@ -24,7 +25,6 @@ from MiqaResearch.data.models import (
 )
 from MiqaResearch.data.models.dicom_storage import DicomStorage
 from MiqaResearch.tasks.dicom_handling.pipeline import run_ingestion
-from contract.constants.research_project_role import PROJECT_ROLE_ANNOTATOR, PROJECT_ROLE_PI
 from tests.client_binding_helpers import bound_client
 from tests.dicom_fixtures import build_multiframe_ct, write_dicom
 
@@ -59,7 +59,7 @@ def world(db, tmp_path):
     dicom_file = DicomFile.objects.get(sop_instance_uid=report.results[0].sop_instance_uid)
     ParticipantConsent.objects.create(
         study_participant=dicom_file.series.study.study_participant, status="Signerat", clinic=sites["A"],
-        consent_type=consent_type, consent_signed_date=datetime(2026, 1, 1, 9, 0, tzinfo=dt_timezone.utc),
+        consent_type=consent_type, consent_signed_date=datetime(2026, 1, 1, 9, 0, tzinfo=UTC),
     )
     return {"project": project, "sites": sites, "file": dicom_file}
 
@@ -188,7 +188,11 @@ def _frames_queries(client, url):
     ]
 
 
-@pytest.mark.parametrize("role, site", [(PROJECT_ROLE_ANNOTATOR, "A"), (PROJECT_ROLE_PI, "B"), (PROJECT_ROLE_ANNOTATOR, "B")])
+@pytest.mark.parametrize("role, site", [
+    (PROJECT_ROLE_ANNOTATOR, "A"),
+    (PROJECT_ROLE_PI, "B"),
+    (PROJECT_ROLE_ANNOTATOR, "B")
+])
 def test_frames_loads_file_and_checks_visibility_in_one_query(world, client, role, site):
     client.force_login(_user_with_role(world["project"], role, world["sites"][site]))
 

@@ -195,7 +195,9 @@ def test_exact_text_filter_on_an_encrypted_column_matches_the_hash_field_with_th
         "person__pid_hash", get_deterministic_hash("19121212-0001"))
 
 
-@pytest.mark.parametrize("key", ["code__icontains", "code__exact", "code__in", "person__pid__icontains", "person__pid_hash"])
+@pytest.mark.parametrize(
+    "key", ["code__icontains", "code__exact", "code__in", "person__pid__icontains", "person__pid_hash"]
+)
 def test_exact_text_filter_allows_only_the_bare_column_key(key):
     assert _exact().filter_for(key, ["x"]) is None
 

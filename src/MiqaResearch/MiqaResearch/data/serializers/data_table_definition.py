@@ -110,7 +110,9 @@ class DataTableDefinition:
         else:
             defaults = sorted(
                 (column for column in self.columns if column.default_sort),
-                key=lambda column: len(self.columns) if column.default_sort_order is None else column.default_sort_order,
+                key=lambda column: (
+                    len(self.columns) if column.default_sort_order is None else column.default_sort_order
+                ),
             )
             ordering = [("-" if column.default_sort == "desc" else "") + column.accessor for column in defaults]
 

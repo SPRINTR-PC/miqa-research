@@ -36,9 +36,13 @@ class ParticipantConsent(models.Model):
     study_participant = models.ForeignKey("StudyParticipant", on_delete=models.CASCADE, blank=False, null=False,
                                           db_index=True)
     status = models.CharField(max_length=200, blank=True, null=True)  # noqa: DJ001
-    consent_signed_date = models.DateTimeField(null=False, blank=False, help_text="Date and time when the consent was granted")
+    consent_signed_date = models.DateTimeField(
+        null=False, blank=False, help_text="Date and time when the consent was granted"
+    )
     last_updated = models.DateTimeField(auto_now=True, help_text="Date and time when the consent was last updated")
-    consent_revoked_date = models.DateTimeField(null=True, blank=True, help_text="Date and time when the consent was revoked")
+    consent_revoked_date = models.DateTimeField(
+        null=True, blank=True, help_text="Date and time when the consent was revoked"
+    )
     clinic = models.ForeignKey(Clinic, on_delete=models.PROTECT, blank=False, null=False,)
     consent_type = models.ForeignKey(ParticipantConsentType, on_delete=models.CASCADE, blank=False, null=False,
                                      related_name="consents", related_query_name="consent",
@@ -96,4 +100,7 @@ class ConsentDailyActiveSummary(models.Model):
         ordering = ["research_project", "clinic", "day"]
 
     def __str__(self) -> str:
-        return f"ConsentDailyActiveSummary(project={self.research_project}, clinic={self.clinic}, day={self.day}, active_participant_count={self.active_participant_count})"
+        return (
+            f"ConsentDailyActiveSummary(project={self.research_project}, clinic={self.clinic}, "
+            f"day={self.day}, active_participant_count={self.active_participant_count})"
+        )

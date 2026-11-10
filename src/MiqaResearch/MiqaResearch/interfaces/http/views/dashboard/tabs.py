@@ -7,9 +7,7 @@ from django.template.loader import render_to_string
 from MiqaResearch.interfaces.http.forms.etl import (
     EtlBindingCreateForm,
     EtlBindingEditForm,
-    EtlLocationGrantForm,
     EtlProjectSettingsForm,
-    EtlSourceLocationForm,
 )
 from MiqaResearch.readers.etl_reader import (
     get_bindable_script_versions,
@@ -135,8 +133,9 @@ async def consent_statistics(request, project_id):
 
     return render(
         request,
-        '01_dashboard/project.html',
-        {'project': research_project, 'active_tab': 'consent-statistics', 'active_subtab': active_subtab} | site_options,
+        "01_dashboard/project.html",
+        {"project": research_project, "active_tab": "consent-statistics", "active_subtab": active_subtab}
+        | site_options,
     )
 
 @htmx_login_required
@@ -242,7 +241,7 @@ async def etl_section_context(project, permissions, section) -> dict:
                 **form_kwargs, source_locations=context['source_locations'])
             for binding in context['bindings']:
                 binding.edit_form = EtlBindingEditForm(
-                    **form_kwargs, current_raw_retention=binding.raw_retention,
+                    **form_kwargs, current_raw_retention=binding.raw_retention, storage_id=binding.storage_id,
                     initial=_binding_edit_initial(binding), auto_id=binding_edit_auto_id(binding),
                 )
 
@@ -262,10 +261,6 @@ async def etl_section_context(project, permissions, section) -> dict:
     elif section == ETL_SECTION_SOURCES:
         context['location_grants'] = await get_project_location_grants(project)
         context['source_locations'] = await get_project_source_locations(project)
-        if permissions.can_manage_source_locations:
-            context['source_location_form'] = EtlSourceLocationForm()
-        if permissions.can_manage_location_grants:
-            context['location_grant_form'] = EtlLocationGrantForm()
 
     return context
 

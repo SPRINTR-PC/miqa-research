@@ -152,7 +152,13 @@ def test_wsi_declaring_implausible_total_pixel_matrix_dimensions_is_rejected(res
     # Actual PixelData stays a tiny 4x4 tile; only the *declared* pyramid
     # extent is bomb-shaped -- exactly the small-compressed-payload/huge-
     # declared-size shape #114 flagged for pathology J2K frames.
-    ds = build_wsi(number_of_frames=1, tile_rows=4, tile_columns=4, total_pixel_matrix_rows=5_000_000, total_pixel_matrix_columns=5_000_000)
+    ds = build_wsi(
+        number_of_frames=1,
+        tile_rows=4,
+        tile_columns=4,
+        total_pixel_matrix_rows=5_000_000,
+        total_pixel_matrix_columns=5_000_000
+    )
     src = write_dicom(ds, tmp_path / "bomb.dcm")
 
     report = run_ingestion(research_project, src)

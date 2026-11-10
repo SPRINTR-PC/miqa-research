@@ -1,0 +1,40 @@
+{% load i18n %}{% comment %}Body of the app modal for the Sources section: New location grant, or Edit (`grant`; only its name changes).{% endcomment %}
+<div class="app-modal-body etl-compact-modal">
+  <div class="flex items-start justify-between gap-4">
+    <h2 id="app-modal-title" class="text-xl font-semibold">{% if grant %}{% translate "Edit location grant" %}{% else %}{% translate "New location grant" %}{% endif %}</h2>
+    <button type="button" class="btn icon-btn etl-modal-close" data-modal-close aria-label="{% translate 'Close' %}">{% include 'components/icon.html' with icon_name='x' icon_classes='h-4 w-4' %}</button>
+  </div>
+  <form method="post" hx-post="{% if grant %}{% url 'dashboard_tab_etl_location_grant_edit' project.id grant.id %}{% else %}{% url 'dashboard_tab_etl_location_grants_create' project.id %}{% endif %}" hx-target="#etl-section-panel" hx-swap="innerHTML">
+    {% csrf_token %}
+    {% if modal_error %}<p class="etl-form-error">{{ modal_error }}</p>{% endif %}
+    {% for field in form %}{% if field.name == "name" %}
+      <label class="etl-field"><span>{{ field.label }}</span>{{ field }}
+        {% for error in field.errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
+      </label>
+    {% endif %}{% endfor %}
+    {% if grant %}
+    <div class="etl-field">
+      <span>{% translate "Storage, bucket and prefix" %}</span>
+      <code class="etl-grant-base">{{ grant.storage.name }}: {{ grant.bucket }}/{{ grant.prefix }}</code>
+      <span class="text-sm text-muted-foreground">{% translate "Only the name can change. To grant a different location, delete this grant and add a new one." %}</span>
+    </div>
+    {% else %}
+    <label class="etl-field"><span>{% translate "Storage" %}</span>
+      <select name="storage" id="etl-grant-storage">
+        {% for storage in storages %}<option value="{{ storage.id }}">{{ storage.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <button type="button" class="btn btn-outline" data-etl-browse data-url="{% url 'dashboard_tab_etl_storage_browse' project.id nil_uuid %}" data-select="etl-grant-storage">{% include 'components/icon.html' with icon_name='folder' icon_classes='h-4 w-4' %}{% translate "Browse storage" %}</button>
+    <div id="etl-storage-browser"></div>
+    {% for field in form %}{% if field.name != "storage" and field.name != "name" %}
+      <label class="etl-field"><span>{{ field.label }}</span>{{ field }}
+        {% for error in field.errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
+      </label>
+    {% endif %}{% endfor %}
+    {% endif %}
+    <div class="modal-actions">
+      <button class="btn btn-primary" type="submit">{% if grant %}{% translate "Save" %}{% else %}{% translate "Create grant" %}{% endif %}</button>
+      <button type="button" class="modal-cancel" data-modal-close>{% translate "Cancel" %}</button>
+    </div>
+  </form>
+</div>

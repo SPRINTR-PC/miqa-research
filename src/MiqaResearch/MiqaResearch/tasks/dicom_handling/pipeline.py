@@ -150,14 +150,22 @@ def _run_local_source(
             discovery.assert_local_source_allowed(file_path, allowed_roots)
         except discovery.SourceNotAllowedError:
             report.results.append(
-                FileIngestionResult(source_path=str(file_path), outcome=OUTCOME_ERROR, error="file resolves outside the allowed source roots")
+                FileIngestionResult(
+                    source_path=str(file_path),
+                    outcome=OUTCOME_ERROR,
+                    error="file resolves outside the allowed source roots",
+                )
             )
             continue
         try:
             raw_bytes = file_path.read_bytes()
         except OSError as exc:
             report.results.append(
-                FileIngestionResult(source_path=str(file_path), outcome=OUTCOME_ERROR, error=f"source file unreadable: {type(exc).__name__}")
+                FileIngestionResult(
+                    source_path=str(file_path),
+                    outcome=OUTCOME_ERROR,
+                    error=f"source file unreadable: {type(exc).__name__}",
+                )
             )
             continue
         result = _ingest_file(research_project, str(file_path), raw_bytes, overwrite_existing)
@@ -320,7 +328,9 @@ def _handle_duplicate(
     new_hash = _content_hash(raw_bytes)
     if new_hash == _stored_content_hash(existing):
         return OUTCOME_SKIPPED_DUPLICATE, False
-    update = overwrite_existing if overwrite_existing is not None else research_project.dicom_duplicate_handling == "update"
+    update = (
+        overwrite_existing if overwrite_existing is not None else research_project.dicom_duplicate_handling == "update"
+    )
     if update:
         participant_alias = existing.series.study.study_participant.alias1
         extracted = extractors.extract(dataset, research_project, participant_alias)

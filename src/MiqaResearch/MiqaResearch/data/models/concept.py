@@ -14,12 +14,12 @@ class Concept(models.Model):
     domain_id = models.CharField(max_length=20, default="Procedure", help_text="The domain this concept belongs to")
     vocabulary_id = models.CharField(max_length=20, help_text="The source vocabulary (e.g., 'SNOMED', 'LOINC', 'CPT4')")
     concept_class_id = models.CharField(max_length=20, help_text="The category of the concept (e.g., 'Procedure')")
-    standard_concept = models.CharField(max_length=1, null=True, blank=True,
+    standard_concept = models.CharField(max_length=1, null=True, blank=True,  # noqa: DJ001
                                         help_text="'S' for standard, 'C' for classification")
     concept_code = models.CharField(max_length=50, help_text="The code from the source vocabulary")
     valid_start_date = models.DateField()
     valid_end_date = models.DateField()
-    invalid_reason = models.CharField(max_length=1, null=True, blank=True)
+    invalid_reason = models.CharField(max_length=1, null=True, blank=True)  # noqa: DJ001
 
     class Meta:
         db_table = "mires_concept"

@@ -7,6 +7,14 @@
   align-items: center;
   justify-content: center;
 }
+.btn.btn-danger {
+  background-color: var(--color-chart-error);
+  border-color: var(--color-chart-error);
+  color: hsl(0, 0%, 98%);
+}
+.btn.btn-danger:hover {
+  background-color: hsl(var(--color-chart-error-parts) / 0.85);
+}
 .bg-card {
   background-color: var(--color-card);
 }
@@ -139,6 +147,7 @@
   padding: 0;
 }
 .etl-list > li {
+  max-width: none;
   padding: 1rem;
   border-bottom: 1px solid var(--color-border);
   display: flex;
@@ -579,29 +588,29 @@ body.dark .etl-help-popover .tok-punctuation {
 body.dark .etl-help-popover .tok-invalid {
   color: #fca5a5;
 }
-#etl-section-panel button.btn:not(.etl-help-close) {
+:is(#etl-section-panel, #api-clients-panel) button.btn:not(.etl-help-close) {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
   width: fit-content;
   padding: 0.5rem 1rem;
   border: 1px solid transparent;
-  background-color: var(--color-primary);
-  color: hsl(165, 91%, 9%);
+  background-color: hsl(277, 65%, 42%);
+  color: hsl(0, 0%, 98%);
   font-size: 0.875rem;
   font-weight: 500;
   line-height: 1.25rem;
   cursor: pointer;
 }
-#etl-section-panel button.btn:not(.etl-help-close) .icon {
+:is(#etl-section-panel, #api-clients-panel) button.btn:not(.etl-help-close) .icon {
   display: inline-flex;
   flex: none;
   align-items: center;
 }
-#etl-section-panel button.btn:not(.etl-help-close):hover {
+:is(#etl-section-panel, #api-clients-panel) button.btn:not(.etl-help-close):hover {
   opacity: 0.9;
 }
-#etl-section-panel button.btn:not(.etl-help-close):focus-visible {
+:is(#etl-section-panel, #api-clients-panel) button.btn:not(.etl-help-close):focus-visible {
   outline: 2px solid var(--color-ring, var(--color-primary));
   outline-offset: 2px;
 }
@@ -609,7 +618,7 @@ body.dark .etl-help-popover .tok-invalid {
   color: var(--color-destructive);
   margin-left: 0.15rem;
 }
-.etl-script-modal .btn {
+.app-modal-body .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -618,23 +627,169 @@ body.dark .etl-help-popover .tok-invalid {
   border: 1px solid var(--color-border);
   cursor: pointer;
 }
-.etl-script-modal .btn .icon {
+.app-modal-body .btn .icon {
   display: inline-flex;
   flex: none;
 }
-.etl-script-modal .btn.btn-primary {
-  background-color: var(--color-primary);
-  color: var(--color-primary-foreground);
+.app-modal-body .btn.btn-primary {
+  background-color: hsl(277, 65%, 42%);
+  color: hsl(0, 0%, 98%);
   border-color: transparent;
 }
-.etl-script-modal .btn.btn-destructive {
+.app-modal-body .btn.btn-destructive {
   background-color: var(--color-destructive);
   color: var(--color-destructive-foreground);
   border-color: transparent;
 }
-.etl-script-modal .btn.etl-modal-close {
+.app-modal-body .btn.etl-modal-close {
   padding: 0.5rem;
   border-color: transparent;
+}
+.etl-storage-browse {
+  margin-top: 0.5rem;
+  margin-bottom: 0.75rem;
+  background-color: var(--color-background);
+}
+#etl-storage-browser:not(:empty) {
+  margin-top: 0.5rem;
+}
+#etl-storage-browser:empty {
+  margin-bottom: 0.75rem;
+}
+.etl-browse-path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.875rem;
+  color: var(--color-muted-foreground);
+  word-break: break-all;
+}
+.etl-browse-toolbar {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.875rem;
+}
+.etl-browse-tool {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--color-foreground);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.etl-browse-tool:hover {
+  text-decoration: none;
+}
+.etl-browse-list {
+  max-height: 16rem;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.etl-browse-list > li {
+  border-bottom: 1px solid var(--color-border);
+}
+.etl-browse-list > li:last-child {
+  border-bottom: 0;
+}
+.etl-browse-entry,
+.etl-browse-file {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.375rem 0.75rem;
+  font-size: 0.875rem;
+  text-align: left;
+}
+.etl-browse-entry {
+  background: none;
+  border: 0;
+  color: var(--color-foreground);
+  cursor: pointer;
+}
+.etl-browse-entry:hover {
+  background-color: hsl(var(--color-muted-parts) / 0.25);
+}
+.etl-browse-file {
+  color: var(--color-muted-foreground);
+}
+.etl-tree-children {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 1rem;
+}
+.etl-tree-children[hidden] {
+  display: none;
+}
+.etl-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  font-size: 0.875rem;
+}
+.etl-tree-toggle {
+  flex: none;
+  width: 1.25rem;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--color-muted-foreground);
+  cursor: pointer;
+}
+.etl-tree-toggle[aria-expanded="true"] {
+  transform: rotate(90deg);
+}
+.etl-tree-label {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  padding: 0.125rem 0.375rem;
+  color: var(--color-foreground);
+  cursor: pointer;
+  text-align: left;
+}
+.etl-tree-label:hover {
+  background-color: hsl(var(--color-muted-parts) / 0.25);
+}
+.etl-tree-label.selected {
+  background-color: hsl(var(--color-muted-parts) / 0.4);
+  font-weight: 600;
+}
+.etl-tree-file {
+  color: var(--color-muted-foreground);
+}
+.etl-grant-base {
+  display: block;
+  padding: 0.4rem 0.6rem;
+  border: 1px dashed var(--color-border);
+  border-radius: 0.375rem;
+  color: var(--color-muted-foreground);
+  word-break: break-all;
+}
+.etl-manage-actions > details > summary {
+  padding: 0.5rem 1rem;
+  border: 1px solid transparent;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  cursor: pointer;
+}
+:is(#etl-section-panel, #api-clients-panel) .rounded-lg :is(p, li) {
+  max-width: none;
+}
+:is(#etl-section-panel, #api-clients-panel) .rounded-lg .text-center .icon {
+  display: flex;
+  justify-content: center;
+}
+:is(#etl-section-panel, #api-clients-panel) button.btn.btn-danger:not(.etl-help-close) {
+  background-color: var(--color-chart-error);
+  border-color: var(--color-chart-error);
+  color: hsl(0, 0%, 98%);
 }
 .icon.small-inline-icon {
   height: 1.3rem;
@@ -1847,29 +2002,105 @@ body:not(.dark) .manual-prose .highlight .il {
   }
 }
 dialog.modal {
-  background-color: var(--color-popover);
+  background-color: hsl(var(--color-background-parts) / 0.78);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
   color: var(--color-popover-foreground);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-lg);
-  padding: 1.5rem;
-  max-width: 28rem;
-  width: 90%;
+  border: 1px solid hsl(var(--color-foreground-parts) / 0.12);
+  border-radius: 1rem;
+  box-shadow: 0 24px 64px hsla(0, 0%, 0%, 0.45);
+  padding: 2rem;
+  max-width: 32rem;
+  width: 92%;
+  max-height: calc(100vh - 4rem);
+  overflow-y: auto;
 }
 dialog.modal:has(.etl-script-modal) {
-  width: 95%;
-  max-width: calc(var(--container-max, 1400px) * 0.95);
-  max-height: calc(100vh - 6rem);
-  overflow-y: auto;
+  max-width: min(56rem, 95vw);
 }
 dialog.modal[open] {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  margin: 4rem auto auto auto;
+  margin: auto;
 }
 dialog.modal::backdrop {
-  background-color: hsla(0, 0%, 0%, 0.5);
+  background-color: hsla(0, 0%, 0%, 0.6);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+.app-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+.app-modal-body .etl-field {
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+.app-modal-body .etl-field > span:first-child {
+  font-weight: 500;
+}
+.app-modal-body .etl-field :is(select, input:not([type="file"]), textarea) {
+  border: 1px solid hsl(var(--color-foreground-parts) / 0.2);
+  background-color: hsl(var(--color-foreground-parts) / 0.05);
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.app-modal-body .etl-field :is(select, input, textarea)::placeholder {
+  color: hsl(var(--color-foreground-parts) / 0.4);
+}
+.app-modal-body .etl-field :is(select, input, textarea):focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px hsl(var(--color-primary-parts) / 0.28);
+}
+.app-modal-body .modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.75rem;
+}
+.app-modal-body .modal-cancel {
+  background: none;
+  border: 0;
+  padding: 0.5rem 0.75rem;
+  color: var(--color-muted-foreground);
+  font: inherit;
+  cursor: pointer;
+}
+.app-modal-body .modal-cancel:hover {
+  color: var(--color-foreground);
+}
+.app-modal-body .btn.btn-outline {
+  background-color: hsl(var(--color-foreground-parts) / 0.06);
+  border: 1px solid hsl(var(--color-foreground-parts) / 0.2);
+  color: var(--color-foreground);
+  width: fit-content;
+  margin-bottom: 0.5rem;
+}
+.app-modal-body .btn.btn-outline:hover {
+  background-color: hsl(var(--color-foreground-parts) / 0.12);
+}
+.app-modal-body .btn.etl-modal-close {
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border-radius: 0.5rem;
+  background-color: hsl(var(--color-foreground-parts) / 0.1);
+  border: 0;
+}
+.app-modal-body .btn.etl-modal-close:hover {
+  background-color: hsl(var(--color-foreground-parts) / 0.2);
+}
+.app-modal-body h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+.app-modal-body .etl-grant-base {
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.75rem;
 }
 mires-chart-line,
 mires-chart-bar {
@@ -1892,13 +2123,24 @@ mires-chart-bar.card-plot {
 .horizontal-tablist .tab {
   border-width: 0;
   background-color: transparent;
+  color: inherit;
 }
 .horizontal-tablist .tab[aria-selected="true"] {
   background-color: var(--color-background);
+  color: var(--color-foreground);
 }
 .horizontal-tablist .tab svg {
   height: 1rem;
   width: 1rem;
+}
+.dark #dashboard-tablist {
+  background-color: hsl(0, 0%, 20%);
+}
+body:not(.dark) #dashboard-tablist {
+  background-color: hsl(0, 0%, 85%);
+}
+body:not(.dark) #dashboard-tablist .tab svg {
+  color: hsl(277, 60%, 38%);
 }
 header {
   background-color: var(--color-card-background);
@@ -1944,6 +2186,7 @@ header {
 }
 .top-bar button {
   align-items: center;
+  color: var(--color-foreground);
 }
 .top-bar button.icon-btn {
   height: 2.5rem;
@@ -1971,6 +2214,7 @@ header {
 }
 :root {
   --color-background-parts: 0 0% 96%;
+  --color-bg-pattern: hsl(0, 0%, 88%);
   --color-foreground-parts: 0 0% 9%;
   --color-text-parts: 0 0% 9%;
   --color-card-parts: 0 0% 98%;
@@ -2026,6 +2270,7 @@ header {
 }
 .dark {
   --color-background-parts: 0 0% 9%;
+  --color-bg-pattern: hsl(0, 0%, 18%);
   --color-foreground-parts: 0 0% 98%;
   --color-text-parts: 0 0% 98%;
   --color-card-parts: 0 0% 14%;
@@ -2169,6 +2414,20 @@ article {
 body {
   background-color: var(--color-background);
   font-family: "Work Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-color: var(--color-bg-pattern);
+  mask-image: url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%22300%22%20height=%22300%22%20viewBox=%220%200%20100%20100%22%3E%3Cg%20fill=%22none%22%20stroke=%22%23000%22%20stroke-width=%220.3%22%3E%3Cpath%20d=%22M85,0C100,25%2070,75%2085,100M85,0C70,25%20100,75%2085,100M78,15L92,15M83,35L87,35M83,65L87,65M78,85L92,85%22/%3E%3Cpath%20d=%22M0,50C30,20%2070,80%20100,50M0,54C30,24%2070,84%20100,54%22/%3E%3Cpath%20d=%22M15,15L20,12L25,15L25,21L20,24L15,21ZM25,21L32,25M32,24L33,25L32,26L31,25Z%22/%3E%3Cpath%20d=%22M20,80L25,80M20,83L25,83M20,86L25,86%22/%3E%3C/g%3E%3C/svg%3E");
+  mask-size: 800px 800px;
+  mask-repeat: repeat;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%22300%22%20height=%22300%22%20viewBox=%220%200%20100%20100%22%3E%3Cg%20fill=%22none%22%20stroke=%22%23000%22%20stroke-width=%220.3%22%3E%3Cpath%20d=%22M85,0C100,25%2070,75%2085,100M85,0C70,25%20100,75%2085,100M78,15L92,15M83,35L87,35M83,65L87,65M78,85L92,85%22/%3E%3Cpath%20d=%22M0,50C30,20%2070,80%20100,50M0,54C30,24%2070,84%20100,54%22/%3E%3Cpath%20d=%22M15,15L20,12L25,15L25,21L20,24L15,21ZM25,21L32,25M32,24L33,25L32,26L31,25Z%22/%3E%3Cpath%20d=%22M20,80L25,80M20,83L25,83M20,86L25,86%22/%3E%3C/g%3E%3C/svg%3E");
+  -webkit-mask-size: 800px 800px;
+  -webkit-mask-repeat: repeat;
 }
 p {
   display: block;

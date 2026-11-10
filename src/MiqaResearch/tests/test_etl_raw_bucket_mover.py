@@ -231,8 +231,8 @@ def test_cleanup_retry_exhaustion_escalates_exactly_once_and_leaves_the_source_u
     s3_client.put_object(Bucket="incoming", Key="redcap/a.csv", Body=b"data")
     job_input = _job_input(job, data=b"data")
     monkeypatch.setattr(
-        raw_bucket_mover, "build_etl_s3_client",
-        lambda: _DeleteFailingClient(boto3.client("s3", region_name="us-east-1")))
+        raw_bucket_mover, "build_storage_client",
+        lambda storage: _DeleteFailingClient(boto3.client("s3", region_name="us-east-1")))
 
     raw_bucket_mover.move_job_inputs(job)
 
@@ -259,8 +259,8 @@ def test_a_first_cleanup_failure_under_the_cap_schedules_a_backoff_retry_without
     s3_client.put_object(Bucket="incoming", Key="redcap/a.csv", Body=b"data")
     job_input = _job_input(job, data=b"data")
     monkeypatch.setattr(
-        raw_bucket_mover, "build_etl_s3_client",
-        lambda: _DeleteFailingClient(boto3.client("s3", region_name="us-east-1")))
+        raw_bucket_mover, "build_storage_client",
+        lambda storage: _DeleteFailingClient(boto3.client("s3", region_name="us-east-1")))
 
     raw_bucket_mover.move_job_inputs(job)
 
@@ -323,8 +323,8 @@ def test_a_delete_retention_jobs_failing_source_delete_escalates_with_its_retent
     s3_client.put_object(Bucket="incoming", Key="redcap/a.csv", Body=b"data")
     job_input = _job_input(delete_job, data=b"data")
     monkeypatch.setattr(
-        raw_bucket_mover, "build_etl_s3_client",
-        lambda: _DeleteFailingClient(boto3.client("s3", region_name="us-east-1")))
+        raw_bucket_mover, "build_storage_client",
+        lambda storage: _DeleteFailingClient(boto3.client("s3", region_name="us-east-1")))
 
     raw_bucket_mover.move_job_inputs(delete_job)
 

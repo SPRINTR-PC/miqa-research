@@ -225,7 +225,10 @@ def _wsi_level_pixels(downsample: int) -> np.ndarray:
     height, width = WSI_HEIGHT // downsample, WSI_WIDTH // downsample
     y, x = np.mgrid[0:height, 0:width] * downsample
     stripes = ((x + y) // 32) % 2 * 60
-    rgb = np.stack([60 + 160 * x // WSI_WIDTH, 220 - 150 * y // WSI_HEIGHT, np.full_like(x, 170)], axis=-1) - stripes[..., None]
+    rgb = (
+        np.stack([60 + 160 * x // WSI_WIDTH, 220 - 150 * y // WSI_HEIGHT, np.full_like(x, 170)], axis=-1)
+        - stripes[..., None]
+    )
     return np.clip(rgb, 0, 255).astype(np.uint8)
 
 
@@ -481,7 +484,8 @@ class Command(BaseCommand):
     def _blinded_series(self) -> DicomSeries:
         """#290: Blinded Annotation project, the harness PI as PI, a 2D image and an ingested SR on it."""
         project, _ = ResearchProject.objects.get_or_create(
-            name=BLINDED_PROJECT_NAME, defaults={"description": "Blinded Annotation for the viewer browser tests (#290)"},
+            name=BLINDED_PROJECT_NAME,
+            defaults={"description": "Blinded Annotation for the viewer browser tests (#290)"},
         )
         if not project.blinded_annotation:
             project.blinded_annotation = True
@@ -562,7 +566,9 @@ class Command(BaseCommand):
         return DicomSeries.objects.get(study__study_participant__research_project=project, modality="SM")
 
     def _wsi_annotations(self, project) -> DicomSeries:
-        existing = DicomSeries.objects.filter(study__study_participant__research_project=project, modality="ANN").first()
+        existing = DicomSeries.objects.filter(
+            study__study_participant__research_project=project, modality="ANN"
+        ).first()
         if existing:
             return existing
         with tempfile.TemporaryDirectory() as tmp:

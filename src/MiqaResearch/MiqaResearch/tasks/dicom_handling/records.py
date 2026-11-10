@@ -4,8 +4,8 @@ Study/Series fields are fill-blank-only: values populate on first creation and
 only fill still-blank fields on later matches — a disagreeing later file never
 overwrites an earlier value. Two series aggregates are exceptions, always
 resynced from the files: `file_size_in_mb` accumulates, and
-`frame_of_reference_uid` is the value all files share, else null (#197). Matching is by the pseudonymized UID values, never the raw source
-ones (#115).
+`frame_of_reference_uid` is the value all files share, else null (#197). Matching is by the
+pseudonymized UID values, never the raw source ones (#115).
 """
 from uuid import uuid7
 

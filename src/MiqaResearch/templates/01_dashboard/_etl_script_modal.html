@@ -1,5 +1,5 @@
 {% load i18n %}{% comment %}Body of the app modal for the Scripts section: New script (no `script`) or Edit script.{% endcomment %}
-<div class="etl-script-modal space-y-4">
+<div class="app-modal-body etl-script-modal">
   <div class="flex items-start justify-between gap-4">
     <h2 id="app-modal-title" class="text-xl font-semibold">{% if script %}{% translate "Edit script" %}: {{ script.name }}{% else %}{% translate "New script" %}{% endif %}</h2>
     <button type="button" class="btn icon-btn etl-modal-close" data-modal-close aria-label="{% translate 'Close' %}">{% include 'components/icon.html' with icon_name='x' icon_classes='h-4 w-4' %}</button>
@@ -11,28 +11,22 @@
     {% csrf_token %}
     {% for field in create_form %}{% include '01_dashboard/_etl_form_field.html' %}{% endfor %}
     {% for error in create_form.non_field_errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
-    <button class="btn btn-primary" type="submit">{% translate "Create script" %}</button>
+    <div class="modal-actions">
+      <button class="btn btn-primary" type="submit">{% translate "Create script" %}</button>
+      <button type="button" class="modal-cancel" data-modal-close>{% translate "Cancel" %}</button>
+    </div>
   </form>
   {% else %}
-  <section aria-labelledby="etl-script-settings-title" class="space-y-2">
-    <h3 id="etl-script-settings-title" class="font-medium">{% translate "Settings" %}</h3>
-    <form method="post" hx-post="{% url 'dashboard_tab_etl_script_edit' project.id script.id %}" hx-target="#etl-section-panel" hx-swap="innerHTML">
-      {% csrf_token %}
-      {% for field in edit_form %}{% if field.name != "datatype" or not script.datatype_name %}{% include '01_dashboard/_etl_form_field.html' %}{% endif %}{% endfor %}
-      {% for error in edit_form.non_field_errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
+  <form method="post" enctype="multipart/form-data"
+    hx-post="{% url 'dashboard_tab_etl_script_edit' project.id script.id %}" hx-target="#etl-section-panel" hx-swap="innerHTML" hx-encoding="multipart/form-data">
+    {% csrf_token %}
+    {% for field in edit_form %}{% if field.name != "datatype" or not script.datatype_name %}{% include '01_dashboard/_etl_form_field.html' %}{% endif %}{% endfor %}
+    {% for error in edit_form.non_field_errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
+    <div class="modal-actions">
       <button class="btn btn-primary" type="submit">{% translate "Save" %}</button>
-    </form>
-  </section>
-
-  <section aria-labelledby="etl-script-version-title" class="space-y-2">
-    <h3 id="etl-script-version-title" class="font-medium">{% translate "Add version" %}</h3>
-    <form method="post" enctype="multipart/form-data" hx-post="{% url 'dashboard_tab_etl_script_version_create' project.id script.id %}" hx-target="#etl-section-panel" hx-swap="innerHTML" hx-encoding="multipart/form-data">
-      {% csrf_token %}
-      {% for field in version_form %}{% include '01_dashboard/_etl_form_field.html' %}{% endfor %}
-      {% for error in version_form.non_field_errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
-      <button class="btn btn-primary" type="submit">{% translate "Save as new version" %}</button>
-    </form>
-  </section>
+      <button type="button" class="modal-cancel" data-modal-close>{% translate "Cancel" %}</button>
+    </div>
+  </form>
 
   {% if etl_permissions.can_manage_admin_only %}
   <form method="post" hx-post="{% url 'dashboard_tab_etl_script_archive' project.id script.id %}" hx-target="#etl-section-panel" hx-swap="innerHTML">

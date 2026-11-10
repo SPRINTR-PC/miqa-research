@@ -1,0 +1,46 @@
+{% load i18n %}{% comment %}Body of the app modal for the Sources section: New source location, or Edit (`location`; `locked` when a Binding reads from it).{% endcomment %}
+<div class="app-modal-body etl-compact-modal">
+  <div class="flex items-start justify-between gap-4">
+    <h2 id="app-modal-title" class="text-xl font-semibold">{% if location %}{% translate "Edit source location" %}{% else %}{% translate "New source location" %}{% endif %}</h2>
+    <button type="button" class="btn icon-btn etl-modal-close" data-modal-close aria-label="{% translate 'Close' %}">{% include 'components/icon.html' with icon_name='x' icon_classes='h-4 w-4' %}</button>
+  </div>
+  <form method="post" hx-post="{% if location %}{% url 'dashboard_tab_etl_source_location_edit' project.id location.id %}{% else %}{% url 'dashboard_tab_etl_source_locations_create' project.id %}{% endif %}" hx-target="#etl-section-panel" hx-swap="innerHTML">
+    {% csrf_token %}
+    {% if modal_error %}<p class="etl-form-error">{{ modal_error }}</p>{% endif %}
+    {% for field in form %}{% if field.name == "name" %}
+      <label class="etl-field"><span>{{ field.label }}</span>{{ field }}
+        {% for error in field.errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
+      </label>
+    {% endif %}{% endfor %}
+    {% if locked %}
+    <div class="etl-field">
+      <span>{% translate "Storage, bucket and prefix" %}</span>
+      <code class="etl-grant-base">{{ location.storage.name }}: {{ location.bucket }}/{{ location.prefix }}</code>
+      <span class="text-sm text-muted-foreground">{% translate "A Binding reads from this source location, so only its name can change." %}</span>
+    </div>
+    {% else %}
+    <label class="etl-field"><span>{% translate "Location grant" %}</span>
+      <select name="grant" required data-etl-grant-select>
+        {% for grant in location_grants %}
+          <option value="{{ grant.id }}" data-base="{{ grant.storage.name }}: {{ grant.bucket }}/{{ grant.prefix }}"{% if form.grant.value|stringformat:"s" == grant.id|stringformat:"s" %} selected{% endif %}>{% if grant.name %}{{ grant.name }} ({{ grant.bucket }}/{{ grant.prefix }}){% else %}{{ grant.storage.name }}: {{ grant.bucket }}/{{ grant.prefix }}{% endif %}</option>
+        {% empty %}<option value="">{% translate "No location grants yet" %}</option>{% endfor %}
+      </select>
+      {% for error in form.grant.errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
+    </label>
+    <div class="etl-field">
+      <span>{% translate "Storage, bucket and prefix" %}</span>
+      <code class="etl-grant-base" data-etl-grant-base>{% if location_grants %}{% with first=location_grants.0 %}{{ first.storage.name }}: {{ first.bucket }}/{{ first.prefix }}{% endwith %}{% endif %}</code>
+    </div>
+    {% for field in form %}{% if field.name == "subpath" %}
+      <label class="etl-field"><span>{{ field.label }}</span>{{ field }}
+        <span class="text-sm text-muted-foreground">{{ field.help_text }}</span>
+        {% for error in field.errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
+      </label>
+    {% endif %}{% endfor %}
+    {% endif %}
+    <div class="modal-actions">
+      <button class="btn btn-primary" type="submit">{% if location %}{% translate "Save" %}{% else %}{% translate "Create source location" %}{% endif %}</button>
+      <button type="button" class="modal-cancel" data-modal-close>{% translate "Cancel" %}</button>
+    </div>
+  </form>
+</div>

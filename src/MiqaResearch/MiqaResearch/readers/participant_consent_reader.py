@@ -77,41 +77,6 @@ async def get_project_consent_participant_count(project: ResearchProject) -> int
     return participant_count
 
 
-async def get_consent_data_by_clinic(project: ResearchProject) -> ProjectConsentHistoryByClinicSchema:
-    """
-    Get consent data as a list grouped by clinic for a given project.
-    """
-    query = (
-        ParticipantConsent.objects.filter(consent_type__research_project=project)
-        .annotate(
-            clinic_name=F("clinic__name"),
-            consent_label=F("consent_type__label"),
-            study_participant_alias=F("study_participant__alias1"),
-            study_participant_pid=F("study_participant__person_source_value"),
-            study_participant_name=F("study_participant__name"),
-            study_participant_gender=F("study_participant__gender"),
-        )
-        .values(
-            "id",
-            "clinic_id",
-            "clinic_name",
-            "consent_type_id",
-            "consent_label",
-            "status",
-            "consent_signed_date",
-            "last_updated",
-            "consent_revoked_date",
-            "comment",
-            "source",
-            "study_participant_id",
-            "study_participant_alias",
-            "study_participant_pid",
-            "study_participant_name",
-            "study_participant_gender",
-        )
-    )
-
-
 async def get_consent_history_by_clinic(request, project: ResearchProject) -> ProjectConsentHistoryByClinicSchema:
     """
     Get consent count history by clinic for a given project.
@@ -133,10 +98,12 @@ async def get_consent_history_by_clinic(request, project: ResearchProject) -> Pr
                 ClinicConsentHistorySchema(
                     clinic_id=clinic["clinic_id"],
                     clinic_name=str(clinic["clinic_name"]),
-                    consent_history=[ConsentHistoryEventSchema(**item) for item in formatted_data.get(clinic["clinic_id"], {})]
+                    consent_history=[
+                        ConsentHistoryEventSchema(**item) for item in formatted_data.get(clinic["clinic_id"], {})
+                    ],
                 )
                 for clinic in connected_clinics
-            ]
+            ],
         )
     except Exception:
         logger.error("Failed to create output ProjectConsentHistoryByClinicSchema", exc_info=True)
@@ -145,7 +112,9 @@ async def get_consent_history_by_clinic(request, project: ResearchProject) -> Pr
     return output
 
 
-async def get_consent_history_plot_by_clinic(project: ResearchProject) -> LineChartResponseSchema | FilledAreaChartResponseSchema:
+async def get_consent_history_plot_by_clinic(
+    project: ResearchProject,
+) -> LineChartResponseSchema | FilledAreaChartResponseSchema:
     """
     Get consent count history plot data by clinic for a given project.
     """
@@ -235,11 +204,14 @@ async def get_consent_statistics_plot(project: ResearchProject) -> BarChartRespo
 
     logger.debug("Creating data schema for consents by PIV version")
     consents_per_piv_series = BarChartDataSchema(
-        categories=[str(row[0]) if row[0] else gettext("Unknown") for row in consents_per_participant_information_version],
-        series=[BarSeriesSchema(
-            name=gettext("Active Consents"),
-            values=[row[1] for row in consents_per_participant_information_version]
-        )],
+        categories=[
+            str(row[0]) if row[0] else gettext("Unknown") for row in consents_per_participant_information_version
+        ],
+        series=[
+            BarSeriesSchema(
+                name=gettext("Active Consents"), values=[row[1] for row in consents_per_participant_information_version]
+            )
+        ],
     )
     logger.debug("Created data schema for consents by PIV version")
 
@@ -263,7 +235,9 @@ async def get_consent_statistics_plot(project: ResearchProject) -> BarChartRespo
             ChartGroupingSchema(
                 name=gettext("Consents By Consent Type"),
                 label=gettext("Consents By Consent Type"),
-                labels=ChartGroupingLabelsSchema(x_axis_title=None, y_axis_title=None, legend_title=gettext("Consent type")),
+                labels=ChartGroupingLabelsSchema(
+                    x_axis_title=None, y_axis_title=None, legend_title=gettext("Consent type")
+                ),
                 data=consents_per_consent_type,
             ),
             ChartGroupingSchema(

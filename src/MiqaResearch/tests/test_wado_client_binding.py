@@ -3,13 +3,14 @@
 Seams: the WADO HTTP endpoints (fed by `run_ingestion`) called with a Bearer token, and the OAuth2
 token endpoint (`/o/token/`) for which scopes a client may obtain.
 """
-from datetime import datetime, timezone as dt_timezone
+from datetime import UTC, datetime
 
 import pytest
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from oauth2_provider.models import Application
 
+from contract.constants.audit_log import EVENT_TYPE_WADO_CLIENT_ACCESS
 from MiqaResearch.data.models import (
     AuditLog,
     ClientBinding,
@@ -20,7 +21,6 @@ from MiqaResearch.data.models import (
     ResearchProject,
 )
 from MiqaResearch.tasks.dicom_handling.pipeline import run_ingestion
-from contract.constants.audit_log import EVENT_TYPE_WADO_CLIENT_ACCESS
 from tests.client_binding_helpers import bound_client
 from tests.dicom_fixtures import build_multiframe_ct, write_dicom
 
@@ -52,7 +52,7 @@ def world(db, tmp_path):
     dicom_file = DicomFile.objects.get(sop_instance_uid=report.results[0].sop_instance_uid)
     ParticipantConsent.objects.create(
         study_participant=dicom_file.series.study.study_participant, status="Signerat", clinic=sites["A"],
-        consent_type=consent_type, consent_signed_date=datetime(2026, 1, 1, 9, 0, tzinfo=dt_timezone.utc),
+        consent_type=consent_type, consent_signed_date=datetime(2026, 1, 1, 9, 0, tzinfo=UTC),
     )
     return {"project": project, "sites": sites, "file": dicom_file}
 

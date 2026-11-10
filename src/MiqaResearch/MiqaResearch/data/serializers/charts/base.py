@@ -1,8 +1,6 @@
-from typing import Generic, Literal, TypeVar
+from typing import Literal
 
 from ninja import Schema
-
-TData = TypeVar("TData")
 
 
 class ChartEventCallbacksSchema(Schema):
@@ -31,7 +29,7 @@ class ChartGroupingLabelsSchema(Schema):
     y_axis_range: tuple[float | None, float | None] | None = None
 
 
-class ChartGroupingSchema(Schema, Generic[TData]):
+class ChartGroupingSchema[TData](Schema):
     """One Chart Grouping: a named alternative view of the same underlying dataset."""
 
     name: str
@@ -40,7 +38,7 @@ class ChartGroupingSchema(Schema, Generic[TData]):
     data: TData
 
 
-class ChartResponseSchema(Schema, Generic[TData]):
+class ChartResponseSchema[TData](Schema):
     """The full response shape returned by a chart component's dataUrl endpoint.
 
     `groupings` is always a non-empty list, even when there is only one Chart

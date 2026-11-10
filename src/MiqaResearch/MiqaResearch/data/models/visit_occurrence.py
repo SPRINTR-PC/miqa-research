@@ -30,7 +30,9 @@ class VisitOccurrence(models.Model):
         help_text="A foreign key that refers to a visit Concept identifier in the Standardized Vocabularies."
     )
     visit_start_date = models.DateField(help_text="The start date of the visit.")
-    visit_start_datetime = models.DateTimeField(null=True, blank=True, help_text="The date and time of the visit started.")
+    visit_start_datetime = models.DateTimeField(
+        null=True, blank=True, help_text="The date and time of the visit started."
+    )
     visit_end_date = models.DateField(help_text="The end date of the visit.")
     visit_end_datetime = models.DateTimeField(null=True, blank=True, help_text="The date and time of the visit ended.")
     # The source data from which the visit record is derived
@@ -43,7 +45,12 @@ class VisitOccurrence(models.Model):
         help_text="The type of source data from which the visit record is derived."
     )
     # provider_id and care_site_id are omitted as they might require additional models
-    visit_source_value = models.CharField(max_length=50, blank=True, null=True, help_text="The source code for the visit as it appears in the source data.")
+    visit_source_value = models.CharField(  # noqa: DJ001
+        max_length=50,
+        blank=True,
+        null=True,
+        help_text="The source code for the visit as it appears in the source data.",
+    )
     visit_source_concept = models.ForeignKey(
         Concept,
         on_delete=models.SET_NULL,
@@ -61,7 +68,12 @@ class VisitOccurrence(models.Model):
         related_name="admitted_from_visits",
         help_text="A foreign key that refers to the admitted from Concept identifier."
     )
-    admitted_from_source_value = models.CharField(max_length=50, blank=True, null=True, help_text="The source code for the admitted from as it appears in the source data.")
+    admitted_from_source_value = models.CharField(  # noqa: DJ001
+        max_length=50,
+        blank=True,
+        null=True,
+        help_text="The source code for the admitted from as it appears in the source data.",
+    )
     discharged_to_concept = models.ForeignKey(
         Concept,
         on_delete=models.SET_NULL,
@@ -70,7 +82,12 @@ class VisitOccurrence(models.Model):
         related_name="discharged_to_visits",
         help_text="A foreign key that refers to the discharged to Concept identifier."
     )
-    discharged_to_source_value = models.CharField(max_length=50, blank=True, null=True, help_text="The source code for the discharged to as it appears in the source data.")
+    discharged_to_source_value = models.CharField(  # noqa: DJ001
+        max_length=50,
+        blank=True,
+        null=True,
+        help_text="The source code for the discharged to as it appears in the source data.",
+    )
     preceding_visit_occurrence = models.ForeignKey(
         'self',
         on_delete=models.SET_NULL,

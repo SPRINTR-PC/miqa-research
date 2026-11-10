@@ -213,3 +213,5 @@ src/MiqaResearch/MiqaResearch/data/fixtures/consent_data.json
 
 # Publish output
 /artifacts/
+
+src/MiqaResearch/MiqaResearch/report_output/

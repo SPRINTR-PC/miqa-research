@@ -41,7 +41,9 @@ def upload_to(instance, filename):
 class PromData(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     project = models.ForeignKey(ResearchProject, on_delete=models.PROTECT, blank=False, null=False, db_index=True)
-    prom_form_template = models.ForeignKey(PromFormTemplate, on_delete=models.PROTECT, blank=False, null=False, db_index=True)
+    prom_form_template = models.ForeignKey(
+        PromFormTemplate, on_delete=models.PROTECT, blank=False, null=False, db_index=True
+    )
     prom_form_file = models.FileField(upload_to=upload_to, blank=True, null=True)  # Allow null for only digital forms
     # Snapshot of prom_form_template.template.version at upload time (mirrors kpforms'
     # own FormSubmission.form_template_version convention) -- set once in save(), below,
@@ -53,6 +55,9 @@ class PromData(models.Model):
     class Meta:
         db_table = "mires_prom_data"
         ordering = ["-uploaded_at"]
+
+    def __str__(self) -> str:
+        return f"PromData {self.id} for {self.project} uploaded at {self.uploaded_at} by {self.uploaded_by}"
 
     def save(self, *args, **kwargs):
         if self.template_version is None:

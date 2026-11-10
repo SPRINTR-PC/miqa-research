@@ -117,6 +117,45 @@ document.addEventListener('row-action', function(evt) {
   htmx.ajax('GET', url, { target: '#app-modal-content', swap: 'innerHTML', source: table });
 });
 
+// Location Grant form (#394): "Browse storage" loads the chosen storage's buckets/folders into the form;
+// "Use this folder" copies the bucket and prefix being browsed into the form's own inputs.
+document.addEventListener('click', function(evt) {
+  const browse = evt.target.closest('[data-etl-browse]');
+  if (browse && window.htmx) {
+    const select = document.getElementById(browse.dataset.select);
+    const url = browse.dataset.url.replace(NIL_UUID, encodeURIComponent(select.value));
+    htmx.ajax('GET', url, { target: '#etl-storage-browser', swap: 'outerHTML', source: browse });
+    return;
+  }
+  const toggle = evt.target.closest('[data-etl-tree-toggle]');
+  if (toggle) {
+    // The first click's htmx request fills the children list; every click expands or collapses it.
+    const children = toggle.closest('.etl-tree-node').querySelector('.etl-tree-children');
+    const expand = children.hidden;
+    children.hidden = !expand;
+    toggle.setAttribute('aria-expanded', String(expand));
+    return;
+  }
+  const pick = evt.target.closest('[data-etl-pick]');
+  if (pick) {
+    const form = pick.closest('form');
+    form.querySelector('[name=bucket]').value = pick.dataset.bucket;
+    form.querySelector('[name=prefix]').value = pick.dataset.prefix;
+    form.querySelectorAll('.etl-tree-label.selected').forEach(function(el) { el.classList.remove('selected'); });
+    pick.classList.add('selected');
+  }
+});
+
+// Source Location form: choosing a location grant shows the storage, bucket and prefix it fixes; only an
+// additional prefix can be typed after them.
+document.addEventListener('change', function(evt) {
+  const select = evt.target.closest('[data-etl-grant-select]');
+  if (!select) return;
+  const base = select.closest('form').querySelector('[data-etl-grant-base]');
+  const option = select.selectedOptions[0];
+  base.textContent = option ? option.dataset.base || '' : '';
+});
+
 document.addEventListener('DOMContentLoaded', function() {
   setActiveMenuItem();
   setDarkLightModeIcon();
