@@ -17,7 +17,9 @@ from .audit import record_etl_event
 
 logger = logging.getLogger(__name__)
 
-_FIELDS = ("kind", "endpoint_url", "region", "access_key_id_env", "secret_access_key_env")
+_FIELDS = ("kind", "endpoint_url", "region", "access_key_id_env", "secret_access_key_env",
+           "access_key_id_vault_path", "access_key_id_vault_key",
+           "secret_access_key_vault_path", "secret_access_key_vault_key")
 
 
 def sync_etl_storages() -> None:

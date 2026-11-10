@@ -600,8 +600,11 @@ manage action then checks the relevant permission itself and responds 403 if it 
 
 A Connected Storage (`EtlStorage`) is an S3-compatible store: a unique name, endpoint URL, region and
 the *names* of the env vars holding its access key id and secret (`access_key_id_env`,
-`secret_access_key_env`). No secret value is stored, logged or rendered. A storage whose env vars are
-unset shows as "credentials not configured" and fails to browse or poll with that message.
+`secret_access_key_env`) and/or, per credential, a Vault path and key name
+(`access_key_id_vault_path`/`_vault_key`, `secret_access_key_vault_path`/`_vault_key`). Per credential
+the env var wins when set; otherwise the secret is read from Vault at use time (needs `MIRES_USE_VAULT`).
+No secret value is stored, logged or rendered. A storage with no resolvable credentials (env vars unset
+and Vault off, unreachable or unseeded) shows as "credentials not configured" and fails to browse or poll with that message.
 
 Every `EtlLocationGrant`, `EtlSourceLocation` and `PipelineBinding` belongs to one storage (a location
 and Binding take it from their grant). Unique keys include the storage, so the same bucket and prefix in
@@ -613,11 +616,11 @@ only authorises its own storage.
   `MIRES_ETL_S3_*` settings read *live* (endpoint, region and credentials), so an existing deployment
   behaves as before. It is read-only in the admin and can't be deleted.
 - **Settings**: `MIRES_ETL_STORAGES` is a JSON list of `{name, kind, endpoint_url, region,
-  access_key_id_env, secret_access_key_env}`, synced after every `migrate` and by
+  access_key_id_env, secret_access_key_env, access_key_id_vault_path, access_key_id_vault_key, secret_access_key_vault_path, secret_access_key_vault_key}`, synced after every `migrate` and by
   `manage.py sync_etl_storages` (`actions/etl/storages.py`). These are read-only in the admin. One
   removed from settings is deleted if nothing references it, otherwise kept and flagged "no longer in
   settings". A declared name that clashes with an admin-created storage is skipped and logged.
-- **Admin**: staff and superusers create, edit and delete the rest (env-var names only).
+- **Admin**: staff and superusers create, edit and delete the rest (env-var names and Vault path/key names only).
 - **Browsing**: in the Location Grant form, staff and superusers pick a storage, then a bucket
   (`ListBuckets`; type it instead if the credential can't list), then drill into folders one level at a
   time, with up to 50 object names per folder for orientation, never contents (`readers/etl_storage_browser.py`,
@@ -836,7 +839,7 @@ they are loaded.
 | `MIRES_ETL_S3_REGION_NAME` | `us-east-1` | Region for that endpoint. |
 | `MIRES_ETL_S3_VAULT_PATH` | `mires/etl-s3` | With `MIRES_USE_VAULT`, the Vault KV path holding `AccessKeyId` and `SecretAccessKey` for the Default storage. Used only when the two `MIRES_ETL_S3_*` credential vars are unset. |
 | `MIRES_ETL_S3_ACCESS_KEY_ID` / `MIRES_ETL_S3_SECRET_ACCESS_KEY` | *(none)* | The credential of the built-in `Default` Connected Storage (these `MIRES_ETL_S3_*` settings are read live). |
-| `MIRES_ETL_STORAGES` | `[]` | JSON list of additional Connected Storages (`name`, `kind`, `endpoint_url`, `region`, `access_key_id_env`, `secret_access_key_env`), synced after every `migrate`. See [Connected Storages](#heading-etl-connected-storages). |
+| `MIRES_ETL_STORAGES` | `[]` | JSON list of additional Connected Storages (`name`, `kind`, `endpoint_url`, `region`, `access_key_id_env`, `secret_access_key_env`, plus the four `*_vault_path` / `*_vault_key` fields), synced after every `migrate`. See [Connected Storages](#heading-etl-connected-storages). |
 | `MIRES_ETL_POLL_INTERVAL_SECONDS` | `30` | How often every Binding is polled. |
 | `MIRES_ETL_JOB_MAX_AUTO_RETRIES` | `3` | Maximum number of attempts for infra-class failures. |
 | `MIRES_ETL_JOB_STUCK_GRACE_SECONDS` | `300` | Grace period on top of the sandbox timeout before a running Job counts as stuck. |

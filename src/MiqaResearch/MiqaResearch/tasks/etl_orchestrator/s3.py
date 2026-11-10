@@ -8,7 +8,6 @@ pipeline's own S3 wrappers -- each is scoped to a different credential and bucke
 """
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -65,20 +64,18 @@ class EtlBucketSource:
 
 
 class EtlStorageCredentialsNotConfigured(Exception):
-    """A Connected Storage names env vars that are not set in this process."""
+    """A Connected Storage has no credentials: env vars unset and Vault off, unreachable or unseeded."""
 
 
 def build_storage_client(storage, *, config=None):
     """The S3 client for one Connected Storage (#394). The Default storage is the platform-wide
-    MIRES_ETL_S3_* settings, read live; any other reads the env vars it names."""
+    MIRES_ETL_S3_* settings, read live; any other reads the env vars / Vault secrets it names (#396)."""
     if storage.is_default:
         return build_etl_s3_client(config=config)
-    if not storage.credentials_configured:
+    credentials = storage.resolve_credentials()
+    if credentials is None:
         raise EtlStorageCredentialsNotConfigured(f"Storage {storage.name!r}: credentials not configured")
-    kwargs: dict = {
-        "aws_access_key_id": os.environ[storage.access_key_id_env],
-        "aws_secret_access_key": os.environ[storage.secret_access_key_env],
-    }
+    kwargs: dict = {"aws_access_key_id": credentials[0], "aws_secret_access_key": credentials[1]}
     if storage.endpoint_url:
         kwargs["endpoint_url"] = storage.endpoint_url
     if storage.region:
