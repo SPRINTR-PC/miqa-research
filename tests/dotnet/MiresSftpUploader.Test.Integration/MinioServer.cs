@@ -26,7 +26,8 @@ public sealed record MinioServerInfo(string Endpoint, string AccessKey, string S
     /// <summary>
     /// A client for seeding and inspecting buckets independently of the adapter under test. Retries more than the SDK's
     /// default: seeding thousands of objects in parallel can make the throwaway container drop a connection mid-request
-    /// (HttpIOException "response ended prematurely"), which is a transient network error the SDK retries.
+    /// (HttpIOException "response ended prematurely"), which is a transient network error the SDK retries. MinIO can also
+    /// answer with an S3 error ("Client disconnected before response was ready") that the SDK does not retry; seeding retries that itself.
     /// </summary>
     public AmazonS3Client AdminClient() => new(new BasicAWSCredentials(AccessKey, SecretKey),
         new AmazonS3Config { ServiceURL = Endpoint, ForcePathStyle = true, AuthenticationRegion = "us-east-1", MaxErrorRetry = 8,
@@ -38,8 +39,21 @@ public sealed record MinioServerInfo(string Endpoint, string AccessKey, string S
         var bucket = "t" + Guid.NewGuid().ToString("N")[..16];
         using var client = AdminClient();
         await client.PutBucketAsync(bucket);
-        await Parallel.ForEachAsync(objects, new ParallelOptions { MaxDegreeOfParallelism = 16 }, async (entry, ct) =>
-            await client.PutObjectAsync(new PutObjectRequest { BucketName = bucket, Key = entry.Key, InputStream = new MemoryStream(entry.Value), AutoCloseStream = true }, ct));
+        await Parallel.ForEachAsync(objects, new ParallelOptions { MaxDegreeOfParallelism = 6 }, async (entry, ct) =>
+        {
+            for (var attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    await client.PutObjectAsync(new PutObjectRequest { BucketName = bucket, Key = entry.Key, InputStream = new MemoryStream(entry.Value), AutoCloseStream = true }, ct);
+                    return;
+                }
+                catch (AmazonS3Exception ex) when (attempt < 4 && ex.Message.Contains("disconnected", StringComparison.OrdinalIgnoreCase))
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(200 * attempt), ct);
+                }
+            }
+        });
         return bucket;
     }
 }
