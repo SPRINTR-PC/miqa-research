@@ -44,7 +44,7 @@ class AuditLog(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     logtime = models.DateTimeField(auto_now_add=True)
     user = models.ForeignKey(User, on_delete=models.PROTECT, null=True, blank=True, db_index=True)
-    event_type = models.CharField(max_length=32, choices=EVENT_TYPE_CHOICES)
+    event_type = models.CharField(max_length=64, choices=EVENT_TYPE_CHOICES)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     session_key = models.CharField(max_length=40, null=True, blank=True)  # noqa: DJ001
     auth_method = models.CharField(max_length=16, choices=AUTH_METHOD_CHOICES, null=True, blank=True)  # noqa: DJ001

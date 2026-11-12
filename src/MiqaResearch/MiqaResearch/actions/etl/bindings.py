@@ -16,7 +16,7 @@ from contract.constants.audit_log import EVENT_TYPE_ETL_BINDING_CREATED, EVENT_T
 from contract.constants.etl import (
     ETL_SCRIPT_ORIGIN_NATIVE,
     PIPELINE_BINDING_GROUPING_FILE,
-    PIPELINE_BINDING_RAW_RETENTION_MOVE,
+    default_raw_retention,
 )
 from MiqaResearch.data.models import EtlScriptVersion, PipelineBinding
 from MiqaResearch.etl_config_schema import ConfigSchema
@@ -32,7 +32,7 @@ from .exceptions import (
 
 async def create_pipeline_binding(
         *, project, user, request, source_location, script_version_id, raw_bucket, raw_prefix,
-        raw_retention=PIPELINE_BINDING_RAW_RETENTION_MOVE, grouping_mode=PIPELINE_BINDING_GROUPING_FILE,
+        raw_retention=None, grouping_mode=PIPELINE_BINDING_GROUPING_FILE,
         quiescence_seconds=None, config=None,
         timeout_seconds_override=None, memory_mb_override=None, cpu_millicores_override=None) -> PipelineBinding:
     # The Binding copies its Source Location's bucket/prefix (#268); those never change afterwards.
@@ -41,6 +41,8 @@ async def create_pipeline_binding(
     source_bucket, source_prefix = source_location.bucket, source_location.prefix
     script_version = await _usable_script_version(project, script_version_id)
     _require_config_fits(script_version, config or {})
+    if raw_retention is None:  # the Datatype's own default (#421): "delete" where raws tie pseudonyms to identities
+        raw_retention = default_raw_retention(script_version.script.datatype_name)
 
     already_bound = await PipelineBinding.objects.filter(
         storage_id=source_location.storage_id, source_bucket=source_bucket, source_prefix=source_prefix).aexists()
