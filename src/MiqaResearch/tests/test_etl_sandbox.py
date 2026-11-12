@@ -25,6 +25,7 @@ from MiqaResearch.etl_sandbox import (
 )
 from MiqaResearch.etl_sandbox.compose_backend import ComposeSandboxBackend
 from mires_etl import contract
+from tests.sandbox_staging import stage_inputs
 
 # --- image allowlist -------------------------------------------------------
 
@@ -173,18 +174,21 @@ def test_run_creates_a_network_less_non_root_resource_limited_container(allowlis
     assert kwargs["labels"] == {"mires.etl.sandbox": "1", "mires.etl.run_id": "r1"}
 
 
-def test_run_stages_manifest_script_and_input_files_via_put_archive(allowlisted):
+def test_run_stages_manifest_script_and_input_files_via_put_archive(allowlisted, tmp_path):
     client = MagicMock()
     container = _fake_container()
     client.containers.create.return_value = container
     backend = ComposeSandboxBackend(client=client)
     spec = SandboxRunSpec(
         run_id="r1", image_key="python-etl-v1", manifest={"datatype": "measurement", "config": {"a": 1}},
-        script_source=b"SCRIPT_SOURCE", input_files={"source.csv": b"a,b\n1,2\n"}, limits=_limits())
+        script_source=b"SCRIPT_SOURCE", input_files=stage_inputs(tmp_path, {"source.csv": b"a,b\n1,2\n"}), limits=_limits())
+
+    captured = []
+    container.put_archive.side_effect = lambda path, data: captured.append((path, data.read()))
 
     backend.run(spec)
 
-    (path, archive_bytes), _ = container.put_archive.call_args
+    (path, archive_bytes), = captured
     assert path == "/sandbox"
     with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r") as tar:
         names = tar.getnames()
@@ -204,9 +208,12 @@ def test_run_stages_an_r_scripts_source_as_script_r(settings):
         run_id="r1", image_key="r-etl-v1", manifest={"datatype": "measurement"},
         script_source=b"main <- function(ctx) NULL", limits=_limits())
 
+    captured = []
+    container.put_archive.side_effect = lambda path, data: captured.append(data.read())
+
     backend.run(spec)
 
-    (_, archive_bytes), _ = container.put_archive.call_args
+    (archive_bytes,) = captured
     with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r") as tar:
         assert set(tar.getnames()) == {"manifest.json", "script.R"}
         assert tar.extractfile("script.R").read() == b"main <- function(ctx) NULL"

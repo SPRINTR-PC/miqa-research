@@ -31,6 +31,7 @@ from MiqaResearch.etl_sandbox import SandboxLimits, SandboxRunSpec, resolve_limi
 from MiqaResearch.etl_sandbox.compose_backend import ComposeSandboxBackend
 from mires_etl import contract
 from tests.sandbox_docker import docker_client_for
+from tests.sandbox_staging import stage_inputs
 
 IMAGE_REF = "mires-etl-sandbox-python:dev"
 
@@ -171,7 +172,7 @@ def test_sweep_removes_an_orphaned_sandbox_container_and_keeps_a_live_one(docker
 
 @pytest.mark.long_running
 @pytest.mark.django_db
-def test_the_native_consent_script_runs_in_the_real_image_and_its_consents_load(docker_client, settings):
+def test_the_native_consent_script_runs_in_the_real_image_and_its_consents_load(docker_client, settings, tmp_path):
     from django.core.management import call_command
 
     from MiqaResearch.data.models import ParticipantConsent
@@ -192,7 +193,7 @@ def test_the_native_consent_script_runs_in_the_real_image_and_its_consents_load(
     spec = SandboxRunSpec(
         run_id="integration-test-native-consent", image_key=native_version.image_key,
         manifest={"datatype": "participant_consent", "config": {}}, script_source=native_version.source.read(),
-        limits=resolve_limits(), input_files={"export.csv": export})
+        limits=resolve_limits(), input_files=stage_inputs(tmp_path, {"export.csv": export}))
     result = ComposeSandboxBackend(client=docker_client).run(spec)
 
     assert result.exit_code == contract.EXIT_SUCCESS, result.log.decode(errors="replace")

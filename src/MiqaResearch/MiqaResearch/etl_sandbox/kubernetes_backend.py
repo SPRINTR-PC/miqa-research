@@ -18,6 +18,7 @@ check the policy object exists -- it runs a real, fail-closed egress probe befor
 import math
 import time
 from collections.abc import Callable
+from typing import BinaryIO
 
 from kubernetes import client as k8s
 from kubernetes.client.exceptions import ApiException
@@ -25,7 +26,7 @@ from kubernetes.stream import stream as default_stream_fn
 
 from mires_etl import contract
 
-from ._staging import build_sandbox_archive, check_input_size, read_output_from_tar
+from ._staging import check_input_size, open_sandbox_archive, read_output_from_tar
 from .backend import SandboxBackend
 from .exceptions import SandboxBackendUnhealthy
 from .images import resolve_sandbox_image
@@ -154,7 +155,8 @@ class KubernetesSandboxBackend(SandboxBackend):
         pod_name = _stage_pod_name(spec.run_id)
         self._run_transfer_pod(pod_name, pvc_name, spec.run_id)
         try:
-            self._exec_write(pod_name, ["tar", "-xf", "-", "-C", SANDBOX_ROOT], build_sandbox_archive(spec))
+            with open_sandbox_archive(spec) as archive:
+                self._exec_write(pod_name, ["tar", "-xf", "-", "-C", SANDBOX_ROOT], archive)
         finally:
             self._core_v1.delete_namespaced_pod(pod_name, self._namespace())
 
@@ -205,13 +207,13 @@ class KubernetesSandboxBackend(SandboxBackend):
                 raise TimeoutError(f"Pod {name!r} did not reach Running within {timeout_seconds}s.")
             time.sleep(POD_POLL_INTERVAL_SECONDS)
 
-    def _exec_write(self, pod_name: str, command: list[str], data: bytes) -> None:
+    def _exec_write(self, pod_name: str, command: list[str], data: BinaryIO) -> None:
         ws = self._stream_fn(
             self._core_v1.connect_get_namespaced_pod_exec, pod_name, self._namespace(),
             command=command, stderr=True, stdin=True, stdout=True, tty=False, _preload_content=False)
         try:
-            for offset in range(0, len(data), EXEC_CHUNK_BYTES):
-                ws.write_stdin(data[offset:offset + EXEC_CHUNK_BYTES])
+            while chunk := data.read(EXEC_CHUNK_BYTES):
+                ws.write_stdin(chunk)
         finally:
             ws.close()
 

@@ -20,6 +20,7 @@ from MiqaResearch.etl_sandbox import (
 from MiqaResearch.etl_sandbox.kubernetes_backend import KubernetesSandboxBackend
 from MiqaResearch.etl_sandbox.limits import SandboxLimits
 from mires_etl import contract
+from tests.sandbox_staging import stage_inputs
 
 
 def _limits(**overrides):
@@ -212,14 +213,14 @@ def test_run_creates_a_read_write_once_pvc_sized_to_the_input_and_output_ceiling
     assert pvc.spec.resources.requests["storage"] == "3Gi"
 
 
-def test_run_stages_the_manifest_script_and_input_files_via_exec_tar(allowlisted):
+def test_run_stages_the_manifest_script_and_input_files_via_exec_tar(allowlisted, tmp_path):
     backend, core_v1, batch_v1, networking_v1, _ = _backend()
     stream_fn = _make_stream_fn(_output_tar(result_jsonl=b'{"datatype": "measurement"}\n', log=b""))
     backend._stream_fn = stream_fn
     _wire_successful_run(core_v1, batch_v1)
     spec = SandboxRunSpec(
         run_id="r1", image_key="python-etl-v1", manifest={"datatype": "measurement", "config": {"a": 1}},
-        script_source=b"SCRIPT_SOURCE", input_files={"source.csv": b"a,b\n1,2\n"}, limits=_limits())
+        script_source=b"SCRIPT_SOURCE", input_files=stage_inputs(tmp_path, {"source.csv": b"a,b\n1,2\n"}), limits=_limits())
 
     backend.run(spec)
 

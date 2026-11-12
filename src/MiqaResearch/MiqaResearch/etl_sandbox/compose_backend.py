@@ -22,7 +22,7 @@ from requests.exceptions import ReadTimeout
 
 from mires_etl import contract
 
-from ._staging import build_sandbox_archive, check_input_size, read_output_from_tar
+from ._staging import check_input_size, open_sandbox_archive, read_output_from_tar
 from .backend import SandboxBackend
 from .images import resolve_sandbox_image
 from .spec import SandboxRunResult, SandboxRunSpec
@@ -45,6 +45,12 @@ class ComposeSandboxBackend(SandboxBackend):
         check_input_size(spec)
 
         client = self._get_client()
+        create_kwargs = {}
+        if _storage_limit_enabled():
+            # Bounds the container's writable layer (inputs + outputs). Only the overlay2-on-XFS-with-
+            # project-quotas driver honours it; elsewhere create() fails, so it is opt-in (#414).
+            create_kwargs["storage_opt"] = {
+                "size": str(spec.limits.max_input_bytes + spec.limits.max_output_bytes)}
         container = client.containers.create(
             image=image,
             name=_container_name(spec.run_id),
@@ -57,9 +63,11 @@ class ComposeSandboxBackend(SandboxBackend):
             cap_drop=["ALL"],
             security_opt=["no-new-privileges"],
             detach=True,
+            **create_kwargs,
         )
         try:
-            container.put_archive(SANDBOX_ROOT, build_sandbox_archive(spec))
+            with open_sandbox_archive(spec) as archive:
+                container.put_archive(SANDBOX_ROOT, archive)
             container.start()
             killed = False
             try:
@@ -103,6 +111,11 @@ class ComposeSandboxBackend(SandboxBackend):
             from django.conf import settings
             self._client = docker.DockerClient(base_url=settings.SANDBOX_DOCKER_HOST)
         return self._client
+
+
+def _storage_limit_enabled() -> bool:
+    from django.conf import settings
+    return settings.SANDBOX_COMPOSE_STORAGE_LIMIT
 
 
 def _container_name(run_id: str) -> str:
