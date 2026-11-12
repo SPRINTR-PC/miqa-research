@@ -7,8 +7,7 @@ the whole batch, never a partial write. This module only builds the registry + l
 direct Python interface, exercised with fixture JSONL; no sandbox or orchestrator involved yet.
 """
 from django.db import transaction
-from ninja import Schema
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from MiqaResearch.data.models import EtlJob, ResearchProject
 
@@ -26,7 +25,7 @@ def load_jsonl(*, datatype_name: str, project: ResearchProject, etl_job: EtlJob,
         return registration.loader(project=project, etl_job=etl_job, rows=rows)
 
 
-def _parse_rows(schema: type[Schema], jsonl_text: str) -> list[Schema]:
+def _parse_rows(schema: type[BaseModel], jsonl_text: str) -> list[BaseModel]:
     rows = []
     for line_number, line in enumerate(jsonl_text.splitlines(), start=1):
         line = line.strip()

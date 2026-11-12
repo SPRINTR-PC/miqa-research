@@ -1,13 +1,12 @@
-"""The sandbox container's actual entrypoint (#161): `python -m MiqaResearch.etl_shim [root]`.
+"""The sandbox container's actual entrypoint (#161): `python -m mires_etl [root]`.
 Runs the Python shim, or -- in the R image, which sets `MIRES_ETL_SHIM_LANGUAGE=r` -- the R shim
 (#166), which drives `Rscript` itself and validates its rows here.
 
 Runs after `ComposeSandboxBackend` (or a future Kubernetes backend, #165) has staged
 `manifest.json` + `script.py` + `input/` under `root` (default `/sandbox`, matching
-`etl_sandbox.Dockerfile`) via the runner's own I/O staging -- never a bind mount. `django.setup()`
-runs first because `run_sandbox`'s own import graph (`etl_datatypes` -> `data.models`) needs the
-Django app registry ready; nothing here ever opens a database connection, matching the sandbox's
-network-less, DB-less contract (see `etl_shim/context.py`).
+`etl_sandbox.Dockerfile`) via the runner's own I/O staging -- never a bind mount. This package is
+Django-free (#412), so there is no app setup: nothing here ever opens a database connection, matching
+the sandbox's network-less, DB-less contract (see `context.py`).
 """
 import os
 import sys
@@ -15,10 +14,6 @@ from pathlib import Path
 
 
 def main() -> int:
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "MiqaResearch.settings")
-    import django
-    django.setup()
-
     from . import contract
     from .r_shim import run_r_sandbox
     from .shim import run_sandbox

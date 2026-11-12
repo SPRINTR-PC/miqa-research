@@ -10,8 +10,8 @@ import json
 import sys
 from uuid import uuid4
 
-from MiqaResearch.etl_shim import contract
-from MiqaResearch.etl_shim.r_shim import run_r_sandbox
+from mires_etl import contract
+from mires_etl.r_shim import run_r_sandbox
 
 
 def _fake_r_child(tmp_path, body):

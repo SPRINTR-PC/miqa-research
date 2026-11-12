@@ -4,32 +4,15 @@ Natural key: (person, visit_concept, visit_start_date, visit_source_value) -- th
 loader-level contract as `measurement` (see `measurement.py`), scoped to what a source system
 reliably repeats across re-exports of the same visit.
 """
-from datetime import date, datetime
-from uuid import UUID
-
 from MiqaResearch.data.models import ResearchProject, VisitOccurrence
+from mires_etl.schemas.visit_occurrence import VisitOccurrenceRowSchema
 
 from .concepts import require_existing_concepts
-from .participant_reference import ParticipantReferenceFields, resolve_participant
-from .registry import LoadResult, register_datatype
+from .participant_reference import resolve_participant
+from .registry import LoadResult, register_loader
 
 
-class VisitOccurrenceRowSchema(ParticipantReferenceFields):
-    visit_concept_id: UUID
-    visit_start_date: date
-    visit_end_date: date
-    visit_source_value: str
-    visit_start_datetime: datetime | None = None
-    visit_end_datetime: datetime | None = None
-    visit_type_concept_id: UUID | None = None
-    visit_source_concept_id: UUID | None = None
-    admitted_from_concept_id: UUID | None = None
-    admitted_from_source_value: str | None = None
-    discharged_to_concept_id: UUID | None = None
-    discharged_to_source_value: str | None = None
-
-
-@register_datatype("visit_occurrence", VisitOccurrenceRowSchema)
+@register_loader("visit_occurrence")
 def load_visit_occurrence_rows(
         *, project: ResearchProject, etl_job, rows: list[VisitOccurrenceRowSchema]) -> LoadResult:
     require_existing_concepts({
