@@ -79,6 +79,10 @@ app.conf.beat_schedule = {
         "task": "MiqaResearch.tasks.etl_orchestrator.tasks.sweep_orphaned_sandboxes",
         "schedule": 300.0,
     },
+    "dicom-sweep-orphan-blobs": {
+        "task": "MiqaResearch.tasks.dicom_handling.orphan_sweep.sweep_dicom_orphans",
+        "schedule": crontab(hour=3, minute=0),
+    },
 }
 app.autodiscover_tasks([
     "MiqaResearch.tasks"

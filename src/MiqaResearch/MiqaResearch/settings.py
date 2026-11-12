@@ -72,6 +72,11 @@ env = environ.Env(
     MIRES_DICOM_DELETE_ORIGINALS_AFTER_STORAGE=(bool, False),
     MIRES_DICOM_MAX_PIXEL_DIMENSIONS=(int, 200_000),
     MIRES_DICOM_MAX_FRAME_COUNT=(int, 500_000),
+    MIRES_DICOM_ORPHAN_DETECT_HOURS=(int, 2),
+    MIRES_DICOM_ORPHAN_GRACE_HOURS=(int, 24),
+    MIRES_DICOM_ORPHAN_MAX_DELETE_COUNT=(int, 100),
+    MIRES_DICOM_ORPHAN_MAX_DELETE_FRACTION=(float, 0.05),
+    MIRES_DICOM_ORPHAN_SWEEP_ACTION=(str, "delete"),
     MIRES_EMAIL_HOST=(str, None),
     MIRES_EMAIL_PORT=(int, 1234),
     MIRES_EMAIL_HOST_USER=(str, None),
@@ -93,6 +98,9 @@ env = environ.Env(
     MIRES_ETL_STORAGES=(str, "[]"),
     MIRES_SANDBOX_BACKEND=(str, "compose"),
     MIRES_SANDBOX_DOCKER_HOST=(str, "unix:///var/run/docker.sock"),
+    MIRES_SANDBOX_COMPOSE_STORAGE_LIMIT=(bool, False),
+    MIRES_ETL_SCRATCH_DIR=(str, ""),
+    MIRES_ETL_SCRATCH_MARGIN_BYTES=(int, 256 * 1024 ** 2),
     MIRES_SANDBOX_IMAGE_ALLOWLIST=(str, "{}"),
     MIRES_SANDBOX_DEFAULT_TIMEOUT_SECONDS=(int, 10 * 60),
     MIRES_SANDBOX_DEFAULT_MEMORY_MB=(int, 1024),
@@ -239,6 +247,15 @@ ETL_STORAGES: list[dict] = json.loads(env("MIRES_ETL_STORAGES"))
 # how a PipelineBinding may lower, never raise, timeout/memory/CPU below them).
 SANDBOX_BACKEND: str = env("MIRES_SANDBOX_BACKEND")
 SANDBOX_DOCKER_HOST: str = env("MIRES_SANDBOX_DOCKER_HOST")
+# Compose only: pass `storage_opt size=` (inputs + outputs cap) to the sandbox container. Needs overlay2 on
+# XFS with project quotas; on other storage drivers container creation fails, so it is off by default (#414).
+SANDBOX_COMPOSE_STORAGE_LIMIT: bool = env("MIRES_SANDBOX_COMPOSE_STORAGE_LIMIT")
+# ETL runner scratch volume (#414): each Job's inputs are fetched here (mode 0700, removed once the Job is
+# finalized). It holds the original files, so deployments should use an encrypted volume. Empty = system temp
+# dir. A Job needs free space >= its total listed input size + ETL_SCRATCH_MARGIN_BYTES, else it is retried as an
+# infra-class failure.
+ETL_SCRATCH_DIR: str = env("MIRES_ETL_SCRATCH_DIR")
+ETL_SCRATCH_MARGIN_BYTES: int = env("MIRES_ETL_SCRATCH_MARGIN_BYTES")
 SANDBOX_IMAGE_ALLOWLIST: dict[str, str] = json.loads(env("MIRES_SANDBOX_IMAGE_ALLOWLIST"))
 SANDBOX_DEFAULT_TIMEOUT_SECONDS: int = env("MIRES_SANDBOX_DEFAULT_TIMEOUT_SECONDS")
 SANDBOX_DEFAULT_MEMORY_MB: int = env("MIRES_SANDBOX_DEFAULT_MEMORY_MB")
@@ -329,6 +346,16 @@ DICOM_DELETE_ORIGINALS_AFTER_STORAGE: bool = env("MIRES_DICOM_DELETE_ORIGINALS_A
 # (tunable per deployment via env).
 DICOM_MAX_PIXEL_DIMENSIONS: int = env("MIRES_DICOM_MAX_PIXEL_DIMENSIONS")
 DICOM_MAX_FRAME_COUNT: int = env("MIRES_DICOM_MAX_FRAME_COUNT")
+
+# Orphan DICOM blob sweep (#420): a blob under DICOM/ with no DicomFile row is reported after
+# DETECT hours (outlasts the longest ETL Job) and deleted after GRACE hours, only if it was already
+# reportable at the previous run. Nothing is deleted if the deletable set exceeds MAX_DELETE_COUNT or
+# MAX_DELETE_FRACTION of listed blobs. SWEEP_ACTION (report | delete) governs the daily task.
+DICOM_ORPHAN_DETECT_HOURS: int = env("MIRES_DICOM_ORPHAN_DETECT_HOURS")
+DICOM_ORPHAN_GRACE_HOURS: int = env("MIRES_DICOM_ORPHAN_GRACE_HOURS")
+DICOM_ORPHAN_MAX_DELETE_COUNT: int = env("MIRES_DICOM_ORPHAN_MAX_DELETE_COUNT")
+DICOM_ORPHAN_MAX_DELETE_FRACTION: float = env("MIRES_DICOM_ORPHAN_MAX_DELETE_FRACTION")
+DICOM_ORPHAN_SWEEP_ACTION: str = env("MIRES_DICOM_ORPHAN_SWEEP_ACTION")
 
 
 def get_allowed_hosts_list(allowed_hosts_env) -> list[str]:

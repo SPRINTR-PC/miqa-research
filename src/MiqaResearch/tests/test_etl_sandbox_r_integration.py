@@ -30,6 +30,7 @@ from MiqaResearch.etl_sandbox import SandboxRunSpec, resolve_limits
 from MiqaResearch.etl_sandbox.compose_backend import ComposeSandboxBackend
 from mires_etl import contract
 from tests.sandbox_docker import docker_client_for
+from tests.sandbox_staging import stage_inputs
 
 IMAGE_KEY = "r-etl-v1"
 IMAGE_REF = "mires-etl-sandbox-r:dev"
@@ -60,13 +61,13 @@ def _run(docker_client, script_source: str, *, input_files=None, config=None):
     spec = SandboxRunSpec(
         run_id="r-integration-test-run", image_key=IMAGE_KEY,
         manifest={"datatype": "measurement", "config": config or {}}, script_source=script_source.encode(),
-        input_files=input_files or {}, limits=resolve_limits())
+        input_files=input_files or [], limits=resolve_limits())
     return ComposeSandboxBackend(client=docker_client).run(spec)
 
 
 @pytest.mark.long_running
 @pytest.mark.django_db
-def test_a_sample_r_script_runs_isolated_in_a_real_container_and_its_rows_load(docker_client):
+def test_a_sample_r_script_runs_isolated_in_a_real_container_and_its_rows_load(docker_client, tmp_path):
     research_project = ResearchProject.objects.create(name="ETL R sandbox integration project", description="")
     participant = StudyParticipant.objects.create(
         alias1="ETL-R-P001", person_source_value="SRC001", research_project=research_project)
@@ -110,7 +111,8 @@ main <- function(ctx) {{
 }}
 """
     result = _run(
-        docker_client, script_source, input_files={"weights.csv": f"alias1,kg\n{participant.alias1},71.5\n".encode()},
+        docker_client, script_source,
+        input_files=stage_inputs(tmp_path, {"weights.csv": f"alias1,kg\n{participant.alias1},71.5\n".encode()}),
         config={"source_value": "WEIGHT"})
 
     assert result.exit_code == contract.EXIT_SUCCESS, result.log.decode(errors="replace")
