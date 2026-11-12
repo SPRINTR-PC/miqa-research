@@ -14,7 +14,7 @@ from .registry import LoadResult, register_loader
 
 @register_loader("visit_occurrence")
 def load_visit_occurrence_rows(
-        *, project: ResearchProject, etl_job, rows: list[VisitOccurrenceRowSchema]) -> LoadResult:
+        *, project: ResearchProject, etl_job, rows: list[VisitOccurrenceRowSchema], inputs=None) -> LoadResult:
     require_existing_concepts({
         concept_id
         for row in rows

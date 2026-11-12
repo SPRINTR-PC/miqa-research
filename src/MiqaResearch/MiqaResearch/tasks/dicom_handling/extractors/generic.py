@@ -5,7 +5,7 @@ de-identified (De-identification Profile, ADR 0028) inside build_metadata_dump i
 """
 from pydicom.dataset import Dataset
 
-from ..metadata_dump import build_metadata_dump
+from MiqaResearch.actions.dicom_ingest.metadata_dump import build_metadata_dump
 from .common import common_extraction
 
 

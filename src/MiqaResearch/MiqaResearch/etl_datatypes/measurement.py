@@ -15,7 +15,8 @@ from .registry import LoadResult, register_loader
 
 
 @register_loader("measurement")
-def load_measurement_rows(*, project: ResearchProject, etl_job, rows: list[MeasurementRowSchema]) -> LoadResult:
+def load_measurement_rows(
+        *, project: ResearchProject, etl_job, rows: list[MeasurementRowSchema], inputs=None) -> LoadResult:
     require_existing_concepts({
         concept_id
         for row in rows

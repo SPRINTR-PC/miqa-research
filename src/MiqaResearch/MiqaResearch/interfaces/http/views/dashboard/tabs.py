@@ -19,6 +19,7 @@ from MiqaResearch.readers.etl_reader import (
     get_project_source_locations,
     script_version_choices,
     script_version_config_schemas,
+    script_version_default_raw_retentions,
 )
 from MiqaResearch.readers.participant_consent_reader import (
     get_project_consent_count,
@@ -218,6 +219,7 @@ async def binding_form_kwargs(project, permissions) -> dict:
         'location_grants': await get_project_location_grants(project),
         'script_version_choices': script_version_choices(versions),
         'config_schemas': script_version_config_schemas(versions),
+        'raw_retention_defaults': script_version_default_raw_retentions(versions),
         'can_choose_delete': permissions.can_manage_admin_only,
     }
 

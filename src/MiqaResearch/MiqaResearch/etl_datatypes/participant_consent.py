@@ -28,7 +28,7 @@ from .registry import LoadResult, register_loader
 
 @register_loader("participant_consent")
 def load_participant_consent_rows(
-        *, project: ResearchProject, etl_job, rows: list[ParticipantConsentRowSchema]) -> LoadResult:
+        *, project: ResearchProject, etl_job, rows: list[ParticipantConsentRowSchema], inputs=None) -> LoadResult:
     created = updated = 0
     for row in rows:
         participant = _get_or_create_participant(project, row)

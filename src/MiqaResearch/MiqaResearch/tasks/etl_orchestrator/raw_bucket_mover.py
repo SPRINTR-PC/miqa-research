@@ -24,6 +24,7 @@ from django.utils import timezone
 from contract.constants.audit_log import EVENT_TYPE_ETL_SOURCE_CLEANUP_STUCK
 from contract.constants.etl import (
     ETL_JOB_INPUT_SOURCE_STATUS_DELETED,
+    ETL_JOB_INPUT_SOURCE_STATUS_KEPT_IN_SOURCE,
     ETL_JOB_INPUT_SOURCE_STATUS_MOVED,
     ETL_JOB_INPUT_SOURCE_STATUS_SOURCE_CLEANUP_PENDING,
     ETL_JOB_INPUT_SOURCE_STATUS_SOURCE_CLEANUP_STUCK,
@@ -61,7 +62,7 @@ def move_job_inputs(job: EtlJob) -> None:
 
     terminal_statuses = (
         ETL_JOB_INPUT_SOURCE_STATUS_MOVED, ETL_JOB_INPUT_SOURCE_STATUS_DELETED,
-        ETL_JOB_INPUT_SOURCE_STATUS_SOURCE_CLEANUP_STUCK)
+        ETL_JOB_INPUT_SOURCE_STATUS_SOURCE_CLEANUP_STUCK, ETL_JOB_INPUT_SOURCE_STATUS_KEPT_IN_SOURCE)
     for job_input in job.inputs.exclude(source_status__in=terminal_statuses):
         try:
             _move_one(client, grants, binding, job, job_input)

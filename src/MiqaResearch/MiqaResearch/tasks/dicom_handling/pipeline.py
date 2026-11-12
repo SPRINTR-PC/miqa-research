@@ -28,9 +28,11 @@ from MiqaResearch.actions.participant_keys import ensure_linked_key
 from MiqaResearch.data.models import DicomFile, ResearchProject
 from MiqaResearch.readers.participant_keys import participant_alias_of
 
-from . import derived_provenance, dicom_parsing, discovery, extractors, frame_index, pixel_bounds, records
+from MiqaResearch.actions.dicom_ingest import derived_provenance, frame_index, records
+from MiqaResearch.actions.dicom_ingest import storage as storage_stage
+
+from . import dicom_parsing, discovery, extractors, pixel_bounds
 from . import participant as participant_stage
-from . import storage as storage_stage
 from .dicom_parsing import NotADicomError
 from .pixel_bounds import ImplausiblePixelDimensionsError
 

@@ -35,14 +35,14 @@ from contract.constants.audit_log import (
     EVENT_TYPE_SEGMENTATION_SUPERSEDED,
 )
 from helpers.dicom_deidentification import deidentify
+from MiqaResearch.actions.dicom_ingest import frame_index, records
+from MiqaResearch.actions.dicom_ingest import storage as storage_stage
+from MiqaResearch.actions.dicom_ingest.metadata_dump import build_metadata_dump
 from MiqaResearch.actions.viewer_exceptions import NotAllowed, NotFound, ViewerActionError
 from MiqaResearch.data.models import AuditLog, DerivedObjectProvenance, DicomFile, DicomSeries
 from MiqaResearch.readers.annotation_permissions import ParticipantRights
 from MiqaResearch.readers.blinding import ParticipantBlinding, viewer_reveals
 from MiqaResearch.readers.participant_visibility import can_open_unlinked, can_see_participant
-from MiqaResearch.tasks.dicom_handling import frame_index, records
-from MiqaResearch.tasks.dicom_handling import storage as storage_stage
-from MiqaResearch.tasks.dicom_handling.metadata_dump import build_metadata_dump
 
 logger = logging.getLogger(__name__)
 

@@ -49,6 +49,7 @@ ETL_JOB_INPUT_SOURCE_STATUS_MOVED = "moved"
 ETL_JOB_INPUT_SOURCE_STATUS_DELETED = "deleted"
 ETL_JOB_INPUT_SOURCE_STATUS_SOURCE_CLEANUP_PENDING = "source_cleanup_pending"
 ETL_JOB_INPUT_SOURCE_STATUS_SOURCE_CLEANUP_STUCK = "source_cleanup_stuck"
+ETL_JOB_INPUT_SOURCE_STATUS_KEPT_IN_SOURCE = "kept_in_source"
 
 ETL_JOB_INPUT_SOURCE_STATUS_CHOICES = [
     (ETL_JOB_INPUT_SOURCE_STATUS_PENDING, gettext_lazy("Not yet moved or deleted")),
@@ -56,6 +57,7 @@ ETL_JOB_INPUT_SOURCE_STATUS_CHOICES = [
     (ETL_JOB_INPUT_SOURCE_STATUS_DELETED, gettext_lazy("Deleted after load")),
     (ETL_JOB_INPUT_SOURCE_STATUS_SOURCE_CLEANUP_PENDING, gettext_lazy("Source cleanup pending (retrying)")),
     (ETL_JOB_INPUT_SOURCE_STATUS_SOURCE_CLEANUP_STUCK, gettext_lazy("Source cleanup stuck (needs manual handling)")),
+    (ETL_JOB_INPUT_SOURCE_STATUS_KEPT_IN_SOURCE, gettext_lazy("Kept in source (not stored)")),
 ]
 
 ETL_STORAGE_KIND_S3 = "s3"
