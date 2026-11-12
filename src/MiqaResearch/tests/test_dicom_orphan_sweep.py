@@ -20,6 +20,7 @@ from MiqaResearch.data.models import (
     DicomFile,
     DicomSeries,
     DicomStudy,
+    ParticipantKey,
     ResearchProject,
     StudyParticipant,
 )
@@ -77,6 +78,12 @@ def blobs(request, settings, tmp_path, monkeypatch):
         yield Blobs("local", monkeypatch)
 
 
+@pytest.fixture(autouse=True)
+def encryption_keys(settings):
+    settings.FERNET_KEY = b"EiGdHopiKZdBZwVCP4dVJitPrrDnOuGAd94W4EZpwQc="
+    settings.SENSITIVE_DATA_HASH_KEY = "H2QCB14temR-C2JnLORSE5TxPwLd8iy3YygNPQ-corA="
+
+
 @pytest.fixture
 def staff(db, django_user_model):
     return django_user_model.objects.create_user(
@@ -86,8 +93,10 @@ def staff(db, django_user_model):
 def _row_for(name):
     project = ResearchProject.objects.create(name=f"p-{uuid4().hex[:6]}", description="-")
     participant = StudyParticipant.objects.create(alias1=f"a-{uuid4().hex[:8]}", research_project=project)
+    key = ParticipantKey.objects.create(
+        project=project, key_type="dicom:PatientID", value=f"p-{uuid4().hex[:8]}", study_participant=participant)
     study = DicomStudy.objects.create(
-        study_participant=participant, study_datetime=NOW, study_instance_uid=f"1.2.{uuid4().int % 10**10}")
+        participant_key=key, study_datetime=NOW, study_instance_uid=f"1.2.{uuid4().int % 10**10}")
     series = DicomSeries.objects.create(study=study, series_instance_uid=f"1.3.{uuid4().int % 10**10}")
     row = DicomFile.objects.create(
         series=series, sop_instance_uid=f"1.4.{uuid4().int % 10**10}", file_size_in_mb=1.0, file="placeholder")

@@ -30,7 +30,7 @@ def add_legacy_keys(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("data", "0044_etl_storage_vault_credentials"),
+        ("data", "0046_etljob_sandbox_image_manifest"),
     ]
 
     operations = [
