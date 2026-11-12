@@ -26,8 +26,8 @@ from MiqaResearch.data.models import (
     ResearchProject,
     StudyParticipant,
 )
-from MiqaResearch.etl_shim import contract
 from MiqaResearch.tasks.etl_orchestrator import runner
+from mires_etl import contract
 
 
 class FakeSandboxBackend:
@@ -217,7 +217,156 @@ def test_run_job_builds_the_spec_from_the_script_version_and_binding_config(
     assert spec.run_id == str(job.id)
     assert spec.image_key == script_version.image_key
     assert spec.manifest == {"datatype": "measurement", "config": {"delimiter": ","}}
-    assert spec.input_files == {"export.csv": b"col_a,col_b\n1,2\n"}
+    (staged,) = spec.input_files
+    assert (staged.relative_path, staged.size) == ("export.csv", len(b"col_a,col_b\n1,2\n"))
+
+
+def _scratch_settings(settings, tmp_path):
+    settings.ETL_SCRATCH_DIR = str(tmp_path / "scratch")
+    settings.ETL_SCRATCH_MARGIN_BYTES = 0
+    return tmp_path / "scratch"
+
+
+class _ContentCapturingBackend(FakeSandboxBackend):
+    def run(self, spec):
+        self.staged_content = {s.relative_path: s.local_path.read_bytes() for s in spec.input_files}
+        self.scratch_dir = spec.scratch_dir
+        self.scratch_mode = spec.scratch_dir.stat().st_mode & 0o777
+        return super().run(spec)
+
+
+def test_the_backend_sees_the_staged_bytes_in_a_0700_scratch_dir_removed_after_the_job(
+        monkeypatch, settings, tmp_path, job, job_input, s3_input, study_participant, measurement_concept):
+    scratch = _scratch_settings(settings, tmp_path)
+    backend = _ContentCapturingBackend(
+        result=_success_result(_measurement_row_jsonl(study_participant, measurement_concept)))
+    monkeypatch.setattr(runner, "get_sandbox_backend", lambda: backend)
+
+    runner.run_job(str(job.id))
+
+    assert backend.staged_content == {"export.csv": b"col_a,col_b\n1,2\n"}
+    assert backend.scratch_mode == 0o700
+    assert not backend.scratch_dir.exists()
+    assert list(scratch.iterdir()) == []
+
+
+def test_scratch_is_removed_when_the_script_fails(monkeypatch, settings, tmp_path, job, job_input, s3_input):
+    scratch = _scratch_settings(settings, tmp_path)
+    monkeypatch.setattr(runner, "get_sandbox_backend", lambda: FakeSandboxBackend(
+        result=_failure_result(contract.EXIT_SCRIPT_ERROR, log=b"boom")))
+
+    runner.run_job(str(job.id))
+
+    assert list(scratch.iterdir()) == []
+
+
+def test_scratch_is_removed_when_the_runner_raises_unexpectedly(
+        monkeypatch, settings, tmp_path, job, job_input, s3_input):
+    scratch = _scratch_settings(settings, tmp_path)
+
+    def boom():
+        raise RuntimeError("worker exploded")
+
+    monkeypatch.setattr(runner, "get_sandbox_backend", boom)
+
+    with pytest.raises(RuntimeError):
+        runner.run_job(str(job.id))
+
+    assert list(scratch.iterdir()) == []
+
+
+def test_a_size_mismatch_between_listing_and_fetch_fails_the_job(
+        monkeypatch, settings, tmp_path, job, job_input, s3_input):
+    _scratch_settings(settings, tmp_path)
+    monkeypatch.setattr(runner.EtlBucketSource, "size_of", lambda self, key: 3)
+    backend = FakeSandboxBackend(result=_failure_result(contract.EXIT_SCRIPT_ERROR, log=b""))
+    monkeypatch.setattr(runner, "get_sandbox_backend", lambda: backend)
+
+    finished = runner.run_job(str(job.id))
+
+    assert finished.status == ETL_JOB_STATUS_FAILED
+    assert "changed while being read" in finished.log
+    assert backend.received_spec is None
+
+
+def test_insufficient_scratch_space_fails_as_infra_and_queues_a_retry_without_fetching(
+        monkeypatch, settings, tmp_path, job, job_input, s3_input):
+    from MiqaResearch.tasks.etl_orchestrator import tasks
+
+    _scratch_settings(settings, tmp_path)
+    settings.ETL_SCRATCH_MARGIN_BYTES = 10 ** 18
+    settings.ETL_JOB_MAX_AUTO_RETRIES = 2
+    enqueued = []
+    monkeypatch.setattr(tasks, "run_etl_job", type("T", (), {
+        "enqueue": staticmethod(lambda job_id: enqueued.append(job_id))})())
+    backend = FakeSandboxBackend(result=_failure_result(contract.EXIT_SCRIPT_ERROR, log=b""))
+    monkeypatch.setattr(runner, "get_sandbox_backend", lambda: backend)
+
+    finished = runner.run_job(str(job.id))
+
+    assert finished.status == ETL_JOB_STATUS_FAILED
+    assert "insufficient scratch space" in finished.log
+    assert len(enqueued) == 1
+    assert backend.received_spec is None
+
+
+class _GeneratedBody:
+    """A response body that yields `size` zero bytes in chunks without ever holding them."""
+
+    def __init__(self, size):
+        self._size = size
+
+    def iter_chunks(self, chunk_size):
+        chunk = b"\0" * chunk_size
+        sent = 0
+        while sent < self._size:
+            n = min(chunk_size, self._size - sent)
+            yield chunk[:n]
+            sent += n
+
+
+class _HugeObjectClient:
+    def __init__(self, size):
+        self._size = size
+
+    def head_object(self, **_):
+        return {"ContentLength": self._size}
+
+    def get_object(self, **_):
+        return {"Body": _GeneratedBody(self._size)}
+
+
+def test_peak_python_memory_stays_bounded_by_a_chunk_for_a_large_input(
+        monkeypatch, settings, tmp_path, job, job_input):
+    import tracemalloc
+
+    from MiqaResearch.etl_sandbox._staging import open_sandbox_archive
+
+    _scratch_settings(settings, tmp_path)
+    size = 128 * 1024 * 1024
+
+    def fake_init(self, bucket, prefix, storage):
+        self.bucket, self.prefix, self._client = bucket, prefix, _HugeObjectClient(size)
+
+    monkeypatch.setattr(runner.EtlBucketSource, "__init__", fake_init)
+
+    class _Archiving(FakeSandboxBackend):
+        def run(self, spec):
+            with open_sandbox_archive(spec) as archive:
+                while archive.read(1024 * 1024):
+                    pass
+            return super().run(spec)
+
+    monkeypatch.setattr(runner, "get_sandbox_backend", lambda: _Archiving(
+        result=_failure_result(contract.EXIT_SCRIPT_ERROR, log=b"")))
+    tracemalloc.start()
+    try:
+        runner.run_job(str(job.id))
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    assert peak < 16 * 1024 * 1024
 
 
 def test_a_queued_job_runs_with_the_config_it_was_queued_with_even_after_the_binding_changes(
@@ -286,3 +435,31 @@ def _failure_result(exit_code: int, *, log: bytes):
     from MiqaResearch.etl_sandbox import SandboxRunResult
     killed = exit_code == contract.EXIT_TIMEOUT_OR_KILLED
     return SandboxRunResult(exit_code=exit_code, result_jsonl=None, log=log, killed=killed)
+
+
+# --- image provenance (#413) ---------------------------------------------
+
+def test_run_job_records_the_sandbox_image_digest_and_manifest_on_success(
+        monkeypatch, job, job_input, s3_input, study_participant, measurement_concept):
+    from MiqaResearch.etl_sandbox import SandboxRunResult
+    result = SandboxRunResult(
+        exit_code=contract.EXIT_SUCCESS, log=b"ok", image_digest="sha256:abc", image_manifest="pydicom==3.0.2\n",
+        result_jsonl=_measurement_row_jsonl(study_participant, measurement_concept))
+    monkeypatch.setattr(runner, "get_sandbox_backend", lambda: FakeSandboxBackend(result=result))
+
+    runner.run_job(str(job.id))
+
+    job.refresh_from_db()
+    assert job.sandbox_image_digest == "sha256:abc"
+    assert job.sandbox_image_manifest == "pydicom==3.0.2\n"
+
+
+def test_run_job_records_the_sandbox_image_digest_on_a_failed_run_too(monkeypatch, job, job_input, s3_input):
+    from MiqaResearch.etl_sandbox import SandboxRunResult
+    result = SandboxRunResult(exit_code=contract.EXIT_SCRIPT_ERROR, log=b"boom", image_digest="sha256:def")
+    monkeypatch.setattr(runner, "get_sandbox_backend", lambda: FakeSandboxBackend(result=result))
+
+    runner.run_job(str(job.id))
+
+    job.refresh_from_db()
+    assert job.sandbox_image_digest == "sha256:def"

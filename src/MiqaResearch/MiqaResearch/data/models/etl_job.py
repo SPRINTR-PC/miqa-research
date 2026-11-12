@@ -40,7 +40,11 @@ class EtlJob(models.Model):
         blank=False, null=False,
         help_text="Snapshot of the Binding's Raw Retention at the time this Job was queued; a later Binding "
                    "change never affects this Job's inputs.")
-    sandbox_image_digest = models.CharField(max_length=200, blank=True, default="")
+    sandbox_image_digest = models.CharField(
+        max_length=200, blank=True, default="",
+        help_text="Image ID the sandbox ran on (compose image ID / K8s pod imageID).")
+    sandbox_image_manifest = models.TextField(
+        blank=True, default="", help_text="The sandbox image's baked package list (/etc/mires/packages.txt).")
     log = models.TextField(
         blank=True, default="", help_text="Sandbox execution log, capped at 64 KB by the orchestrator.")
     started_at = models.DateTimeField(blank=True, null=True)

@@ -92,3 +92,31 @@ def test_read_raises_for_a_missing_key():
 
     with pytest.raises(EtlBucketSourceError):
         EtlBucketSource("incoming", "redcap/", default_storage()).read("redcap/does-not-exist.csv")
+
+
+@mock_aws
+def test_list_objects_carries_the_size():
+    client = boto3.client("s3", region_name="us-east-1")
+    client.create_bucket(Bucket="incoming")
+    client.put_object(Bucket="incoming", Key="redcap/a.csv", Body=b"12345")
+
+    (ref,) = EtlBucketSource("incoming", "redcap/", default_storage()).list_objects()
+
+    assert ref.size == 5
+
+
+@mock_aws
+def test_download_streams_to_a_file_returning_sha256_and_size(tmp_path):
+    import hashlib
+
+    data = b"x" * (3 * 1024 * 1024 + 7)
+    client = boto3.client("s3", region_name="us-east-1")
+    client.create_bucket(Bucket="incoming")
+    client.put_object(Bucket="incoming", Key="redcap/big.bin", Body=data)
+    source = EtlBucketSource("incoming", "redcap/", default_storage())
+
+    sha256, size = source.download("redcap/big.bin", tmp_path / "sub" / "big.bin")
+
+    assert (sha256, size) == (hashlib.sha256(data).hexdigest(), len(data))
+    assert (tmp_path / "sub" / "big.bin").read_bytes() == data
+    assert source.size_of("redcap/big.bin") == len(data)

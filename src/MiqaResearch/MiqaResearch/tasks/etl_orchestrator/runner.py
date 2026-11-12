@@ -5,7 +5,7 @@ poller only ever wrote placeholders, since hashing at poll time would mean fetch
 twice), builds the sandbox contract's manifest (`{"datatype": ..., "config": ...}`) and
 SandboxRunSpec from the Job's own pinned Script Version and config snapshot (#224: a Binding edit
 never changes a Job already queued), and runs it through the configured
-SandboxBackend. On exit 0 the result (header line dropped, per etl_shim.contract's manifest/result
+SandboxBackend. On exit 0 the result (header line dropped, per mires_etl.contract's manifest/result
 shape) is handed to the real Datatype loader (#159) inside its own all-or-nothing transaction.
 Every other exit code (1 script error / 2 contract violation / 3 timeout-or-killed) fails the Job
 without a retry -- matching #156's spec text that groups all three as requiring manual retry.
@@ -16,8 +16,11 @@ concern beyond delegating to `retry.handle_run_exception`, shared with stuck-job
 """
 from __future__ import annotations
 
-import hashlib
+import shutil
+import tempfile
+from pathlib import Path
 
+from django.conf import settings
 from django.utils import timezone
 
 from contract.constants.etl import (
@@ -28,8 +31,15 @@ from contract.constants.etl import (
 )
 from MiqaResearch.data.models import EtlJob
 from MiqaResearch.etl_datatypes import EtlDatatypeError, load_jsonl
-from MiqaResearch.etl_sandbox import SandboxRunSpec, get_sandbox_backend, resolve_limits
-from MiqaResearch.etl_shim import contract
+from MiqaResearch.etl_sandbox import (
+    SandboxInputTooLarge,
+    SandboxRunSpec,
+    StagedInput,
+    get_sandbox_backend,
+    resolve_limits,
+)
+from MiqaResearch.etl_sandbox._staging import check_input_size
+from mires_etl import contract
 
 from . import retry
 from .s3 import EtlBucketSource
@@ -47,15 +57,24 @@ def run_job(job_id: str) -> EtlJob:
     job.started_at = timezone.now()
     job.save(update_fields=["status", "started_at"])
 
+    scratch = _make_scratch_dir()
+    try:
+        return _run_in_scratch(job, scratch)
+    finally:
+        # The loader's `inputs` reader opens the staged files, so scratch lives until the Job is finalized.
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def _run_in_scratch(job: EtlJob, scratch: Path) -> EtlJob:
     binding = job.binding
     source = EtlBucketSource(binding.source_bucket, binding.source_prefix, binding.storage)
-    input_files = {}
-    for job_input in job.inputs.all():
-        data = source.read(job_input.key)
-        job_input.sha256 = hashlib.sha256(data).hexdigest()
-        job_input.size_bytes = len(data)
-        job_input.save(update_fields=["sha256", "size_bytes"])
-        input_files[_relative_key(binding, job_input.key)] = data
+    job_inputs = list(job.inputs.all())
+    staged = []
+    for job_input in job_inputs:
+        relative = _relative_key(binding, job_input.key)
+        staged.append(StagedInput(
+            relative_path=relative, size=source.size_of(job_input.key),
+            local_path=_input_path(scratch, relative)))
 
     script = job.script_version.script
     spec = SandboxRunSpec(
@@ -64,8 +83,38 @@ def run_job(job_id: str) -> EtlJob:
         manifest={"datatype": script.datatype_name, "config": job.config_snapshot},
         script_source=job.script_version.source.read(),
         limits=resolve_limits(binding),
-        input_files=input_files,
+        input_files=staged,
+        scratch_dir=scratch,
     )
+
+    try:
+        check_input_size(spec)  # on listed sizes, before anything is fetched
+    except SandboxInputTooLarge as exc:
+        retry.handle_run_exception(job, exc)
+        job.refresh_from_db()
+        return job
+
+    total = sum(staged_input.size for staged_input in staged)
+    free = shutil.disk_usage(scratch).free
+    needed = total + settings.ETL_SCRATCH_MARGIN_BYTES
+    if free < needed:
+        retry.retry_infra_failure(
+            job, reason=f"insufficient scratch space in {scratch.parent}: {free} bytes free, "
+                        f"{needed} needed ({total} input + margin)")
+        job.refresh_from_db()
+        return job
+
+    for job_input, staged_input in zip(job_inputs, staged, strict=True):
+        sha256, size = source.download(job_input.key, staged_input.local_path)
+        if size != staged_input.size:
+            retry.fail_job(
+                job, reason=f"input {job_input.key!r} changed while being read: "
+                            f"listed {staged_input.size} bytes, fetched {size}")
+            job.refresh_from_db()
+            return job
+        job_input.sha256 = sha256
+        job_input.size_bytes = size
+        job_input.save(update_fields=["sha256", "size_bytes"])
 
     backend = get_sandbox_backend()
     try:
@@ -78,9 +127,27 @@ def run_job(job_id: str) -> EtlJob:
     return _finalize(job, result)
 
 
+def _make_scratch_dir() -> Path:
+    """A per-Job scratch dir (mode 0700 via mkdtemp) on the configured volume."""
+    base = settings.ETL_SCRATCH_DIR or None
+    if base:
+        Path(base).mkdir(parents=True, exist_ok=True)
+    return Path(tempfile.mkdtemp(prefix="mires-etl-", dir=base))
+
+
+def _input_path(scratch: Path, relative: str) -> Path:
+    root = (scratch / "input").resolve()
+    path = (root / relative).resolve()
+    if not path.is_relative_to(root):
+        raise ValueError(f"input path escapes the scratch directory: {relative!r}")
+    return path
+
+
 def _finalize(job: EtlJob, result) -> EtlJob:
     job.finished_at = timezone.now()
     job.log = _cap_log(result.log)
+    job.sandbox_image_digest = result.image_digest[:200]
+    job.sandbox_image_manifest = result.image_manifest
 
     if result.exit_code == contract.EXIT_SUCCESS:
         try:
@@ -95,7 +162,7 @@ def _finalize(job: EtlJob, result) -> EtlJob:
         # none auto-retry (#156's spec text groups them explicitly under "manual retry").
         job.status = ETL_JOB_STATUS_FAILED
 
-    job.save(update_fields=["status", "finished_at", "log"])
+    job.save(update_fields=["status", "finished_at", "log", "sandbox_image_digest", "sandbox_image_manifest"])
     if job.status == ETL_JOB_STATUS_SUCCEEDED:
         # Only once "succeeded" is saved: the mover skips any other status, and under "delete"
         # Raw Retention a move for an unrecorded success would lose the source (#246).

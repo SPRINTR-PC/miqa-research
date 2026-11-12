@@ -36,6 +36,16 @@
     {% endif %}
   </div>
 
+  {% if job.sandbox_image_digest or job.sandbox_image_manifest %}
+    <div>
+      <p class="font-medium">{% translate "Sandbox image" %}</p>
+      {% if job.sandbox_image_digest %}<p class="text-sm"><code>{{ job.sandbox_image_digest }}</code></p>{% endif %}
+      {% if job.sandbox_image_manifest %}
+        <details class="text-sm"><summary>{% translate "Installed packages" %}</summary><pre class="etl-job-log">{{ job.sandbox_image_manifest }}</pre></details>
+      {% endif %}
+    </div>
+  {% endif %}
+
   <div>
     <p class="font-medium">{% translate "Log" %}</p>
     {% if job.log %}
