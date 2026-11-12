@@ -1,7 +1,7 @@
 # ETL sandbox image (#161): the Python runtime a PipelineBinding's Script executes inside, run by
 # ComposeSandboxBackend (MiqaResearch/etl_sandbox/compose_backend.py) with network_mode="none" and
-# a non-root user. Bakes in the platform shim (MiqaResearch/etl_shim) plus the same Django app its
-# import graph needs (etl_shim -> etl_datatypes -> data.models), so the entrypoint below never
+# a non-root user. Bakes in the platform shim (the Django-free mires_etl package) plus the rest of the app source, so the
+# entrypoint below never
 # depends on a live database, Vault, or network -- it only imports code and reads/writes /sandbox,
 # staged and retrieved by the runner via Docker's archive API, never a bind mount.
 #
@@ -39,5 +39,5 @@ ENV MIRES_LOGGING_DIR=/tmp/mires-etl-sandbox-logs
 RUN mkdir -p /sandbox && chown 65534:65534 /sandbox
 USER 65534:65534
 
-ENTRYPOINT ["python", "-m", "MiqaResearch.etl_shim"]
+ENTRYPOINT ["python", "-m", "mires_etl"]
 CMD ["/sandbox"]

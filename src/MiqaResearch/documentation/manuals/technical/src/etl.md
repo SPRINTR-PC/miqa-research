@@ -26,31 +26,34 @@ The code is split across these packages:
 
 | Package | Responsibility |
 |---|---|
-| `MiqaResearch/etl_datatypes/` | The ETL Datatype registry and the JSONL loader. |
+| `MiqaResearch/etl_datatypes/` | The ETL Datatype loader registry and the JSONL loader. |
 | `MiqaResearch/data/models/etl_*.py` | Scripts, Script Versions, Pipeline Bindings, Jobs and the orchestrator's bookkeeping tables. |
 | `MiqaResearch/tasks/etl_orchestrator/` | Celery tasks for polling, running Jobs, retries, stuck-job recovery, log pruning and the raw-bucket move. |
 | `MiqaResearch/etl_sandbox/` | The `SandboxBackend` interface, its Compose and Kubernetes implementations, the image allowlist and resource limits. |
-| `MiqaResearch/etl_shim/` | The script contract and the Python and R shims baked into the sandbox images. |
+| `mires_etl/` | Django-free package baked into the sandbox images: the script contract, the Python and R shims, and the Datatype row schemas (`mires_etl/schemas/`). |
 | `MiqaResearch/actions/etl/`, `readers/etl_*.py` | Management writes (audited) and reads for the ETL Pipelines project tab, and the permission policy. |
 
 (heading-etl-datatypes)=
 ## ETL Datatype registry
 
 An **ETL Datatype** is a kind of incoming data that is registered in code. Each one has a name,
-a row schema (a Django Ninja / Pydantic `Schema`) and a loader function that persists validated
+a row schema (a Pydantic `BaseModel` in `mires_etl.schemas`) and a loader function that persists validated
 rows. Users choose among the registered Datatypes but can never define one. Scripts only return
 rows, and they never write to the database themselves.
 
-A Datatype is registered with a decorator. `etl_datatypes/__init__.py` imports each module so
-that registration happens at import time:
+A Datatype is registered in two places, both with a decorator. The row schema registers by name in
+the Django-free `mires_etl.schemas` (`@register_schema("measurement")`); the sandbox validates rows
+against it. The loader registers by name in `etl_datatypes` (each module is imported by
+`etl_datatypes/__init__.py` so registration happens at import time):
 
 ```python
-@register_datatype("measurement", MeasurementRowSchema)
-def load_measurement_rows(*, project, etl_job, rows) -> LoadResult:
+@register_loader("measurement")
+def load_measurement_rows(*, project, etl_job, rows: list[MeasurementRowSchema]) -> LoadResult:
     ...
 ```
 
-Registering the same name twice raises `DatatypeAlreadyRegistered`.
+Registering the same loader name twice raises `DatatypeAlreadyRegistered`. A test fails if the two
+name sets differ.
 
 Three Datatypes are shipped. The first two target OMOP CDM v5.4 tables:
 
@@ -454,7 +457,7 @@ unsupported extension is rejected as a form error.
 | Python | `etl_sandbox.Dockerfile` (Python 3.14 slim, bookworm) | `python-etl-v1` |
 | R | `etl_sandbox_r.Dockerfile`: `FROM` the Python image, plus `r-base-core` 4.2 and `r-cran-jsonlite` | `r-etl-v1` |
 
-Both images use `python -m MiqaResearch.etl_shim /sandbox` as their entrypoint. The R image
+Both images use `python -m mires_etl /sandbox` as their entrypoint. The R image
 sets `MIRES_ETL_SHIM_LANGUAGE=r`. Build them with:
 
 ```console
@@ -468,7 +471,7 @@ skip when no container daemon or image is available.
 ## Script contract
 
 Every language shim implements the same file layout and exit codes, defined in
-`etl_shim/contract.py`. All paths are relative to the sandbox root (`/sandbox`).
+`mires_etl/contract.py`. All paths are relative to the sandbox root (`/sandbox`).
 
 | Path | Written by | Contents |
 |---|---|---|

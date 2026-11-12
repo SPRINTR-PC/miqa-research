@@ -13,7 +13,7 @@ from .exceptions import (
     UnresolvableParticipantReference,
 )
 from .loader import load_jsonl
-from .registry import DatatypeRegistration, LoadResult, get_datatype, register_datatype, registered_datatype_names
+from .registry import DatatypeRegistration, LoadResult, get_datatype, register_loader, registered_datatype_names
 
 __all__ = [
     "AmbiguousParticipantReference",
@@ -27,6 +27,6 @@ __all__ = [
     "UnresolvableParticipantReference",
     "get_datatype",
     "load_jsonl",
-    "register_datatype",
+    "register_loader",
     "registered_datatype_names",
 ]

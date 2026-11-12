@@ -23,7 +23,7 @@ from kubernetes import client as k8s
 from kubernetes.client.exceptions import ApiException
 from kubernetes.stream import stream as default_stream_fn
 
-from MiqaResearch.etl_shim import contract
+from mires_etl import contract
 
 from ._staging import build_sandbox_archive, check_input_size, read_output_from_tar
 from .backend import SandboxBackend

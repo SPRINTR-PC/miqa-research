@@ -26,8 +26,8 @@ from MiqaResearch.data.models import (
     ResearchProject,
     StudyParticipant,
 )
-from MiqaResearch.etl_shim import contract
 from MiqaResearch.tasks.etl_orchestrator import runner
+from mires_etl import contract
 
 
 class FakeSandboxBackend:

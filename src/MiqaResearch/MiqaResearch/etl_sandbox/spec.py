@@ -1,6 +1,6 @@
 """The `SandboxBackend.run()` request/response shapes (#161). Deliberately plain -- no Django
 model reference -- so a backend (real or fake) is exercisable without a database, matching the
-existing shim's own `manifest: dict, input_dir: Path` seam (`etl_shim/shim.py`). The orchestrator
+existing shim's own `manifest: dict, input_dir: Path` seam (`mires_etl/shim.py`). The orchestrator
 (#162) is what builds a `SandboxRunSpec` from a `PipelineBinding` + `EtlJob` + `EtlScriptVersion`.
 """
 from dataclasses import dataclass, field

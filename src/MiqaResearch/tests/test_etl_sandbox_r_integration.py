@@ -28,7 +28,7 @@ from MiqaResearch.data.models import (
 from MiqaResearch.etl_datatypes import load_jsonl
 from MiqaResearch.etl_sandbox import SandboxRunSpec, resolve_limits
 from MiqaResearch.etl_sandbox.compose_backend import ComposeSandboxBackend
-from MiqaResearch.etl_shim import contract
+from mires_etl import contract
 from tests.sandbox_docker import docker_client_for
 
 IMAGE_KEY = "r-etl-v1"

@@ -1,6 +1,6 @@
 # ETL sandbox R image (#166): the R runtime an R Script (script.R) executes inside. Layered on the
 # Python sandbox image (etl_sandbox.Dockerfile) because the R shim is two halves (see
-# MiqaResearch/etl_shim/r_shim.py): the platform's Python entrypoint launches `Rscript shim.R`
+# mires_etl/r_shim.py): the platform's Python entrypoint launches `Rscript shim.R`
 # for the Script itself, then validates the emitted rows against the ETL Datatype registry --
 # so the Datatype schemas keep one source of truth instead of being re-expressed in R. Same
 # isolation as the Python image: non-root, network-less, /sandbox staged via the archive API.

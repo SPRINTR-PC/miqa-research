@@ -4,7 +4,6 @@ from uuid import uuid4
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
-from ninja import Schema
 
 from contract.constants.etl import ETL_SCRIPT_ORIGIN_CUSTOM
 from MiqaResearch.data.models import (
@@ -27,10 +26,10 @@ from MiqaResearch.etl_datatypes import (
     UnresolvableParticipantReference,
     get_datatype,
     load_jsonl,
-    register_datatype,
+    register_loader,
 )
-from MiqaResearch.etl_datatypes.measurement import MeasurementRowSchema
-from MiqaResearch.etl_datatypes.visit_occurrence import VisitOccurrenceRowSchema
+from mires_etl.schemas.measurement import MeasurementRowSchema
+from mires_etl.schemas.visit_occurrence import VisitOccurrenceRowSchema
 
 
 def _jsonl(*rows: dict) -> str:
@@ -145,12 +144,9 @@ def test_get_datatype_raises_for_an_unregistered_name():
         get_datatype("does-not-exist")
 
 
-def test_register_datatype_rejects_a_second_registration_under_the_same_name():
-    class DummySchema(Schema):
-        pass
-
+def test_register_loader_rejects_a_second_registration_under_the_same_name():
     with pytest.raises(DatatypeAlreadyRegistered):
-        @register_datatype("measurement", DummySchema)
+        @register_loader("measurement")
         def _dummy_loader(*, project, etl_job, rows):
             raise AssertionError("should never run")
 
