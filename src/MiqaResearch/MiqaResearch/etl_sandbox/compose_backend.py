@@ -85,8 +85,10 @@ class ComposeSandboxBackend(SandboxBackend):
                 container.kill()
                 exit_code, killed = contract.EXIT_TIMEOUT_OR_KILLED, True
 
-            result_jsonl, log = _retrieve_output(container, max_bytes=spec.limits.max_output_bytes)
-            return SandboxRunResult(exit_code=exit_code, result_jsonl=result_jsonl, log=log, killed=killed)
+            result_jsonl, log, image_manifest = _retrieve_output(container, max_bytes=spec.limits.max_output_bytes)
+            return SandboxRunResult(
+                exit_code=exit_code, result_jsonl=result_jsonl, log=log, killed=killed,
+                image_digest=container.attrs.get("Image") or "", image_manifest=image_manifest)
         finally:
             container.remove(force=True)
 
@@ -122,18 +124,18 @@ def _container_name(run_id: str) -> str:
     return f"{CONTAINER_NAME_PREFIX}{run_id}"
 
 
-def _retrieve_output(container, *, max_bytes: int) -> tuple[bytes | None, bytes]:
+def _retrieve_output(container, *, max_bytes: int) -> tuple[bytes | None, bytes, str]:
     try:
         stream, _ = container.get_archive(f"{SANDBOX_ROOT}/{contract.OUTPUT_DIRNAME}")
     except NotFound:
-        return None, b""
+        return None, b"", ""
 
     buf = io.BytesIO()
     size = 0
     for chunk in stream:
         size += len(chunk)
         if size > max_bytes:
-            return None, b""
+            return None, b"", ""
         buf.write(chunk)
 
     return read_output_from_tar(buf.getvalue())

@@ -359,7 +359,7 @@ class SandboxBackend(abc.ABC):
     def sweep(self, *, live_run_ids: Callable[[], set[str]]) -> None: ...
 ```
 
-- **`run()`** returns `SandboxRunResult(exit_code, result_jsonl, log, killed)`. A Script's own
+- **`run()`** returns `SandboxRunResult(exit_code, result_jsonl, log, killed, image_digest, image_manifest)`. A Script's own
   failure is reported through `exit_code`. `run()` raises only for runner-level problems, where
   no container was ever started.
 - **`cancel()`** removes a single run.
@@ -455,7 +455,28 @@ unsupported extension is rejected as a form error.
 | Image | Dockerfile | Key |
 |---|---|---|
 | Python | `etl_sandbox.Dockerfile` (Python 3.14 slim, bookworm) | `python-etl-v1` |
-| R | `etl_sandbox_r.Dockerfile`: `FROM` the Python image, plus `r-base-core` 4.2 and `r-cran-jsonlite` | `r-etl-v1` |
+| R | `etl_sandbox_r.Dockerfile`: `FROM` the Python image, plus `r-base-core` 4.2 and the curated R set | `r-etl-v1` |
+
+The images are slim. They copy only the Django-free `mires_etl` package and the curated package
+set, never Django, Celery or app code. A set change means a new image key (`v2`, and so on).
+
+**Curated package sets.** A Script may import the standard library plus its language's set,
+and nothing else.
+
+| Language | Set | Declared in |
+|---|---|---|
+| Python | `pydicom`, `polars`, `numpy` | uv dependency group `etl-python` (versions from `uv.lock`) |
+| Python (shim only) | `pydantic` | uv dependency group `etl-shim` |
+| R | `jsonlite`, `dplyr`, `readr`, `tidyr`, `lubridate` | `etl_sandbox_r.Dockerfile` (Debian `r-cran-*`) |
+
+A test checks every Native Script's imports against the standard library and `etl-python`.
+The same sets are listed in the Script editor.
+
+**Provenance.** Each image bakes its pinned package list at `/etc/mires/packages.txt`. The
+entrypoint copies it into `output/packages.txt` after the Script has run, so a Script cannot
+forge it. The backend returns it as `SandboxRunResult.image_manifest`, together with
+`image_digest` (the Compose image ID, or the Kubernetes pod `imageID`). The runner stores both
+on the Job (`sandbox_image_digest`, `sandbox_image_manifest`) and the Job page shows them.
 
 Both images use `python -m mires_etl /sandbox` as their entrypoint. The R image
 sets `MIRES_ETL_SHIM_LANGUAGE=r`. Build them with:
@@ -670,8 +691,8 @@ names, descriptions or bucket paths:
 
 Native Scripts ship with the codebase in `MiqaResearch/etl_native_scripts/`
 ([ADR 0030](#heading-etl-adr-0030)). `NATIVE_SCRIPTS` lists each one's name, Datatype,
-description and source file. The sources are self-contained (standard library only), because
-they run in the sandbox as `script.py` and a Customized copy has to keep working on its own.
+description and source file. The sources are self-contained (standard library plus the curated `etl-python` set, no
+`MiqaResearch` or `mires_etl` imports), because they run in the sandbox as `script.py` and a Customized copy has to keep working on its own.
 
 **Sync.** `sync_native_etl_scripts` runs after every `migrate`, through `post_migrate`, and can
 also be run on demand with `manage.py sync_native_etl_scripts`. It mirrors the list into

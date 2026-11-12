@@ -99,9 +99,13 @@ def _limits(**overrides):
     return SandboxLimits(**defaults)
 
 
-def _output_archive(*, result_jsonl: bytes | None, log: bytes) -> list[bytes]:
+def _output_archive(*, result_jsonl: bytes | None, log: bytes, packages: bytes | None = None) -> list[bytes]:
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w") as tar:
+        if packages is not None:
+            info = tarfile.TarInfo(name=f"output/{contract.PACKAGES_FILENAME}")
+            info.size = len(packages)
+            tar.addfile(info, io.BytesIO(packages))
         if result_jsonl is not None:
             info = tarfile.TarInfo(name=f"output/{contract.RESULT_FILENAME}")
             info.size = len(result_jsonl)
@@ -235,6 +239,22 @@ def test_run_returns_the_result_jsonl_and_log_on_success(allowlisted):
     assert result.result_jsonl == b'{"datatype": "measurement"}\nrow\n'
     assert result.log == b"hello\n"
     assert result.killed is False
+
+
+def test_run_returns_the_image_digest_and_the_baked_package_manifest(allowlisted):
+    client = MagicMock()
+    container = _fake_container(
+        output_archive=_output_archive(result_jsonl=None, log=b"", packages=b"pydicom==3.0.2\n"))
+    container.attrs = {"State": {"OOMKilled": False}, "Image": "sha256:feedbeef"}
+    client.containers.create.return_value = container
+    spec = SandboxRunSpec(
+        run_id="r1", image_key="python-etl-v1", manifest={"datatype": "measurement"}, script_source=b"",
+        limits=_limits())
+
+    result = ComposeSandboxBackend(client=client).run(spec)
+
+    assert result.image_digest == "sha256:feedbeef"
+    assert result.image_manifest == "pydicom==3.0.2\n"
 
 
 def test_run_always_removes_the_container_afterwards(allowlisted):

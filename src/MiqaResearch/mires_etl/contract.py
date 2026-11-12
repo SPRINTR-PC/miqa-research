@@ -16,6 +16,8 @@ Layout, all paths relative to the sandbox root:
   Datatype's schema (participant-referenced, per #159). Never partially written: on any failure
   no result file exists, so a downstream loader can never consume a partial batch.
 - `output/log.txt` -- the script run's captured stdout+stderr, written regardless of outcome.
+- `output/packages.txt` -- a copy of the image's `/etc/mires/packages.txt`, written by the entrypoint
+  after the run (never by the Script) when the file exists; the runner stores it on the Job.
 
 Exit codes (every non-zero code fails the Job all-or-nothing, matching #159's loader):
 
@@ -34,6 +36,10 @@ R_SCRIPT_FILENAME = "script.R"
 OUTPUT_DIRNAME = "output"
 RESULT_FILENAME = "result.jsonl"
 LOG_FILENAME = "log.txt"
+# The image's baked package manifest (#413): the entrypoint copies it next to the log so a backend
+# reads image provenance through the same output tar, identically on Compose and Kubernetes.
+PACKAGES_FILENAME = "packages.txt"
+IMAGE_PACKAGES_PATH = "/etc/mires/packages.txt"
 
 EXIT_SUCCESS = 0
 EXIT_SCRIPT_ERROR = 1

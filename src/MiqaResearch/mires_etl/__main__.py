@@ -20,8 +20,25 @@ def main() -> int:
 
     root = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("/sandbox")
     if os.environ.get("MIRES_ETL_SHIM_LANGUAGE", contract.LANGUAGE_PYTHON) == contract.LANGUAGE_R:
-        return run_r_sandbox(root).exit_code
-    return run_sandbox(root).exit_code
+        exit_code = run_r_sandbox(root).exit_code
+    else:
+        exit_code = run_sandbox(root).exit_code
+    copy_image_manifest(root / contract.OUTPUT_DIRNAME)
+    return exit_code
+
+
+def copy_image_manifest(output_dir: Path) -> None:
+    """Copy the image's baked package manifest into `output_dir` (#413). Written after the Script
+    ran, so a Script cannot forge it; silently skipped when the file is absent (dev runs)."""
+    from . import contract
+
+    source = Path(os.environ.get("MIRES_ETL_PACKAGES_FILE", contract.IMAGE_PACKAGES_PATH))
+    try:
+        content = source.read_bytes()
+        output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / contract.PACKAGES_FILENAME).write_bytes(content)
+    except OSError:
+        pass
 
 
 if __name__ == "__main__":

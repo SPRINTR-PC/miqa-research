@@ -146,6 +146,8 @@ def _input_path(scratch: Path, relative: str) -> Path:
 def _finalize(job: EtlJob, result) -> EtlJob:
     job.finished_at = timezone.now()
     job.log = _cap_log(result.log)
+    job.sandbox_image_digest = result.image_digest[:200]
+    job.sandbox_image_manifest = result.image_manifest
 
     if result.exit_code == contract.EXIT_SUCCESS:
         try:
@@ -160,7 +162,7 @@ def _finalize(job: EtlJob, result) -> EtlJob:
         # none auto-retry (#156's spec text groups them explicitly under "manual retry").
         job.status = ETL_JOB_STATUS_FAILED
 
-    job.save(update_fields=["status", "finished_at", "log"])
+    job.save(update_fields=["status", "finished_at", "log", "sandbox_image_digest", "sandbox_image_manifest"])
     if job.status == ETL_JOB_STATUS_SUCCEEDED:
         # Only once "succeeded" is saved: the mover skips any other status, and under "delete"
         # Raw Retention a move for an unrecorded success would lose the source (#246).

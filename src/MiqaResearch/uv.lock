@@ -1598,6 +1598,14 @@ docs = [
     { name = "sphinxcontrib-mermaid" },
     { name = "watchfiles" },
 ]
+etl-python = [
+    { name = "numpy" },
+    { name = "polars" },
+    { name = "pydicom" },
+]
+etl-shim = [
+    { name = "pydantic" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -1667,6 +1675,12 @@ docs = [
     { name = "sphinxcontrib-mermaid", specifier = ">=2.0.3" },
     { name = "watchfiles" },
 ]
+etl-python = [
+    { name = "numpy", specifier = ">=2.4.6" },
+    { name = "polars", specifier = ">=1.40.1" },
+    { name = "pydicom" },
+]
+etl-shim = [{ name = "pydantic" }]
 
 [[package]]
 name = "more-itertools"

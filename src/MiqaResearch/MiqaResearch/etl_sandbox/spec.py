@@ -37,3 +37,5 @@ class SandboxRunResult:
     result_jsonl: bytes | None = None
     log: bytes = b""
     killed: bool = False
+    image_digest: str = ""
+    image_manifest: str = ""
