@@ -35,13 +35,12 @@ from mires_etl.schemas.dicom_instance import DicomInstanceRowSchema
 
 from . import derived_provenance, frame_index, records
 from . import storage as storage_stage
-from .metadata_dump import build_metadata_dump
+from .metadata_dump import build_metadata_dump, payload_metadata
 from .pseudonymize import pseudonymize_model
 
 logger = logging.getLogger(__name__)
 
 DUPLICATE_HANDLING_INHERIT = "inherit"
-_RT_TYPES = {"rtstruct": "RTSTRUCT", "rtplan": "RTPLAN", "rtdose": "RTDOSE", "rtimage": "RTIMAGE"}
 
 
 class _Config:
@@ -194,25 +193,13 @@ def _assert_plausible_pixels(row) -> None:
             raise EtlLoadError(f"Declared {name}={value} exceeds the configured maximum of {maximum}.")
 
 
-def _payload_metadata(row, project) -> dict:
-    payload = pseudonymize_model(row.payload, project)
-    kind = payload.pop("kind")
-    if kind == "rdsr":
-        return {"dose_report": payload}
-    if kind in _RT_TYPES:
-        return {"rt_summary": {"type": _RT_TYPES[kind], **payload}}
-    if kind == "wsi":
-        return {"pathology_summary": payload}
-    return {}
-
-
 def _extracted(row, ds, project, etl_job, participant_key) -> dict:
     study_datetime = row.study_datetime or etl_job.started_at or timezone.now()
     if timezone.is_naive(study_datetime):
         study_datetime = study_datetime.replace(tzinfo=UTC)
     pseudonymized = pseudonymize_model(row, project)
     metadata = build_metadata_dump(ds, project, participant_alias_of(participant_key))
-    metadata.update(_payload_metadata(row, project))
+    metadata.update(payload_metadata(row.payload, project))
     return {
         "study_datetime": study_datetime,
         "study_description": row.study_description,

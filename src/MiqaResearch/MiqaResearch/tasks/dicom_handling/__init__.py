@@ -1,6 +1,4 @@
-"""DICOM ingestion pipeline stages (#98 spec).
+"""DICOM maintenance tasks: backfills, the orphan sweep and NDPI conversion.
 
-`pipeline.run_ingestion` is the top-level, directly-callable seam; the stage
-modules alongside it (parsing, participant matching, extraction, records,
-storage) are its internals.
+Ingestion is the ETL `dicom_instance` Datatype (`actions/dicom_ingest`).
 """

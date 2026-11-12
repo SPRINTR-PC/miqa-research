@@ -1,28 +1,23 @@
-"""Performance/load test suite for DICOM ingestion (#126).
+"""Performance/load test suite for DICOM ingestion (#126), ported to the ETL path (#419).
 
 Three scenarios, each long_running and excluded from the default test run
 (pyproject.toml's `-m 'not ... and not long_running ...'`, added by #104):
-many small files (throughput), one very large file/series (S3 backend), and
-concurrent runs (real task dispatch, #116's one deliberate exception to
-"call run_ingestion directly"). All against fully synthetic data.
+many small files in one folder Job (throughput), one very large file/series (S3 backend), and
+concurrent Jobs loading into one project. Each Job is the real native script plus the `dicom_instance`
+loader; the orchestrator, queue and sandbox are covered by the ETL integration tests. All against fully
+synthetic data.
 """
 import itertools
-import shutil
-import socket
 import time
-from pathlib import Path
-from urllib.parse import urlparse
+from concurrent.futures import ThreadPoolExecutor
 
 import boto3
 import pytest
-from celery.result import AsyncResult
-from django.conf import settings as django_settings
+from django.db import connection
 
-from MiqaResearch.celery import app as celery_app
 from MiqaResearch.data.models import DicomFile, ResearchProject
-from MiqaResearch.tasks.dicom_handling.pipeline import run_ingestion
-from MiqaResearch.tasks.dicom_handling.tasks import ingest_dicom_source
 from tests.dicom_fixtures import build_ct_image, build_wsi, write_dicom
+from tests.dicom_ingest_helper import ingest_files
 
 
 @pytest.fixture(autouse=True)
@@ -31,21 +26,9 @@ def encryption_keys(settings):
     settings.SENSITIVE_DATA_HASH_KEY = "H2QCB14temR-C2JnLORSE5TxPwLd8iy3YygNPQ-corA="
 
 
-def _skip_unless_broker_reachable():
-    """The concurrency test needs the compose network's broker and a worker sharing this checkout and
-    the test database, i.e. it runs inside `mires_testrunner` (docker-compose.dev-test.yml)."""
-    broker = urlparse(django_settings.CELERY_BROKER_URL)
-    try:
-        socket.create_connection((broker.hostname, broker.port or 5672), timeout=3).close()
-    except OSError as exc:
-        pytest.skip(f"Celery broker {broker.hostname}:{broker.port} not reachable ({exc}); "
-                    "run this test inside mires_testrunner")
-
-
 @pytest.mark.long_running
 def test_throughput_many_small_files_meets_acceptance_threshold(benchmark, settings, tmp_path, db):
-    """AC #1: many small synthetic files, explicit throughput threshold."""
-    settings.DICOM_ALLOWED_SOURCE_ROOTS = [tmp_path]
+    """AC #1: many small synthetic files in one folder Job, explicit throughput threshold."""
     settings.MEDIA_ROOT = tmp_path / "media"
     files_per_round = 200
     acceptance_files_per_second = 15  # see plan doc: measured baseline 40.6/sec, ~2.7x headroom
@@ -71,7 +54,7 @@ def test_throughput_many_small_files_meets_acceptance_threshold(benchmark, setti
         return (project, folder), {}
 
     def run(project, folder):
-        return run_ingestion(project, folder)
+        return ingest_files(project, folder)
 
     report = benchmark.pedantic(run, setup=setup, rounds=3, iterations=1)
 
@@ -93,7 +76,6 @@ def test_large_series_via_s3_backend_meets_acceptance_threshold(
     precedent as test_dicom_storage_backend.py's long_running multipart
     test), explicit acceptance threshold.
     """
-    settings.DICOM_ALLOWED_SOURCE_ROOTS = [tmp_path]
     settings.DICOM_STORAGE_BACKEND = "s3"
     settings.DICOM_S3_BUCKET = "dicom-perf-large-file-test"
     settings.DICOM_S3_ENDPOINT_URL = rustfs_endpoint
@@ -129,7 +111,7 @@ def test_large_series_via_s3_backend_meets_acceptance_threshold(
         return (project, large_file), {}
 
     def run(project, source):
-        return run_ingestion(project, source)
+        return ingest_files(project, source)
 
     report = benchmark.pedantic(run, setup=setup, rounds=2, iterations=1)
 
@@ -139,109 +121,49 @@ def test_large_series_via_s3_backend_meets_acceptance_threshold(
     )
 
 
+
+
 @pytest.mark.long_running
-def test_concurrent_ingestion_runs_via_real_task_dispatch_complete_correctly_and_within_threshold(
-    settings, transactional_db
+def test_concurrent_jobs_loading_into_one_project_complete_correctly_and_within_threshold(
+    settings, tmp_path, transactional_db
 ):
-    """AC #3: concurrent ingestion dispatched as real tasks on the actual
-    queue (#116's one deliberate exception to calling run_ingestion
-    directly) -- not in-process calls.
+    """AC #3: several Jobs loading into the same project at once (one thread, one DB connection each),
+    the shape of concurrent `run_etl_job` workers: every Job succeeds, nothing is lost or duplicated, and
+    the whole batch finishes within the threshold. The queue and sandbox are covered by the ETL
+    integration tests; this exercises the loader's concurrent writes."""
+    settings.MEDIA_ROOT = tmp_path / "media"
+    project = ResearchProject.objects.create(
+        name="Concurrency perf project", description="Project for #126 concurrency test")
+    run_count, files_per_run = 4, 10
+    acceptance_seconds = 60  # generous: script + load of 10 files per Job, contending on one project
 
-    Requires a live mires_worker_dicom consuming `dicomIngestion` (see
-    docker-compose.dev-test.yml). The scratch source path below must match
-    that worker's MIRES_DICOM_ALLOWED_SOURCE_ROOTS env var exactly -- this
-    test's own settings overrides only apply in *this* process; the
-    dispatched task runs inside the worker container.
+    folders = []
+    for run in range(run_count):
+        folder = tmp_path / f"run-{run}"
+        for i in range(files_per_run):
+            write_dicom(
+                build_ct_image(
+                    patient_id=f"P-CONC-{run}-{i}",
+                    study_instance_uid=f"1.2.9999.126.3.{run}.{i}.1",
+                    series_instance_uid=f"1.2.9999.126.3.{run}.{i}.2",
+                    sop_instance_uid=f"1.2.9999.126.3.{run}.{i}.3",
+                ),
+                folder / f"file-{i}.dcm",
+            )
+        folders.append(folder)
 
-    Storage stays local (the default), pointed at a scratch media root via
-    the worker's MIRES_MEDIA_ROOT (docker-compose.dev-test.yml) -- not at
-    S3/RustFS, so this test (dispatch/concurrency, AC #3) stays independent
-    of the real RustFS container the AC #4 test in
-    test_dicom_storage_backend.py already exercises. This test removes that
-    scratch media root afterward, same as it does its own source scratch
-    root.
+    def run_job(folder):
+        try:
+            return ingest_files(project, folder).counts
+        finally:
+            connection.close()
 
-    Uses `transactional_db`, not `db`: the default `db` fixture wraps the
-    test in one outer transaction rolled back at the end, so a separate
-    process (the worker, on its own DB connection) would never see the
-    ResearchProject row this test creates. `transactional_db` commits for
-    real, which any other process needs in order to see this test's writes.
+    start = time.monotonic()
+    with ThreadPoolExecutor(max_workers=run_count) as pool:
+        counts = list(pool.map(run_job, folders))
+    elapsed = time.monotonic() - start
 
-    Polls via Celery's own `AsyncResult`, not `django.tasks`'s
-    `TaskResult.refresh()`/`.return_value` -- found live, against this
-    environment's pinned versions, that `django_tasks_celery`'s extended
-    django-db-backend metadata bridging chokes on kwargs/args the "django-db"
-    Celery result backend stores as JSON *strings* (`meta_to_task_result`
-    does `dict(meta["kwargs"])`, expecting an already-decoded dict, and gets
-    the literal 2-character string `"{}"` instead -- ValueError). `enqueue()`
-    dispatch is unaffected; only that particular result-reading path is.
-    """
-    _skip_unless_broker_reachable()
-    # Undo tests/conftest.py's autouse dummy-backend override so this run
-    # actually goes through django_tasks_celery.CeleryBackend.
-    settings.TASKS = {
-        **settings.TASKS,
-        "default": {**settings.TASKS["default"], "BACKEND": "django_tasks_celery.CeleryBackend"},
-    }
-    scratch_root = Path(django_settings.BASE_DIR) / ".dev-data" / "dicom_perf_concurrency"
-    # Must match the worker's MIRES_MEDIA_ROOT (docker-compose.dev-test.yml);
-    # its CWD is /app, same as this process's BASE_DIR. Cleaned up alongside
-    # scratch_root.
-    worker_media_root = Path(django_settings.BASE_DIR) / ".dev-data" / "dicom_perf_concurrency_media"
-    settings.DICOM_ALLOWED_SOURCE_ROOTS = [scratch_root]
-    settings.DICOM_STORAGE_BACKEND = "local"
-
-    shutil.rmtree(scratch_root, ignore_errors=True)
-    scratch_root.mkdir(parents=True, exist_ok=True)
-    try:
-        project = ResearchProject.objects.create(
-            name="Concurrency perf project", description="Project for #126 concurrency test"
-        )
-        run_count = 4
-        files_per_run = 10
-        # generous: dispatch + queue + worker pickup + ingest + result round-trip, over docker-compose
-        acceptance_seconds = 60
-
-        sources = []
-        for run in range(run_count):
-            folder = scratch_root / f"run-{run}"
-            for i in range(files_per_run):
-                write_dicom(
-                    build_ct_image(
-                        patient_id=f"P-CONC-{run}-{i}",
-                        study_instance_uid=f"1.2.9999.126.3.{run}.{i}.1",
-                        series_instance_uid=f"1.2.9999.126.3.{run}.{i}.2",
-                        sop_instance_uid=f"1.2.9999.126.3.{run}.{i}.3",
-                    ),
-                    folder / f"file-{i}.dcm",
-                )
-            sources.append(str(folder))
-
-        start = time.monotonic()
-        task_results = [ingest_dicom_source.enqueue(str(project.id), source) for source in sources]
-        async_results = [AsyncResult(result.id, app=celery_app) for result in task_results]
-
-        deadline = start + acceptance_seconds
-        while not all(ar.ready() for ar in async_results) and time.monotonic() < deadline:
-            time.sleep(0.5)
-        elapsed = time.monotonic() - start
-
-        assert all(ar.ready() for ar in async_results), "not every dispatched run finished before the deadline"
-        assert all(ar.successful() for ar in async_results), [
-            (ar.id, ar.state, ar.result) for ar in async_results if not ar.successful()
-        ]
-        assert elapsed < acceptance_seconds, (
-            f"{run_count} concurrent runs took {elapsed:.1f}s, over the {acceptance_seconds}s threshold"
-        )
-
-        for ar in async_results:
-            payload = ar.get()
-            assert payload["counts"] == {
-                "ingested": files_per_run, "skipped_duplicate": 0, "duplicate_conflict": 0, "error": 0,
-            }
-            assert len(payload["results"]) == files_per_run
-            assert all(result["outcome"] == "ingested" for result in payload["results"])
-        assert DicomFile.objects.filter(research_project=project).count() == run_count * files_per_run
-    finally:
-        shutil.rmtree(scratch_root, ignore_errors=True)
-        shutil.rmtree(worker_media_root, ignore_errors=True)
+    assert counts == [{"ingested": files_per_run, "skipped": 0}] * run_count
+    assert elapsed < acceptance_seconds, (
+        f"{run_count} concurrent Jobs took {elapsed:.1f}s, over the {acceptance_seconds}s threshold")
+    assert DicomFile.objects.filter(research_project=project).count() == run_count * files_per_run

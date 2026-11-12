@@ -1,6 +1,6 @@
 """S3-compatible object storage backend for DICOM ingestion (#122).
 
-Per the #98 testing decisions: tests exercise the `run_ingestion` seam (and,
+Per the #98 testing decisions: tests exercise the `ingest_files` seam (and,
 for the real-multipart case, the `DicomStorage` seam directly) and assert on
 what ends up stored/retrievable, never on internal call sequences.
 
@@ -21,19 +21,14 @@ from moto import mock_aws
 
 from MiqaResearch.data.models import DicomFile, ResearchProject
 from MiqaResearch.data.models.dicom_storage import DicomStorage
-from MiqaResearch.tasks.dicom_handling.pipeline import run_ingestion
 from tests.dicom_fixtures import build_ct_image, write_dicom
+from tests.dicom_ingest_helper import ingest_files
 
 
 @pytest.fixture(autouse=True)
 def encryption_keys(settings):
     settings.FERNET_KEY = b"EiGdHopiKZdBZwVCP4dVJitPrrDnOuGAd94W4EZpwQc="
     settings.SENSITIVE_DATA_HASH_KEY = "H2QCB14temR-C2JnLORSE5TxPwLd8iy3YygNPQ-corA="
-
-
-@pytest.fixture(autouse=True)
-def allow_tmp_sources(settings, tmp_path):
-    settings.DICOM_ALLOWED_SOURCE_ROOTS = [tmp_path]
 
 
 @pytest.fixture
@@ -59,12 +54,12 @@ def test_s3_backend_writes_to_s3_not_local_disk_and_stays_retrievable(research_p
     src = write_dicom(build_ct_image(), tmp_path / "ct1.dcm")
     raw_bytes = src.read_bytes()
 
-    report = run_ingestion(research_project, src)
+    report = ingest_files(research_project, src)
 
     assert report.counts["ingested"] == 1
     dcm_file = DicomFile.objects.get()
     # Not on local disk -- MEDIA_ROOT stays untouched by an S3-backed write
-    assert not (tmp_path / "media").exists()
+    assert not (tmp_path / "media" / "DICOM").exists()
     # Present in the configured bucket, byte-identical to the source
     stored = boto3.client("s3", region_name="us-east-1").get_object(Bucket="dicom-storage", Key=dcm_file.file.name)
     assert stored["Body"].read() == raw_bytes

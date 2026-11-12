@@ -4,7 +4,7 @@ Two tiers: fast, default-suite unit tests against a mocked `WsiDicomizer`
 boundary, and a `long_running`-marked integration tier that downloads a real
 Hamamatsu sample (CC0, from OpenSlide's public test-data mirror at
 openslide.cs.cmu.edu) and proves an actual round-trip: ndpi -> DICOM ->
-ordinary `run_ingestion`. Real NDPI samples are hundreds of MB and
+ordinary `ingest_files`. Real NDPI samples are hundreds of MB and
 hand-crafting a valid synthetic one would mean reverse-engineering NDPI's
 proprietary 64-bit-offset TIFF hybrid layout and Hamamatsu's private strip
 tags -- even opentile's own test suite downloads real files rather than
@@ -26,7 +26,7 @@ from MiqaResearch.tasks.dicom_handling.ndpi_conversion import (
     NdpiUnsupportedSourceError,
     convert_ndpi_to_dicom,
 )
-from MiqaResearch.tasks.dicom_handling.pipeline import run_ingestion
+from tests.dicom_ingest_helper import ingest_files
 
 NDPI_SAMPLE_URL = "https://openslide.cs.cmu.edu/download/openslide-testdata/Hamamatsu/CMU-1.ndpi"
 NDPI_SAMPLE_CACHE = Path(__file__).parent / "testdata" / "ndpi" / "CMU-1.ndpi"
@@ -39,8 +39,7 @@ def encryption_keys(settings):
 
 
 @pytest.fixture(autouse=True)
-def allow_tmp_sources(settings, tmp_path):
-    settings.DICOM_ALLOWED_SOURCE_ROOTS = [tmp_path]
+def local_media(settings, tmp_path):
     settings.MEDIA_ROOT = tmp_path / "media"
 
 
@@ -127,14 +126,14 @@ def test_importing_ndpi_conversion_does_not_leave_pydicom_validation_globally_st
 
 def test_ingestion_pipeline_treats_ndpi_files_like_any_non_dicom_file(research_project, tmp_path):
     """No special-casing (#125 AC): an *.ndpi source is never auto-converted, just reported like any
-    other file `run_ingestion` can't parse as DICOM."""
+    other non-DICOM file (the script skips it and it stays in the source)."""
     ndpi_path = tmp_path / "slide.ndpi"
     ndpi_path.write_bytes(b"not a dicom file, just an ndpi-named blob")
 
-    report = run_ingestion(research_project, ndpi_path)
+    report = ingest_files(research_project, ndpi_path)
 
-    assert report.counts["error"] == 1
-    assert report.counts["ingested"] == 0
+    assert report.counts == {"ingested": 0, "skipped": 1}
+    assert report.load_result.kept_inputs == ("slide.ndpi",)
 
 
 @pytest.fixture(scope="session")
@@ -187,7 +186,7 @@ class TestRealNdpiConversion:
             ds.PatientID = "NDPI-TEST-PATIENT-125"
             ds.save_as(file_path)
 
-        report = run_ingestion(research_project, output_dir)
+        report = ingest_files(research_project, output_dir)
 
         assert report.counts["ingested"] >= 1, report.results
         assert DicomFile.objects.filter(research_project=research_project).exists()

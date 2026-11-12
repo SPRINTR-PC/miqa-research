@@ -6,8 +6,8 @@ import pytest
 
 from MiqaResearch.data.models import DicomFile, ResearchProject, StudyParticipant
 from MiqaResearch.tasks.dicom_handling.metadata_backfill import resanitize_dicom_metadata
-from MiqaResearch.tasks.dicom_handling.pipeline import run_ingestion
 from tests.dicom_fixtures import build_ct_image, build_wsi, write_dicom
+from tests.dicom_ingest_helper import ingest_files
 
 LEGACY_DUMP = {"PatientBirthDate": "19750131", "AccessionNumber": "ACC-1", "KVP": 120.0}
 
@@ -20,7 +20,6 @@ def encryption_keys(settings):
 
 @pytest.fixture(autouse=True)
 def storage(settings, tmp_path):
-    settings.DICOM_ALLOWED_SOURCE_ROOTS = [tmp_path]
     settings.MEDIA_ROOT = tmp_path / "media"
 
 
@@ -30,7 +29,7 @@ def research_project(db):
 
 
 def _ingest(research_project, tmp_path, ds, name):
-    report = run_ingestion(research_project, write_dicom(ds, tmp_path / name))
+    report = ingest_files(research_project, write_dicom(ds, tmp_path / name))
     assert report.counts["ingested"] == 1
     return DicomFile.objects.get(sop_instance_uid=report.results[0].sop_instance_uid)
 

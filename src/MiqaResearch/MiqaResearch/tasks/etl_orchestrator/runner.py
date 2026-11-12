@@ -179,7 +179,9 @@ def _load_result(job: EtlJob, result_jsonl: bytes | None, inputs: JobInputs | No
     if not result_jsonl:
         raise EtlDatatypeError("sandbox reported success (exit 0) but wrote no result.jsonl")
     text = result_jsonl.decode("utf-8")
-    body = "\n".join(text.splitlines()[1:])  # drop the header line: {"datatype": "<name>"}
+    # drop the header line ({"datatype": "<name>"}); split on "\n" only, as str.splitlines also splits on
+    # U+0085/U+2028/U+2029, which a JSON string may contain raw
+    body = text.partition("\n")[2]
     kwargs = {"inputs": inputs} if inputs is not None else {}
     return load_jsonl(
         datatype_name=job.script_version.script.datatype_name,

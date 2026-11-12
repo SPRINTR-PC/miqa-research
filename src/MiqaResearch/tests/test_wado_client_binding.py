@@ -1,6 +1,6 @@
 """WADO for machine clients (#277, ADR 0027): Client Binding, the `dicom:raw` scope, per-token audit.
 
-Seams: the WADO HTTP endpoints (fed by `run_ingestion`) called with a Bearer token, and the OAuth2
+Seams: the WADO HTTP endpoints (fed by `ingest_files`) called with a Bearer token, and the OAuth2
 token endpoint (`/o/token/`) for which scopes a client may obtain.
 """
 from datetime import UTC, datetime
@@ -20,9 +20,9 @@ from MiqaResearch.data.models import (
     ParticipantConsentType,
     ResearchProject,
 )
-from MiqaResearch.tasks.dicom_handling.pipeline import run_ingestion
 from tests.client_binding_helpers import bound_client
 from tests.dicom_fixtures import build_multiframe_ct, write_dicom
+from tests.dicom_ingest_helper import ingest_files
 
 FRAMES_CACHE_CONTROL = "private, max-age=31536000, immutable"
 
@@ -35,7 +35,6 @@ def encryption_keys(settings):
 
 @pytest.fixture(autouse=True)
 def local_media(settings, tmp_path):
-    settings.DICOM_ALLOWED_SOURCE_ROOTS = [tmp_path]
     settings.MEDIA_ROOT = tmp_path / "media"
     settings.DEBUG = False
     settings.MIDDLEWARE = [m for m in settings.MIDDLEWARE if "debug_toolbar" not in m]
@@ -47,7 +46,7 @@ def world(db, tmp_path):
     project = ResearchProject.objects.create(name="Client project", description="Project for #277 tests")
     consent_type = ParticipantConsentType.objects.create(label="Participation", research_project=project)
     sites = {code: Clinic.objects.create(clinic_code=f"S-{code}", clinic_name=f"Site {code}") for code in "AB"}
-    report = run_ingestion(project, write_dicom(build_multiframe_ct(number_of_frames=3), tmp_path / "ct.dcm"))
+    report = ingest_files(project, write_dicom(build_multiframe_ct(number_of_frames=3), tmp_path / "ct.dcm"))
     assert report.counts["ingested"] == 1, report.results
     dicom_file = DicomFile.objects.get(sop_instance_uid=report.results[0].sop_instance_uid)
     ParticipantConsent.objects.create(

@@ -22,7 +22,7 @@ from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
 from django.db import connection
-from django.test import Client, override_settings
+from django.test import Client
 from PIL import Image
 from pydicom.dataset import Dataset, FileMetaDataset
 from pydicom.encaps import encapsulate
@@ -40,13 +40,13 @@ from pydicom.uid import (
 )
 
 from contract.constants.research_project_role import PROJECT_ROLE_INVESTIGATOR, PROJECT_ROLE_PI
+from MiqaResearch.actions.dicom_ingest.local import ingest_local_folder
 from MiqaResearch.data.models import (
     DicomSeries,
     ResearchProject,
     ResearchProjectRole,
     ResearchProjectUserRoleMap,
 )
-from MiqaResearch.tasks.dicom_handling.pipeline import run_ingestion
 
 PROJECT_NAME = "Viewer harness"
 BLINDED_PROJECT_NAME = "Viewer harness blinded"
@@ -499,11 +499,9 @@ class Command(BaseCommand):
         with tempfile.TemporaryDirectory() as tmp:
             image.save_as(Path(tmp) / "image.dcm", enforce_file_format=True)
             build_blinded_sr(image).save_as(Path(tmp) / "sr.dcm", enforce_file_format=True)
-            with override_settings(DICOM_ALLOWED_SOURCE_ROOTS=[Path(tmp)]):
-                report = run_ingestion(project, tmp)
-        if report.counts.get("ingested") != 2:
-            errors = sorted({r.error for r in report.results if r.error})
-            raise CommandError(f"Blinded fixture ingestion failed: {report.counts} {errors}")
+            result = ingest_local_folder(project, Path(tmp), link_participants=True)
+        if result.created != 2:
+            raise CommandError(f"Blinded fixture ingestion failed: {result}")
         return DicomSeries.objects.get(**lookup)
 
     def _ct_series(self, project) -> DicomSeries:
@@ -513,11 +511,9 @@ class Command(BaseCommand):
         with tempfile.TemporaryDirectory() as tmp:
             for i in range(CT_SLICES):
                 build_ct_slice(i).save_as(Path(tmp) / f"ct-{i:02}.dcm", enforce_file_format=True)
-            with override_settings(DICOM_ALLOWED_SOURCE_ROOTS=[Path(tmp)]):
-                report = run_ingestion(project, tmp)
-        if report.counts.get("ingested") != CT_SLICES:
-            errors = sorted({r.error for r in report.results if r.error})
-            raise CommandError(f"CT ingestion failed: {report.counts} {errors}")
+            result = ingest_local_folder(project, Path(tmp), link_participants=True)
+        if result.created != CT_SLICES:
+            raise CommandError(f"CT ingestion failed: {result}")
         return DicomSeries.objects.get(study__participant_key__project=project, modality="CT")
 
     def _fusion_series(self, project, key: str) -> DicomSeries:
@@ -529,11 +525,9 @@ class Command(BaseCommand):
         with tempfile.TemporaryDirectory() as tmp:
             for i in range(CT_SLICES):
                 build_fusion_slice(key, i).save_as(Path(tmp) / f"{key}-{i:02}.dcm", enforce_file_format=True)
-            with override_settings(DICOM_ALLOWED_SOURCE_ROOTS=[Path(tmp)]):
-                report = run_ingestion(project, tmp)
-        if report.counts.get("ingested") != CT_SLICES:
-            errors = sorted({r.error for r in report.results if r.error})
-            raise CommandError(f"{key} ingestion failed: {report.counts} {errors}")
+            result = ingest_local_folder(project, Path(tmp), link_participants=True)
+        if result.created != CT_SLICES:
+            raise CommandError(f"{key} ingestion failed: {result}")
         return DicomSeries.objects.get(**lookup)
 
     def _planar_series(self, project, key: str, index: int) -> DicomSeries:
@@ -544,11 +538,9 @@ class Command(BaseCommand):
             return existing
         with tempfile.TemporaryDirectory() as tmp:
             build_planar_image(key, index).save_as(Path(tmp) / f"{key}.dcm", enforce_file_format=True)
-            with override_settings(DICOM_ALLOWED_SOURCE_ROOTS=[Path(tmp)]):
-                report = run_ingestion(project, tmp)
-        if report.counts.get("ingested") != 1:
-            errors = sorted({r.error for r in report.results if r.error})
-            raise CommandError(f"{key} ingestion failed: {report.counts} {errors}")
+            result = ingest_local_folder(project, Path(tmp), link_participants=True)
+        if result.created != 1:
+            raise CommandError(f"{key} ingestion failed: {result}")
         return DicomSeries.objects.get(**lookup)
 
     def _wsi_series(self, project) -> DicomSeries:
@@ -558,11 +550,9 @@ class Command(BaseCommand):
         with tempfile.TemporaryDirectory() as tmp:
             for level in range(len(WSI_DOWNSAMPLES)):
                 build_wsi_level(level).save_as(Path(tmp) / f"wsi-{level}.dcm", enforce_file_format=True)
-            with override_settings(DICOM_ALLOWED_SOURCE_ROOTS=[Path(tmp)]):
-                report = run_ingestion(project, tmp)
-        if report.counts.get("ingested") != len(WSI_DOWNSAMPLES):
-            errors = sorted({r.error for r in report.results if r.error})
-            raise CommandError(f"WSI ingestion failed: {report.counts} {errors}")
+            result = ingest_local_folder(project, Path(tmp), link_participants=True)
+        if result.created != len(WSI_DOWNSAMPLES):
+            raise CommandError(f"WSI ingestion failed: {result}")
         return DicomSeries.objects.get(study__participant_key__project=project, modality="SM")
 
     def _wsi_annotations(self, project) -> DicomSeries:
@@ -573,9 +563,7 @@ class Command(BaseCommand):
             return existing
         with tempfile.TemporaryDirectory() as tmp:
             build_wsi_annotations().save_as(Path(tmp) / "ann.dcm", enforce_file_format=True)
-            with override_settings(DICOM_ALLOWED_SOURCE_ROOTS=[Path(tmp)]):
-                report = run_ingestion(project, tmp)
-        if report.counts.get("ingested") != 1:
-            errors = sorted({r.error for r in report.results if r.error})
-            raise CommandError(f"ANN ingestion failed: {report.counts} {errors}")
+            result = ingest_local_folder(project, Path(tmp), link_participants=True)
+        if result.created != 1:
+            raise CommandError(f"ANN ingestion failed: {result}")
         return DicomSeries.objects.get(study__participant_key__project=project, modality="ANN")

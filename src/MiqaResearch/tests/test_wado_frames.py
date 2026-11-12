@@ -1,6 +1,6 @@
 """WADO-RS /frames (#274): frame offset index, ranged reads, media types, 406.
 
-Seams: the HTTP endpoint (bytes + part headers, 406), `run_ingestion` (the
+Seams: the HTTP endpoint (bytes + part headers, 406), `ingest_files` (the
 frame offset index it stores is observed only through the endpoint and
 through the stored-bytes read path), and the backfill task.
 """
@@ -14,9 +14,9 @@ from moto import mock_aws
 from MiqaResearch.data.models import DicomFile, ResearchProject
 from MiqaResearch.data.models.dicom_storage import DicomStorage
 from MiqaResearch.tasks.dicom_handling.frame_index_backfill import backfill_frame_indexes
-from MiqaResearch.tasks.dicom_handling.pipeline import run_ingestion
 from tests.client_binding_helpers import bound_client
 from tests.dicom_fixtures import build_multiframe_ct, build_tiled_wsi_jpeg, fake_jpeg_tile, write_dicom
+from tests.dicom_ingest_helper import ingest_files
 
 TOKEN = "frames-test-token"
 NATIVE_PART_TYPE = "application/octet-stream; transfer-syntax=1.2.840.10008.1.2.1"
@@ -31,7 +31,6 @@ def encryption_keys(settings):
 
 @pytest.fixture(autouse=True)
 def local_media(settings, tmp_path):
-    settings.DICOM_ALLOWED_SOURCE_ROOTS = [tmp_path]
     settings.MEDIA_ROOT = tmp_path / "media"
     settings.DEBUG = False
     settings.MIDDLEWARE = [m for m in settings.MIDDLEWARE if "debug_toolbar" not in m]
@@ -49,7 +48,7 @@ def bearer(research_project):
 
 
 def _ingest(research_project, tmp_path, ds, name="f.dcm") -> DicomFile:
-    report = run_ingestion(research_project, write_dicom(ds, tmp_path / name))
+    report = ingest_files(research_project, write_dicom(ds, tmp_path / name))
     assert report.counts["ingested"] == 1, report.results
     return DicomFile.objects.get(sop_instance_uid=report.results[0].sop_instance_uid)
 
@@ -236,9 +235,10 @@ def test_duplicate_update_reindexes_replaced_file(research_project, tmp_path, cl
         sop_instance_uid="1.2.9999.42.1.1003",
     )
 
-    report = run_ingestion(research_project, write_dicom(replacement, tmp_path / "new.dcm"), overwrite_existing=True)
+    report = ingest_files(
+        research_project, write_dicom(replacement, tmp_path / "new.dcm"), duplicate_handling="update")
 
-    assert report.counts["duplicate_conflict"] == 1
+    assert report.load_result.updated == 1
     response = client.get(_frames_url(dcm_file, "4"), **bearer)
     assert _parts(response) == [(JPEG_PART_TYPE, fake_jpeg_tile(3))]
 

@@ -10,8 +10,8 @@ import pytest
 from django.contrib.auth import get_user_model
 
 from MiqaResearch.data.models import DicomSeries, ResearchProject, ResearchProjectRole, ResearchProjectUserRoleMap
-from MiqaResearch.tasks.dicom_handling.pipeline import run_ingestion
 from tests.dicom_fixtures import build_ct_image, write_dicom
+from tests.dicom_ingest_helper import ingest_files
 
 DEV_PAGE = "/viewer/dev/"
 VIEWER_BUNDLE = "js/viewer/mireswc-viewer.js"
@@ -88,7 +88,7 @@ def test_dev_page_offers_related_series_limited_by_participant_visibility(
     limited by Participant Visibility: unknown and invisible series are left out."""
     settings.DEBUG = True
     elsewhere = ResearchProject.objects.create(name="Not mine", description="#271")
-    run_ingestion(elsewhere, write_dicom(build_ct_image(
+    ingest_files(elsewhere, write_dicom(build_ct_image(
         patient_id="OTHER-1", patient_name="Other^Patient", study_instance_uid="1.2.9999.43.1.1001",
         series_instance_uid="1.2.9999.43.1.1002", sop_instance_uid="1.2.9999.43.1.1003",
         frame_of_reference_uid="1.2.9999.43.1.1004"), tmp_path / "other.dcm"))
@@ -118,7 +118,7 @@ def test_dev_page_leaves_out_series_of_an_unlinked_study(settings, no_toolbar, c
 def test_dev_page_lists_related_series_after_the_opened_one(settings, no_toolbar, client, ct_series, tmp_path):
     settings.DEBUG = True
     project = ct_series.study.participant_key.study_participant.research_project
-    run_ingestion(project, write_dicom(build_ct_image(
+    ingest_files(project, write_dicom(build_ct_image(
         series_instance_uid="1.2.9999.42.1.2002", sop_instance_uid="1.2.9999.42.1.2003", modality="PT"),
         tmp_path / "pet.dcm"))
     pet = DicomSeries.objects.get(modality="PT").series_instance_uid
@@ -158,10 +158,9 @@ def test_base_layout_never_loads_the_viewer_bundle(settings, no_toolbar, logged_
 def ct_series(db, settings, tmp_path):
     settings.FERNET_KEY = b"EiGdHopiKZdBZwVCP4dVJitPrrDnOuGAd94W4EZpwQc="
     settings.SENSITIVE_DATA_HASH_KEY = "H2QCB14temR-C2JnLORSE5TxPwLd8iy3YygNPQ-corA="
-    settings.DICOM_ALLOWED_SOURCE_ROOTS = [tmp_path]
     settings.MEDIA_ROOT = tmp_path / "media"
     project = ResearchProject.objects.create(name="Viewer roles", description="#280")
-    report = run_ingestion(project, write_dicom(build_ct_image(), tmp_path / "ct.dcm"))
+    report = ingest_files(project, write_dicom(build_ct_image(), tmp_path / "ct.dcm"))
     assert report.counts["ingested"] == 1, report.results
     return DicomSeries.objects.select_related("study__participant_key__study_participant").get(
         study__participant_key__project=project

@@ -127,9 +127,10 @@ def run_sandbox(root: Path) -> ShimResult:
 
 
 def read_result_jsonl(path: Path) -> ResultDocument:
-    lines = path.read_text().splitlines(keepends=True)
-    header = json.loads(lines[0])
-    return ResultDocument(datatype=header["datatype"], rows_jsonl="".join(lines[1:]))
+    # split on "\n" only: str.splitlines also splits on U+0085/U+2028/U+2029, which JSON strings may contain raw
+    header_line, _, rows_jsonl = path.read_text().partition("\n")
+    header = json.loads(header_line)
+    return ResultDocument(datatype=header["datatype"], rows_jsonl=rows_jsonl)
 
 
 def _load_script_main(script_path: Path) -> ScriptMain | None:

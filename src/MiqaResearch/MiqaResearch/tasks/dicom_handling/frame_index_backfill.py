@@ -10,9 +10,8 @@ import logging
 from django.tasks import task
 
 from contract.constants.celery import QUEUE_DICOM_INGESTION
-from MiqaResearch.data.models import DicomFile
-
 from MiqaResearch.actions.dicom_ingest.frame_index import build_frame_index
+from MiqaResearch.data.models import DicomFile
 
 logger = logging.getLogger(__name__)
 

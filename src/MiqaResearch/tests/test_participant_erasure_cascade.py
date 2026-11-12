@@ -1,11 +1,11 @@
 """Participant erasure cascades through Participant Keys to imaging (ADR 0035, #415).
 
-Seam: deleting a Study Participant, fed by `run_ingestion`.
+Seam: deleting a Study Participant, fed by `ingest_files`.
 """
 import pytest
 
 from MiqaResearch.data.models import DicomFile, DicomSeries, DicomStudy, ParticipantKey, ResearchProject
-from MiqaResearch.tasks.dicom_handling.pipeline import run_ingestion
+from tests.dicom_ingest_helper import ingest_files
 from tests.dicom_fixtures import build_ct_image, write_dicom
 
 
@@ -13,14 +13,13 @@ from tests.dicom_fixtures import build_ct_image, write_dicom
 def environment(settings, tmp_path):
     settings.FERNET_KEY = b"EiGdHopiKZdBZwVCP4dVJitPrrDnOuGAd94W4EZpwQc="
     settings.SENSITIVE_DATA_HASH_KEY = "H2QCB14temR-C2JnLORSE5TxPwLd8iy3YygNPQ-corA="
-    settings.DICOM_ALLOWED_SOURCE_ROOTS = [tmp_path]
     settings.MEDIA_ROOT = tmp_path / "media"
 
 
 @pytest.fixture
 def ingested(db, tmp_path):
     project = ResearchProject.objects.create(name="Erasure", description="#415")
-    report = run_ingestion(project, write_dicom(build_ct_image(), tmp_path / "ct.dcm"))
+    report = ingest_files(project, write_dicom(build_ct_image(), tmp_path / "ct.dcm"))
     assert report.counts["ingested"] == 1, report.results
     return DicomFile.objects.select_related("series__study__participant_key__study_participant").get()
 

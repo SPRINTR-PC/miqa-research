@@ -62,14 +62,12 @@ env = environ.Env(
     MIRES_CELERY_WORKER_PREFETCH_MULTIPLIER=(int, 1),
     MIRES_DATA_HASH_FERNET_KEY_ENCRYPTION=(str, "utf-8"),
     MIRES_DATA_HASH_KEY_VAULT_PATH=(str, "mires/datahashing"),
-    MIRES_DICOM_ALLOWED_SOURCE_ROOTS=(str, ""),
     MIRES_DICOM_S3_ENDPOINT_URL=(str, None),
     MIRES_DICOM_S3_REGION_NAME=(str, "us-east-1"),
     MIRES_DICOM_S3_ACCESS_KEY_ID=(str, None),
     MIRES_DICOM_S3_SECRET_ACCESS_KEY=(str, None),
     MIRES_DICOM_STORAGE_BACKEND=(str, "local"),
     MIRES_DICOM_S3_BUCKET=(str, None),
-    MIRES_DICOM_DELETE_ORIGINALS_AFTER_STORAGE=(bool, False),
     MIRES_DICOM_MAX_PIXEL_DIMENSIONS=(int, 200_000),
     MIRES_DICOM_MAX_FRAME_COUNT=(int, 500_000),
     MIRES_DICOM_ORPHAN_DETECT_HOURS=(int, 2),
@@ -178,16 +176,8 @@ AUDIT_LOG_RETENTION_DAYS = env("MIRES_AUDIT_LOG_RETENTION_DAYS")
 # ADR 0024: data-access events (contract.constants.audit_log.DATA_ACCESS_EVENT_TYPES) are kept 10 years by default.
 DATA_ACCESS_AUDIT_RETENTION_DAYS = env("MIRES_DATA_ACCESS_AUDIT_RETENTION_DAYS")
 
-# DICOM ingestion (#120): local source paths must sit inside one of the
-# allowed roots (default-deny: nothing allowed until configured). The S3
-# settings configure the run's read-scoped S3 source client; the storage-write
-# path (#122) reuses the same connection settings, adding only a destination
-# bucket and the local/s3 toggle below.
-DICOM_ALLOWED_SOURCE_ROOTS: list[Path] = [
-    Path(part.strip()).expanduser()
-    for part in env("MIRES_DICOM_ALLOWED_SOURCE_ROOTS").split(",")
-    if part.strip()
-]
+# DICOM storage (#122): the S3 connection settings, the destination bucket and the local/s3 toggle below.
+# Ingestion itself is an ETL Job over an S3 Source Location (spec #411).
 DICOM_S3_ENDPOINT_URL: str | None = env("MIRES_DICOM_S3_ENDPOINT_URL")
 # Defaults to "us-east-1": most S3-compatible stores (RustFS included) still
 # require *some* region for SigV4 signing even when they don't enforce AWS's
@@ -329,13 +319,6 @@ ETL_JOB_STUCK_GRACE_SECONDS: int = env("MIRES_ETL_JOB_STUCK_GRACE_SECONDS")
 ETL_SOURCE_CLEANUP_MAX_ATTEMPTS: int = env("MIRES_ETL_SOURCE_CLEANUP_MAX_ATTEMPTS")
 ETL_SOURCE_CLEANUP_BACKOFF_BASE_SECONDS: int = env("MIRES_ETL_SOURCE_CLEANUP_BACKOFF_BASE_SECONDS")
 ETL_SOURCE_CLEANUP_BACKOFF_MAX_SECONDS: int = env("MIRES_ETL_SOURCE_CLEANUP_BACKOFF_MAX_SECONDS")
-
-# DICOM ingestion (#123): global default for source retention. A run deletes
-# its source file only once storage is verified, never merely on a successful
-# storage call. Layered: ResearchProject.dicom_delete_originals_after_storage
-# overrides this per project (None defers here); run_ingestion's
-# delete_originals_after_storage overrides both for a single run.
-DICOM_DELETE_ORIGINALS_AFTER_STORAGE: bool = env("MIRES_DICOM_DELETE_ORIGINALS_AFTER_STORAGE")
 
 # DICOM ingestion security (#114, #127): a file's *declared* Rows/Columns/
 # TotalPixelMatrixRows/TotalPixelMatrixColumns/NumberOfFrames tags are
