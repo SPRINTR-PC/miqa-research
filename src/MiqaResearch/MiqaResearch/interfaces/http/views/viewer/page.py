@@ -17,12 +17,18 @@ from django.utils.http import urlencode
 from django.views.decorators.csrf import ensure_csrf_cookie
 
 from MiqaResearch.actions.image_access_audit import audit_viewer_open
-from MiqaResearch.readers.viewer_open import ViewerOpenNotFound, viewer_open
+from MiqaResearch.readers.viewer_open import ViewerOpenNotFound, unlinked_viewer_open, viewer_open
 
 
 def viewer_url(project_id, participant_id, series_uids: list[str]) -> str:
     """The page URL opening `series_uids` (first = base) for a participant: what "Open" links point at."""
     path = reverse("viewer_page", kwargs={"project_id": project_id, "participant_id": participant_id})
+    return f"{path}?{urlencode({'series': series_uids}, doseq=True)}"
+
+
+def unlinked_viewer_url(project_id, key_id, series_uids: list[str]) -> str:
+    """The page URL opening `series_uids` of an unlinked Participant Key: the "Unlinked imaging" entry."""
+    path = reverse("unlinked_viewer_page", kwargs={"project_id": project_id, "key_id": key_id})
     return f"{path}?{urlencode({'series': series_uids}, doseq=True)}"
 
 
@@ -35,5 +41,22 @@ def viewer_page(request, project_id, participant_id):
     except ViewerOpenNotFound:
         raise Http404 from None
     viewer_session = str(uuid4())
-    audit_viewer_open(request, opened.participant, opened.opened_uids, viewer_session)
+    return _render(request, opened)
+
+
+@login_required
+@ensure_csrf_cookie
+def unlinked_viewer_page(request, project_id, key_id):
+    """"Unlinked imaging" (#416): the Studies of a Participant Key with no Study Participant yet. Project
+    Admins and Data Managers only; everyone else gets 404."""
+    try:
+        opened = unlinked_viewer_open(request.user, project_id, key_id, request.GET.getlist("series"))
+    except ViewerOpenNotFound:
+        raise Http404 from None
+    return _render(request, opened)
+
+
+def _render(request, opened):
+    viewer_session = str(uuid4())
+    audit_viewer_open(request, opened, viewer_session)
     return render(request, "05_viewer/page.html", {"open": opened, "viewer_session": viewer_session})
