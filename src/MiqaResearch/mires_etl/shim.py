@@ -13,10 +13,9 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from MiqaResearch.etl_datatypes import DatatypeNotRegistered, get_datatype
-
 from . import contract
 from .context import ScriptContext
+from .schemas import SchemaNotRegistered, get_schema
 
 ScriptMain = Callable[[ScriptContext], Iterable[dict]]
 
@@ -58,8 +57,8 @@ def run_script(
     if not datatype_name:
         return _contract_violation(output_dir, 'manifest.json is missing a "datatype" field.')
     try:
-        registration = get_datatype(datatype_name)
-    except DatatypeNotRegistered as exc:
+        schema = get_schema(datatype_name)
+    except SchemaNotRegistered as exc:
         return _contract_violation(output_dir, str(exc))
 
     ctx = ScriptContext(input_dir=input_dir, datatype=datatype_name, config=manifest.get("config", {}))
@@ -72,7 +71,7 @@ def run_script(
             with tmp_result_path.open("w") as result_file:
                 result_file.write(json.dumps({"datatype": datatype_name}) + "\n")
                 for row in rows:
-                    validated = registration.schema.model_validate(row)
+                    validated = schema.model_validate(row)
                     result_file.write(validated.model_dump_json() + "\n")
                     rows_written += 1
     except ValidationError as exc:

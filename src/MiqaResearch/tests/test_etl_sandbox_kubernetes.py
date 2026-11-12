@@ -19,7 +19,7 @@ from MiqaResearch.etl_sandbox import (
 )
 from MiqaResearch.etl_sandbox.kubernetes_backend import KubernetesSandboxBackend
 from MiqaResearch.etl_sandbox.limits import SandboxLimits
-from MiqaResearch.etl_shim import contract
+from mires_etl import contract
 from tests.sandbox_staging import stage_inputs
 
 

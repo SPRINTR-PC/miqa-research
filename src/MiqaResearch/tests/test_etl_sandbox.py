@@ -24,7 +24,7 @@ from MiqaResearch.etl_sandbox import (
     resolve_sandbox_image,
 )
 from MiqaResearch.etl_sandbox.compose_backend import ComposeSandboxBackend
-from MiqaResearch.etl_shim import contract
+from mires_etl import contract
 from tests.sandbox_staging import stage_inputs
 
 # --- image allowlist -------------------------------------------------------

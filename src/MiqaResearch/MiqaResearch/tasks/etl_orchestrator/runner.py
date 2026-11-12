@@ -5,7 +5,7 @@ poller only ever wrote placeholders, since hashing at poll time would mean fetch
 twice), builds the sandbox contract's manifest (`{"datatype": ..., "config": ...}`) and
 SandboxRunSpec from the Job's own pinned Script Version and config snapshot (#224: a Binding edit
 never changes a Job already queued), and runs it through the configured
-SandboxBackend. On exit 0 the result (header line dropped, per etl_shim.contract's manifest/result
+SandboxBackend. On exit 0 the result (header line dropped, per mires_etl.contract's manifest/result
 shape) is handed to the real Datatype loader (#159) inside its own all-or-nothing transaction.
 Every other exit code (1 script error / 2 contract violation / 3 timeout-or-killed) fails the Job
 without a retry -- matching #156's spec text that groups all three as requiring manual retry.
@@ -39,7 +39,7 @@ from MiqaResearch.etl_sandbox import (
     resolve_limits,
 )
 from MiqaResearch.etl_sandbox._staging import check_input_size
-from MiqaResearch.etl_shim import contract
+from mires_etl import contract
 
 from . import retry
 from .s3 import EtlBucketSource

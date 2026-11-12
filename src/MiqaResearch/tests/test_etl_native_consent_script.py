@@ -10,8 +10,8 @@ from pathlib import Path
 import pytest
 
 from MiqaResearch.etl_native_scripts import native_script_path
-from MiqaResearch.etl_shim import contract
-from MiqaResearch.etl_shim.shim import read_result_jsonl, run_script
+from mires_etl import contract
+from mires_etl.shim import read_result_jsonl, run_script
 
 HEADER = "Namn,Personnummer,Status,Signerat,Senast Uppdaterad,Återtaget,klinik,Kommentar,Blodprov,Bilder\n"
 

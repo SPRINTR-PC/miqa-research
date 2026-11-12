@@ -11,7 +11,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import BinaryIO
 
-from MiqaResearch.etl_shim import contract
+from mires_etl import contract
 
 from .exceptions import SandboxInputTooLarge
 from .spec import SandboxRunSpec

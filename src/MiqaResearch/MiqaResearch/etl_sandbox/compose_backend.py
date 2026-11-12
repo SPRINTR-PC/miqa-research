@@ -20,7 +20,7 @@ from docker.errors import NotFound
 from requests.exceptions import ConnectionError as RequestsConnectionError
 from requests.exceptions import ReadTimeout
 
-from MiqaResearch.etl_shim import contract
+from mires_etl import contract
 
 from ._staging import check_input_size, open_sandbox_archive, read_output_from_tar
 from .backend import SandboxBackend

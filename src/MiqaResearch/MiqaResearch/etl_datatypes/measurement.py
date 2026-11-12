@@ -6,33 +6,15 @@ Script authors, chosen as the one thing a source system reliably repeats across 
 same measurement (unlike the row's own DB id, which a Script never sees). Re-running the same
 batch must upsert in place rather than duplicate (#159).
 """
-from datetime import date, datetime
-from uuid import UUID
-
 from MiqaResearch.data.models import Measurement, ResearchProject
+from mires_etl.schemas.measurement import MeasurementRowSchema
 
 from .concepts import require_existing_concepts
-from .participant_reference import ParticipantReferenceFields, resolve_participant
-from .registry import LoadResult, register_datatype
+from .participant_reference import resolve_participant
+from .registry import LoadResult, register_loader
 
 
-class MeasurementRowSchema(ParticipantReferenceFields):
-    measurement_concept_id: UUID
-    measurement_type_concept_id: UUID
-    measurement_date: date
-    measurement_source_value: str
-    measurement_datetime: datetime | None = None
-    operator_concept_id: UUID | None = None
-    value_as_number: float | None = None
-    value_as_concept_id: UUID | None = None
-    unit_concept_id: UUID | None = None
-    unit_source_value: str | None = None
-    value_source_value: str | None = None
-    range_low: float | None = None
-    range_high: float | None = None
-
-
-@register_datatype("measurement", MeasurementRowSchema)
+@register_loader("measurement")
 def load_measurement_rows(*, project: ResearchProject, etl_job, rows: list[MeasurementRowSchema]) -> LoadResult:
     require_existing_concepts({
         concept_id
