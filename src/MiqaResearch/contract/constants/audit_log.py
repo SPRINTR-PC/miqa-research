@@ -37,6 +37,7 @@ EVENT_TYPE_BLINDED_ANNOTATION_CHANGED = "blinded_annotation_changed"
 EVENT_TYPE_BLINDING_REVEAL = "blinding_reveal"
 EVENT_TYPE_VIEWER_SERIES_OPENED = "viewer_series_opened"
 EVENT_TYPE_VIEWER_OPEN = "viewer_open"
+EVENT_TYPE_DICOM_ORPHAN_SWEEP = "dicom_orphan_sweep"
 
 EVENT_TYPE_CHOICES = [
     (EVENT_TYPE_LOGIN, "Login"),
@@ -78,6 +79,7 @@ EVENT_TYPE_CHOICES = [
     (EVENT_TYPE_BLINDING_REVEAL, "Blinding Reveal"),
     (EVENT_TYPE_VIEWER_SERIES_OPENED, "Image series opened in the viewer"),
     (EVENT_TYPE_VIEWER_OPEN, "Viewer opened"),
+    (EVENT_TYPE_DICOM_ORPHAN_SWEEP, "Orphan DICOM blob sweep"),
 ]
 
 # Data-access events (ADR 0024): purged on DATA_ACCESS_AUDIT_RETENTION_DAYS, not AUDIT_LOG_RETENTION_DAYS.

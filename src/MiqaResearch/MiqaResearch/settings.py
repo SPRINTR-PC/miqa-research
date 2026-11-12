@@ -72,6 +72,11 @@ env = environ.Env(
     MIRES_DICOM_DELETE_ORIGINALS_AFTER_STORAGE=(bool, False),
     MIRES_DICOM_MAX_PIXEL_DIMENSIONS=(int, 200_000),
     MIRES_DICOM_MAX_FRAME_COUNT=(int, 500_000),
+    MIRES_DICOM_ORPHAN_DETECT_HOURS=(int, 2),
+    MIRES_DICOM_ORPHAN_GRACE_HOURS=(int, 24),
+    MIRES_DICOM_ORPHAN_MAX_DELETE_COUNT=(int, 100),
+    MIRES_DICOM_ORPHAN_MAX_DELETE_FRACTION=(float, 0.05),
+    MIRES_DICOM_ORPHAN_SWEEP_ACTION=(str, "delete"),
     MIRES_EMAIL_HOST=(str, None),
     MIRES_EMAIL_PORT=(int, 1234),
     MIRES_EMAIL_HOST_USER=(str, None),
@@ -341,6 +346,16 @@ DICOM_DELETE_ORIGINALS_AFTER_STORAGE: bool = env("MIRES_DICOM_DELETE_ORIGINALS_A
 # (tunable per deployment via env).
 DICOM_MAX_PIXEL_DIMENSIONS: int = env("MIRES_DICOM_MAX_PIXEL_DIMENSIONS")
 DICOM_MAX_FRAME_COUNT: int = env("MIRES_DICOM_MAX_FRAME_COUNT")
+
+# Orphan DICOM blob sweep (#420): a blob under DICOM/ with no DicomFile row is reported after
+# DETECT hours (outlasts the longest ETL Job) and deleted after GRACE hours, only if it was already
+# reportable at the previous run. Nothing is deleted if the deletable set exceeds MAX_DELETE_COUNT or
+# MAX_DELETE_FRACTION of listed blobs. SWEEP_ACTION (report | delete) governs the daily task.
+DICOM_ORPHAN_DETECT_HOURS: int = env("MIRES_DICOM_ORPHAN_DETECT_HOURS")
+DICOM_ORPHAN_GRACE_HOURS: int = env("MIRES_DICOM_ORPHAN_GRACE_HOURS")
+DICOM_ORPHAN_MAX_DELETE_COUNT: int = env("MIRES_DICOM_ORPHAN_MAX_DELETE_COUNT")
+DICOM_ORPHAN_MAX_DELETE_FRACTION: float = env("MIRES_DICOM_ORPHAN_MAX_DELETE_FRACTION")
+DICOM_ORPHAN_SWEEP_ACTION: str = env("MIRES_DICOM_ORPHAN_SWEEP_ACTION")
 
 
 def get_allowed_hosts_list(allowed_hosts_env) -> list[str]:
