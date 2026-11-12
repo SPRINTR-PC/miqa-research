@@ -67,7 +67,8 @@ def _hidden_series() -> QuerySet[DicomSeries]:
     return DicomSeries.objects.filter(
         pk=OuterRef("series"),
         modality__in=DERIVED_MODALITIES,
-        study__study_participant__research_project__blinded_annotation=True,
+        study__participant_key__project__blinded_annotation=True,
+        study__participant_key__study_participant__isnull=False,  # does not apply while unlinked
     )
 
 
@@ -82,7 +83,7 @@ def files_visible_under_blinding_for_user(
         for participant_id, epoch in reveals.items():
             current |= Q(pk=participant_id, research_project__blinding_epoch=epoch)
         revealed = visible_participants_in_any_project(user, OVERSEER_ROLES).filter(current)
-        hidden = hidden.exclude(study__study_participant__in=revealed)
+        hidden = hidden.exclude(study__participant_key__study_participant__in=revealed)
     return files.filter(~Exists(hidden))
 
 

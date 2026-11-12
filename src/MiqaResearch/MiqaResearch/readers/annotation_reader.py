@@ -83,7 +83,7 @@ def participant_blinding_status(user, participant_id, reveals: dict[str, int] | 
 def _chains(participant) -> list[list[DerivedObjectProvenance]]:
     """The participant's version chains, each oldest version first."""
     versions = (
-        DerivedObjectProvenance.objects.filter(series__study__study_participant=participant)
+        DerivedObjectProvenance.objects.filter(series__study__participant_key__study_participant=participant)
         .select_related("series", "author", "base_series")
         .prefetch_related("source_series")
         .order_by("chain_id", "version")

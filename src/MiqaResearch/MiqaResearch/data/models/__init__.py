@@ -19,6 +19,7 @@ from .etl_source_location import EtlSourceLocation
 from .etl_storage import EtlStorage
 from .measurement import Measurement
 from .oidc_role_mapping import OIDCRoleMapping
+from .participant_key import ParticipantKey
 from .prom_data import ParsedPromForm, PromData, PromFormTemplate
 from .research_project import ResearchProject, ResearchProjectRole, ResearchProjectUserRoleMap
 from .study_participant import StudyParticipant

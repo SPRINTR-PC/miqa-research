@@ -16,12 +16,20 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from helpers.db_fields import get_fernet
-from MiqaResearch.data.models import DicomFile, DicomSeries, DicomStudy, ResearchProject, StudyParticipant
+from MiqaResearch.data.models import (
+    DicomFile,
+    DicomSeries,
+    DicomStudy,
+    ParticipantKey,
+    ResearchProject,
+    StudyParticipant,
+)
 
 
 @pytest.fixture(autouse=True)
 def fernet_key(settings):
     settings.FERNET_KEY = b"EiGdHopiKZdBZwVCP4dVJitPrrDnOuGAd94W4EZpwQc="
+    settings.SENSITIVE_DATA_HASH_KEY = "H2QCB14temR-C2JnLORSE5TxPwLd8iy3YygNPQ-corA="
 
 
 @pytest.fixture
@@ -36,8 +44,11 @@ def study_participant(research_project):
 
 @pytest.fixture
 def dicom_study(study_participant):
+    key = ParticipantKey.objects.create(
+        project=study_participant.research_project, key_type="dicom:PatientID", value=f"pid-{uuid4().hex[:8]}",
+        study_participant=study_participant)
     return DicomStudy.objects.create(
-        study_participant=study_participant,
+        participant_key=key,
         study_datetime=datetime.now(UTC),
         study_instance_uid=f"1.2.840.{uuid4().int % 10**10}",
     )

@@ -22,8 +22,11 @@ from uuid import UUID
 from django.conf import settings as django_settings
 from django.db import transaction
 
+from contract.constants.participant_key import DICOM_PATIENT_ID_KEY_TYPE
 from helpers.dicom_uid import pseudonymize_uid
+from MiqaResearch.actions.participant_keys import ensure_linked_key
 from MiqaResearch.data.models import DicomFile, ResearchProject
+from MiqaResearch.readers.participant_keys import participant_alias_of
 
 from . import derived_provenance, dicom_parsing, discovery, extractors, frame_index, pixel_bounds, records
 from . import participant as participant_stage
@@ -254,7 +257,7 @@ def _ingest_file(
     try:
         with transaction.atomic():
             existing = (
-                DicomFile.objects.select_related("series__study__study_participant")
+                DicomFile.objects.select_related("series__study__participant_key__study_participant")
                 .filter(sop_instance_uid=sop_pseudonym)
                 .first()
             )
@@ -266,8 +269,11 @@ def _ingest_file(
             participant = participant_stage.match_or_create_participant(dataset, research_project)
             extracted = extractors.extract(dataset, research_project, participant.alias1)
             file_size_in_mb = len(raw_bytes) / (1024 * 1024)
+            participant_key = ensure_linked_key(
+                research_project, DICOM_PATIENT_ID_KEY_TYPE, participant_stage.patient_id_of(dataset), participant
+            )
             dcm_file = records.build_hierarchy(
-                participant, research_project, pseudonyms, extracted, file_size_in_mb
+                participant_key, research_project, pseudonyms, extracted, file_size_in_mb
             )
             dcm_file.content_sha256 = _content_hash(raw_bytes)
             _set_frame_index(dcm_file, raw_bytes)
@@ -332,7 +338,7 @@ def _handle_duplicate(
         overwrite_existing if overwrite_existing is not None else research_project.dicom_duplicate_handling == "update"
     )
     if update:
-        participant_alias = existing.series.study.study_participant.alias1
+        participant_alias = participant_alias_of(existing.series.study.participant_key)
         extracted = extractors.extract(dataset, research_project, participant_alias)
         file_size_in_mb = len(raw_bytes) / (1024 * 1024)
         superseded = storage_stage.replace_file_bytes(existing, raw_bytes)

@@ -81,7 +81,7 @@ def other_ct(project, tmp_path):
 
 
 def _participant(dicom_file):
-    return dicom_file.series.study.study_participant
+    return dicom_file.series.study.participant_key.study_participant
 
 
 def _blind(project, on=True):
@@ -406,6 +406,22 @@ def test_session_wado_serves_only_own_work_under_the_flag(client, project, ct, t
 
 
 @pytest.mark.django_db
+def test_blinding_does_not_apply_to_an_unlinked_study(client, project, ct, tmp_path):
+    """ADR 0035 (#415): ingested work on an unlinked Study is shown to who may open it, flag or not."""
+    ingested = _ingested_seg(project, tmp_path)
+    _blind(project)
+    admin = _member(project, PROJECT_ROLE_ADMIN)
+    client.force_login(admin)
+    assert _ingested_metadata(client, ingested).status_code == 404
+
+    key = ingested.series.study.participant_key
+    key.study_participant = None
+    key.save(update_fields=["study_participant"])
+
+    assert _ingested_metadata(client, ingested).status_code == 200
+
+
+@pytest.mark.django_db
 def test_session_wado_serves_everyones_work_without_the_flag(client, project, ct):
     others = _save(client, _member(project), _sr_for(ct), [ct.series]).json()
     client.force_login(_member(project))
@@ -439,5 +455,5 @@ def test_aggregate_counts_are_not_filtered(client, project, ct):
     _save(client, _member(project), _sr_for(ct), [ct.series])
     _blind(project)
 
-    series = DicomSeries.objects.filter(study__study_participant=_participant(ct))
+    series = DicomSeries.objects.filter(study__participant_key__study_participant=_participant(ct))
     assert data_kind_totals(DATA_KIND_ANNOTATIONS, series).count == 2

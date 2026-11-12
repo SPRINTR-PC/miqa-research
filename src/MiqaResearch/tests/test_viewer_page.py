@@ -47,7 +47,7 @@ def project(db):
 def _ingest(project, tmp_path, name, **tags) -> DicomSeries:
     report = run_ingestion(project, write_dicom(build_ct_image(**tags), tmp_path / f"{name}.dcm"))
     assert report.counts["ingested"] == 1, report.results
-    return DicomSeries.objects.select_related("study__study_participant").get(
+    return DicomSeries.objects.select_related("study__participant_key__study_participant").get(
         dicomfile__sop_instance_uid=report.results[0].sop_instance_uid
     )
 
@@ -66,7 +66,7 @@ def _member(client, project, role_name=PROJECT_ROLE_ANNOTATOR, clinic=None):
 
 
 def _open(client, series: DicomSeries, *uids: str, project_id=None, participant_id=None):
-    participant = series.study.study_participant
+    participant = series.study.participant_key.study_participant
     project_id = project_id or participant.research_project_id
     url = f"/projects/{project_id}/participants/{participant_id or participant.pk}/viewer/"
     return client.get(url, {"series": list(uids) or [series.series_instance_uid]})
@@ -128,6 +128,17 @@ def test_user_without_a_role_on_the_project_gets_404(client, ct):
     assert _open(client, ct).status_code == 404
 
 
+def test_series_of_an_unlinked_study_is_not_the_participants(client, project, ct):
+    """ADR 0035 (#415): unlinking the Study's Participant Key takes its series out of the participant's open."""
+    _member(client, project)
+    participant_id = ct.study.participant_key.study_participant_id
+    key = ct.study.participant_key
+    key.study_participant = None
+    key.save(update_fields=["study_participant"])
+
+    assert _open(client, ct, project_id=project.pk, participant_id=participant_id).status_code == 404
+
+
 def test_participant_of_another_project_gets_404(client, project, ct):
     _member(client, project)
     other = ResearchProject.objects.create(name="Other", description="#279")
@@ -146,7 +157,7 @@ def test_a_series_of_another_participant_makes_the_whole_page_404(client, projec
 
 def test_unknown_series_or_no_series_is_404(client, project, ct):
     _member(client, project)
-    participant = ct.study.study_participant
+    participant = ct.study.participant_key.study_participant
 
     assert _open(client, ct, "2.25.404").status_code == 404
     assert client.get(f"/projects/{project.pk}/participants/{participant.pk}/viewer/").status_code == 404
@@ -178,7 +189,7 @@ def test_annotation_and_segmentation_series_are_not_offered_and_cannot_be_opened
 
 def test_page_hosts_the_viewer_named_by_alias_only(client, project, ct):
     user = _member(client, project)
-    participant = ct.study.study_participant
+    participant = ct.study.participant_key.study_participant
 
     response = _open(client, ct)
 
@@ -215,7 +226,7 @@ def test_each_page_load_is_one_viewer_open_audit_entry(client, project, ct, tmp_
     assert entry.user == user
     assert entry.project_id == project.pk
     assert entry.metadata["series_uids"] == [ct.series_instance_uid, pet.series_instance_uid]
-    assert entry.metadata["participant_ids"] == [str(ct.study.study_participant.pk)]
+    assert entry.metadata["participant_ids"] == [str(ct.study.participant_key.study_participant.pk)]
     assert entry.metadata["fused"] is True
     assert entries[1].metadata["fused"] is False
     # the entry names the page's Viewer Session, which the element sends with its requests
@@ -247,7 +258,7 @@ def test_viewer_url_opens_the_series_in_order(client, project, ct, tmp_path):
     pet = _ingest(project, tmp_path, "pet", series_instance_uid="1.2.9999.42.1.2002",
                   sop_instance_uid="1.2.9999.42.1.2003", modality="PT")
     _member(client, project)
-    participant = ct.study.study_participant
+    participant = ct.study.participant_key.study_participant
 
     url = viewer_url(project.pk, participant.pk, [pet.series_instance_uid, ct.series_instance_uid])
 

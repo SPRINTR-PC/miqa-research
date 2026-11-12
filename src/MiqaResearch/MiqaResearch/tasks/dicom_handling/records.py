@@ -12,7 +12,7 @@ from uuid import uuid7
 from django.db.models import Count, F, Max, Q, Sum
 from django.db.models.functions import Coalesce
 
-from MiqaResearch.data.models import DicomFile, DicomSeries, DicomStudy, StudyParticipant
+from MiqaResearch.data.models import DicomFile, DicomSeries, DicomStudy, ParticipantKey
 
 # Extraction keys that map 1:1 onto DicomFile geometry/flag columns.
 _FILE_COLUMN_KEYS = (
@@ -25,7 +25,7 @@ _FILE_COLUMN_KEYS = (
 
 
 def build_hierarchy(
-    study_participant: StudyParticipant,
+    participant_key: ParticipantKey,
     research_project,
     pseudonyms: dict[str, str],
     extracted: dict,
@@ -33,7 +33,7 @@ def build_hierarchy(
 ) -> DicomFile:
     """Create or match Study + Series, and construct (not save) the new DicomFile."""
     study = _upsert_study(
-        study_participant,
+        participant_key,
         pseudonyms["study"],
         {
             "study_datetime": extracted["study_datetime"],
@@ -128,9 +128,9 @@ def update_file_in_place(dcm_file: DicomFile, extracted: dict, file_size_in_mb: 
     set_series_frame_of_reference(dcm_file.series)
 
 
-def _upsert_study(study_participant: StudyParticipant, study_uid: str, fields: dict) -> DicomStudy:
+def _upsert_study(participant_key: ParticipantKey, study_uid: str, fields: dict) -> DicomStudy:
     study, _ = DicomStudy.objects.get_or_create(
-        study_participant=study_participant,
+        participant_key=participant_key,
         study_instance_uid=study_uid,
         defaults=fields,
     )

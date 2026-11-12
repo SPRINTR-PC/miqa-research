@@ -92,7 +92,7 @@ def test_metadata_carries_no_phi_and_the_participant_pseudonym(research_project,
     ds.PatientAddress = "Home Road 1"
     ds.OperatorsName = "OPERATOR^OLGA"
     (dcm_file,) = _ingest(research_project, tmp_path, ds)
-    alias = dcm_file.series.study.study_participant.alias1
+    alias = dcm_file.series.study.participant_key.study_participant.alias1
 
     response = client.get(_series_url(dcm_file), **bearer)
 

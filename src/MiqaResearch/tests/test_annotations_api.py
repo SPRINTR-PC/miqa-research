@@ -74,7 +74,7 @@ def ct(project, tmp_path) -> DicomFile:
 def _ingest(project, tmp_path, ds, name) -> DicomFile:
     report = run_ingestion(project, write_dicom(ds, tmp_path / name))
     assert report.counts["ingested"] == 1, report.results
-    return DicomFile.objects.select_related("series__study__study_participant").get(
+    return DicomFile.objects.select_related("series__study__participant_key__study_participant").get(
         sop_instance_uid=report.results[0].sop_instance_uid
     )
 
@@ -156,7 +156,7 @@ def test_saved_sr_is_sanitized_with_server_uids_and_keeps_its_references(client,
     assert body["author"] == annotator.username
     assert body["source_series_uids"] == [ct.series.series_instance_uid]
     stored = _stored(body["series_instance_uid"])
-    participant = ct.series.study.study_participant
+    participant = ct.series.study.participant_key.study_participant
     # patient/study from the DB, never from the browser
     assert str(stored.PatientName) == participant.alias1
     assert stored.PatientID == participant.alias1
@@ -189,7 +189,7 @@ def test_saved_seg_is_a_segmentation_whose_metadata_dump_keeps_pseudonymized_ref
     dcm_file = DicomFile.objects.get(series__series_instance_uid=response.json()["series_instance_uid"])
     assert dcm_file.uids_pseudonymized is True
     assert dcm_file.metadata["ReferencedSeriesSequence"][0]["SeriesInstanceUID"] == ct.series.series_instance_uid
-    assert dcm_file.metadata["PatientID"] == ct.series.study.study_participant.alias1
+    assert dcm_file.metadata["PatientID"] == ct.series.study.participant_key.study_participant.alias1
 
 
 @pytest.mark.django_db
@@ -215,6 +215,21 @@ def test_save_is_audited_as_a_create_event(client, project, ct):
 
 
 @pytest.mark.django_db
+def _unlink(dicom_file):
+    key = dicom_file.series.study.participant_key
+    key.study_participant = None
+    key.save(update_fields=["study_participant"])
+
+
+def test_save_on_an_unlinked_study_is_refused_until_linked(client, project, ct):
+    """ADR 0035 (#415): 403 for who may open unlinked Studies, 404 for everyone else."""
+    _unlink(ct)
+
+    assert _save(client, _member(project, PROJECT_ROLE_ADMIN), _sr_for(ct), [ct.series]).status_code == 403
+    assert _save(client, _member(project), _sr_for(ct), [ct.series]).status_code == 404
+    assert not DicomSeries.objects.filter(modality="SR").exists()
+
+
 def test_upload_that_is_not_sr_or_seg_is_rejected(client, project, ct):
     response = _save(client, _member(project), build_ct_image(), [ct.series])
 
@@ -404,7 +419,7 @@ def test_pi_and_admin_change_anyones_work(client, project, ct, role_name):
 def test_site_pi_changes_anyones_work_only_at_its_sites(client, project, ct):
     site_a = Clinic.objects.create(clinic_code="A", clinic_name="Site A")
     site_b = Clinic.objects.create(clinic_code="B", clinic_name="Site B")
-    _consent_at(ct.series.study.study_participant, project, site_a)
+    _consent_at(ct.series.study.participant_key.study_participant, project, site_a)
     first = _save(client, _member(project), _sr_for(ct), [ct.series]).json()
 
     site_b_pi = _member(project, PROJECT_ROLE_SITE_PI, clinic=site_b)
@@ -417,7 +432,7 @@ def test_site_pi_changes_anyones_work_only_at_its_sites(client, project, ct):
 def test_site_pi_elsewhere_with_a_global_annotator_role_cannot_change_others_work(client, project, ct):
     site_a = Clinic.objects.create(clinic_code="A", clinic_name="Site A")
     site_b = Clinic.objects.create(clinic_code="B", clinic_name="Site B")
-    _consent_at(ct.series.study.study_participant, project, site_a)
+    _consent_at(ct.series.study.participant_key.study_participant, project, site_a)
     first = _save(client, _member(project), _sr_for(ct), [ct.series]).json()
     user = _member(project, PROJECT_ROLE_SITE_PI, clinic=site_b)
     _grant(user, project, PROJECT_ROLE_ANNOTATOR)
@@ -429,7 +444,7 @@ def test_site_pi_elsewhere_with_a_global_annotator_role_cannot_change_others_wor
 def test_annotator_restricted_to_another_site_gets_404(client, project, ct):
     site_a = Clinic.objects.create(clinic_code="A", clinic_name="Site A")
     site_b = Clinic.objects.create(clinic_code="B", clinic_name="Site B")
-    _consent_at(ct.series.study.study_participant, project, site_a)
+    _consent_at(ct.series.study.participant_key.study_participant, project, site_a)
 
     response = _save(client, _member(project, clinic=site_b), _sr_for(ct), [ct.series])
 
@@ -451,7 +466,8 @@ def test_list_shows_chain_heads_with_history(client, project, ct):
     second = _save(client, annotator, _sr_for(ct), [ct.series], supersedes=first["id"]).json()
     seg = _save(client, annotator, _seg_for(ct), [ct.series]).json()
 
-    response = _list(client, annotator, ct.series.study.study_participant, series=ct.series.series_instance_uid)
+    participant = ct.series.study.participant_key.study_participant
+    response = _list(client, annotator, participant, series=ct.series.series_instance_uid)
 
     assert response.status_code == 200
     chains = {item["id"]: item for item in response.json()}
@@ -471,7 +487,7 @@ def test_an_object_made_on_a_fusion_names_its_base_series(client, project, ct, t
     saved = _save(client, annotator, _seg_for(overlay), [overlay.series, ct.series]).json()
 
     assert saved["base_series_uid"] == overlay.series.series_instance_uid
-    [chain] = _list(client, annotator, ct.series.study.study_participant).json()
+    [chain] = _list(client, annotator, ct.series.study.participant_key.study_participant).json()
     assert chain["base_series_uid"] == overlay.series.series_instance_uid
     assert chain["history"][0]["base_series_uid"] == overlay.series.series_instance_uid
 
@@ -481,7 +497,7 @@ def test_list_filters_by_source_series(client, project, ct):
     annotator = _member(project)
     _save(client, annotator, _sr_for(ct), [ct.series])
 
-    response = _list(client, annotator, ct.series.study.study_participant, series="2.25.999")
+    response = _list(client, annotator, ct.series.study.participant_key.study_participant, series="2.25.999")
 
     assert response.json() == []
 
@@ -491,7 +507,7 @@ def test_retired_objects_are_listed_only_for_those_who_may_retire(client, projec
     author = _member(project)
     saved = _save(client, author, _sr_for(ct), [ct.series]).json()
     _retire(client, author, saved["id"])
-    participant = ct.series.study.study_participant
+    participant = ct.series.study.participant_key.study_participant
 
     assert _list(client, author, participant).json() == []
     assert [item["id"] for item in _list(client, author, participant, include_retired="true").json()] == [saved["id"]]
@@ -503,7 +519,7 @@ def test_retired_objects_are_listed_only_for_those_who_may_retire(client, projec
 
 @pytest.mark.django_db
 def test_list_of_an_invisible_participant_is_404(client, project, ct):
-    assert _list(client, _user(), ct.series.study.study_participant).status_code == 404
+    assert _list(client, _user(), ct.series.study.participant_key.study_participant).status_code == 404
 
 
 # --- ingested objects ------------------------------------------------------
@@ -519,7 +535,7 @@ def test_ingested_sr_and_seg_get_provenance_without_author(client, project, ct, 
     derived = _ingest(project, tmp_path, raw, "derived.dcm")
 
     pi = _member(project, PROJECT_ROLE_PI)
-    chains = _list(client, pi, ct.series.study.study_participant).json()
+    chains = _list(client, pi, ct.series.study.participant_key.study_participant).json()
     assert len(chains) == 1
     assert chains[0]["series_instance_uid"] == derived.series.series_instance_uid
     assert chains[0]["kind"] == kind
@@ -535,7 +551,7 @@ def test_ingested_objects_are_changed_only_by_pi_site_pi_or_admin(client, projec
     raw = build_viewer_seg(referenced_series_uid="1.2.9999.42.1.1002", referenced_sop_uid="1.2.9999.42.1.1003")
     _ingest(project, tmp_path, raw, "derived.dcm")
     annotator = _member(project)
-    head = _list(client, annotator, ct.series.study.study_participant).json()[0]
+    head = _list(client, annotator, ct.series.study.participant_key.study_participant).json()[0]
 
     assert head["can_change"] is False
     assert _retire(client, annotator, head["id"]).status_code == 403
@@ -596,7 +612,9 @@ def test_data_kind_counts_chain_heads_and_sizes_all_versions(client, project, ct
     _retire(client, annotator, retired["id"])
     _ingest(project, tmp_path, build_viewer_seg(
         referenced_series_uid="1.2.9999.42.1.1002", referenced_sop_uid="1.2.9999.42.1.1003"), "ingested.dcm")
-    participant_series = DicomSeries.objects.filter(study__study_participant=ct.series.study.study_participant)
+    participant_series = DicomSeries.objects.filter(
+        study__participant_key__study_participant=ct.series.study.participant_key.study_participant
+    )
 
     imaging = data_kind_totals(DATA_KIND_DICOM_SERIES, participant_series)
     annotations = data_kind_totals(DATA_KIND_ANNOTATIONS, participant_series)

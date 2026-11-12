@@ -3,14 +3,14 @@ from uuid import uuid7
 from django.db import models
 
 from .concept import Concept
-from .study_participant import StudyParticipant
+from .participant_key import ParticipantKey
 from .visit_occurrence import VisitOccurrence
 
 
 class DicomStudy(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid7, editable=False)
-    study_participant = models.ForeignKey(
-        StudyParticipant, on_delete=models.CASCADE, blank=False, null=False, db_index=True
+    participant_key = models.ForeignKey(
+        ParticipantKey, on_delete=models.CASCADE, blank=False, null=False, db_index=True
     )
     visit_occurrence = models.ForeignKey(
         VisitOccurrence,

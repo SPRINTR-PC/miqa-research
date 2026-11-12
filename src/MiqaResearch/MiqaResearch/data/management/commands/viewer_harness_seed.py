@@ -475,10 +475,10 @@ class Command(BaseCommand):
                 "seriesUid": wsi.series_instance_uid,
                 "levels": len(WSI_DOWNSAMPLES),
                 "baseTiles": (WSI_WIDTH // WSI_TILE) * (WSI_HEIGHT // WSI_TILE),
-                "participant": str(wsi.study.study_participant_id),
+                "participant": str(wsi.study.participant_key.study_participant_id),
             },
             "wsiAnnotations": {"groups": [meaning for _, (_, meaning), _, _ in ANN_GROUPS]},
-            "blinded": {**_series_ref(blinded), "participant": str(blinded.study.study_participant_id)},
+            "blinded": {**_series_ref(blinded), "participant": str(blinded.study.participant_key.study_participant_id)},
         }))
 
     def _blinded_series(self) -> DicomSeries:
@@ -491,7 +491,7 @@ class Command(BaseCommand):
             project.blinded_annotation = True
             project.save(update_fields=["blinded_annotation"])
         _member(project, USERNAME, PROJECT_ROLE_PI)
-        lookup = {"study__study_participant__research_project": project, "modality": "OT"}
+        lookup = {"study__participant_key__project": project, "modality": "OT"}
         existing = DicomSeries.objects.filter(**lookup).first()
         if existing:
             return existing
@@ -507,7 +507,7 @@ class Command(BaseCommand):
         return DicomSeries.objects.get(**lookup)
 
     def _ct_series(self, project) -> DicomSeries:
-        existing = DicomSeries.objects.filter(study__study_participant__research_project=project, modality="CT").first()
+        existing = DicomSeries.objects.filter(study__participant_key__project=project, modality="CT").first()
         if existing:
             return existing
         with tempfile.TemporaryDirectory() as tmp:
@@ -518,11 +518,11 @@ class Command(BaseCommand):
         if report.counts.get("ingested") != CT_SLICES:
             errors = sorted({r.error for r in report.results if r.error})
             raise CommandError(f"CT ingestion failed: {report.counts} {errors}")
-        return DicomSeries.objects.get(study__study_participant__research_project=project, modality="CT")
+        return DicomSeries.objects.get(study__participant_key__project=project, modality="CT")
 
     def _fusion_series(self, project, key: str) -> DicomSeries:
         description = FUSION_FIXTURES[key][0]
-        lookup = {"study__study_participant__research_project": project, "series_description": description}
+        lookup = {"study__participant_key__project": project, "series_description": description}
         existing = DicomSeries.objects.filter(**lookup).first()
         if existing:
             return existing
@@ -538,7 +538,7 @@ class Command(BaseCommand):
 
     def _planar_series(self, project, key: str, index: int) -> DicomSeries:
         description = PLANAR_FIXTURES[key][0]
-        lookup = {"study__study_participant__research_project": project, "series_description": description}
+        lookup = {"study__participant_key__project": project, "series_description": description}
         existing = DicomSeries.objects.filter(**lookup).first()
         if existing:
             return existing
@@ -552,7 +552,7 @@ class Command(BaseCommand):
         return DicomSeries.objects.get(**lookup)
 
     def _wsi_series(self, project) -> DicomSeries:
-        existing = DicomSeries.objects.filter(study__study_participant__research_project=project, modality="SM").first()
+        existing = DicomSeries.objects.filter(study__participant_key__project=project, modality="SM").first()
         if existing:
             return existing
         with tempfile.TemporaryDirectory() as tmp:
@@ -563,11 +563,11 @@ class Command(BaseCommand):
         if report.counts.get("ingested") != len(WSI_DOWNSAMPLES):
             errors = sorted({r.error for r in report.results if r.error})
             raise CommandError(f"WSI ingestion failed: {report.counts} {errors}")
-        return DicomSeries.objects.get(study__study_participant__research_project=project, modality="SM")
+        return DicomSeries.objects.get(study__participant_key__project=project, modality="SM")
 
     def _wsi_annotations(self, project) -> DicomSeries:
         existing = DicomSeries.objects.filter(
-            study__study_participant__research_project=project, modality="ANN"
+            study__participant_key__project=project, modality="ANN"
         ).first()
         if existing:
             return existing
@@ -578,4 +578,4 @@ class Command(BaseCommand):
         if report.counts.get("ingested") != 1:
             errors = sorted({r.error for r in report.results if r.error})
             raise CommandError(f"ANN ingestion failed: {report.counts} {errors}")
-        return DicomSeries.objects.get(study__study_participant__research_project=project, modality="ANN")
+        return DicomSeries.objects.get(study__participant_key__project=project, modality="ANN")
