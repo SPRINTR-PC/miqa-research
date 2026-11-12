@@ -168,9 +168,13 @@ def _make_stream_fn(output_tar_bytes: bytes = b""):
     return stream_fn
 
 
-def _output_tar(*, result_jsonl: bytes | None, log: bytes) -> bytes:
+def _output_tar(*, result_jsonl: bytes | None, log: bytes, packages: bytes | None = None) -> bytes:
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w") as tar:
+        if packages is not None:
+            info = tarfile.TarInfo(name=f"{contract.OUTPUT_DIRNAME}/{contract.PACKAGES_FILENAME}")
+            info.size = len(packages)
+            tar.addfile(info, io.BytesIO(packages))
         if result_jsonl is not None:
             info = tarfile.TarInfo(name=f"{contract.OUTPUT_DIRNAME}/{contract.RESULT_FILENAME}")
             info.size = len(result_jsonl)
@@ -272,6 +276,23 @@ def test_run_returns_the_result_jsonl_and_log_on_success(allowlisted):
     assert result.result_jsonl == b'{"datatype": "measurement"}\nrow\n'
     assert result.log == b"hello\n"
     assert result.killed is False
+
+
+def test_run_returns_the_pod_image_id_and_the_baked_package_manifest(allowlisted):
+    backend, core_v1, batch_v1, networking_v1, stream_fn = _backend()
+    backend._stream_fn = _make_stream_fn(
+        _output_tar(result_jsonl=None, log=b"", packages=b"pydicom==3.0.2\n"))
+    _wire_successful_run(core_v1, batch_v1, exit_code=0)
+    pod = core_v1.list_namespaced_pod.return_value.items[0]
+    pod.status.container_statuses[0].image_id = "docker-pullable://x@sha256:1"
+    spec = SandboxRunSpec(
+        run_id="r1", image_key="python-etl-v1", manifest={"datatype": "measurement"}, script_source=b"",
+        limits=_limits())
+
+    result = backend.run(spec)
+
+    assert result.image_digest == "docker-pullable://x@sha256:1"
+    assert result.image_manifest == "pydicom==3.0.2\n"
 
 
 def test_run_reports_exit_code_3_when_the_job_hits_its_deadline(allowlisted):

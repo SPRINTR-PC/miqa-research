@@ -1,8 +1,8 @@
 """Native (built-in) ETL Scripts (#226): global, read-only Scripts shipped with the codebase.
 
 Each entry's source file lives next to this module, optionally with a `<stem>.schema.json` sidecar:
-the JSON Schema its Bindings' config must satisfy (#238). It must be self-contained -- stdlib only, no
-MiqaResearch imports -- since it runs in the sandbox as `script.py`, and a project's Customize
+the JSON Schema its Bindings' config must satisfy (#238). It must be self-contained -- stdlib plus the
+curated `etl-python` uv group (#413), no MiqaResearch or mires_etl imports -- since it runs in the sandbox as `script.py`, and a project's Customize
 copy of it has to keep working on its own. `sync_native_etl_scripts` (run on every migrate)
 mirrors this list into EtlScript/EtlScriptVersion rows.
 """

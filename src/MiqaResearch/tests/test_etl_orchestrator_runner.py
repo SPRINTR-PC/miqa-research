@@ -286,3 +286,31 @@ def _failure_result(exit_code: int, *, log: bytes):
     from MiqaResearch.etl_sandbox import SandboxRunResult
     killed = exit_code == contract.EXIT_TIMEOUT_OR_KILLED
     return SandboxRunResult(exit_code=exit_code, result_jsonl=None, log=log, killed=killed)
+
+
+# --- image provenance (#413) ---------------------------------------------
+
+def test_run_job_records_the_sandbox_image_digest_and_manifest_on_success(
+        monkeypatch, job, job_input, s3_input, study_participant, measurement_concept):
+    from MiqaResearch.etl_sandbox import SandboxRunResult
+    result = SandboxRunResult(
+        exit_code=contract.EXIT_SUCCESS, log=b"ok", image_digest="sha256:abc", image_manifest="pydicom==3.0.2\n",
+        result_jsonl=_measurement_row_jsonl(study_participant, measurement_concept))
+    monkeypatch.setattr(runner, "get_sandbox_backend", lambda: FakeSandboxBackend(result=result))
+
+    runner.run_job(str(job.id))
+
+    job.refresh_from_db()
+    assert job.sandbox_image_digest == "sha256:abc"
+    assert job.sandbox_image_manifest == "pydicom==3.0.2\n"
+
+
+def test_run_job_records_the_sandbox_image_digest_on_a_failed_run_too(monkeypatch, job, job_input, s3_input):
+    from MiqaResearch.etl_sandbox import SandboxRunResult
+    result = SandboxRunResult(exit_code=contract.EXIT_SCRIPT_ERROR, log=b"boom", image_digest="sha256:def")
+    monkeypatch.setattr(runner, "get_sandbox_backend", lambda: FakeSandboxBackend(result=result))
+
+    runner.run_job(str(job.id))
+
+    job.refresh_from_db()
+    assert job.sandbox_image_digest == "sha256:def"

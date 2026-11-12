@@ -6,7 +6,9 @@
 # isolation as the Python image: non-root, network-less, /sandbox staged via the archive API.
 #
 # Allowlist key: r-etl-v1 (language + runtime + release, #147) -- R from Debian bookworm
-# (r-base-core 4.2) plus jsonlite, the only package the shim itself needs.
+# (r-base-core 4.2) plus the curated set (#413): jsonlite (the shim), dplyr, readr, tidyr, lubridate.
+# Replaces r-etl-v1 in place; a change to the list means a new key. The installed versions are
+# appended to /etc/mires/packages.txt so each Job records them.
 #
 # Build (the Python image first -- this one builds FROM it):
 #   docker compose --profile etl-sandbox-build build mires_etl_sandbox_python mires_etl_sandbox_r
@@ -16,7 +18,8 @@ FROM ${BASE_IMAGE}
 
 USER root
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends r-base-core r-cran-jsonlite \
+    && apt-get install -y --no-install-recommends r-base-core r-cran-jsonlite r-cran-dplyr r-cran-readr r-cran-tidyr r-cran-lubridate \
+    && dpkg-query -W -f='${Package}==${Version}\n' r-base-core 'r-cran-*' >> /etc/mires/packages.txt \
     && rm -rf /var/lib/apt/lists/*
 USER 65534:65534
 

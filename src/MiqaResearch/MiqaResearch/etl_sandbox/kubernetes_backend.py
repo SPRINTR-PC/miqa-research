@@ -77,9 +77,11 @@ class KubernetesSandboxBackend(SandboxBackend):
         pvc_name = self._create_pvc(spec)
         try:
             self._stage(pvc_name, spec)
-            exit_code, killed = self._run_job(pvc_name, image, spec)
-            result_jsonl, log = self._drain(pvc_name, spec.run_id, spec.limits.max_output_bytes)
-            return SandboxRunResult(exit_code=exit_code, result_jsonl=result_jsonl, log=log, killed=killed)
+            exit_code, killed, image_digest = self._run_job(pvc_name, image, spec)
+            result_jsonl, log, image_manifest = self._drain(pvc_name, spec.run_id, spec.limits.max_output_bytes)
+            return SandboxRunResult(
+                exit_code=exit_code, result_jsonl=result_jsonl, log=log, killed=killed,
+                image_digest=image_digest, image_manifest=image_manifest)
         finally:
             self._delete_pvc(pvc_name)
 
@@ -158,7 +160,7 @@ class KubernetesSandboxBackend(SandboxBackend):
         finally:
             self._core_v1.delete_namespaced_pod(pod_name, self._namespace())
 
-    def _drain(self, pvc_name: str, run_id: str, max_output_bytes: int) -> tuple[bytes | None, bytes]:
+    def _drain(self, pvc_name: str, run_id: str, max_output_bytes: int) -> tuple[bytes | None, bytes, str]:
         pod_name = _drain_pod_name(run_id)
         self._run_transfer_pod(pod_name, pvc_name, run_id)
         try:
@@ -169,7 +171,7 @@ class KubernetesSandboxBackend(SandboxBackend):
             self._core_v1.delete_namespaced_pod(pod_name, self._namespace())
 
         if tar_bytes is None:
-            return None, b""
+            return None, b"", ""
         return read_output_from_tar(tar_bytes)
 
     def _run_transfer_pod(self, pod_name: str, pvc_name: str, run_id: str) -> None:
@@ -239,7 +241,7 @@ class KubernetesSandboxBackend(SandboxBackend):
 
     # --- script Job ----------------------------------------------------
 
-    def _run_job(self, pvc_name: str, image: str, spec: SandboxRunSpec) -> tuple[int, bool]:
+    def _run_job(self, pvc_name: str, image: str, spec: SandboxRunSpec) -> tuple[int, bool, str]:
         job_name = _job_name(spec.run_id)
         limits = spec.limits
         job = k8s.V1Job(
@@ -293,7 +295,7 @@ class KubernetesSandboxBackend(SandboxBackend):
         finally:
             self._batch_v1.delete_namespaced_job(job_name, self._namespace(), propagation_policy="Foreground")
 
-    def _wait_for_job(self, job_name: str, timeout_seconds: int) -> tuple[int, bool]:
+    def _wait_for_job(self, job_name: str, timeout_seconds: int) -> tuple[int, bool, str]:
         deadline = time.monotonic() + timeout_seconds + JOB_POLL_GRACE_SECONDS
         while True:
             job = self._batch_v1.read_namespaced_job(job_name, self._namespace())
@@ -303,7 +305,7 @@ class KubernetesSandboxBackend(SandboxBackend):
                 raise TimeoutError(f"Job {job_name!r} did not reach a terminal state within {timeout_seconds}s.")
             time.sleep(JOB_POLL_INTERVAL_SECONDS)
 
-    def _read_job_outcome(self, job_name: str, deadline: float) -> tuple[int, bool]:
+    def _read_job_outcome(self, job_name: str, deadline: float) -> tuple[int, bool, str]:
         """Called once the Job itself is terminal. The Job going terminal and its Pod's own container
         status reflecting *why* are not perfectly synchronized -- observed racing this session's
         integration test, where `container_statuses[0].state.terminated` was still `None` right after
@@ -316,14 +318,17 @@ class KubernetesSandboxBackend(SandboxBackend):
             pods = self._core_v1.list_namespaced_pod(namespace, label_selector=f"job-name={job_name}").items
             if pods:
                 pod = pods[0]
-                if pod.status.reason == "DeadlineExceeded":
-                    return contract.EXIT_TIMEOUT_OR_KILLED, True
                 container_statuses = pod.status.container_statuses or []
+                # The pod's `imageID` is the resolved image digest reference (#413); empty if the
+                # kubelet never recorded one (e.g. a DeadlineExceeded pod that never started).
+                image_digest = (container_statuses[0].image_id if container_statuses else "") or ""
+                if pod.status.reason == "DeadlineExceeded":
+                    return contract.EXIT_TIMEOUT_OR_KILLED, True, image_digest
                 terminated = container_statuses[0].state.terminated if container_statuses else None
                 if terminated is not None:
                     if terminated.reason == "OOMKilled":
-                        return contract.EXIT_TIMEOUT_OR_KILLED, True
-                    return terminated.exit_code, False
+                        return contract.EXIT_TIMEOUT_OR_KILLED, True, image_digest
+                    return terminated.exit_code, False, image_digest
             # Either no Pod observed yet, or one observed with no terminated state yet -- a kubelet
             # that GCs a DeadlineExceeded Pod quickly can make it vanish from list_namespaced_pod
             # entirely before we ever see it (observed this session), so an empty list must retry too,
@@ -332,7 +337,7 @@ class KubernetesSandboxBackend(SandboxBackend):
                 # The Job is terminal but its Pod never surfaced a terminated container state or an
                 # explicit DeadlineExceeded reason -- treat conservatively as killed rather than invent
                 # a success/script exit code we never actually observed.
-                return contract.EXIT_TIMEOUT_OR_KILLED, True
+                return contract.EXIT_TIMEOUT_OR_KILLED, True, ""
             time.sleep(JOB_POLL_INTERVAL_SECONDS)
 
     def _ensure_healthy(self) -> None:

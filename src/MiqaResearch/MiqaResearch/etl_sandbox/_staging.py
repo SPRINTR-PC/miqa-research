@@ -36,16 +36,16 @@ def _add_bytes(tar: tarfile.TarFile, name: str, content: bytes) -> None:
     tar.addfile(info, io.BytesIO(content))
 
 
-def read_output_from_tar(tar_bytes: bytes) -> tuple[bytes | None, bytes]:
+def read_output_from_tar(tar_bytes: bytes) -> tuple[bytes | None, bytes, str]:
     """Parse a tar archive of `output/` (as produced by `tar -c -C /sandbox output` or Docker's
-    `get_archive`) into `(result_jsonl, log)`. Caller enforces `max_output_bytes` on the raw bytes
+    `get_archive`) into `(result_jsonl, log, image_manifest)`. Caller enforces `max_output_bytes` on the raw bytes
     *before* calling this -- it never inspects size itself.
     """
-    result_jsonl, log = None, b""
     with tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r") as tar:
         result_jsonl = _read_member(tar, f"{contract.OUTPUT_DIRNAME}/{contract.RESULT_FILENAME}")
         log = _read_member(tar, f"{contract.OUTPUT_DIRNAME}/{contract.LOG_FILENAME}") or b""
-    return result_jsonl, log
+        manifest = _read_member(tar, f"{contract.OUTPUT_DIRNAME}/{contract.PACKAGES_FILENAME}") or b""
+    return result_jsonl, log, manifest.decode("utf-8", errors="replace")
 
 
 def _read_member(tar: tarfile.TarFile, name: str) -> bytes | None:

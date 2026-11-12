@@ -5,6 +5,8 @@
     <button type="button" class="btn icon-btn etl-modal-close" data-modal-close aria-label="{% translate 'Close' %}">{% include 'components/icon.html' with icon_name='x' icon_classes='h-4 w-4' %}</button>
   </div>
 
+  <p class="text-sm text-muted-foreground etl-script-packages">{% translate "Scripts run in a network-less sandbox. Python scripts may import the standard library plus pydicom, polars and numpy. R scripts may use jsonlite, dplyr, readr, tidyr and lubridate. Nothing else is installed." %}</p>
+
   {% if not script %}
   <form method="post" enctype="multipart/form-data"
     hx-post="{% url 'dashboard_tab_etl_scripts_create' project.id %}" hx-target="#etl-section-panel" hx-swap="innerHTML" hx-encoding="multipart/form-data">

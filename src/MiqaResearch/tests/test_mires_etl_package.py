@@ -26,3 +26,26 @@ def test_existing_datatypes_validate_via_mires_etl_schemas():
     assert issubclass(get_schema("measurement"), ParticipantReferenceFields)
     with pytest.raises(ValueError):
         get_schema("measurement").model_validate({})
+
+
+def test_entrypoint_copies_the_image_package_manifest_into_the_output(tmp_path, monkeypatch):
+    from mires_etl.__main__ import copy_image_manifest
+
+    manifest = tmp_path / "packages.txt"
+    manifest.write_text("pydicom==3.0.2\n")
+    monkeypatch.setenv("MIRES_ETL_PACKAGES_FILE", str(manifest))
+    output = tmp_path / "root" / "output"
+
+    copy_image_manifest(output)
+
+    assert (output / "packages.txt").read_text() == "pydicom==3.0.2\n"
+
+
+def test_entrypoint_skips_the_manifest_when_the_image_has_none(tmp_path, monkeypatch):
+    from mires_etl.__main__ import copy_image_manifest
+
+    monkeypatch.setenv("MIRES_ETL_PACKAGES_FILE", str(tmp_path / "missing.txt"))
+
+    copy_image_manifest(tmp_path / "output")
+
+    assert not (tmp_path / "output" / "packages.txt").exists()
