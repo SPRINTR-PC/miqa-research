@@ -28,3 +28,11 @@ LINK_VIA_CHOICES = [
 
 def dicom_key_type(tag_keyword: str) -> str:
     return f"{KEY_SOURCE_DICOM}:{tag_keyword}"
+
+# Identity Reveal reasons (pick-list) for an exact-PID participant lookup when linking a key.
+REVEAL_REASON_LINK_KEY = "link_participant_key"
+REVEAL_REASON_CHOICES = [
+    (REVEAL_REASON_LINK_KEY, "Link a Participant Key to its Study Participant"),
+    ("data_quality_check", "Data quality check"),
+    ("participant_request", "Participant request"),
+]
