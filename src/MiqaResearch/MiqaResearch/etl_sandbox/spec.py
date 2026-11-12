@@ -4,8 +4,19 @@ existing shim's own `manifest: dict, input_dir: Path` seam (`etl_shim/shim.py`).
 (#162) is what builds a `SandboxRunSpec` from a `PipelineBinding` + `EtlJob` + `EtlScriptVersion`.
 """
 from dataclasses import dataclass, field
+from collections.abc import Sequence
+from pathlib import Path
 
 from .limits import SandboxLimits
+
+
+@dataclass(frozen=True)
+class StagedInput:
+    """One input already fetched to the worker's scratch volume (#414): its path under the sandbox's
+    `input/`, its size in bytes, and where the bytes live locally. The tar is built from the local file."""
+    relative_path: str
+    size: int
+    local_path: Path
 
 
 @dataclass(frozen=True)
@@ -15,7 +26,9 @@ class SandboxRunSpec:
     manifest: dict
     script_source: bytes
     limits: SandboxLimits
-    input_files: dict[str, bytes] = field(default_factory=dict)
+    input_files: Sequence[StagedInput] = field(default_factory=tuple)
+    # Where the archive temp file is written (the same scratch volume as the inputs); None = system temp.
+    scratch_dir: Path | None = None
 
 
 @dataclass(frozen=True)

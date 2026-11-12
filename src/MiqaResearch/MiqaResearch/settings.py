@@ -93,6 +93,9 @@ env = environ.Env(
     MIRES_ETL_STORAGES=(str, "[]"),
     MIRES_SANDBOX_BACKEND=(str, "compose"),
     MIRES_SANDBOX_DOCKER_HOST=(str, "unix:///var/run/docker.sock"),
+    MIRES_SANDBOX_COMPOSE_STORAGE_LIMIT=(bool, False),
+    MIRES_ETL_SCRATCH_DIR=(str, ""),
+    MIRES_ETL_SCRATCH_MARGIN_BYTES=(int, 256 * 1024 ** 2),
     MIRES_SANDBOX_IMAGE_ALLOWLIST=(str, "{}"),
     MIRES_SANDBOX_DEFAULT_TIMEOUT_SECONDS=(int, 10 * 60),
     MIRES_SANDBOX_DEFAULT_MEMORY_MB=(int, 1024),
@@ -239,6 +242,15 @@ ETL_STORAGES: list[dict] = json.loads(env("MIRES_ETL_STORAGES"))
 # how a PipelineBinding may lower, never raise, timeout/memory/CPU below them).
 SANDBOX_BACKEND: str = env("MIRES_SANDBOX_BACKEND")
 SANDBOX_DOCKER_HOST: str = env("MIRES_SANDBOX_DOCKER_HOST")
+# Compose only: pass `storage_opt size=` (inputs + outputs cap) to the sandbox container. Needs overlay2 on
+# XFS with project quotas; on other storage drivers container creation fails, so it is off by default (#414).
+SANDBOX_COMPOSE_STORAGE_LIMIT: bool = env("MIRES_SANDBOX_COMPOSE_STORAGE_LIMIT")
+# ETL runner scratch volume (#414): each Job's inputs are fetched here (mode 0700, removed once the Job is
+# finalized). It holds the original files, so deployments should use an encrypted volume. Empty = system temp
+# dir. A Job needs free space >= its total listed input size + ETL_SCRATCH_MARGIN_BYTES, else it is retried as an
+# infra-class failure.
+ETL_SCRATCH_DIR: str = env("MIRES_ETL_SCRATCH_DIR")
+ETL_SCRATCH_MARGIN_BYTES: int = env("MIRES_ETL_SCRATCH_MARGIN_BYTES")
 SANDBOX_IMAGE_ALLOWLIST: dict[str, str] = json.loads(env("MIRES_SANDBOX_IMAGE_ALLOWLIST"))
 SANDBOX_DEFAULT_TIMEOUT_SECONDS: int = env("MIRES_SANDBOX_DEFAULT_TIMEOUT_SECONDS")
 SANDBOX_DEFAULT_MEMORY_MB: int = env("MIRES_SANDBOX_DEFAULT_MEMORY_MB")
