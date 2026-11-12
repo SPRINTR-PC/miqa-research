@@ -11,6 +11,7 @@ import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 from contract.constants.etl import ETL_SCRIPT_ORIGIN_CUSTOM
+from helpers.dicom_uid import pseudonymize_uid
 from MiqaResearch.actions.dicom_ingest import records, storage
 from MiqaResearch.data.models import (
     DerivedObjectProvenance,
@@ -28,12 +29,19 @@ from MiqaResearch.data.models import (
 )
 from MiqaResearch.etl_datatypes import EtlLoadError, JobInputs, get_datatype, load_jsonl
 from MiqaResearch.etl_datatypes.exceptions import UnrecordedInput
+from MiqaResearch.etl_datatypes.loader import _parse_rows
 from MiqaResearch.etl_native_scripts import native_script_path
 from mires_etl import contract
+from mires_etl.schemas.dicom_instance import DicomInstanceRowSchema
 from mires_etl.shim import read_result_jsonl, run_script
 from tests.dicom_fixtures import (
     build_ct_image,
+    build_rdsr,
+    build_rtdose,
+    build_rtimage,
+    build_rtplan,
     build_rtstruct,
+    build_wsi,
     write_dicom,
 )
 
@@ -343,3 +351,80 @@ def test_rt_chain_links_whichever_order_the_jobs_arrive_in(ingest, order):
     assert summary["referenced_series_instance_uids"] == [ct_series.series_instance_uid]
     assert summary["referenced_image_sop_instance_uids"] == [DicomFile.objects.get(series=ct_series).sop_instance_uid]
     assert _provenance_sources() == {ct_series.series_instance_uid}
+
+
+# --- payload summaries land in the stored metadata with pseudonymized UIDs (ports #121, #124 layer B) ---
+
+def test_rdsr_dose_report_is_stored_and_the_file_has_no_geometry(ingest):
+    ingest({"a.dcm": build_rdsr()})
+    dcm = DicomFile.objects.get()
+    totals = dcm.metadata["dose_report"]["totals"]
+    assert totals["dose_area_product_total"] == {"value": 12.5, "unit": "Gy.m2"}
+    assert len(dcm.metadata["dose_report"]["irradiation_events"]) == 2
+    assert dcm.image_orientation_patient is None and dcm.pixel_spacing is None
+
+
+@pytest.mark.parametrize(("build", "kind", "reference_key", "original"), [
+    (build_rtstruct, "RTSTRUCT", "referenced_series_instance_uids", "1.2.9999.42.1.1002"),
+    (build_rtplan, "RTPLAN", "referenced_structure_set_sop_instance_uids", "1.2.9999.42.6.6003"),
+    (build_rtdose, "RTDOSE", "referenced_rt_plan_sop_instance_uids", "1.2.9999.42.7.7003"),
+    (build_rtimage, "RTIMAGE", "referenced_rt_plan_sop_instance_uids", "1.2.9999.42.7.7003"),
+])
+def test_rt_summary_references_are_pseudonymized_and_no_original_uid_survives(
+        ingest, project, build, kind, reference_key, original):
+    ingest({"a.dcm": build()})
+    summary = DicomFile.objects.get().metadata["rt_summary"]
+    assert summary["type"] == kind
+    assert summary[reference_key] == [pseudonymize_uid(original, project)]
+    assert original not in json.dumps(DicomFile.objects.get().metadata)
+
+
+def test_rtdose_grid_geometry_and_pseudonymized_frame_of_reference_are_stored(ingest, project):
+    ingest({"a.dcm": build_rtdose()})
+    dcm = DicomFile.objects.get()
+    assert dcm.image_position_patient == [-10.0, -20.0, 50.5]
+    assert dcm.pixel_spacing == [2.5, 2.5]
+    assert dcm.frame_of_reference_uid == pseudonymize_uid("1.2.9999.42.1.1004", project)
+
+
+def test_standard_image_carries_no_modality_summaries(ingest):
+    ingest({"a.dcm": build_ct_image()})
+    metadata = DicomFile.objects.get().metadata
+    assert "dose_report" not in metadata and "rt_summary" not in metadata and "pathology_summary" not in metadata
+
+
+def test_wsi_pathology_summary_and_pixel_spacing_are_stored(ingest, project):
+    ds = build_wsi(pixel_spacing="0.0005\\0.0005", objective_lens_power=40.0)
+    ingest({"a.dcm": ds})
+    dcm = DicomFile.objects.get()
+    summary = dcm.metadata["pathology_summary"]
+    assert (summary["frame_count"], summary["image_type"], summary["objective_lens_power"]) == (3, "VOLUME", 40.0)
+    assert dcm.pixel_spacing == [0.0005, 0.0005]
+    assert dcm.frame_of_reference_uid == pseudonymize_uid(ds.FrameOfReferenceUID, project)
+    assert dcm.image_orientation_patient is None and dcm.image_position_patient is None
+
+
+def test_wsi_pyramid_levels_in_one_job_link_to_one_series(ingest):
+    full_res = build_wsi(
+        sop_instance_uid="1.2.9999.42.10.10003", total_pixel_matrix_rows=8, total_pixel_matrix_columns=8)
+    thumbnail = build_wsi(
+        sop_instance_uid="1.2.9999.42.10.20003", total_pixel_matrix_rows=2, total_pixel_matrix_columns=2,
+        image_type=("ORIGINAL", "PRIMARY", "LABEL", "NONE"))
+    result = ingest({"level0.dcm": full_res, "level1.dcm": thumbnail})
+    assert result.created == 2
+    assert DicomSeries.objects.count() == 1
+    assert DicomFile.objects.count() == 2
+
+
+def test_a_row_string_with_unicode_line_separators_survives_the_jsonl_round_trip(tmp_path):
+    """`str.splitlines` splits on U+0085/U+2028/U+2029, which pydantic's JSON output leaves raw (found by the
+    PatientID fuzzer): the result file and the loader must split rows on "\\n" only."""
+    path = tmp_path / "result.jsonl"
+    row = DicomInstanceRowSchema(
+        source_path="a.dcm", status="skipped", skip_reason="not_dicom", study_description="a\x85b\u2028c\u2029d")
+    path.write_text(json.dumps({"datatype": "dicom_instance"}) + "\n" + row.model_dump_json() + "\n")
+
+    document = read_result_jsonl(path)
+    [parsed] = _parse_rows(DicomInstanceRowSchema, document.rows_jsonl)
+
+    assert parsed.study_description == "a\x85b\u2028c\u2029d"

@@ -1,6 +1,5 @@
 """ETL orchestrator (#162): Celery task entry points. Each is a thin wrapper -- id resolution and
-dispatch in, the real logic delegated to this package's other modules -- matching the DICOM
-ingestion task precedent (tasks/dicom_handling/tasks.py). Per #162's testing decision, every test
+dispatch in, the real logic delegated to this package's other modules. Per #162's testing decision, every test
 calls these via `.func(...)` directly rather than through real Celery beat/dispatch.
 """
 from django.tasks import task

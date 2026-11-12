@@ -19,15 +19,6 @@ class ResearchProject(models.Model):
     dicom_duplicate_handling = models.CharField(
         max_length=10, choices=[("skip", "Skip"), ("update", "Update")], default="skip", blank=False, null=False,
         help_text="Default behavior when DICOM ingestion encounters a file whose SOP Instance UID already exists")
-    dicom_delete_originals_after_storage = models.BooleanField(
-        blank=True,
-        null=True,
-        default=None,
-        help_text=(
-            "Overrides MIRES_DICOM_DELETE_ORIGINALS_AFTER_STORAGE for this project; "
-            "null defers to the global setting"
-        ),
-    )
     dicom_hashuid_salt_key = EncryptedCharField(
         blank=True, null=True,
         help_text="Salt used to pseudonymize incoming DICOM UIDs (CTP-style HashUID) for this project. "

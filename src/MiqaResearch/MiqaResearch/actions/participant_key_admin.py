@@ -30,12 +30,25 @@ from MiqaResearch.actions.viewer_exceptions import NotAllowed, NotFound, ViewerA
 from MiqaResearch.data.models import AuditLog, DicomFile, ParticipantKey, StudyParticipant
 from MiqaResearch.readers.participant_keys import is_project_admin
 from MiqaResearch.readers.participant_visibility import can_open_unlinked, visible_participants
-from MiqaResearch.tasks.dicom_handling.participant import _birth_date_parts
 
 logger = logging.getLogger("mires")
 
 MAX_REASON_LENGTH = 500
 _SEX_TO_GENDER = {"M": "M", "F": "F"}
+
+
+def _birth_date_parts(value: str) -> tuple[int | None, int | None, int | None]:
+    """Split a DICOM DA date (YYYYMMDD, possibly partial) into year/month/day.
+
+    A zero component means "unknown" in DICOM and yields None.
+    """
+    value = value.strip()
+    if len(value) < 4 or not value.isdigit():
+        return None, None, None
+    year = int(value[0:4])
+    month = int(value[4:6]) if len(value) >= 6 and value[4:6] != "00" else None
+    day = int(value[6:8]) if month is not None and len(value) >= 8 and value[6:8] != "00" else None
+    return year, month, day
 _REVEAL_REASONS = {value for value, _ in REVEAL_REASON_CHOICES}
 
 

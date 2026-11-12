@@ -1,6 +1,6 @@
 """WADO for the browser viewer (#276): session callers, Participant Visibility per request, cache headers.
 
-Seam: the WADO HTTP endpoints, fed by `run_ingestion`. A session caller is a
+Seam: the WADO HTTP endpoints, fed by `ingest_files`. A session caller is a
 logged-in user (`client.force_login`); a client caller sends a Bearer token.
 """
 from datetime import UTC, datetime
@@ -24,9 +24,9 @@ from MiqaResearch.data.models import (
     ResearchProjectUserRoleMap,
 )
 from MiqaResearch.data.models.dicom_storage import DicomStorage
-from MiqaResearch.tasks.dicom_handling.pipeline import run_ingestion
 from tests.client_binding_helpers import bound_client
 from tests.dicom_fixtures import build_multiframe_ct, write_dicom
+from tests.dicom_ingest_helper import ingest_files
 
 User = get_user_model()
 TOKEN = "session-access-test-token"
@@ -42,7 +42,6 @@ def encryption_keys(settings):
 
 @pytest.fixture(autouse=True)
 def local_media(settings, tmp_path):
-    settings.DICOM_ALLOWED_SOURCE_ROOTS = [tmp_path]
     settings.MEDIA_ROOT = tmp_path / "media"
     settings.DEBUG = False
     settings.MIDDLEWARE = [m for m in settings.MIDDLEWARE if "debug_toolbar" not in m]
@@ -54,7 +53,7 @@ def world(db, tmp_path):
     project = ResearchProject.objects.create(name="Viewer project", description="Project for #276 tests")
     consent_type = ParticipantConsentType.objects.create(label="Participation", research_project=project)
     sites = {code: Clinic.objects.create(clinic_code=f"S-{code}", clinic_name=f"Site {code}") for code in "AB"}
-    report = run_ingestion(project, write_dicom(build_multiframe_ct(number_of_frames=3), tmp_path / "ct.dcm"))
+    report = ingest_files(project, write_dicom(build_multiframe_ct(number_of_frames=3), tmp_path / "ct.dcm"))
     assert report.counts["ingested"] == 1, report.results
     dicom_file = DicomFile.objects.get(sop_instance_uid=report.results[0].sop_instance_uid)
     ParticipantConsent.objects.create(

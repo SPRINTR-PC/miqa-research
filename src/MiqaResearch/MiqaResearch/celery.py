@@ -32,19 +32,15 @@ app.conf.task_queues = (
     Queue(QUEUE_ETL_RUN, queue_arguments={"x-queue-type": "quorum"}, routing_key="etl.run.#"),
 )
 app.conf.broker_transport_options = {'confirm_publish': True}
-# Ingestion runs over large folders/S3 prefixes are far more variable in
-# duration than this codebase's other tasks. django.tasks' `@task()`
+# The DICOM backfill tasks re-read every stored file, far longer than this codebase's other
+# tasks. django.tasks' `@task()`
 # decorator has no time-limit kwarg (unlike raw Celery `@app.task`, which
 # tasks/ocr/__init__.py uses instead) -- so the limit is set here, per-task,
 # via Celery's own task_annotations, keyed by the task's dotted Python path.
-# Comfortably larger than the 30min MIRES_CELERY_TASK_TIME_LIMIT global default (#103).
+# Comfortably larger than the 30min MIRES_CELERY_TASK_TIME_LIMIT global default.
 DICOM_INGESTION_TASK_SOFT_TIME_LIMIT = 55 * 60
 DICOM_INGESTION_TASK_TIME_LIMIT = 60 * 60
 app.conf.task_annotations = {
-    "MiqaResearch.tasks.dicom_handling.tasks.ingest_dicom_source": {
-        "time_limit": DICOM_INGESTION_TASK_TIME_LIMIT,
-        "soft_time_limit": DICOM_INGESTION_TASK_SOFT_TIME_LIMIT,
-    },
     # One-off re-sanitizing of every stored dump (#273) re-reads each file's header
     "MiqaResearch.tasks.dicom_handling.metadata_backfill.resanitize_dicom_metadata": {
         "time_limit": DICOM_INGESTION_TASK_TIME_LIMIT,

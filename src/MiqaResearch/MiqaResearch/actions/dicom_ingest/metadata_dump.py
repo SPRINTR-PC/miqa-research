@@ -14,6 +14,8 @@ from pydicom.dataset import Dataset
 
 from helpers.dicom_deidentification import deidentify
 
+from .pseudonymize import pseudonymize_model
+
 # Binary/payload tags never captured into the metadata store.
 _SKIPPED_KEYWORDS = frozenset({"PixelData"})
 
@@ -42,6 +44,23 @@ def build_metadata_dump(
             continue
         dump[keyword] = _to_json_safe(element.value, depth=0)
     return dump
+
+
+_RT_TYPES = {"rtstruct": "RTSTRUCT", "rtplan": "RTPLAN", "rtdose": "RTDOSE", "rtimage": "RTIMAGE"}
+
+
+def payload_metadata(payload, research_project) -> dict:
+    """The metadata keys a row payload adds (`dose_report`, `rt_summary`, `pathology_summary`), its UIDs
+    pseudonymized for `research_project`."""
+    summary = pseudonymize_model(payload, research_project)
+    kind = summary.pop("kind")
+    if kind == "rdsr":
+        return {"dose_report": summary}
+    if kind in _RT_TYPES:
+        return {"rt_summary": {"type": _RT_TYPES[kind], **summary}}
+    if kind == "wsi":
+        return {"pathology_summary": summary}
+    return {}
 
 
 def _header_elements(ds: Dataset):

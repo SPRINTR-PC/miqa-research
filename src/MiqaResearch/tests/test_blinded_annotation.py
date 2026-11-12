@@ -49,7 +49,6 @@ def encryption_keys(settings):
 
 @pytest.fixture(autouse=True)
 def local_media(settings, tmp_path):
-    settings.DICOM_ALLOWED_SOURCE_ROOTS = [tmp_path]
     settings.MEDIA_ROOT = tmp_path / "media"
     settings.DEBUG = False
     settings.MIDDLEWARE = [m for m in settings.MIDDLEWARE if "debug_toolbar" not in m]

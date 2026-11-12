@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 import boto3
 from botocore.exceptions import ClientError

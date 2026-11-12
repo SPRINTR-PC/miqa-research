@@ -1,7 +1,7 @@
 """Annotations and Segmentations backend (#287): save, supersede, 409, retire, list.
 
 Seams: the HTTP API under /api/v1/viewer/objects (session auth), the stored
-object as WADO would read it (the stored file bytes), `run_ingestion` for
+object as WADO would read it (the stored file bytes), `ingest_files` for
 ingested SR/SEG, the Data Kind classifier, and the Audit Log.
 """
 import io
@@ -38,9 +38,9 @@ from MiqaResearch.readers.annotation_data_kinds import (
     data_kind_for_modality,
     data_kind_totals,
 )
-from MiqaResearch.tasks.dicom_handling.pipeline import run_ingestion
 from tests.dicom_derived_fixtures import build_viewer_seg, build_viewer_sr
 from tests.dicom_fixtures import build_ct_image, write_dicom
+from tests.dicom_ingest_helper import ingest_files
 
 OBJECTS_URL = "/api/v1/viewer/objects"
 User = get_user_model()
@@ -54,7 +54,6 @@ def encryption_keys(settings):
 
 @pytest.fixture(autouse=True)
 def local_media(settings, tmp_path):
-    settings.DICOM_ALLOWED_SOURCE_ROOTS = [tmp_path]
     settings.MEDIA_ROOT = tmp_path / "media"
     settings.DEBUG = False
     settings.MIDDLEWARE = [m for m in settings.MIDDLEWARE if "debug_toolbar" not in m]
@@ -72,7 +71,7 @@ def ct(project, tmp_path) -> DicomFile:
 
 
 def _ingest(project, tmp_path, ds, name) -> DicomFile:
-    report = run_ingestion(project, write_dicom(ds, tmp_path / name))
+    report = ingest_files(project, write_dicom(ds, tmp_path / name))
     assert report.counts["ingested"] == 1, report.results
     return DicomFile.objects.select_related("series__study__participant_key__study_participant").get(
         sop_instance_uid=report.results[0].sop_instance_uid

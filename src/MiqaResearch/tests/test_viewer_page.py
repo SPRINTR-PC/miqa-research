@@ -27,9 +27,9 @@ from MiqaResearch.data.models import (
     ResearchProjectUserRoleMap,
 )
 from MiqaResearch.interfaces.http.views.viewer.page import viewer_url
-from MiqaResearch.tasks.dicom_handling.pipeline import run_ingestion
 from tests.dicom_derived_fixtures import build_viewer_sr
 from tests.dicom_fixtures import build_ct_image, write_dicom
+from tests.dicom_ingest_helper import ingest_files
 
 User = get_user_model()
 
@@ -38,7 +38,6 @@ User = get_user_model()
 def environment(settings, tmp_path):
     settings.FERNET_KEY = b"EiGdHopiKZdBZwVCP4dVJitPrrDnOuGAd94W4EZpwQc="
     settings.SENSITIVE_DATA_HASH_KEY = "H2QCB14temR-C2JnLORSE5TxPwLd8iy3YygNPQ-corA="
-    settings.DICOM_ALLOWED_SOURCE_ROOTS = [tmp_path]
     settings.MEDIA_ROOT = tmp_path / "media"
     settings.DEBUG = False
     settings.MIDDLEWARE = [m for m in settings.MIDDLEWARE if "debug_toolbar" not in m]
@@ -50,7 +49,7 @@ def project(db):
 
 
 def _ingest(project, tmp_path, name, **tags) -> DicomSeries:
-    report = run_ingestion(project, write_dicom(build_ct_image(**tags), tmp_path / f"{name}.dcm"))
+    report = ingest_files(project, write_dicom(build_ct_image(**tags), tmp_path / f"{name}.dcm"))
     assert report.counts["ingested"] == 1, report.results
     return DicomSeries.objects.select_related("study__participant_key__study_participant").get(
         dicomfile__sop_instance_uid=report.results[0].sop_instance_uid
@@ -178,7 +177,7 @@ def test_participant_outside_the_users_sites_gets_404(client, project, ct):
 def _ingested_sr(project, tmp_path) -> DicomSeries:
     raw = build_viewer_sr(referenced_study_uid="1.2.9999.42.1.1001", referenced_series_uid="1.2.9999.42.1.1002",
                           referenced_sop_uid="1.2.9999.42.1.1003")
-    report = run_ingestion(project, write_dicom(raw, tmp_path / "sr.dcm"))
+    report = ingest_files(project, write_dicom(raw, tmp_path / "sr.dcm"))
     assert report.counts["ingested"] == 1, report.results
     return DicomSeries.objects.get(dicomfile__sop_instance_uid=report.results[0].sop_instance_uid)
 

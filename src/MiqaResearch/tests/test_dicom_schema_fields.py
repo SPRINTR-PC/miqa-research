@@ -3,8 +3,7 @@ Round-trip coverage for the DICOM ingestion schema changes (#98, #117):
 
 - DicomFile: image_position_patient, file_size_in_mb
 - DicomSeries: file_size_in_mb, removal of the dead wadors_uri field
-- ResearchProject: dicom_duplicate_handling, dicom_delete_originals_after_storage,
-  dicom_hashuid_salt_key (encrypted at rest)
+- ResearchProject: dicom_duplicate_handling, dicom_hashuid_salt_key (encrypted at rest)
 """
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -86,15 +85,6 @@ def test_research_project_duplicate_handling_defaults_to_skip(db):
     project = ResearchProject.objects.create(name="Default handling project", description="...")
     project.refresh_from_db()
     assert project.dicom_duplicate_handling == "skip"
-
-
-@pytest.mark.django_db
-@pytest.mark.parametrize("override", [True, False, None])
-def test_research_project_delete_originals_override_round_trips(research_project, override):
-    research_project.dicom_delete_originals_after_storage = override
-    research_project.save()
-    research_project.refresh_from_db()
-    assert research_project.dicom_delete_originals_after_storage is override
 
 
 @pytest.mark.django_db

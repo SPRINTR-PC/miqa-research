@@ -31,7 +31,8 @@ def load_jsonl(
 
 def _parse_rows(schema: type[BaseModel], jsonl_text: str) -> list[BaseModel]:
     rows = []
-    for line_number, line in enumerate(jsonl_text.splitlines(), start=1):
+    # split on "\n" only: str.splitlines also splits on U+0085/U+2028/U+2029, which JSON strings may contain raw
+    for line_number, line in enumerate(jsonl_text.split("\n"), start=1):
         line = line.strip()
         if not line:
             continue

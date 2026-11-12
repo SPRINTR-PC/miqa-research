@@ -1,14 +1,13 @@
 """WADO-RS /metadata served through the De-identification Profile (#275).
 
 Seam: the HTTP endpoints (study, series and instance /metadata), fed by
-`run_ingestion`. A client builds frame URLs from the returned UIDs, so the
+`ingest_files`. A client builds frame URLs from the returned UIDs, so the
 round trip metadata -> /frames is the key behaviour.
 """
 import pytest
 from pydicom.dataset import Dataset
 
 from MiqaResearch.data.models import DicomFile, ResearchProject
-from MiqaResearch.tasks.dicom_handling.pipeline import run_ingestion
 from tests.client_binding_helpers import bound_client
 from tests.dicom_fixtures import (
     DEFAULT_BIRTH_DATE,
@@ -18,6 +17,7 @@ from tests.dicom_fixtures import (
     build_tiled_wsi_jpeg,
     write_dicom,
 )
+from tests.dicom_ingest_helper import ingest_files
 
 TOKEN = "metadata-test-token"
 STUDY_UID, SERIES_UID, SOP_UID = "0020000D", "0020000E", "00080018"
@@ -31,7 +31,6 @@ def encryption_keys(settings):
 
 @pytest.fixture(autouse=True)
 def local_media(settings, tmp_path):
-    settings.DICOM_ALLOWED_SOURCE_ROOTS = [tmp_path]
     settings.MEDIA_ROOT = tmp_path / "media"
     settings.DEBUG = False
     settings.MIDDLEWARE = [m for m in settings.MIDDLEWARE if "debug_toolbar" not in m]
@@ -51,7 +50,7 @@ def bearer(research_project):
 def _ingest(research_project, tmp_path, *datasets) -> list[DicomFile]:
     files = []
     for index, ds in enumerate(datasets):
-        report = run_ingestion(research_project, write_dicom(ds, tmp_path / f"f{index}.dcm"))
+        report = ingest_files(research_project, write_dicom(ds, tmp_path / f"f{index}.dcm"))
         assert report.counts["ingested"] == 1, report.results
         files.append(DicomFile.objects.get(sop_instance_uid=report.results[0].sop_instance_uid))
     return files
