@@ -14,6 +14,10 @@ from dataclasses import dataclass
 from django.db import transaction
 from django.utils import timezone
 
+from contract.constants.audit_log import (
+    EVENT_TYPE_PARTICIPANT_KEY_DEMOGRAPHICS_FILLED,
+    EVENT_TYPE_PARTICIPANT_KEY_LINKED,
+)
 from contract.constants.participant_key import (
     DICOM_KEY_TAG_ALLOWLIST,
     DICOM_PATIENT_ID_KEY_TYPE,
@@ -23,7 +27,8 @@ from contract.constants.participant_key import (
 )
 from helpers.db_fields import get_deterministic_hash
 from helpers.person_source_value import format_person_source_value
-from MiqaResearch.data.models import ParticipantKey, StudyParticipant
+from MiqaResearch.actions.participant_demographics import fill_demographics
+from MiqaResearch.data.models import AuditLog, ParticipantKey, StudyParticipant
 
 PATIENT_ID = "PatientID"
 
@@ -91,10 +96,11 @@ def _observed(instance: dict) -> list[tuple[str, str]]:
 
 def _study_key(observed: list[list[tuple[str, str]]], configured_tag: str | None) -> tuple[str, str]:
     """The Study's key: the first configured tag present, else PatientID."""
-    for key_type in [dicom_key_type(configured_tag)] if configured_tag else []:
+    if configured_tag:
+        configured_type = dicom_key_type(configured_tag)
         for values in observed:
             for found_type, value in values:
-                if found_type == key_type:
+                if found_type == configured_type:
                     return found_type, value
     for values in observed:
         for found_type, value in values:
@@ -198,7 +204,8 @@ def link_keys_from_mapping(
     """Links each (key_type, value, participant) of a `participant_key_link` Job, creating missing keys
     already linked (a mapping may precede the images). All-or-nothing: a key linked to a different
     participant, or given two participants by the mapping itself, raises `ParticipantKeyMappingConflict`
-    listing every offending row and nothing is written. Same participant is a no-op. Never re-points."""
+    listing every offending row and nothing is written. Same participant is a no-op. Never re-points.
+    The audit event (counts and the Job id only) is written in the same transaction."""
     with transaction.atomic():
         wanted: dict[tuple[str, str], StudyParticipant] = {}
         conflicts = []
@@ -229,7 +236,31 @@ def link_keys_from_mapping(
             keys.append(key)
         # Rows repeating a key are unchanged too: count them so the summary adds up to the row count.
         unchanged += len(mappings) - len(wanted)
+        AuditLog.objects.record(
+            EVENT_TYPE_PARTICIPANT_KEY_LINKED, project=project,
+            metadata={"etl_job_id": str(job.id) if job else None, "created": created, "linked": linked,
+                      "unchanged": unchanged})
         return MappingOutcome(created=created, linked=linked, unchanged=unchanged, keys=keys)
+
+
+def fill_mapped_demographics(
+    project, mappings: list[tuple[str, str, StudyParticipant]], keys: list[ParticipantKey], *, job=None
+) -> int:
+    """Fills blank DOB / sex of the mapped participants from the stored originals behind their keys; `mappings`
+    and `keys` are the inputs and `keys` of a `link_keys_from_mapping` call. Returns how many participants
+    were filled and audits it (count and Job id only)."""
+    first_per_key = {}
+    for key_type, value, participant in mappings:
+        first_per_key.setdefault((key_type, value.strip()), participant)
+    keys_by_participant: dict = {}
+    for participant, key in zip(first_per_key.values(), keys, strict=True):
+        keys_by_participant.setdefault(participant.pk, (participant, []))[1].append(key)
+    filled = sum(fill_demographics(participant, linked) for participant, linked in keys_by_participant.values())
+    if filled:
+        AuditLog.objects.record(
+            EVENT_TYPE_PARTICIPANT_KEY_DEMOGRAPHICS_FILLED, project=project,
+            metadata={"etl_job_id": str(job.id) if job else None, "participants": filled})
+    return filled
 
 
 def _find_key(project, key_type: str, value: str) -> ParticipantKey | None:

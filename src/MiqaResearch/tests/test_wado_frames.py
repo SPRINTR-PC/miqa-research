@@ -80,6 +80,24 @@ def _native_frame(ds, n: int) -> bytes:
     return ds.PixelData[(n - 1) * size : n * size]
 
 
+def test_an_unlinked_studys_frames_are_served_to_a_project_admin_byte_exact(research_project, tmp_path, client):
+    """ADR 0035 (#415): the frame path tolerates a Study whose Participant Key is unlinked."""
+    from contract.constants.research_project_role import PROJECT_ROLE_ADMIN
+    from tests.test_annotations_api import _member
+
+    ds = build_multiframe_ct(number_of_frames=2)
+    dcm_file = _ingest(research_project, tmp_path, ds)
+    key = dcm_file.series.study.participant_key
+    key.study_participant = None
+    key.save(update_fields=["study_participant"])
+    client.force_login(_member(research_project, PROJECT_ROLE_ADMIN))
+
+    response = client.get(_frames_url(dcm_file, "2"))
+
+    assert response.status_code == 200
+    assert _parts(response) == [(NATIVE_PART_TYPE, _native_frame(ds, 2))]
+
+
 def test_native_multiframe_ct_frames_are_served_byte_exact(research_project, tmp_path, client, bearer):
     ds = build_multiframe_ct(number_of_frames=3)
     dcm_file = _ingest(research_project, tmp_path, ds)

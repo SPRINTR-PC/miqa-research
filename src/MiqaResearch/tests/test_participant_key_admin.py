@@ -311,6 +311,39 @@ def test_link_never_overwrites_demographics_and_reports_mismatch(project, tmp_pa
     assert not AuditLog.objects.filter(event_type=EVENT_TYPE_PARTICIPANT_KEY_DEMOGRAPHICS_FILLED).exists()
 
 
+@pytest.mark.parametrize(("birth", "expected"), [
+    ("1975", (1975, None, None)),
+    ("197500", (1975, None, None)),
+    ("19750000", (1975, None, None)),
+    ("197503", (1975, 3, None)),
+    ("19750300", (1975, 3, None)),
+    ("19751300", (1975, None, None)),  # month out of range: kept as year only
+    ("17990101", (None, None, None)),  # implausible year
+    ("abcd0101", (None, None, None)),
+    ("", (None, None, None)),
+])
+def test_link_fills_partial_and_rejects_invalid_birth_dates_like_the_datatype(project, tmp_path, birth, expected):
+    """Admin Link shares the one demographics implementation with the participant_key_link Datatype."""
+    key = _unlinked_study_key(project, tmp_path, patient_birth_date=birth, patient_sex="O")
+    participant = _participant(project, "A1")
+    response = _link(_admin(project), key, participant_id=str(participant.id), fill_demographics=True)
+    assert response.status_code == 200
+    participant.refresh_from_db()
+    assert (participant.year_of_birth, participant.month_of_birth, participant.day_of_birth) == expected
+    assert participant.gender == "O"  # DICOM sex "O" maps like in the Datatype
+    assert ("date_of_birth" in response.json()["demographics_filled"]) == (expected[0] is not None)
+
+
+def test_the_actions_guard_the_reason_even_without_the_api_schema(project):
+    from MiqaResearch.actions.participant_key_admin import InvalidKeyAction, unlink_key
+
+    admin = _admin(project)
+    key = _key(project, "K", participant=_participant(project, "A1"))
+    for reason in ("", "  ", "x" * 501):
+        with pytest.raises(InvalidKeyAction):
+            unlink_key(user=admin, key_id=key.id, reason=reason)
+
+
 def test_link_without_the_checkbox_leaves_demographics(project, tmp_path):
     key = _unlinked_study_key(project, tmp_path)
     participant = _participant(project, "A1")
@@ -350,9 +383,9 @@ def test_repoint_and_unlink_are_admin_only_with_a_reason(project):
     assert _unlink(manager, key, reason="why").status_code == 403
     assert _repoint(_user(), key, participant_id=str(new.id), reason="why").status_code == 404
     admin = _admin(project)
-    assert _repoint(admin, key, participant_id=str(new.id), reason="  ").status_code == 400
-    assert _repoint(admin, key, participant_id=str(new.id), reason="x" * 501).status_code == 400
-    assert _unlink(admin, key, reason="").status_code == 400
+    assert _repoint(admin, key, participant_id=str(new.id), reason="  ").status_code == 422
+    assert _repoint(admin, key, participant_id=str(new.id), reason="x" * 501).status_code == 422
+    assert _unlink(admin, key, reason="").status_code == 422
     assert _call(admin, "post", "participant_key_unlink", key_id=key.id).status_code == 422  # reason missing
     key.refresh_from_db()
     assert key.study_participant == old

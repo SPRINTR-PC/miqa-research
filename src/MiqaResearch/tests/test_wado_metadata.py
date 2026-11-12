@@ -68,6 +68,25 @@ def _series_url(dcm_file: DicomFile) -> str:
     )
 
 
+def test_an_unlinked_studys_metadata_carries_a_key_derived_alias_never_the_patient_id(
+        research_project, tmp_path, client):
+    """ADR 0035 (#415): with no Study Participant the de-identified PatientID is the key's stable UNLINKED- alias."""
+    from contract.constants.research_project_role import PROJECT_ROLE_ADMIN
+    from tests.test_annotations_api import _member
+
+    (dcm_file,) = _ingest(research_project, tmp_path, build_tiled_wsi_jpeg())
+    key = dcm_file.series.study.participant_key
+    key.study_participant = None
+    key.save(update_fields=["study_participant"])
+    client.force_login(_member(research_project, PROJECT_ROLE_ADMIN))
+
+    response = client.get(_series_url(dcm_file))
+
+    assert response.status_code == 200
+    assert f"UNLINKED-{key.pk.hex[:12]}" in response.content.decode()
+    assert DEFAULT_PATIENT_ID not in response.content.decode()
+
+
 def test_frame_urls_built_from_series_metadata_resolve(research_project, tmp_path, client, bearer):
     (dcm_file,) = _ingest(research_project, tmp_path, build_tiled_wsi_jpeg())
 

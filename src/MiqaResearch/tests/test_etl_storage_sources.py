@@ -149,3 +149,18 @@ def test_a_location_allowed_in_two_storages_needs_one_chosen(project, lab):
 
     with pytest.raises(EtlLocationConflict, match="storage"):
         _call(create_source_location, project=project, name="Either", bucket="incoming", prefix="")
+
+
+@pytest.mark.parametrize(("can_choose_delete", "expected_initial"), [(True, "delete"), (False, "move")])
+def test_datatype_delete_default_is_not_preselected_when_the_user_cannot_choose_delete(
+        can_choose_delete, expected_initial):
+    """Documents current behaviour (#411 review): a Datatype's "delete" Raw Retention default is preselected in the
+    Binding wizard only for users who may choose Delete (project Admin); for others no default is preselected,
+    so the field falls back to its own initial. Binding creation by the action does not gate on role."""
+    from MiqaResearch.interfaces.http.forms.etl import EtlBindingCreateForm
+
+    form = EtlBindingCreateForm(
+        None, location_grants=[], source_locations=[], script_version_choices=[("1", "v1")],
+        can_choose_delete=can_choose_delete, raw_retention_defaults={"1": "delete"})
+
+    assert form.fields["raw_retention"].initial == expected_initial

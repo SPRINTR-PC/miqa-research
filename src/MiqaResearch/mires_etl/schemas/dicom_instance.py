@@ -1,11 +1,11 @@
 """`dicom_instance` Datatype row schema (#417, spec #401): one row per input file.
 
 Raw UIDs, headers only. Fields typed `DicomUid` (including inside payload lists) are the ones the
-loader pseudonymizes; the SOP Class UID is a public standard value and stays raw. `tags` is the raw
-JSON-safe header dump (no pixel data) -- the loader must de-identify it before storing.
+loader pseudonymizes; the SOP Class UID is a public standard value and stays raw. There is no raw header
+dump: the loader rebuilds the stored metadata from the file's own bytes, and the schema forbids extras.
 """
 from datetime import datetime
-from typing import Annotated, Any, Literal, Self
+from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -122,7 +122,6 @@ class DicomInstanceRowSchema(_Strict):
     pixel_spacing: list[float] | None = None
     frame_of_reference_uid: DicomUid | None = None
     identifiers: dict[str, str] = Field(default_factory=dict)
-    tags: dict[str, Any] | None = None
     payload: Payload | None = None
 
     @model_validator(mode="after")

@@ -1,6 +1,8 @@
 """Fill a Study Participant's blank date of birth and sex from the stored original DICOM headers (#400, #421).
 
 Only blanks are filled, never overwritten. Nothing here logs or returns the values read."""
+from dataclasses import dataclass, field
+
 from pydicom import dcmread
 from pydicom.errors import InvalidDicomError
 
@@ -11,25 +13,49 @@ PATIENT_SEX_TO_GENDER = {"M": "M", "F": "F", "O": "O"}
 _TAGS = ["PatientBirthDate", "PatientSex"]
 
 
+@dataclass(frozen=True)
+class DemographicsOutcome:
+    filled: list[str] = field(default_factory=list)  # "date_of_birth", "sex"
+    mismatched: list[str] = field(default_factory=list)  # stored value differs from the originals' (never changed)
+
+
 def fill_demographics(participant: StudyParticipant, keys: list[ParticipantKey]) -> bool:
     """Fills `participant`'s blank DOB / sex from the first usable value in the originals behind `keys`.
-    Returns whether anything was filled."""
+    Returns whether anything was filled. Reads no file when nothing is blank."""
+    if participant.year_of_birth is not None and participant.gender != "U":
+        return False
+    return bool(_fill(participant, keys, compare=False).filled)
+
+
+def fill_and_compare_demographics(participant: StudyParticipant, keys: list[ParticipantKey]) -> DemographicsOutcome:
+    """Like `fill_demographics`, and also reports which already-set values differ from the originals."""
+    return _fill(participant, keys, compare=True)
+
+
+def _fill(participant: StudyParticipant, keys, *, compare: bool) -> DemographicsOutcome:
     need_birth = participant.year_of_birth is None
     need_sex = participant.gender == "U"
-    if not (need_birth or need_sex):
-        return False
-    birth = _first_birth(keys) if need_birth else None
-    sex = _first_sex(keys) if need_sex else None
+    birth = _first_birth(keys) if need_birth or compare else None
+    sex = _first_sex(keys) if need_sex or compare else None
+    outcome = DemographicsOutcome()
     update_fields = []
     if birth:
-        participant.year_of_birth, participant.month_of_birth, participant.day_of_birth = birth
-        update_fields += ["year_of_birth", "month_of_birth", "day_of_birth"]
+        if need_birth:
+            participant.year_of_birth, participant.month_of_birth, participant.day_of_birth = birth
+            update_fields += ["year_of_birth", "month_of_birth", "day_of_birth"]
+            outcome.filled.append("date_of_birth")
+        elif birth != (participant.year_of_birth, participant.month_of_birth, participant.day_of_birth):
+            outcome.mismatched.append("date_of_birth")
     if sex:
-        participant.gender = sex
-        update_fields.append("gender")
+        if need_sex:
+            participant.gender = sex
+            update_fields.append("gender")
+            outcome.filled.append("sex")
+        elif participant.gender != sex:
+            outcome.mismatched.append("sex")
     if update_fields:
         participant.save(update_fields=update_fields)
-    return bool(update_fields)
+    return outcome
 
 
 def _first_birth(keys):
