@@ -369,6 +369,15 @@ ETL loads and DICOM ingestion match the same person however it was written
 Project via `alias1`.
 _Avoid_: Patient, Subject
 
+### Participant Key
+One identifier value of one kind (e.g. a DICOM PatientID), from one source,
+within one Research Project, that may or may not yet be linked to a Study
+Participant. A Study Participant can have many; imaging and other source data
+hang off the key until it is linked. A key with no Study Participant is
+**unlinked**, and tracking those is how Admins and Data Managers see missing
+matches. The value is protected like `person_source_value`.
+_Avoid_: Pseudonym (only one kind of key value), external ID, mapping
+
 ### Consent Project
 The Research Project named by `MIRES_TASK_CONSENT_RESEARCH_PROJECT_NAME`. It owns
 the SamtyckenUmu consent types and the Pipeline Binding that loads the consent
@@ -712,6 +721,71 @@ _Avoid_: admin, operator
 | 0032 | ETL Raw Retention: per-Binding "delete after load" opt-out, Admin-only | Accepted |
 | 0033 | SamtyckenUmu consent task only fetches into an ETL source bucket; legacy participants adopted by command | Accepted |
 | 0034 | ETL Source Locations named inside staff-managed Location Grants | Accepted |
+| 0035 | Dicom Studies hang off a Participant Key, not directly off a Study Participant | Proposed |
+| 0036 | DICOM ingestion runs as an ETL Datatype, not a standalone task | Proposed |
+
+### ADR 0036 — DICOM ingestion runs as an ETL Datatype, not a standalone task
+
+**Context**: DICOM ingestion (#98) ran as its own `ingest_dicom_source` task
+with its own discovery, local-folder and S3 sources and per-run retention
+options, beside the ETL framework (#140) that already provides sources,
+Bindings, sandboxing, Jobs and Raw Retention. #140 left a "DICOM seam = loader
+only". Pseudonymized imaging also needs a path that tolerates unlinked
+participants (ADR 0035).
+
+**Decision**: A default Native Script and a `dicom_instance` ETL Datatype
+replace the task. The sandboxed script only parses headers and extracts
+payloads; the loader owns every write: it reads the originals from the Job
+inputs, verifies sha256, stores them, pseudonymizes UIDs and rebuilds the
+sanitized metadata dump from the bytes. A Job is all-or-nothing, with blob
+cleanup on rollback, and the loader reads every stored blob back before
+commit, so a succeeded Job means every file is verified. Raw Retention
+"delete" is the Datatype's default, and only ingested inputs are deleted:
+skipped files and differing duplicates in skip mode stay in the source.
+`ingest_dicom_source`, local-folder ingestion, its allowed-roots setting and
+its delete-originals settings are removed; the reusable logic moves to
+`actions/dicom_ingest/`.
+
+**Consequences**:
+- Amends #103 (task structure) and #112 (source retention, now Raw Retention).
+- Dev and test ingest from a local S3 (RustFS), not a local folder.
+- The ndpi converter (#102) no longer feeds ingestion: NDPI is stored and converted on the fly, converted DICOM is not stored.
+- One Job loads a whole folder in one transaction; blobs written before a
+  crash can be orphaned; a daily reconciliation sweep reports them to staff and deletes them after a grace period.
+- Rejected: wrapping the old task as a Binding (two retention models, two
+  source models) and keeping local folders as a second source kind.
+
+### ADR 0035 — Dicom Studies hang off a Participant Key, not directly off a Study Participant
+
+**Context**: DICOM ingestion created a Study Participant from PatientID when
+nothing matched, and `DicomStudy` pointed straight at it. Pseudonymized
+imaging has no immediately resolvable participant, and the link may arrive
+later or from another source (e.g. genomics), so ingestion must be able to
+store data whose participant is not yet known (map "Default ETL script for
+incoming DICOM files").
+
+**Decision**: A Participant Key (project, key type, encrypted value with hash
+sidecar, nullable Study Participant) sits between them. `DicomStudy` has a
+required `participant_key` FK and no direct participant FK; the participant is
+derived through the key. DICOM ingestion never creates Study Participants
+(amends #100). A key is linked by matching, by the `participant_key_link`
+Datatype, or by an Admin action; linking one file's keys links all its
+observed keys, a conflict fails and links nothing. Deleting a participant
+cascades through keys to imaging, as before. An unlinked Study is readable
+(WADO, viewer) only by project Admins and Data Managers, audited, and cannot
+receive Annotations or Segmentations until linked.
+
+**Consequences**:
+- Every `study__study_participant` path (viewer, WADO access, blinding,
+  annotations, access audit, provenance, backfill) moves to the derived path
+  and must tolerate an unlinked Study; amends viewer spec #271.
+- An extra join on those paths, accepted to keep one source of truth.
+- Linking can optionally fill a participant's blank DOB and sex from the
+  stored original bytes; the De-identification Profile blanks DOB in the dump.
+- Rejected: a nullable `study_participant` on `DicomStudy` (no home for the
+  pseudonym or its later mapping), a placeholder participant per project
+  (pollutes counts and consent logic), a separate holding model (duplicates
+  the schema).
 
 ### ADR 0034 — ETL Source Locations named inside staff-managed Location Grants
 
