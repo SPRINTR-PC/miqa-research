@@ -14,7 +14,7 @@ class SandboxBackend(abc.ABC):
     def run(self, spec: SandboxRunSpec) -> SandboxRunResult:
         """Run `spec` to completion (or until its `limits.timeout_seconds` elapses) and return
         the result. Never raises for a Script's own failure -- that's carried in `exit_code`
-        (see `etl_shim.contract`) -- only for a runner-level problem (unknown image, oversized
+        (see `mires_etl.contract`) -- only for a runner-level problem (unknown image, oversized
         input) that means no container was ever started.
         """
 

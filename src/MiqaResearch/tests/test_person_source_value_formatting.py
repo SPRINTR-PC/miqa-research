@@ -19,8 +19,9 @@ from MiqaResearch.data.models import (
     StudyParticipant,
 )
 from MiqaResearch.etl_datatypes import load_jsonl
-from MiqaResearch.etl_datatypes.participant_reference import ParticipantReferenceFields, resolve_participant
+from MiqaResearch.etl_datatypes.participant_reference import resolve_participant
 from MiqaResearch.tasks.dicom_handling.participant import match_or_create_participant
+from mires_etl.schemas import ParticipantReferenceFields
 
 SPELLINGS = ["19121212-1212", "191212121212", " 19121212-1212 "]
 

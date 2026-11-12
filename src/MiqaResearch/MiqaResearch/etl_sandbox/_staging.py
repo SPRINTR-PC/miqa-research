@@ -7,7 +7,7 @@ import io
 import json
 import tarfile
 
-from MiqaResearch.etl_shim import contract
+from mires_etl import contract
 
 from .exceptions import SandboxInputTooLarge
 from .spec import SandboxRunSpec

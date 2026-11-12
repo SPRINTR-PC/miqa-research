@@ -23,9 +23,9 @@ from MiqaResearch.data.models import (
     StudyParticipant,
 )
 from MiqaResearch.etl_datatypes import load_jsonl
-from MiqaResearch.etl_shim import contract
-from MiqaResearch.etl_shim.context import ScriptContext
-from MiqaResearch.etl_shim.shim import read_result_jsonl, run_sandbox, run_script
+from mires_etl import contract
+from mires_etl.context import ScriptContext
+from mires_etl.shim import read_result_jsonl, run_sandbox, run_script
 
 # --- run_script: the mid-level seam (a script's `main`, already loaded) ----
 

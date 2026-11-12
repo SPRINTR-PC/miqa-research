@@ -34,8 +34,8 @@ from MiqaResearch.data.models import (
     StudyParticipant,
 )
 from MiqaResearch.etl_sandbox import SandboxRunResult
-from MiqaResearch.etl_shim import contract
 from MiqaResearch.tasks.etl_orchestrator import runner, tasks
+from mires_etl import contract
 
 
 class _FakeTask:
