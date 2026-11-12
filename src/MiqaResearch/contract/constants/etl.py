@@ -36,6 +36,14 @@ PIPELINE_BINDING_RAW_RETENTION_CHOICES = [
     (PIPELINE_BINDING_RAW_RETENTION_DELETE, gettext_lazy("Delete after load")),
 ]
 
+# A Datatype whose raw files tie pseudonyms to real identities defaults to "delete" (ADR 0032, #421).
+DATATYPE_DEFAULT_RAW_RETENTION = {"participant_key_link": PIPELINE_BINDING_RAW_RETENTION_DELETE}
+
+
+def default_raw_retention(datatype_name: str) -> str:
+    return DATATYPE_DEFAULT_RAW_RETENTION.get(datatype_name, PIPELINE_BINDING_RAW_RETENTION_MOVE)
+
+
 ETL_JOB_INPUT_SOURCE_STATUS_PENDING = "pending"
 ETL_JOB_INPUT_SOURCE_STATUS_MOVED = "moved"
 ETL_JOB_INPUT_SOURCE_STATUS_DELETED = "deleted"

@@ -9,12 +9,15 @@ PatientID vs `person_source_value` (opt-in, dash-stripped). Keys already linked 
 More than one candidate, an instance resolving differently from another, or a key already linked to a
 different participant is an error; nothing is linked (the whole call is one transaction).
 """
+from dataclasses import dataclass
+
 from django.db import transaction
 from django.utils import timezone
 
 from contract.constants.participant_key import (
     DICOM_KEY_TAG_ALLOWLIST,
     DICOM_PATIENT_ID_KEY_TYPE,
+    LINK_VIA_DATATYPE,
     LINK_VIA_MATCH,
     dicom_key_type,
 )
@@ -151,11 +154,11 @@ def _get_or_create_key(project, key_type: str, value: str, job) -> ParticipantKe
     return key or ParticipantKey.objects.create(project=project, key_type=key_type, value=value, first_seen_job=job)
 
 
-def _link(keys, participant: StudyParticipant, job) -> None:
+def _link(keys, participant: StudyParticipant, job, via: str = LINK_VIA_MATCH) -> None:
     for key in keys:
         if key.study_participant_id is None:
             key.study_participant = participant
-            key.linked_via = LINK_VIA_MATCH
+            key.linked_via = via
             key.linked_job = job
             key.linked_at = timezone.now()
             key.save(update_fields=["study_participant", "linked_via", "linked_job", "linked_at"])
@@ -170,3 +173,65 @@ def ensure_linked_key(project, key_type: str, value: str, participant: StudyPart
             raise ParticipantKeyConflict("the key is already linked to another participant")
         _link([key], participant, job)
         return key
+
+
+class ParticipantKeyMappingConflict(ParticipantKeyError):
+    """Mapping rows put a key on a participant other than the one it already has (or another row gives it).
+    `rows` are 1-based row numbers; the message never carries values."""
+
+    def __init__(self, rows: list[int]):
+        self.rows = rows
+        super().__init__("a key on row " + ", ".join(map(str, rows)) + " is already linked to a different participant")
+
+
+@dataclass(frozen=True)
+class MappingOutcome:
+    created: int
+    linked: int
+    unchanged: int
+    keys: list[ParticipantKey]
+
+
+def link_keys_from_mapping(
+    project, mappings: list[tuple[str, str, StudyParticipant]], *, job=None
+) -> MappingOutcome:
+    """Links each (key_type, value, participant) of a `participant_key_link` Job, creating missing keys
+    already linked (a mapping may precede the images). All-or-nothing: a key linked to a different
+    participant, or given two participants by the mapping itself, raises `ParticipantKeyMappingConflict`
+    listing every offending row and nothing is written. Same participant is a no-op. Never re-points."""
+    with transaction.atomic():
+        wanted: dict[tuple[str, str], StudyParticipant] = {}
+        conflicts = []
+        for row, (key_type, value, participant) in enumerate(mappings, start=1):
+            value = value.strip()
+            existing = _find_key(project, key_type, value)
+            current = wanted.get((key_type, value)) or (existing.study_participant if existing else None)
+            if current is not None and current.pk != participant.pk:
+                conflicts.append(row)
+            wanted.setdefault((key_type, value), participant)
+        if conflicts:
+            raise ParticipantKeyMappingConflict(conflicts)
+
+        created = linked = unchanged = 0
+        keys = []
+        for (key_type, value), participant in wanted.items():
+            key = _find_key(project, key_type, value)
+            if key is None:
+                key = ParticipantKey.objects.create(
+                    project=project, key_type=key_type, value=value, first_seen_job=job)
+                _link([key], participant, job, LINK_VIA_DATATYPE)
+                created += 1
+            elif key.study_participant_id is None:
+                _link([key], participant, job, LINK_VIA_DATATYPE)
+                linked += 1
+            else:
+                unchanged += 1
+            keys.append(key)
+        # Rows repeating a key are unchanged too: count them so the summary adds up to the row count.
+        unchanged += len(mappings) - len(wanted)
+        return MappingOutcome(created=created, linked=linked, unchanged=unchanged, keys=keys)
+
+
+def _find_key(project, key_type: str, value: str) -> ParticipantKey | None:
+    return ParticipantKey.objects.select_related("study_participant").filter(
+        project=project, key_type=key_type, value_hash=get_deterministic_hash(value)).first()

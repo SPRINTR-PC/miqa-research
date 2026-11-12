@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CSV → participant key link config",
+  "type": "object",
+  "properties": {
+    "key_type": {"type": "string", "minLength": 1, "title": "Key type", "description": "Which identifier the key column holds: an allow-listed DICOM tag as dicom:<tag> (PatientID, OtherPatientIDs, PatientName, IssuerOfPatientID, AccessionNumber, StudyID). Default: dicom:PatientID."},
+    "delimiter": {"type": "string", "minLength": 1, "maxLength": 1, "title": "Delimiter", "description": "CSV field delimiter. Default: \",\"."},
+    "encoding": {"type": "string", "minLength": 1, "title": "Encoding", "description": "File encoding. Default: utf-8-sig."},
+    "fill_demographics": {"type": "boolean", "title": "Fill demographics", "description": "Fill a participant's blank date of birth and sex from the stored original DICOM headers. Never overwrites. Default: off."},
+    "columns": {
+      "type": "object", "title": "Columns",
+      "description": "Header names, e.g. {\"key_value\": \"Pseudonym\"}. Each row needs a key and exactly one of alias1 or person_source_value.",
+      "properties": {
+        "key_value": {"type": "string"},
+        "alias1": {"type": "string"},
+        "person_source_value": {"type": "string"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

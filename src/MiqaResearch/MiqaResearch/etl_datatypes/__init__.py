@@ -1,6 +1,7 @@
 from . import (
     measurement,  # noqa: F401  -- import triggers @register_datatype("measurement")
     participant_consent,  # noqa: F401  -- import triggers @register_datatype("participant_consent")
+    participant_key_link,  # noqa: F401  -- import triggers @register_loader("participant_key_link")
     visit_occurrence,  # noqa: F401  -- import triggers @register_datatype("visit_occurrence")
 )
 from .exceptions import (

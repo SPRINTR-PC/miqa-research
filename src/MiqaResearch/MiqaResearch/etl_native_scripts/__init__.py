@@ -32,6 +32,16 @@ NATIVE_SCRIPTS: tuple[NativeScript, ...] = (
         ),
     ),
     NativeScript(
+        name="CSV → participant key link",
+        datatype_name="participant_key_link",
+        filename="csv_participant_key_link.py",
+        description=(
+            "Reads a mapping CSV and produces one participant_key_link row per line: a key (by default "
+            "a DICOM PatientID pseudonym) and the Study Participant it belongs to, by alias1 or "
+            "person_source_value. Config: key type, delimiter, encoding, column names, fill_demographics."
+        ),
+    ),
+    NativeScript(
         name="DICOM files → dicom_instance",
         datatype_name="dicom_instance",
         filename="dicom_instance.py",
