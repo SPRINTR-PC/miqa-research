@@ -421,6 +421,23 @@ def test_blinding_does_not_apply_to_an_unlinked_study(client, project, ct, tmp_p
 
 
 @pytest.mark.django_db
+def test_client_blinding_filter_keeps_an_unlinked_studys_derived_series(project, ct, tmp_path):
+    """ADR 0035 (#415): machine clients lose blinded derived series of linked Studies only; an unlinked one stays."""
+    from MiqaResearch.data.models import DicomFile
+    from MiqaResearch.readers.blinding import files_visible_under_blinding_for_client
+
+    ingested = _ingested_seg(project, tmp_path)
+    _blind(project)
+    assert not files_visible_under_blinding_for_client(DicomFile.objects.filter(pk=ingested.pk)).exists()
+
+    key = ingested.series.study.participant_key
+    key.study_participant = None
+    key.save(update_fields=["study_participant"])
+
+    assert files_visible_under_blinding_for_client(DicomFile.objects.filter(pk=ingested.pk)).exists()
+
+
+@pytest.mark.django_db
 def test_session_wado_serves_everyones_work_without_the_flag(client, project, ct):
     others = _save(client, _member(project), _sr_for(ct), [ct.series]).json()
     client.force_login(_member(project))

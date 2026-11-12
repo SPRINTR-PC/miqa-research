@@ -12,23 +12,34 @@ from uuid import UUID
 
 from asgiref.sync import sync_to_async
 from ninja import Router, Schema
-from ninja.errors import HttpError
 from ninja.pagination import paginate
 from ninja.security import SessionAuth
+from pydantic import field_validator
 
-from contract.constants.audit_log import EVENT_TYPE_PID_VIEW
-from contract.constants.participant_key import REVEAL_REASON_CHOICES
-from MiqaResearch.actions.participant_key_admin import link_key, repoint_key, unlink_key
+from contract.constants.participant_key import MAX_REASON_LENGTH
+from MiqaResearch.actions.participant_key_admin import (
+    link_key,
+    open_key_table,
+    repoint_key,
+    tracking_project,
+    unlink_key,
+)
 from MiqaResearch.actions.viewer_exceptions import ViewerActionError
-from MiqaResearch.data.models import AuditLog, ParticipantKey, ResearchProject, ResearchProjectUserRoleMap
+from MiqaResearch.data.models import ParticipantKey
 from MiqaResearch.interfaces.http.api.pagination import DataTablePagination
 from MiqaResearch.interfaces.http.api.views.viewer.errors import ErrorOut, http_error
-from MiqaResearch.readers.participant_keys import key_table_source, search_participants
-from MiqaResearch.readers.participant_visibility import can_open_unlinked
+from MiqaResearch.readers.participant_keys import search_participants
 
 router = Router(auth=SessionAuth(), tags=["participant-keys"])
 
-_REVEAL_REASONS = {value for value, _ in REVEAL_REASON_CHOICES}
+
+def _checked_reason(value: str) -> str:
+    value = value.strip()
+    if not value:
+        raise ValueError("a reason is required")
+    if len(value) > MAX_REASON_LENGTH:
+        raise ValueError(f"the reason may be at most {MAX_REASON_LENGTH} characters")
+    return value
 
 
 class ParticipantRef(Schema):
@@ -44,9 +55,13 @@ class LinkIn(ParticipantRef):
 class RepointIn(ParticipantRef):
     reason: str
 
+    _check_reason = field_validator("reason")(_checked_reason)
+
 
 class UnlinkIn(Schema):
     reason: str
+
+    _check_reason = field_validator("reason")(_checked_reason)
 
 
 class KeyOut(Schema):
@@ -74,39 +89,24 @@ def _key_out(key: ParticipantKey) -> dict:
     }
 
 
-def _tracking_project(user, project_id: UUID) -> ResearchProject:
-    """The project, if `user` may use the tracking view (Admin, Data Manager, superuser): 404 without any role
-    on it, 403 with a lower role."""
-    project = ResearchProject.objects.filter(pk=project_id).first()
-    if project is None:
-        raise HttpError(404, "Not Found")
-    if not (user.is_superuser or ResearchProjectUserRoleMap.objects.filter(user=user, project=project).exists()):
-        raise HttpError(404, "Not Found")
-    if not can_open_unlinked(user, project):
-        raise HttpError(403, "only a project Admin or Data Manager may use Participant Keys")
-    return project
-
-
 @router.get("/projects/{project_id}/keys", response=list[dict[str, Any]], url_name="participant_key_table")
 @paginate(DataTablePagination)
 async def key_table(request, project_id: UUID, reveal: bool = False, reason: str | None = None):
     user = await request.auser()
-    project = await sync_to_async(_tracking_project)(user, project_id)
-    if reveal and reason not in _REVEAL_REASONS:
-        raise HttpError(400, "a valid reason is required to reveal key values")
-    source = key_table_source(user, project, reveal=reveal)
-    if reveal:
-        await sync_to_async(AuditLog.objects.record)(
-            EVENT_TYPE_PID_VIEW, user=user, request=request, project=project,
-            metadata={"project_id": str(project.pk), "purpose": "participant_key_table", "reason": reason})
-    return source
+    try:
+        return await sync_to_async(open_key_table)(user, project_id, reveal=reveal, reason=reason, request=request)
+    except ViewerActionError as error:
+        raise http_error(error) from None
 
 
 @router.get(
     "/projects/{project_id}/participant-search", response=list[ParticipantHit],
     url_name="participant_key_participant_search")
 def participant_search(request, project_id: UUID, q: str):
-    project = _tracking_project(request.auth, project_id)
+    try:
+        project = tracking_project(request.auth, project_id)
+    except ViewerActionError as error:
+        raise http_error(error) from None
     return search_participants(request.auth, project, q)
 
 
@@ -122,9 +122,9 @@ def link(request, key_id: UUID, payload: LinkIn):
     except ViewerActionError as error:
         raise http_error(error) from None
     return {
-        **_key_out(result["key"]), "changed": result["changed"],
-        "demographics_filled": result["demographics"]["filled"],
-        "demographics_mismatched": result["demographics"]["mismatched"],
+        **_key_out(result.key), "changed": result.changed,
+        "demographics_filled": result.demographics.filled,
+        "demographics_mismatched": result.demographics.mismatched,
     }
 
 

@@ -16,8 +16,6 @@ from pydicom.tag import Tag
 
 DIRECTORY_SOP_CLASS = "1.2.840.10008.1.3.10"
 _PREAMBLE_LENGTH = 128
-_MAX_SEQUENCE_DEPTH = 8
-_SKIPPED_KEYWORDS = frozenset({"PixelData"})
 
 _STANDARD_IMAGE_SOP_CLASSES = frozenset({
     "1.2.840.10008.5.1.4.1.1.1.1", "1.2.840.10008.5.1.4.1.1.1.1.1", "1.2.840.10008.5.1.4.1.1.2",
@@ -103,7 +101,6 @@ def _row(path: Path, source_path: str, identifier_tags) -> dict:
         "number_of_frames": _int(ds.get("NumberOfFrames")),
         **geometry,
         "identifiers": _identifiers(ds, identifier_tags),
-        "tags": _header_dump(ds),
         "payload": payload,
     }
 
@@ -250,34 +247,6 @@ def _identifiers(ds: Dataset, identifier_tags) -> dict[str, str]:
         if text:
             result[name] = text
     return result
-
-
-def _header_dump(ds: Dataset) -> dict:
-    dump = {}
-    file_meta = getattr(ds, "file_meta", None)
-    for element in [*(file_meta or []), *ds]:
-        key = _element_key(element)
-        if key not in _SKIPPED_KEYWORDS:
-            dump[key] = _json_safe(element.value, 0)
-    return dump
-
-
-def _element_key(element) -> str:
-    return element.keyword or f"{element.tag.group:04X},{element.tag.element:04X}"
-
-
-def _json_safe(value, depth: int):
-    if depth >= _MAX_SEQUENCE_DEPTH:
-        return str(value)
-    if isinstance(value, Dataset):
-        return {_element_key(e): _json_safe(e.value, depth + 1) for e in value}
-    if isinstance(value, bytes):
-        return value.hex()
-    if isinstance(value, (bool, int, float, str)):
-        return value
-    if isinstance(value, collections.abc.Sequence):
-        return [_json_safe(item, depth + 1) for item in value]
-    return str(value)
 
 
 # --- RDSR -----------------------------------------------------------------------------------

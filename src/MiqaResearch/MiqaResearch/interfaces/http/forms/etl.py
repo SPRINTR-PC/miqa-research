@@ -258,6 +258,8 @@ class EtlBindingEditForm(forms.Form):
         self.config_version_id = config_version_id or self._selected_script_version_id()
         if not self.is_bound and "raw_retention" not in self.initial:
             default = self.raw_retention_defaults.get(self.config_version_id)
+            # Not preselected when it is Delete and the user cannot choose Delete (non-Admin): the field's own
+            # initial applies instead. Deliberate: see test_datatype_delete_default_is_not_preselected.
             if default and not (default == PIPELINE_BINDING_RAW_RETENTION_DELETE and self.delete_locked):
                 self.fields["raw_retention"].initial = default
         schema = (config_schemas or {}).get(self.config_version_id)

@@ -92,8 +92,7 @@ def test_ct_image_row_has_raw_uids_header_and_geometry(run):
     assert row["frame_of_reference_uid"] == "1.2.9999.42.1.1004"
     assert row["contains_burned_in_annotations"] is False
     assert row["payload"] == {"kind": "image"}
-    assert "PixelData" not in row["tags"]
-    assert row["tags"]["KVP"] == 120.0
+    assert "tags" not in row  # no raw header dump leaves the sandbox
 
 
 def test_study_datetime_falls_back_through_series_acquisition_content(run):
@@ -233,7 +232,6 @@ def test_unknown_sop_class_is_generic_never_rejected(run):
     row = _one(run, build_generic_dataset())
 
     assert row["payload"] == {"kind": "generic"}
-    assert row["tags"]["XRayTubeCurrent"] == 2.5
     assert row["image_orientation_patient"] is None
 
 

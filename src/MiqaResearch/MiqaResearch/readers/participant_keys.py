@@ -13,7 +13,7 @@ from django.db.models import (
 from django.utils.translation import gettext
 
 from contract.constants.research_project_role import PROJECT_ROLE_ADMIN
-from MiqaResearch.data.models import ParticipantKey, ResearchProjectUserRoleMap
+from MiqaResearch.data.models import ParticipantKey, ResearchProject, ResearchProjectUserRoleMap
 from MiqaResearch.data.serializers.data_table_definition import (
     DataTableColumn,
     DataTableDefinition,
@@ -39,6 +39,23 @@ def is_project_admin(user, project) -> bool:
     if user.is_superuser:
         return True
     return ResearchProjectUserRoleMap.objects.filter(user=user, project=project, role__name=PROJECT_ROLE_ADMIN).exists()
+
+
+def has_project_role(user, project) -> bool:
+    """Superuser or any role on `project`."""
+    return bool(user.is_superuser or ResearchProjectUserRoleMap.objects.filter(user=user, project=project).exists())
+
+
+def project_with_role(user, project_id) -> ResearchProject | None:
+    """The project, or None when it is unknown or `user` has no role on it (never told apart)."""
+    project = ResearchProject.objects.filter(pk=project_id).first()
+    return project if project is not None and has_project_role(user, project) else None
+
+
+def key_with_role(user, key_id) -> ParticipantKey | None:
+    """The key (with its project), or None when unknown or `user` has no role on its project."""
+    key = ParticipantKey.objects.select_related("project").filter(pk=key_id).first()
+    return key if key is not None and has_project_role(user, key.project) else None
 
 
 def keys_visible_to(user, project) -> QuerySet[ParticipantKey]:

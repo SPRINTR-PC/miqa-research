@@ -36,3 +36,7 @@ REVEAL_REASON_CHOICES = [
     ("data_quality_check", "Data quality check"),
     ("participant_request", "Participant request"),
 ]
+REVEAL_REASONS = frozenset(value for value, _ in REVEAL_REASON_CHOICES)
+
+# Re-point and unlink need a reason, at most this long (audit metadata).
+MAX_REASON_LENGTH = 500

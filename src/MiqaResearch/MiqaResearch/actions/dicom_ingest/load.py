@@ -13,11 +13,10 @@ caller's single transaction:
 Blobs written are deleted if anything fails; blobs replaced in update mode are discarded `on_commit`.
 Failures raise `EtlLoadError` (no PHI in messages).
 """
-import hashlib
-import io
 import logging
 from collections import Counter
 from datetime import UTC
+from enum import Enum
 
 import pydicom
 from django.conf import settings
@@ -41,6 +40,13 @@ from .pseudonymize import pseudonymize_model
 logger = logging.getLogger(__name__)
 
 DUPLICATE_HANDLING_INHERIT = "inherit"
+
+
+class _Outcome(Enum):
+    CREATED = "created"
+    UPDATED = "updated"
+    IDENTICAL = "identical"  # same bytes already stored: a no-op
+    KEPT = "kept"  # differing duplicate in skip mode: the input stays in the source
 
 
 class _Config:
@@ -69,7 +75,8 @@ def load_dicom_instances(*, project, etl_job, rows: list[DicomInstanceRowSchema]
         if isinstance(exc, ParticipantKeyError | ValueError):
             raise EtlLoadError(f"Participant Key resolution failed: {exc}") from exc
         if isinstance(exc, Exception):
-            logger.exception("dicom_instance load failed for Job %s", etl_job.id)
+            # type name only: pydicom error text can quote header values (PHI)
+            logger.error("dicom_instance load failed for Job %s (%s)", etl_job.id, type(exc).__name__)
             raise EtlLoadError(f"DICOM load failed ({type(exc).__name__}); nothing was stored.") from exc
         raise
 
@@ -106,9 +113,9 @@ def _load(project, etl_job, rows, inputs, written):
     identical = 0
     for row in ok_rows:
         outcome = _load_file(project, etl_job, row, inputs, config, study_keys[row.study_instance_uid], written)
-        if outcome == "created" or outcome == "updated":
-            counts[outcome] += 1
-        elif outcome == "identical":
+        if outcome in (_Outcome.CREATED, _Outcome.UPDATED):
+            counts[outcome.value] += 1
+        elif outcome is _Outcome.IDENTICAL:
             identical += 1
         else:  # kept: differing duplicate in skip mode
             counts["skipped"] += 1
@@ -151,19 +158,19 @@ def _consistent_with_stored_study(key, study_pseudonym: str):
     raise EtlLoadError("A Study is already stored under a different Participant Key.")
 
 
-def _read_original(inputs, row) -> tuple[bytes, str]:
-    record = inputs.record(row.source_path)
-    with inputs.open(row.source_path) as handle:
-        data = handle.read()
-    sha256 = hashlib.sha256(data).hexdigest()
+def _hash_original(handle, record) -> tuple[str, int]:
+    """(sha256, size) of the staged original, hashed in chunks; must equal the runner-stamped sha256."""
+    sha256, size = storage_stage.sha256_of_stream(handle)
     if sha256 != record.sha256:
         raise EtlLoadError("An input changed after it was staged (sha256 mismatch).")
-    return data, sha256
+    return sha256, size
 
 
-def _parse_matching(data: bytes, row):
+def _parse_matching(handle, row):
+    """Header only (pixel data is never read), so memory stays bounded by the non-pixel header size."""
+    handle.seek(0)
     try:
-        ds = pydicom.dcmread(io.BytesIO(data), force=True, stop_before_pixels=True)
+        ds = pydicom.dcmread(handle, force=True, stop_before_pixels=True)
     except Exception as exc:
         raise EtlLoadError("An input listed as DICOM could not be parsed.") from exc
     for keyword, expected in (
@@ -214,12 +221,13 @@ def _extracted(row, ds, project, etl_job, participant_key) -> dict:
     }
 
 
-def _set_frame_index(dcm_file: DicomFile, data: bytes) -> None:
+def _set_frame_index(dcm_file: DicomFile, handle) -> None:
     try:
-        index = frame_index.build_frame_index(io.BytesIO(data))
-    except Exception:
+        index = frame_index.build_frame_index(handle)
+    except Exception as exc:
         # never fail a load over the index: it is rebuilt on first /frames request or by the backfill
-        logger.exception("Could not build the frame offset index for %s", dcm_file.sop_instance_uid)
+        logger.warning(
+            "Could not build the frame offset index for %s (%s)", dcm_file.sop_instance_uid, type(exc).__name__)
         return
     dcm_file.transfer_syntax_uid = index.transfer_syntax_uid or None
     dcm_file.frame_index = index.frames
@@ -229,7 +237,7 @@ def _stored_sha256(dcm_file: DicomFile) -> str:
     if dcm_file.content_sha256:
         return dcm_file.content_sha256
     with dcm_file.file.storage.open(dcm_file.file.name, "rb") as stored:
-        return hashlib.sha256(stored.read()).hexdigest()
+        return storage_stage.sha256_of_stream(stored)[0]
 
 
 def _verify(dcm_file: DicomFile, sha256: str) -> None:
@@ -237,40 +245,45 @@ def _verify(dcm_file: DicomFile, sha256: str) -> None:
         raise EtlLoadError("A stored blob did not read back identically (sha256 mismatch).")
 
 
-def _load_file(project, etl_job, row, inputs, config, participant_key, written) -> str:
-    """Returns "created", "updated", "identical" or "kept"."""
+def _load_file(project, etl_job, row, inputs, config, participant_key, written) -> _Outcome:
     _assert_plausible_pixels(row)
-    data, sha256 = _read_original(inputs, row)
-    ds = _parse_matching(data, row)
+    record = inputs.record(row.source_path)
+    with inputs.open(row.source_path) as handle:  # streamed throughout: a multi-GB original is never in memory
+        sha256, size = _hash_original(handle, record)
+        return _load_opened(project, etl_job, row, handle, sha256, size, config, participant_key, written)
+
+
+def _load_opened(project, etl_job, row, handle, sha256, size, config, participant_key, written) -> _Outcome:
+    ds = _parse_matching(handle, row)
     pseudonyms = {
         "study": pseudonymize_uid(row.study_instance_uid, project),
         "series": pseudonymize_uid(row.series_instance_uid, project),
         "sop": pseudonymize_uid(row.sop_instance_uid, project),
     }
-    size_mb = len(data) / (1024 * 1024)
+    size_mb = size / (1024 * 1024)
 
     existing = DicomFile.objects.select_related("series__study__participant_key__study_participant") \
         .filter(sop_instance_uid=pseudonyms["sop"]).first()
     if existing is not None:
         if sha256 == _stored_sha256(existing):
-            return "identical"
+            return _Outcome.IDENTICAL
         if not config.update_duplicates:
-            return "kept"
+            return _Outcome.KEPT
         extracted = _extracted(row, ds, project, etl_job, existing.series.study.participant_key)
-        superseded = storage_stage.replace_file_bytes(existing, data)
+        superseded = storage_stage.replace_file_bytes(existing, handle)
         written.append(existing.file.name)
-        _set_frame_index(existing, data)
+        _set_frame_index(existing, handle)
         records.update_file_in_place(existing, extracted, size_mb, sha256)
         records.fill_study_series_blanks(existing.series, extracted)
         transaction.on_commit(lambda: storage_stage.discard_file(existing, superseded))
         _verify(existing, sha256)
-        return "updated"
+        return _Outcome.UPDATED
 
     extracted = _extracted(row, ds, project, etl_job, participant_key)
     dcm_file = records.build_hierarchy(participant_key, project, pseudonyms, extracted, size_mb)
     dcm_file.content_sha256 = sha256
-    _set_frame_index(dcm_file, data)
-    storage_stage.store_file_bytes(dcm_file, data)
+    _set_frame_index(dcm_file, handle)
+    storage_stage.store_file_bytes(dcm_file, handle)
     written.append(dcm_file.file.name)
     dcm_file.save()
     records.add_file_size_to_series(dcm_file.series, size_mb)
@@ -278,7 +291,7 @@ def _load_file(project, etl_job, row, inputs, config, participant_key, written) 
     derived_provenance.record_ingested_provenance(dcm_file, ds, project)
     _link_referencing_derived_objects(dcm_file.series)
     _verify(dcm_file, sha256)
-    return "created"
+    return _Outcome.CREATED
 
 
 def _link_referencing_derived_objects(series) -> None:

@@ -6,6 +6,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -28,7 +29,7 @@ from MiqaResearch.data.models import (
     StudyParticipant,
 )
 from MiqaResearch.etl_datatypes import EtlLoadError, JobInputs, get_datatype, load_jsonl
-from MiqaResearch.etl_datatypes.exceptions import UnrecordedInput
+from MiqaResearch.etl_datatypes.exceptions import EtlRowError, UnrecordedInput
 from MiqaResearch.etl_datatypes.loader import _parse_rows
 from MiqaResearch.etl_native_scripts import native_script_path
 from mires_etl import contract
@@ -162,16 +163,23 @@ def test_study_datetime_falls_back_to_job_started_at_when_the_script_found_none(
     assert study.study_datetime is not None
 
 
-def test_script_supplied_tag_dump_is_ignored_and_metadata_is_rebuilt_from_bytes(ingest):
+def test_script_supplied_tag_dump_is_rejected_and_nothing_is_stored(ingest, settings):
+    """The row schema has no raw-header-dump field (PHI), so a script cannot smuggle one into the metadata."""
     def poison(rows):
         for row in rows:
             row["tags"] = {"PatientName": "LEAKY^NAME", "Poison": "POISON"}
         return rows
 
-    ingest({"a.dcm": build_ct_image()}, rows_hook=poison)
+    with pytest.raises(EtlRowError):
+        ingest({"a.dcm": build_ct_image()}, rows_hook=poison)
+    assert DicomFile.objects.count() == 0
+    assert _blobs(settings) == []
+
+
+def test_stored_metadata_is_rebuilt_from_the_bytes_and_carries_no_phi(ingest):
+    ingest({"a.dcm": build_ct_image()})
     dumped = json.dumps(DicomFile.objects.get().metadata)
-    assert "POISON" not in dumped
-    assert "LEAKY" not in dumped
+    assert "DOE" not in dumped
     assert "SOPClassUID" in dumped
 
 
@@ -183,6 +191,43 @@ def test_identifier_tags_outside_the_allow_list_are_ignored(ingest):
 
     ingest({"a.dcm": build_ct_image()}, rows_hook=widen)
     assert list(ParticipantKey.objects.values_list("key_type", flat=True)) == ["dicom:PatientID"]
+
+
+def test_loader_memory_stays_bounded_for_a_large_original(ingest, settings, tmp_path):
+    """#406/#414: one big original is hashed, stored and read back in chunks, never held whole in memory."""
+    import tracemalloc
+
+    size_mib = 128
+    ds = build_ct_image()
+    ds.Rows = ds.Columns = 8192
+    ds.SamplesPerPixel, ds.PhotometricInterpretation = 1, "MONOCHROME2"
+    ds.BitsAllocated, ds.BitsStored, ds.HighBit, ds.PixelRepresentation = 16, 16, 15, 0
+    ds.PixelData = bytes(8192 * 8192 * 2)
+    big = write_dicom(ds, tmp_path / "big.dcm")
+    del ds
+    assert big.stat().st_size >= size_mib * 1024 * 1024
+    digest = hashlib.sha256()
+    with big.open("rb") as handle:
+        while chunk := handle.read(1024 * 1024):
+            digest.update(chunk)
+    big_bytes = big.read_bytes()  # the fixture writes dict values as-is
+    big.unlink()
+    peaks = []
+
+    def start_tracing(rows):  # runs after the script, right before the loader
+        tracemalloc.start()
+        return rows
+
+    try:
+        result = ingest({"big.dcm": big_bytes}, rows_hook=start_tracing, sha_override={"big.dcm": digest.hexdigest()})
+        peaks.append(tracemalloc.get_traced_memory()[1])
+    finally:
+        tracemalloc.stop()
+
+    assert result.created == 1
+    assert peaks[0] < 32 * 1024 * 1024, f"loader peaked at {peaks[0] / 1024 ** 2:.0f} MiB for a {size_mib} MiB file"
+    stored = _blobs(settings)[0]
+    assert hashlib.sha256(stored.read_bytes()).hexdigest() == digest.hexdigest()
 
 
 def test_inputs_open_refuses_unrecorded_paths(ingest):
@@ -330,6 +375,48 @@ def test_database_error_after_the_blob_is_written_leaves_nothing(ingest, setting
     _assert_nothing_left(settings)
 
 
+def test_an_unexpected_error_logs_only_its_type_never_its_text(ingest, monkeypatch, caplog):
+    """pydicom errors can quote header values (PHI): only the exception type name may reach the log."""
+    def boom(series, size):
+        raise RuntimeError("Invalid PatientName DOE^JOHN")
+
+    monkeypatch.setattr(records, "add_file_size_to_series", boom)
+    with caplog.at_level("DEBUG"), pytest.raises(EtlLoadError):
+        ingest(_two_files())
+    assert "DOE" not in caplog.text
+    assert "RuntimeError" in caplog.text
+
+
+def test_failure_after_the_loader_returns_rolls_back_rows_and_leaves_only_sweepable_orphan_blobs(
+        ingest, settings, monkeypatch):
+    """A failure at the driver's final commit (e.g. a deferred constraint) happens after `load_dicom_instances`
+    returned, so it cannot delete its blobs: the rows roll back, the blobs stay until the orphan sweep (#420,
+    which exists for exactly this: "a crash before rollback") reports and later deletes them."""
+    from datetime import timedelta
+
+    from django.db import DatabaseError
+    from django.utils import timezone
+
+    from MiqaResearch.actions.dicom_ingest.orphan_sweep import sweep_orphans
+    from MiqaResearch.etl_datatypes import loader as driver
+
+    real = driver.get_datatype("dicom_instance")
+
+    def failing_at_commit(**kwargs):
+        real.loader(**kwargs)
+        raise DatabaseError("deferred constraint failed at commit")
+
+    monkeypatch.setattr(
+        driver, "get_datatype", lambda name: SimpleNamespace(schema=real.schema, loader=failing_at_commit))
+    with pytest.raises(DatabaseError):
+        ingest(_two_files())
+    assert (DicomFile.objects.count(), DicomSeries.objects.count(), DicomStudy.objects.count()) == (0, 0, 0)
+    assert len(_blobs(settings)) == 2
+
+    swept = sweep_orphans(delete=False, notify=False, record=False, now=timezone.now() + timedelta(days=365))
+    assert swept.reportable == 2
+
+
 # --- RT chain across Jobs ---
 
 def _provenance_sources():
@@ -351,6 +438,16 @@ def test_rt_chain_links_whichever_order_the_jobs_arrive_in(ingest, order):
     assert summary["referenced_series_instance_uids"] == [ct_series.series_instance_uid]
     assert summary["referenced_image_sop_instance_uids"] == [DicomFile.objects.get(series=ct_series).sop_instance_uid]
     assert _provenance_sources() == {ct_series.series_instance_uid}
+
+
+def test_rt_chain_never_crosses_between_different_unlinked_keys(ingest):
+    """ADR 0035 (#415): an unlinked Study's derived object takes sources only from its own Participant Key."""
+    ingest({"image.dcm": build_ct_image(patient_id="PATIENT-A")})
+    ingest({"rtstruct.dcm": build_rtstruct(patient_id="PATIENT-B")})
+
+    assert ParticipantKey.objects.filter(study_participant__isnull=True).count() == 2
+    assert DerivedObjectProvenance.objects.count() == 1
+    assert _provenance_sources() == set()
 
 
 # --- payload summaries land in the stored metadata with pseudonymized UIDs (ports #121, #124 layer B) ---
