@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('data', '0044_etl_storage_vault_credentials'),
+        ('data', '0045_dicom_orphan_sweep_audit_event'),
     ]
 
     operations = [
