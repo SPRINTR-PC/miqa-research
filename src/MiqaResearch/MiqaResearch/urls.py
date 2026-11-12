@@ -46,7 +46,7 @@ from MiqaResearch.interfaces.http.views.accounts.eid import (
 from MiqaResearch.interfaces.http.views.accounts.login import LoginView
 from MiqaResearch.interfaces.http.views.accounts.logout import LogoutView
 from MiqaResearch.interfaces.http.views.viewer.dev import dev as viewer_dev
-from MiqaResearch.interfaces.http.views.viewer.page import viewer_page
+from MiqaResearch.interfaces.http.views.viewer.page import unlinked_viewer_page, viewer_page
 
 urlpatterns = [
     path('', landing_page_index, name='home'),
@@ -90,6 +90,8 @@ urlpatterns = [
     path('manuals/', include('documentation.urls')),
     path('monitor/', monitor_index, name='monitor'),
     path('projects/<uuid:project_id>/participants/<uuid:participant_id>/viewer/', viewer_page, name='viewer_page'),
+    path('projects/<uuid:project_id>/unlinked-imaging/<uuid:key_id>/viewer/', unlinked_viewer_page,
+         name='unlinked_viewer_page'),
     path('viewer/dev/', viewer_dev, name='viewer_dev'),  # DEBUG-only, for the browser harness (#278, #279)
     path('accounts/bankid/login/', bankid_login_redirect, name='bankid_login'),
     path('accounts/eid/callback/', eid_callback, name='eid_callback'),

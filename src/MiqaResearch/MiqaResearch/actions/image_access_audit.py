@@ -69,17 +69,22 @@ def audit_viewer_series_open(request, user, dicom_files) -> None:
     ], ignore_conflicts=True)
 
 
-def audit_viewer_open(request, participant, series_uids: list[str], viewer_session: str) -> None:
+def audit_viewer_open(request, opened, viewer_session: str) -> None:
+    """One entry per page load; `opened` is the `ViewerOpen`. An unlinked open (#416) has no participant:
+    the project comes from the Participant Key, which the entry names."""
+    series_uids = opened.opened_uids
+    participant, key = opened.participant, opened.participant_key
     AuditLog.objects.create(
         event_type=EVENT_TYPE_VIEWER_OPEN,
         user=request.user,
         ip_address=get_client_ip(request),
         session_key=getattr(getattr(request, "session", None), "session_key", None),
-        project_id=participant.research_project_id,
+        project_id=opened.project_id,
         metadata={
             "viewer_session": viewer_session,
             "series_uids": series_uids,
-            "participant_ids": [str(participant.pk)],
+            "participant_ids": [str(participant.pk)] if participant else [],
+            **({"participant_key_id": str(key.pk)} if key else {}),
             "fused": len(series_uids) > 1,
         },
     )
