@@ -1,4 +1,5 @@
 from . import (
+    dicom_instance,  # noqa: F401  -- import triggers @register_schema("dicom_instance")
     measurement,  # noqa: F401  -- import triggers @register_schema("measurement")
     participant_consent,  # noqa: F401  -- import triggers @register_schema("participant_consent")
     visit_occurrence,  # noqa: F401  -- import triggers @register_schema("visit_occurrence")
