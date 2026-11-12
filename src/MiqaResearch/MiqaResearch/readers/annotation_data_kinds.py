@@ -46,7 +46,8 @@ def series_of_data_kind(data_kind: str, series: QuerySet[DicomSeries] | None = N
 
 
 def data_kind_totals(data_kind: str, series: QuerySet[DicomSeries] | None = None) -> DataKindTotals:
-    """Count and size of `data_kind` among `series`, e.g. `DicomSeries.objects.filter(study__study_participant=p)`."""
+    """Count and size of `data_kind` among `series`, e.g.
+    `DicomSeries.objects.filter(study__participant_key__study_participant=p)`."""
     of_kind = series_of_data_kind(data_kind, series)
     size = of_kind.aggregate(total=Sum("file_size_in_mb"))["total"] or 0.0
     counted = of_kind

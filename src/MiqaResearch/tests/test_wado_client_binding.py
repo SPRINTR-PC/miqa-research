@@ -51,7 +51,8 @@ def world(db, tmp_path):
     assert report.counts["ingested"] == 1, report.results
     dicom_file = DicomFile.objects.get(sop_instance_uid=report.results[0].sop_instance_uid)
     ParticipantConsent.objects.create(
-        study_participant=dicom_file.series.study.study_participant, status="Signerat", clinic=sites["A"],
+        study_participant=dicom_file.series.study.participant_key.study_participant, status="Signerat",
+        clinic=sites["A"],
         consent_type=consent_type, consent_signed_date=datetime(2026, 1, 1, 9, 0, tzinfo=UTC),
     )
     return {"project": project, "sites": sites, "file": dicom_file}

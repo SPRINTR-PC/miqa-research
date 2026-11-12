@@ -57,7 +57,7 @@ def viewer_open(user, project_id, participant_id, requested_uids: list[str]) -> 
     if participant is None or not can_see_participant(user, project_id, participant):
         raise ViewerOpenNotFound()
     requested = list(dict.fromkeys(uid for uid in requested_uids if uid))
-    rows = _rows(DicomSeries.objects.filter(study__study_participant=participant))
+    rows = _rows(DicomSeries.objects.filter(study__participant_key__study_participant=participant))
     if not requested or any(uid not in rows for uid in requested):
         raise ViewerOpenNotFound()
     return _open(user, participant, rows, requested, list(rows))
@@ -68,13 +68,15 @@ def dev_viewer_open(user, open_uids: list[str], related_uids: list[str]) -> View
     whatever project, is left out (the dev page names series of any participant). The participant is the
     first opened series'."""
     visible = DicomSeries.objects.filter(
-        Exists(visible_participants_in_any_project(user).filter(pk=OuterRef("study__study_participant")))
+        Exists(visible_participants_in_any_project(user).filter(pk=OuterRef("study__participant_key__study_participant")))
     )
     rows = _rows(visible.filter(series_instance_uid__in=[*open_uids, *related_uids]))
     opened = list(dict.fromkeys(uid for uid in open_uids if uid in rows))
     if not opened:
         return ViewerOpen(participant=None, series=[], can_annotate=False)
-    participant = StudyParticipant.objects.get(dicomstudy__dicomseries__series_instance_uid=opened[0])
+    participant = StudyParticipant.objects.get(
+        participant_keys__dicomstudy__dicomseries__series_instance_uid=opened[0]
+    )
     return _open(user, participant, rows, opened, [uid for uid in related_uids if uid in rows])
 
 

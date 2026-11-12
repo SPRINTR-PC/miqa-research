@@ -49,6 +49,21 @@ def test_backfill_replaces_legacy_dumps_with_the_profile_dump(research_project, 
     assert result == {"updated": 1, "unchanged": 0, "errors": 0}
 
 
+def test_backfill_tolerates_an_unlinked_study(research_project, tmp_path):
+    """ADR 0035 (#415): an unlinked Study is re-sanitized under a key-derived pseudonym, never the PatientID."""
+    dcm_file = _ingest(research_project, tmp_path, build_ct_image(), "ct.dcm")
+    key = dcm_file.series.study.participant_key
+    key.study_participant = None
+    key.save(update_fields=["study_participant"])
+    DicomFile.objects.filter(pk=dcm_file.pk).update(metadata=LEGACY_DUMP)
+
+    result = resanitize_dicom_metadata.call()
+
+    dcm_file.refresh_from_db()
+    assert result == {"updated": 1, "unchanged": 0, "errors": 0}
+    assert dcm_file.metadata["PatientName"].startswith("UNLINKED-")
+
+
 def test_backfill_is_idempotent(research_project, tmp_path):
     _ingest(research_project, tmp_path, build_ct_image(), "ct.dcm")
     DicomFile.objects.update(metadata=LEGACY_DUMP)

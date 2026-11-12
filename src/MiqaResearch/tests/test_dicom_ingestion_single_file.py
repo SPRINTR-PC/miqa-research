@@ -50,7 +50,7 @@ def test_ingestion_creates_linked_record_hierarchy_for_new_participant(research_
     assert DicomSeries.objects.count() == 1
     assert DicomFile.objects.count() == 1
     dcm_file = DicomFile.objects.get()
-    assert dcm_file.series.study.study_participant == participant
+    assert dcm_file.series.study.participant_key.study_participant == participant
     assert dcm_file.research_project == research_project
     # Study datetime comes from the file's StudyDate/StudyTime tags
     assert dcm_file.series.study.study_datetime == datetime(2024, 3, 15, 10, 15, 0, 123456, tzinfo=UTC)
@@ -91,7 +91,7 @@ def test_pseudonyms_deterministic_within_project_and_distinct_across_projects(db
 
     report_a = run_ingestion(project_a, src)
     assert report_a.counts["ingested"] == 1
-    file_a = DicomFile.objects.get(series__study__study_participant__research_project=project_a)
+    file_a = DicomFile.objects.get(series__study__participant_key__project=project_a)
     # Second file with the same source UIDs in the same project -> same pseudonyms
     same_study_src = build_ct_image(sop_instance_uid="1.2.9999.42.1.1099")
     src2 = write_dicom(same_study_src, tmp_path / "ct2.dcm")
@@ -103,7 +103,7 @@ def test_pseudonyms_deterministic_within_project_and_distinct_across_projects(db
 
     # Same source file in another project -> different pseudonyms
     report_b = run_ingestion(project_b, src)
-    file_b = DicomFile.objects.get(series__study__study_participant__research_project=project_b)
+    file_b = DicomFile.objects.get(series__study__participant_key__project=project_b)
     assert report_b.counts["ingested"] == 1
     assert file_b.sop_instance_uid != file_a.sop_instance_uid
     assert file_b.series.study.study_instance_uid != file_a.series.study.study_instance_uid
@@ -286,7 +286,7 @@ def test_reingest_for_existing_participant_never_overwrites_demographics(researc
     assert existing.day_of_birth == 5
     assert existing.gender == "M"
     # The new study hangs off the pre-existing participant
-    assert DicomStudy.objects.get().study_participant == existing
+    assert DicomStudy.objects.get().participant_key.study_participant == existing
 
 
 def test_file_stored_locally_and_retrievable_via_wado_rs(research_project, tmp_path, settings, client):

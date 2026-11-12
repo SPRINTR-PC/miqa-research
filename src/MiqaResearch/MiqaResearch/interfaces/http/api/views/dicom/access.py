@@ -20,7 +20,7 @@ their own Annotation/Segmentation series (plus revealed participants), clients n
 from dataclasses import dataclass
 from functools import wraps
 
-from django.db.models import Exists, OuterRef, QuerySet
+from django.db.models import Exists, OuterRef, Q, QuerySet
 from django.http import HttpResponse
 
 from contract.constants.scopes import SCOPE_DICOM_RAW
@@ -34,6 +34,7 @@ from MiqaResearch.readers.blinding import (
 )
 from MiqaResearch.readers.participant_visibility import (
     participants_visible_to_client,
+    projects_with_unlinked_access,
     visible_participants_in_any_project,
 )
 
@@ -61,20 +62,30 @@ def caller_of(request) -> SessionCaller | ClientCaller:
 
 def readable_files(request, files: QuerySet[DicomFile]) -> QuerySet[DicomFile]:
     """`files` narrowed to what the caller may read (visibility and blinding); adds no query of its own."""
-    match caller_of(request):
+    caller = caller_of(request)
+    match caller:
         case SessionCaller(user):
             visible = visible_participants_in_any_project(user)
             files = files_visible_under_blinding_for_user(user, viewer_reveals(request), files)
         case ClientCaller(application):
             visible = participants_visible_to_client(application)
             files = files_visible_under_blinding_for_client(files)
-    return files.filter(Exists(visible.filter(pk=OuterRef("series__study__study_participant"))))
+    allowed = Exists(visible.filter(pk=OuterRef("series__study__participant_key__study_participant")))
+    if isinstance(caller, SessionCaller):
+        # unlinked Studies (ADR 0035): project Admins and Data Managers only
+        allowed |= Q(series__study__participant_key__study_participant__isnull=True) & Exists(
+            projects_with_unlinked_access(caller.user).filter(pk=OuterRef("series__study__participant_key__project"))
+        )
+    return files.filter(allowed)
 
 
 def readable_dicom_files(request, *related: str) -> QuerySet[DicomFile]:
-    """Every DicomFile the caller may read, with what the audit needs (`series__study__study_participant`)
+    """Every DicomFile the caller may read, with what the audit needs (`series__study__participant_key`)
     plus `related` loaded."""
-    return readable_files(request, DicomFile.objects.select_related("series__study__study_participant", *related))
+    return readable_files(
+        request,
+        DicomFile.objects.select_related("series__study__participant_key__study_participant", *related),
+    )
 
 
 def audited_files(request, files: QuerySet[DicomFile], *, series_open: bool = False) -> list[DicomFile]:

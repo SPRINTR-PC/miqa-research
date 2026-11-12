@@ -15,6 +15,7 @@ from ninja import Router
 
 from helpers.dicom_deidentification import deidentify
 from MiqaResearch.data.models.dicom_file import DicomFile
+from MiqaResearch.readers.participant_keys import participant_alias_of
 
 from .access import audited_files, not_for_sessions, readable_dicom_files
 from .caching import METADATA_CACHE_CONTROL, matches_if_none_match, not_modified, strong_etag, with_cache_headers
@@ -57,7 +58,7 @@ def retrieve_instance_metadata(request, study_instance_uid: str, series_instance
 
 def _files(request):
     return readable_dicom_files(
-        request, "research_project", "series__study__study_participant__research_project"
+        request, "research_project", "series__study__participant_key__project"
     ).order_by("series_id", "pk")
 
 
@@ -75,11 +76,11 @@ def _metadata_response(request, dicom_files, *, series_open: bool = False):
 
 def sanitized_instance_json(dicom_file: DicomFile) -> dict:
     """DICOM JSON (PS3.18 F.2) of one stored instance's de-identified header."""
-    participant = dicom_file.series.study.study_participant
-    research_project = dicom_file.research_project or participant.research_project
+    key = dicom_file.series.study.participant_key
+    research_project = dicom_file.research_project or key.project
     header = _stored_header(dicom_file)
     sanitized = deidentify(
-        header, research_project=research_project, participant_alias=participant.alias1,
+        header, research_project=research_project, participant_alias=participant_alias_of(key),
         # viewer-saved Annotations/Segmentations (#287) are stored with pseudonymized UIDs already
         uids_already_pseudonymized=dicom_file.uids_pseudonymized,
     )

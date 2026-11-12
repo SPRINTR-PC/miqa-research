@@ -29,9 +29,14 @@ def record_ingested_provenance(dcm_file: DicomFile, dataset: Dataset, research_p
     referenced.discard(series.series_instance_uid)
     if not referenced:
         return
-    sources = DicomSeries.objects.filter(
-        series_instance_uid__in=referenced, study__study_participant_id=series.study.study_participant_id
+    key = series.study.participant_key
+    # one participant's studies, or (unlinked) just the same key's
+    same_owner = (
+        {"study__participant_key__study_participant_id": key.study_participant_id}
+        if key.study_participant_id
+        else {"study__participant_key_id": key.pk}
     )
+    sources = DicomSeries.objects.filter(series_instance_uid__in=referenced, **same_owner)
     provenance.source_series.add(*sources)
 
 

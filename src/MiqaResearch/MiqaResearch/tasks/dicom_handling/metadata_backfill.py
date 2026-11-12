@@ -15,6 +15,7 @@ from django.tasks import task
 
 from contract.constants.celery import QUEUE_DICOM_INGESTION
 from MiqaResearch.data.models import DicomFile
+from MiqaResearch.readers.participant_keys import participant_alias_of
 
 from . import dicom_parsing, extractors
 
@@ -27,7 +28,11 @@ _CHUNK_SIZE = 200
 def resanitize_dicom_metadata() -> dict:
     counts = {"updated": 0, "unchanged": 0, "errors": 0}
     files = (
-        DicomFile.objects.select_related("research_project", "series__study__study_participant__research_project")
+        DicomFile.objects.select_related(
+            "research_project",
+            "series__study__participant_key__study_participant",
+            "series__study__participant_key__project",
+        )
         .exclude(file="")
         # viewer-saved objects (#287) were stored already de-identified with pseudonymized UIDs
         .exclude(uids_pseudonymized=True)
@@ -49,8 +54,8 @@ def resanitize_dicom_metadata() -> dict:
 
 
 def _rebuild_metadata(dcm_file: DicomFile) -> dict:
-    participant = dcm_file.series.study.study_participant
-    research_project = dcm_file.research_project or participant.research_project
+    key = dcm_file.series.study.participant_key
+    research_project = dcm_file.research_project or key.project
     with dcm_file.file.storage.open(dcm_file.file.name, "rb") as stored:
         dataset = dicom_parsing.parse_dicom(stored.read())
-    return extractors.extract(dataset, research_project, participant.alias1)["metadata"]
+    return extractors.extract(dataset, research_project, participant_alias_of(key))["metadata"]
