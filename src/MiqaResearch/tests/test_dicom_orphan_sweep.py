@@ -214,7 +214,8 @@ def test_row_that_appears_just_before_a_delete_saves_the_blob(blobs, db, monkeyp
 
 
 def test_failed_delete_is_counted_and_does_not_stop_the_run(blobs, db, monkeypatch):
-    a, b = blobs.put(30 * H), blobs.put(30 * H)
+    a = blobs.put(30 * H)
+    blobs.put(30 * H)
     _run(now=NOW - 2 * H)
     real_delete = DicomStorage.delete
 
