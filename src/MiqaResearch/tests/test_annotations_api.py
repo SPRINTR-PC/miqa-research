@@ -230,6 +230,13 @@ def test_save_on_an_unlinked_study_is_refused_until_linked(client, project, ct):
     assert not DicomSeries.objects.filter(modality="SR").exists()
 
 
+def test_segmentation_save_on_an_unlinked_study_is_refused_too(client, project, ct):
+    _unlink(ct)
+
+    assert _save(client, _member(project, PROJECT_ROLE_ADMIN), _seg_for(ct), [ct.series]).status_code == 403
+    assert not DicomSeries.objects.filter(modality="SEG").exists()
+
+
 def test_upload_that_is_not_sr_or_seg_is_rejected(client, project, ct):
     response = _save(client, _member(project), build_ct_image(), [ct.series])
 

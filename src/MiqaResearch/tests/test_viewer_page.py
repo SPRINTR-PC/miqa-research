@@ -12,7 +12,12 @@ import pytest
 from django.contrib.auth import get_user_model
 
 from contract.constants.audit_log import DATA_ACCESS_EVENT_TYPES, EVENT_TYPE_VIEWER_OPEN
-from contract.constants.research_project_role import PROJECT_ROLE_ANNOTATOR, PROJECT_ROLE_INVESTIGATOR
+from contract.constants.research_project_role import (
+    PROJECT_ROLE_ADMIN,
+    PROJECT_ROLE_ANNOTATOR,
+    PROJECT_ROLE_DATA_MANAGER,
+    PROJECT_ROLE_INVESTIGATOR,
+)
 from MiqaResearch.data.models import (
     AuditLog,
     Clinic,
@@ -264,3 +269,88 @@ def test_viewer_url_opens_the_series_in_order(client, project, ct, tmp_path):
 
     rows = _series_list(client.get(url))
     assert [(r["series"], r["open"]) for r in rows] == [(pet.series_instance_uid, True), (ct.series_instance_uid, True)]
+
+
+# --- unlinked imaging (ADR 0035, #416) ---
+
+
+def _unlink(series: DicomSeries):
+    key = series.study.participant_key
+    key.study_participant = None
+    key.save(update_fields=["study_participant"])
+    return key
+
+
+def _open_unlinked(client, key, *uids: str, project_id=None):
+    url = f"/projects/{project_id or key.project_id}/unlinked-imaging/{key.pk}/viewer/"
+    return client.get(url, {"series": list(uids)})
+
+
+def _other_patient(project, tmp_path) -> DicomSeries:
+    return _ingest(project, tmp_path, "else", patient_id="OTHER-1", patient_name="Other^Patient",
+                   study_instance_uid="1.2.9999.43.1.1001", series_instance_uid="1.2.9999.43.1.1002",
+                   sop_instance_uid="1.2.9999.43.1.1003")
+
+
+@pytest.mark.parametrize("role_name", [PROJECT_ROLE_ADMIN, PROJECT_ROLE_DATA_MANAGER])
+def test_admin_and_data_manager_open_unlinked_imaging_and_it_is_audited_with_the_project(
+    client, project, ct, tmp_path, role_name
+):
+    other = _other_patient(project, tmp_path)
+    sibling = _ingest(project, tmp_path, "sib", series_instance_uid="1.2.9999.42.1.2002",
+                      sop_instance_uid="1.2.9999.42.1.2003", modality="PT")
+    key = _unlink(ct)
+    assert sibling.study.participant_key_id == key.pk
+    user = _member(client, project, role_name)
+
+    response = _open_unlinked(client, key, ct.series_instance_uid)
+
+    assert response.status_code == 200
+    listed = _series_list(response)
+    assert [(r["series"], r["open"]) for r in listed] == [
+        (ct.series_instance_uid, True), (sibling.series_instance_uid, False)
+    ]
+    assert other.series_instance_uid not in [r["series"] for r in listed]
+    page = response.content.decode()
+    assert "can-annotate" not in page
+    assert 'participant="' not in page
+    entry = AuditLog.objects.get(event_type=EVENT_TYPE_VIEWER_OPEN)
+    assert entry.user == user
+    assert entry.project_id == project.pk
+    assert entry.metadata["series_uids"] == [ct.series_instance_uid]
+    assert entry.metadata["participant_ids"] == []
+    assert entry.metadata["participant_key_id"] == str(key.pk)
+
+
+@pytest.mark.parametrize("role_name", [PROJECT_ROLE_ANNOTATOR, PROJECT_ROLE_INVESTIGATOR])
+def test_other_roles_get_nothing_on_unlinked_imaging(client, project, ct, role_name):
+    key = _unlink(ct)
+    _member(client, project, role_name)
+
+    assert _open_unlinked(client, key, ct.series_instance_uid).status_code == 404
+    assert not AuditLog.objects.filter(event_type=EVENT_TYPE_VIEWER_OPEN).exists()
+
+
+def test_anonymous_and_admin_of_another_project_get_nothing_on_unlinked_imaging(client, project, ct):
+    key = _unlink(ct)
+    assert _open_unlinked(client, key, ct.series_instance_uid).status_code == 302
+    _member(client, ResearchProject.objects.create(name="Elsewhere", description="#416"), PROJECT_ROLE_ADMIN)
+
+    assert _open_unlinked(client, key, ct.series_instance_uid).status_code == 404
+    assert _open_unlinked(client, key, ct.series_instance_uid, project_id=uuid4()).status_code == 404
+
+
+def test_a_linked_key_is_not_opened_as_unlinked_imaging(client, project, ct):
+    _member(client, project, PROJECT_ROLE_ADMIN)
+
+    assert _open_unlinked(client, ct.study.participant_key, ct.series_instance_uid).status_code == 404
+
+
+def test_unlinked_open_needs_requested_series_of_that_key(client, project, ct, tmp_path):
+    other = _other_patient(project, tmp_path)
+    key = _unlink(ct)
+    _member(client, project, PROJECT_ROLE_DATA_MANAGER)
+
+    assert _open_unlinked(client, key, other.series_instance_uid).status_code == 404
+    assert _open_unlinked(client, key, "2.25.404").status_code == 404
+    assert _open_unlinked(client, key).status_code == 404
