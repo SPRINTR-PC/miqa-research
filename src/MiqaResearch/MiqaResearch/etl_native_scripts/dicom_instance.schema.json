@@ -17,6 +17,10 @@
         }
       },
       "additionalProperties": false
+    },
+    "duplicate_handling": {
+      "type": "string", "enum": ["inherit", "skip", "update"], "title": "Duplicate handling",
+      "description": "A file whose SOP Instance is already stored with different content: inherit the project's setting, skip (leave the file in the source) or update (replace the stored file). Default: inherit."
     }
   },
   "additionalProperties": false

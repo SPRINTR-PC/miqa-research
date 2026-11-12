@@ -350,3 +350,24 @@ def test_a_job_not_recorded_as_succeeded_never_has_its_source_touched(
     assert job_input.source_status == ETL_JOB_INPUT_SOURCE_STATUS_PENDING
     assert _all_keys(s3_client, "incoming") == ["redcap/a.csv"]
     assert _all_keys(s3_client, "raw") == []
+
+
+def test_an_input_kept_in_source_is_left_alone_even_under_delete_retention(location_grants, job, s3_client):
+    """#418: a file the loader did not store must survive "delete" Raw Retention."""
+    from MiqaResearch.etl_datatypes import JobInputs, LoadResult
+    from MiqaResearch.tasks.etl_orchestrator.runner import _record_load_outcome
+
+    job.raw_retention = "delete"
+    job.save()
+    s3_client.put_object(Bucket="incoming", Key="redcap/a.csv", Body=b"data")
+    job_input = _job_input(job)
+    inputs = JobInputs.from_staged([("a.csv", job_input, None)])
+
+    _record_load_outcome(job, inputs, LoadResult(created=0, updated=0, skipped=1, kept_inputs=("a.csv",),
+                                                 log_lines=("1 input(s) skipped",)))
+    raw_bucket_mover.move_job_inputs(job)
+
+    job_input.refresh_from_db()
+    assert job_input.source_status == "kept_in_source"
+    assert s3_client.get_object(Bucket="incoming", Key="redcap/a.csv")["Body"].read() == b"data"
+    assert "[loader] 1 input(s) skipped" in job.log

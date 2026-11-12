@@ -24,13 +24,14 @@ from django.conf import settings
 from django.utils import timezone
 
 from contract.constants.etl import (
+    ETL_JOB_INPUT_SOURCE_STATUS_KEPT_IN_SOURCE,
     ETL_JOB_STATUS_FAILED,
     ETL_JOB_STATUS_PENDING,
     ETL_JOB_STATUS_RUNNING,
     ETL_JOB_STATUS_SUCCEEDED,
 )
 from MiqaResearch.data.models import EtlJob
-from MiqaResearch.etl_datatypes import EtlDatatypeError, load_jsonl
+from MiqaResearch.etl_datatypes import EtlDatatypeError, JobInputs, load_jsonl
 from MiqaResearch.etl_sandbox import (
     SandboxInputTooLarge,
     SandboxRunSpec,
@@ -124,7 +125,10 @@ def _run_in_scratch(job: EtlJob, scratch: Path) -> EtlJob:
         job.refresh_from_db()
         return job
 
-    return _finalize(job, result)
+    inputs = JobInputs.from_staged(
+        (staged_input.relative_path, job_input, staged_input.local_path)
+        for job_input, staged_input in zip(job_inputs, staged, strict=True))
+    return _finalize(job, result, inputs)
 
 
 def _make_scratch_dir() -> Path:
@@ -143,7 +147,7 @@ def _input_path(scratch: Path, relative: str) -> Path:
     return path
 
 
-def _finalize(job: EtlJob, result) -> EtlJob:
+def _finalize(job: EtlJob, result, inputs: JobInputs | None = None) -> EtlJob:
     job.finished_at = timezone.now()
     job.log = _cap_log(result.log)
     job.sandbox_image_digest = result.image_digest[:200]
@@ -151,12 +155,13 @@ def _finalize(job: EtlJob, result) -> EtlJob:
 
     if result.exit_code == contract.EXIT_SUCCESS:
         try:
-            _load_result(job, result.result_jsonl)
+            load_result = _load_result(job, result.result_jsonl, inputs)
         except EtlDatatypeError as exc:
             job.status = ETL_JOB_STATUS_FAILED
             job.log = (job.log + f"\n[orchestrator] loader rejected the result: {exc}").strip()
         else:
             job.status = ETL_JOB_STATUS_SUCCEEDED
+            _record_load_outcome(job, inputs, load_result)
     else:
         # Exit 1 (script error), 2 (contract violation), 3 (timeout/killed): all script-class,
         # none auto-retry (#156's spec text groups them explicitly under "manual retry").
@@ -170,14 +175,27 @@ def _finalize(job: EtlJob, result) -> EtlJob:
     return job
 
 
-def _load_result(job: EtlJob, result_jsonl: bytes | None) -> None:
+def _load_result(job: EtlJob, result_jsonl: bytes | None, inputs: JobInputs | None):
     if not result_jsonl:
         raise EtlDatatypeError("sandbox reported success (exit 0) but wrote no result.jsonl")
     text = result_jsonl.decode("utf-8")
     body = "\n".join(text.splitlines()[1:])  # drop the header line: {"datatype": "<name>"}
-    load_jsonl(
+    kwargs = {"inputs": inputs} if inputs is not None else {}
+    return load_jsonl(
         datatype_name=job.script_version.script.datatype_name,
-        project=job.binding.project, etl_job=job, jsonl_text=body)
+        project=job.binding.project, etl_job=job, jsonl_text=body, **kwargs)
+
+
+def _record_load_outcome(job: EtlJob, inputs: JobInputs | None, load_result) -> None:
+    """#402: inputs the loader left in the source are marked so the raw-bucket mover ignores them, and
+    the loader's log lines join the Job log."""
+    if load_result.log_lines:
+        job.log = (job.log + "\n" + "\n".join(f"[loader] {line}" for line in load_result.log_lines)).strip()
+    if inputs is not None:
+        for relative in load_result.kept_inputs:
+            job_input = inputs.record(relative)
+            job_input.source_status = ETL_JOB_INPUT_SOURCE_STATUS_KEPT_IN_SOURCE
+            job_input.save(update_fields=["source_status"])
 
 
 def _enqueue_raw_bucket_move(job: EtlJob) -> None:

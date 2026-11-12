@@ -20,6 +20,10 @@ from .exceptions import DatatypeAlreadyRegistered, DatatypeNotRegistered
 class LoadResult:
     created: int
     updated: int
+    skipped: int = 0
+    # Relative paths of inputs the loader did not store: they stay in the source (#402).
+    kept_inputs: tuple[str, ...] = ()
+    log_lines: tuple[str, ...] = ()
 
     @property
     def total(self) -> int:
@@ -34,16 +38,21 @@ class DatatypeRegistration:
     name: str
     schema: type[BaseModel]
     loader: LoaderFunc
+    default_raw_retention: str | None = None
 
 
 _LOADERS: dict[str, LoaderFunc] = {}
+_DEFAULT_RAW_RETENTION: dict[str, str] = {}
 
 
-def register_loader(name: str) -> Callable[[LoaderFunc], LoaderFunc]:
+def register_loader(name: str, *, default_raw_retention: str | None = None) -> Callable[[LoaderFunc], LoaderFunc]:
+    """`default_raw_retention` ("move" | "delete"): what the Binding wizard preselects for this Datatype."""
     def decorator(loader: LoaderFunc) -> LoaderFunc:
         if name in _LOADERS:
             raise DatatypeAlreadyRegistered(f"A Datatype named {name!r} is already registered.")
         _LOADERS[name] = loader
+        if default_raw_retention:
+            _DEFAULT_RAW_RETENTION[name] = default_raw_retention
         return loader
     return decorator
 
@@ -57,7 +66,8 @@ def get_datatype(name: str) -> DatatypeRegistration:
         loader = _LOADERS[name]
     except KeyError:
         raise DatatypeNotRegistered(f"Datatype {name!r} has a schema but no loader.") from None
-    return DatatypeRegistration(name=name, schema=schema, loader=loader)
+    return DatatypeRegistration(
+        name=name, schema=schema, loader=loader, default_raw_retention=_DEFAULT_RAW_RETENTION.get(name))
 
 
 def registered_datatype_names() -> list[str]:

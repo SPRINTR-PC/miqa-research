@@ -12,17 +12,21 @@ from pydantic import BaseModel, ValidationError
 from MiqaResearch.data.models import EtlJob, ResearchProject
 
 from .exceptions import EtlJobProjectMismatch, EtlRowError
+from .inputs import NO_INPUTS, JobInputs
 from .registry import LoadResult, get_datatype
 
 
-def load_jsonl(*, datatype_name: str, project: ResearchProject, etl_job: EtlJob, jsonl_text: str) -> LoadResult:
+def load_jsonl(
+    *, datatype_name: str, project: ResearchProject, etl_job: EtlJob, jsonl_text: str,
+    inputs: JobInputs = NO_INPUTS,
+) -> LoadResult:
     if etl_job.binding.project_id != project.id:
         raise EtlJobProjectMismatch(f"EtlJob {etl_job.id} belongs to a different project than {project}.")
 
     registration = get_datatype(datatype_name)
     rows = _parse_rows(registration.schema, jsonl_text)
     with transaction.atomic():
-        return registration.loader(project=project, etl_job=etl_job, rows=rows)
+        return registration.loader(project=project, etl_job=etl_job, rows=rows, inputs=inputs)
 
 
 def _parse_rows(schema: type[BaseModel], jsonl_text: str) -> list[BaseModel]:

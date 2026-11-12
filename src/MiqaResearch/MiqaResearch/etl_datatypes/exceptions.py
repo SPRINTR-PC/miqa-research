@@ -24,3 +24,11 @@ class AmbiguousParticipantReference(EtlRowError):
 
 class UnresolvableParticipantReference(EtlRowError):
     """A row's Participant Reference matched no Study Participant in the project."""
+
+
+class EtlLoadError(EtlDatatypeError):
+    """The loader failed for the whole Job (storage, verification, database); everything was rolled back."""
+
+
+class UnrecordedInput(EtlDatatypeError):
+    """A loader asked the `inputs` reader for a path that is not one of the Job's recorded inputs."""

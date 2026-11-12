@@ -18,8 +18,7 @@ def test_importing_mires_etl_pulls_in_no_django_or_celery():
 
 
 def test_every_schema_has_a_loader_and_every_loader_a_schema():
-    # dicom_instance's loader lands with its own ticket (spec #411); drop the exemption then.
-    assert set(schema_names()) - {"dicom_instance"} == loader_names()
+    assert set(schema_names()) == loader_names()
 
 
 def test_existing_datatypes_validate_via_mires_etl_schemas():

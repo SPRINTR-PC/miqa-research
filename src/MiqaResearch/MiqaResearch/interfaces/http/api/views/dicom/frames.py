@@ -2,12 +2,12 @@
 
 Frames are served in the stored transfer syntax, never transcoded: one ranged
 read per frame via the DicomFile's frame offset index
-(tasks/dicom_handling/frame_index.py), no server-side frame cache. Each part
+(actions/dicom_ingest/frame_index.py), no server-side frame cache. Each part
 carries the syntax's media type plus ``transfer-syntax=<uid>``; an Accept that
 can't be satisfied gets 406.
 
 Rows ingested before the index existed are covered by the backfill task
-(`tasks/dicom_handling/frame_index_backfill.backfill_frame_indexes`, enqueue it
+(`actions/dicom_ingest/frame_index_backfill.backfill_frame_indexes`, enqueue it
 once after deploy). Until it reaches a row, the first /frames request for it
 reads the whole file once and stores the index (`_ensure_frame_index`): a
 deliberate safety net (#271 review), so a not-yet-backfilled row is slow once
@@ -20,8 +20,8 @@ from django.shortcuts import get_object_or_404
 from ninja import Router
 from pydicom.uid import UID
 
+from MiqaResearch.actions.dicom_ingest.frame_index import build_frame_index, frame_bytes
 from MiqaResearch.data.models.dicom_file import DicomFile
-from MiqaResearch.tasks.dicom_handling.frame_index import build_frame_index, frame_bytes
 
 from .access import audit_access, readable_dicom_files
 from .caching import FRAMES_CACHE_CONTROL, matches_if_none_match, not_modified, strong_etag, with_cache_headers

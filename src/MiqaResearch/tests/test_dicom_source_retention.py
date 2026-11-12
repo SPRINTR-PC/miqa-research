@@ -14,7 +14,7 @@ import pytest
 from moto import mock_aws
 
 from MiqaResearch.data.models import DicomFile, ResearchProject
-from MiqaResearch.tasks.dicom_handling import storage as storage_stage
+from MiqaResearch.actions.dicom_ingest import storage as storage_stage
 from MiqaResearch.tasks.dicom_handling.pipeline import run_ingestion
 from tests.dicom_fixtures import build_ct_image, write_dicom
 

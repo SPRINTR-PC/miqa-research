@@ -32,7 +32,7 @@ from pydicom.dataset import Dataset
 
 from MiqaResearch.data.models import DicomFile, ResearchProject
 from MiqaResearch.tasks.dicom_handling import discovery, pixel_bounds
-from MiqaResearch.tasks.dicom_handling import records as records_stage
+from MiqaResearch.actions.dicom_ingest import records as records_stage
 from MiqaResearch.tasks.dicom_handling.discovery import SourceNotAllowedError
 from MiqaResearch.tasks.dicom_handling.pipeline import run_ingestion
 from tests.dicom_fixtures import build_ct_image, build_wsi, write_dicom
