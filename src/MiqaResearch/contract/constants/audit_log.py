@@ -87,7 +87,7 @@ EVENT_TYPE_CHOICES = [
     (EVENT_TYPE_PARTICIPANT_KEY_LINKED, "Participant Key linked"),
     (EVENT_TYPE_PARTICIPANT_KEY_REPOINTED, "Participant Key re-pointed"),
     (EVENT_TYPE_PARTICIPANT_KEY_UNLINKED, "Participant Key unlinked"),
-    (EVENT_TYPE_PARTICIPANT_KEY_DEMOGRAPHICS_FILLED, "Participant demographics filled from DICOM"),
+    (EVENT_TYPE_PARTICIPANT_KEY_DEMOGRAPHICS_FILLED, "Participant demographics filled from a Participant Key"),
 ]
 
 # Data-access events (ADR 0024): purged on DATA_ACCESS_AUDIT_RETENTION_DAYS, not AUDIT_LOG_RETENTION_DAYS.
