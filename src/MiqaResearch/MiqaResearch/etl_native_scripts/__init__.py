@@ -31,6 +31,16 @@ NATIVE_SCRIPTS: tuple[NativeScript, ...] = (
             "offered as fields from its config schema."
         ),
     ),
+    NativeScript(
+        name="DICOM files → dicom_instance",
+        datatype_name="dicom_instance",
+        filename="dicom_instance.py",
+        description=(
+            "Reads DICOM headers (never pixels) and produces one dicom_instance row per input file: "
+            "raw UIDs, geometry, identifier tags and a per-SOP-class payload. Non-DICOM files, "
+            "DICOMDIR and directory records are skipped; files missing UIDs fail the Job."
+        ),
+    ),
 )
 
 
