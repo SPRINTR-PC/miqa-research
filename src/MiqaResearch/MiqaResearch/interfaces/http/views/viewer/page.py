@@ -40,7 +40,6 @@ def viewer_page(request, project_id, participant_id):
         opened = viewer_open(request.user, project_id, participant_id, request.GET.getlist("series"))
     except ViewerOpenNotFound:
         raise Http404 from None
-    viewer_session = str(uuid4())
     return _render(request, opened)
 
 
