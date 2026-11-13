@@ -139,6 +139,21 @@ def test_rdsr_totals_and_events(run):
     assert "dose_rp" not in events[1]
 
 
+def test_enhanced_sr_is_parsed_like_an_rdsr(run):
+    from pydicom.uid import EnhancedSRStorage
+
+    ds = build_rdsr()
+    ds.SOPClassUID = EnhancedSRStorage
+    ds.file_meta.MediaStorageSOPClassUID = EnhancedSRStorage
+    assert EnhancedSRStorage == "1.2.840.10008.5.1.4.1.1.88.22"
+    row = _one(run, ds)
+
+    assert row["sop_class_uid"] == EnhancedSRStorage
+    assert row["payload"]["kind"] == "rdsr"
+    assert row["payload"]["totals"]["dose_area_product_total"] == {"value": 12.5, "unit": "Gy.m2"}
+    assert len(row["payload"]["irradiation_events"]) == 2
+
+
 def test_rdsr_has_no_geometry_and_empty_tree_gives_empty_report(run):
     ds = build_rdsr()
     del ds.ContentSequence

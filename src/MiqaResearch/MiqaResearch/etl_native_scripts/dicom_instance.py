@@ -26,7 +26,8 @@ _STANDARD_IMAGE_SOP_CLASSES = frozenset({
     "1.2.840.10008.5.1.4.1.1.12.1", "1.2.840.10008.5.1.4.1.1.12.2", "1.2.840.10008.5.1.4.1.1.20",
     "1.2.840.10008.5.1.4.1.1.128",
 })
-_RDSR = "1.2.840.10008.5.1.4.1.1.88.67"
+# X-Ray Radiation Dose SR and Enhanced SR share the same dose-tree extraction.
+_RDSR_SOP_CLASSES = frozenset({"1.2.840.10008.5.1.4.1.1.88.67", "1.2.840.10008.5.1.4.1.1.88.22"})
 _RTSTRUCT = "1.2.840.10008.5.1.4.1.1.481.3"
 _RTPLAN = "1.2.840.10008.5.1.4.1.1.481.5"
 _RTDOSE = "1.2.840.10008.5.1.4.1.1.481.2"
@@ -137,7 +138,7 @@ def _payload_and_geometry(ds: Dataset, sop_class: str | None):
                 "pixel_spacing": None, "frame_of_reference_uid": None}
     if sop_class in _STANDARD_IMAGE_SOP_CLASSES:
         return {"kind": "image"}, _image_geometry(ds)
-    if sop_class == _RDSR:
+    if sop_class in _RDSR_SOP_CLASSES:
         return _rdsr(ds), geometry
     if sop_class == _RTSTRUCT:
         return _rtstruct(ds), geometry
