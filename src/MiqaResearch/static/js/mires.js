@@ -113,7 +113,9 @@ const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 document.addEventListener('row-action', function(evt) {
   const table = evt.target.closest('[data-row-action-url]');
   if (!table || !window.htmx) return;
-  const url = table.dataset.rowActionUrl.replace(NIL_UUID, encodeURIComponent(evt.detail.value));
+  // A column may have its own URL (`data-row-action-url-<accessor>`); otherwise the table's default applies.
+  const template = table.getAttribute('data-row-action-url-' + evt.detail.accessor) || table.dataset.rowActionUrl;
+  const url = template.replace(NIL_UUID, encodeURIComponent(evt.detail.value));
   htmx.ajax('GET', url, { target: '#app-modal-content', swap: 'innerHTML', source: table });
 });
 

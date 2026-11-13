@@ -1,0 +1,15 @@
+{% load i18n %}{% comment %}Confirmation body of the app modal for permanently deleting an archived Script (superuser only).{% endcomment %}
+<div class="app-modal-body etl-script-modal">
+  <div class="flex items-start justify-between gap-4">
+    <h2 id="app-modal-title" class="text-xl font-semibold">{% translate "Delete script" %}: {{ script.name }}</h2>
+    <button type="button" class="btn icon-btn etl-modal-close" data-modal-close aria-label="{% translate 'Close' %}">{% include 'components/icon.html' with icon_name='x' icon_classes='h-4 w-4' %}</button>
+  </div>
+  <p class="text-sm text-muted-foreground">{% translate "This permanently deletes the archived script, all its versions and their stored code. It can't be undone. Scripts used by a Binding or Job can't be deleted." %}</p>
+  <form method="post" hx-post="{% url 'dashboard_tab_etl_script_delete' project.id script.id %}" hx-target="#etl-section-panel" hx-swap="innerHTML">
+    {% csrf_token %}
+    <div class="modal-actions">
+      <button class="btn btn-destructive" type="submit">{% include 'components/icon.html' with icon_name='trash' icon_classes='h-4 w-4' %}{% translate "Delete permanently" %}</button>
+      <button type="button" class="modal-cancel" data-modal-close>{% translate "Cancel" %}</button>
+    </div>
+  </form>
+</div>

@@ -51,6 +51,9 @@ from .dashboard.etl import (
     etl_script_customize as dashboard_tab_etl_script_customize,
 )
 from .dashboard.etl import (
+    etl_script_delete as dashboard_tab_etl_script_delete,
+)
+from .dashboard.etl import (
     etl_script_edit as dashboard_tab_etl_script_edit,
 )
 from .dashboard.etl import (

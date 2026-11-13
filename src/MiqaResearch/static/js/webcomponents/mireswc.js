@@ -932,6 +932,14 @@ import{_ as e,b as t,c as n,d as r,f as i,g as a,h as o,i as s,l as c,m as l,n a
     button {
       padding: 0.5rem 0.75rem;
     }
+    /* Same look as the app's .btn.btn-destructive (e.g. the delete confirmation modal's button) */
+    button.destructive {
+      background-color: var(--color-destructive, #dc2626);
+      color: var(--color-destructive-foreground, hsl(0, 0%, 98%));
+      border: 1px solid transparent;
+      border-radius: 10px;
+      cursor: pointer;
+    }
   `]}connectedCallback(){super.connectedCallback(),this.initialSort&&this.initialSort.length>0&&(this._sortState=this.initialSort),this.dataUrl&&this._loadData()}updated(e){super.updated(e),e.has(`dataUrl`)&&e.get(`dataUrl`)!==void 0&&(this.dataUrl?(this._refreshColumns=!0,this._sortState=this.initialSort??[],this._filterValues={},this._rangeFilterValues={},this._multiSelectValues={},this._page=1,this._loadData()):(this._rows=void 0,this._columns=void 0,this._hasError=!1,this._pagination=void 0))}async _loadData(){this._isLoading=!0,this._hasError=!1,this._errorDetail=void 0;try{let e=await N.getData(this._buildRequestUrl());if(e.success&&e.data){let{columns:t,pagination:n}=h({columns:e.data.columns,pagination:e.data.pagination});t&&(!this._columns||this._refreshColumns)&&this._sortState.length===0&&(this._sortState=this._defaultSortFrom(t)),this._rows=e.data.rows,this._columns=t??this._columns??this._deriveColumnsFromRows(e.data.rows),this._pagination=n,this._page=n.page}else this._rows=void 0,this._columns=void 0,this._pagination=void 0,this._hasError=!0}catch(e){this._rows=void 0,this._columns=void 0,this._pagination=void 0,this._hasError=!0,this._errorDetail=e instanceof Error?e.message:String(e)}finally{this._refreshColumns=!1,this._isLoading=!1}}_renderErrorMessage(){return this.errorMessage.includes(`{message}`)?this.errorMessage.replace(`{message}`,this._errorDetail??``):this.errorMessage}_renderMiniBarChart(e,t,n=10,r=!0){let i=e.slice(-n),a=Math.max(...i);return v`
       ${r?v`<td class="tooltip-cell">`:``}
         <div class="mini-bar-chart">
@@ -976,6 +984,7 @@ import{_ as e,b as t,c as n,d as r,f as i,g as a,h as o,i as s,l as c,m as l,n a
     `}_renderButtonCell(e,t){let n=this._resolveAccessor(t,e.accessor);return n==null||n===``?v`<td></td>`:v`<td>
       <button
         type="button"
+        class=${e.buttonStyle===`destructive`?`destructive`:``}
         @click=${()=>this.dispatchEvent(new CustomEvent(`row-action`,{detail:{accessor:e.accessor,value:n,row:t},bubbles:!0,composed:!0}))}
       >${e.buttonLabel??e.label}</button>
     </td>`}_formatCellValue(t,n){switch(t.dataType){case`date`:return z(n);case`datetime`:return B(n);default:return n??e}}_renderHeader(e){if(!e.sortable)return e.htmlLabel?v`<th >${M(e.label)}</th>`:v`<th>${e.label}</th>`;let t=this._sortState.findIndex(t=>t.column===e.accessor),n=t>=0?this._sortState[t]:void 0,r=t>=0&&this._sortState.length>1?t+1:void 0,i=n?n.direction===`asc`?`▲ `:`▼ `:`▶ `;return v`<th

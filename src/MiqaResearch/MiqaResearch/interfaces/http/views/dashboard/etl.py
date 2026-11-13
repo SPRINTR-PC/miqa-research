@@ -23,6 +23,7 @@ from MiqaResearch.actions.etl.scripts import (
     create_custom_script,
     create_script_version,
     customize_native_script,
+    delete_archived_script,
     update_custom_script,
 )
 from MiqaResearch.actions.etl.settings import update_etl_project_settings
@@ -227,6 +228,25 @@ async def etl_script_archive(request, project_id, script_id):
     user = await request.auser()
     error = await _attempt(archive_custom_script(project=research_project, user=user, request=request, script=script))
 
+    return await _rerender_section(
+        request, research_project, permissions, ETL_SECTION_SCRIPTS, manage_error=error, close_modal=True)
+
+
+@htmx_login_required
+async def etl_script_delete(request, project_id, script_id):
+    """Superuser only. GET: the confirmation modal. POST: hard-deletes an archived, unused custom Script."""
+    research_project, permissions = await get_user_etl_project_or_404(request, project_id)
+    if not permissions.is_superuser:
+        return HttpResponseForbidden()
+
+    script = await aget_object_or_404(
+        EtlScript, id=script_id, project=research_project, origin=ETL_SCRIPT_ORIGIN_CUSTOM)
+    if request.method != 'POST':
+        return HttpResponse(render_to_string('01_dashboard/_etl_script_delete_modal.html', {
+            'project': research_project, 'script': script}, request=request))
+
+    user = await request.auser()
+    error = await _attempt(delete_archived_script(user=user, request=request, script=script))
     return await _rerender_section(
         request, research_project, permissions, ETL_SECTION_SCRIPTS, manage_error=error, close_modal=True)
 

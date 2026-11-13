@@ -7,6 +7,7 @@ EVENT_TYPE_ETL_SCRIPT_CREATED = "etl_script_created"
 EVENT_TYPE_ETL_SCRIPT_UPDATED = "etl_script_updated"
 EVENT_TYPE_ETL_SCRIPT_VERSION_CREATED = "etl_script_version_created"
 EVENT_TYPE_ETL_SCRIPT_ARCHIVED = "etl_script_archived"
+EVENT_TYPE_ETL_SCRIPT_DELETED = "etl_script_deleted"
 EVENT_TYPE_ETL_BINDING_CREATED = "etl_binding_created"
 EVENT_TYPE_ETL_BINDING_UPDATED = "etl_binding_updated"
 EVENT_TYPE_ETL_SETTINGS_UPDATED = "etl_settings_updated"
@@ -53,6 +54,7 @@ EVENT_TYPE_CHOICES = [
     (EVENT_TYPE_ETL_SCRIPT_UPDATED, "ETL script updated"),
     (EVENT_TYPE_ETL_SCRIPT_VERSION_CREATED, "ETL script version created"),
     (EVENT_TYPE_ETL_SCRIPT_ARCHIVED, "ETL script archived"),
+    (EVENT_TYPE_ETL_SCRIPT_DELETED, "ETL script deleted"),
     (EVENT_TYPE_ETL_BINDING_CREATED, "ETL pipeline binding created"),
     (EVENT_TYPE_ETL_BINDING_UPDATED, "ETL pipeline binding updated"),
     (EVENT_TYPE_ETL_SETTINGS_UPDATED, "ETL project settings updated"),

@@ -13,10 +13,12 @@ from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client
 from django.urls import reverse
+from django.utils import timezone
 
 from contract.constants.audit_log import (
     EVENT_TYPE_ETL_SCRIPT_ARCHIVED,
     EVENT_TYPE_ETL_SCRIPT_CREATED,
+    EVENT_TYPE_ETL_SCRIPT_DELETED,
     EVENT_TYPE_ETL_SCRIPT_UPDATED,
     EVENT_TYPE_ETL_SCRIPT_VERSION_CREATED,
 )
@@ -86,6 +88,10 @@ def _edit_url(project, script):
 
 def _archive_url(project, script):
     return reverse("dashboard_tab_etl_script_archive", args=[project.id, script.id])
+
+
+def _delete_url(project, script):
+    return reverse("dashboard_tab_etl_script_delete", args=[project.id, script.id])
 
 
 def _upload(name=b"print('hi')", filename="script.py"):
@@ -1062,3 +1068,68 @@ def test_help_buttons_are_not_inside_a_label_so_clicking_the_field_or_its_label_
         for popover in ("etl-script-code-help", "etl-config-schema-help"):
             opener = rf'<button[^>]*popovertarget="{popover}"(?![^>]*popovertargetaction)[^>]*>'
             assert len(re.findall(opener, body)) == 1
+
+
+# --- Delete (superuser only, archived and unused) ---------------------------------------------------------------
+
+def _superuser_admin_client(project):
+    user = _user_with_role(project, "Admin")
+    user.is_superuser = True
+    user.save()
+    return _client_as(user)
+
+
+def _archived_script(project):
+    return EtlScript.objects.create(
+        name="Old", origin=ETL_SCRIPT_ORIGIN_CUSTOM, project=project, archived_at=timezone.now())
+
+
+@pytest.mark.django_db
+def test_an_admin_who_is_not_a_superuser_cannot_delete_a_script(project):
+    script = _archived_script(project)
+    client = _client_as(_user_with_role(project, "Admin"))
+
+    get_response = client.get(_delete_url(project, script), **HTMX)
+    post_response = client.post(_delete_url(project, script), {}, **HTMX)
+
+    assert (get_response.status_code, post_response.status_code) == (403, 403)
+    assert EtlScript.objects.filter(pk=script.pk).exists()
+
+
+@pytest.mark.django_db
+def test_a_superuser_confirms_then_deletes_an_archived_script(project):
+    script = _archived_script(project)
+    client = _superuser_admin_client(project)
+
+    confirm = client.get(_delete_url(project, script), **HTMX)
+    response = client.post(_delete_url(project, script), {}, **HTMX)
+
+    assert confirm.status_code == 200
+    assert "Old" in confirm.content.decode()
+    assert response.status_code == 200
+    assert not EtlScript.objects.filter(pk=script.pk).exists()
+    assert AuditLog.objects.filter(event_type=EVENT_TYPE_ETL_SCRIPT_DELETED, project=project).exists()
+
+
+@pytest.mark.django_db
+def test_deleting_an_active_script_is_rejected_with_a_visible_error(project):
+    script = EtlScript.objects.create(name="Live", origin=ETL_SCRIPT_ORIGIN_CUSTOM, project=project)
+    client = _superuser_admin_client(project)
+
+    response = client.post(_delete_url(project, script), {}, **HTMX)
+
+    assert response.status_code == 200
+    assert EtlScript.objects.filter(pk=script.pk).exists()
+    assert "archived" in response.content.decode().lower()
+
+
+@pytest.mark.django_db
+def test_another_projects_script_cannot_be_deleted_through_this_project(project):
+    other = ResearchProject.objects.create(name="Other", description="d")
+    script = _archived_script(other)
+    client = _superuser_admin_client(project)
+
+    response = client.post(_delete_url(project, script), {}, **HTMX)
+
+    assert response.status_code == 404
+    assert EtlScript.objects.filter(pk=script.pk).exists()

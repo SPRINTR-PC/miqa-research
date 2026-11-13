@@ -40,3 +40,7 @@ class EtlLocationConflict(EtlActionError):
 
 class EtlLocationInUse(EtlActionError):
     """A Source Location a Binding uses, or a grant a location or Binding depends on, can't be deleted."""
+
+
+class EtlScriptNotDeletable(EtlActionError):
+    """A Script can't be hard-deleted: it isn't archived, or a Binding or Job still uses one of its Versions."""

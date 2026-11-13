@@ -30,6 +30,7 @@ export interface ColumnDefinition {
   sortable?: boolean;
   dataType?: ColumnDataType;
   hslColor?: HslColor; // for mini-barchart
+  buttonStyle?: "destructive"; // for button: styles the button like the app's destructive buttons
   buttonLabel?: string; // for button: the cell shows a button with this text when the value is set; clicking it dispatches `row-action`
   width?: string;
   defaultSort?: SortDirection;

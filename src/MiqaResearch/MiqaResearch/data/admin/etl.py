@@ -4,7 +4,8 @@ from django.http import HttpResponseRedirect
 from django.urls import reverse
 from unfold.admin import ModelAdmin
 
-from MiqaResearch.actions.etl.exceptions import EtlLocationInUse
+from MiqaResearch.actions.etl.exceptions import EtlLocationInUse, EtlScriptNotDeletable
+from MiqaResearch.actions.etl.scripts import delete_archived_script
 from MiqaResearch.actions.etl.sources import create_location_grant, delete_location_grant
 from MiqaResearch.data.models import (
     EtlJob,
@@ -26,6 +27,28 @@ class EtlScriptAdmin(ModelAdmin):
     list_display = ("name", "origin", "project", "archived_at")
     list_filter = ("origin",)
     search_fields = ("name",)
+
+    def has_delete_permission(self, request, obj=None):
+        return request.user.is_superuser
+
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        actions.pop("delete_selected", None)  # bulk delete would skip the archived/unused check
+        return actions
+
+    def delete_view(self, request, object_id, extra_context=None):
+        if request.method != "POST":
+            return super().delete_view(request, object_id, extra_context)
+        script = self.get_object(request, object_id)
+        if script is None or not self.has_delete_permission(request, script):
+            return super().delete_view(request, object_id, extra_context)
+        try:
+            async_to_sync(delete_archived_script)(user=request.user, request=request, script=script)
+        except EtlScriptNotDeletable as error:
+            self.message_user(request, str(error), messages.ERROR)
+            return HttpResponseRedirect(reverse("admin:data_etlscript_change", args=[object_id]))
+        self.message_user(request, "The Script was deleted.", messages.SUCCESS)
+        return HttpResponseRedirect(reverse("admin:data_etlscript_changelist"))
 
     class Meta:
         model = EtlScript

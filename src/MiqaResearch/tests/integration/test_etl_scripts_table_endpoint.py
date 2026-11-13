@@ -3,6 +3,7 @@ from uuid import uuid4
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
@@ -15,6 +16,8 @@ from contract.constants.research_project_role import (
 )
 from MiqaResearch.data.models import (
     EtlScript,
+    EtlScriptVersion,
+    PipelineBinding,
     ResearchProject,
     ResearchProjectRole,
     ResearchProjectUserRoleMap,
@@ -115,3 +118,42 @@ def test_the_datatype_filter_offers_the_datatypes_in_use_sorted_alphabetically(p
     column = next(column for column in columns if column["accessor"] == "datatype_name")
     assert column["filter"] == {"kind": "dropdown", "options": [
         {"value": "measurement", "label": "measurement"}, {"value": "visit_occurrence", "label": "visit_occurrence"}]}
+
+
+def _superuser_with_role(project):
+    user = _user_with_role(project, PROJECT_ROLE_ADMIN)
+    user.is_superuser = True
+    user.save()
+    return user
+
+
+def _version(script):
+    return EtlScriptVersion.objects.create(
+        script=script, version=1, sha256="0" * 64, source=SimpleUploadedFile("s.py", b"x"))
+
+
+@pytest.mark.django_db
+def test_a_superuser_gets_a_delete_action_for_unused_archived_scripts_only(project):
+    _script(project, "Active")
+    unused = _script(project, "Unused", archived_at=timezone.now())
+    used = _script(project, "Used", archived_at=timezone.now())
+    PipelineBinding.objects.create(
+        project=project, source_bucket="in", source_prefix="", raw_bucket="raw", raw_prefix="",
+        script_version=_version(used))
+
+    body = _get(_superuser_with_role(project), project, sort="name").json()
+
+    assert [(row["name"], row["delete_id"]) for row in body["rows"]] == [
+        ("Active", None), ("Unused", str(unused.id)), ("Used", None)]
+    column = next(column for column in body["columns"] if column["accessor"] == "delete_id")
+    assert (column["data_type"], bool(column["button_label"]), column["button_style"]) == (
+        "button", True, "destructive")
+
+
+@pytest.mark.django_db
+def test_an_admin_who_is_not_a_superuser_gets_no_delete_column(project):
+    _script(project, "Unused", archived_at=timezone.now())
+
+    body = _get(_user_with_role(project, PROJECT_ROLE_ADMIN), project).json()
+
+    assert "delete_id" not in body["rows"][0]

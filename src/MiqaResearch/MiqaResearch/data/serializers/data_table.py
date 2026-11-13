@@ -37,4 +37,5 @@ class DataTableColumnSchema(Schema):
     default_sort_order: int | None = None
     filter: DataTableFilterSchema | None = None
     button_label: str | None = None  # data_type "button": the cell shows a button with this text when the value is set
+    button_style: Literal["destructive"] | None = None  # data_type "button": styles it like a destructive button
 

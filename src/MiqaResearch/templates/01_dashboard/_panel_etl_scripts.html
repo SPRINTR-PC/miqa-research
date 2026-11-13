@@ -9,11 +9,12 @@
 {% endif %}
 
 <div class="rounded-lg border bg-card text-card-foreground shadow-sm">
-  {# `row-action` from the Edit buttons opens the Edit script modal (mires.js); the nil UUID stands in for the row's id #}
+  {# `row-action` from the Edit / Delete buttons opens the Edit script / Delete confirmation modal (mires.js); the nil UUID stands in for the row's id #}
   <data-table
     id="etl-custom-scripts-table"
     dataUrl="{% url 'api-v1:etl_scripts_table' project.id %}"
     data-row-action-url="{% url 'dashboard_tab_etl_script_edit' project.id '00000000-0000-0000-0000-000000000000' %}"
+    data-row-action-url-delete_id="{% url 'dashboard_tab_etl_script_delete' project.id '00000000-0000-0000-0000-000000000000' %}"
     noDataMessage="{% translate 'No scripts registered yet. Create a custom script above, or customize a native script below.' %}"
     loadingMessage="{% translate 'Loading data...' %}"
     striped="true"

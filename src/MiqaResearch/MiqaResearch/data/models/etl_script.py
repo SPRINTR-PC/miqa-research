@@ -55,6 +55,11 @@ class EtlScript(models.Model):
     def delete(self, *args, **kwargs):
         raise ValidationError("EtlScript records are archive-only and cannot be hard-deleted; set archived_at instead.")
 
+    def hard_delete(self):
+        """Bypasses the archive-only guard. Only `actions.etl.scripts.delete_archived_script` may call
+        this, after it has checked the Script is archived and unused."""
+        return super().delete()
+
 
 class EtlScriptVersionQuerySet(models.QuerySet):
     def update(self, **kwargs):

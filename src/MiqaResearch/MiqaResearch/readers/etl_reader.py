@@ -4,7 +4,7 @@ from pathlib import PurePath
 from typing import NamedTuple
 
 from asgiref.sync import sync_to_async
-from django.db.models import Case, Count, F, Q, When
+from django.db.models import Case, Count, Exists, F, OuterRef, Q, When
 from django.utils.translation import gettext
 
 from contract.constants.etl import ETL_SCRIPT_ORIGIN_CUSTOM, ETL_SCRIPT_ORIGIN_NATIVE
@@ -40,10 +40,12 @@ async def get_project_custom_scripts(project: ResearchProject) -> list[EtlScript
     ]
 
 
-async def get_project_custom_scripts_table_source(project: ResearchProject, *, can_edit: bool) -> DataTableSource:
+async def get_project_custom_scripts_table_source(
+        project: ResearchProject, *, can_edit: bool, can_delete: bool = False) -> DataTableSource:
     """The project's custom scripts as a Data Table source. `edit_id` is the script's id while it can be edited (the
     viewer may manage scripts and the script is not archived), else null, so the table shows no Edit button. The
-    Datatype filter offers the datatypes in use, sorted alphabetically."""
+    Datatype filter offers the datatypes in use, sorted alphabetically.
+    `delete_id` (only when `can_delete`) is the id of an archived script no Binding or Job uses, else null."""
     datatype_names = sorted({
         name async for name in
         EtlScript.objects.filter(project=project, origin=ETL_SCRIPT_ORIGIN_CUSTOM)
@@ -62,13 +64,21 @@ async def get_project_custom_scripts_table_source(project: ResearchProject, *, c
     ]
     if can_edit:
         columns.append(DataTableColumn("edit_id", "", "button", button_label=gettext("Edit")))
+    if can_delete:
+        columns.append(DataTableColumn(
+            "delete_id", "", "button", button_label=gettext("Delete"), button_style="destructive"))
     definition = DataTableDefinition(columns=tuple(columns))
+    in_use = (
+        Exists(PipelineBinding.objects.filter(script_version__script=OuterRef("pk")))
+        | Exists(EtlJob.objects.filter(script_version__script=OuterRef("pk")))
+    )
     queryset = (
         EtlScript.objects.filter(project=project, origin=ETL_SCRIPT_ORIGIN_CUSTOM)
         .annotate(
             version_count=Count("versions"),
             **_config_schema_version_count(),
             edit_id=Case(When(archived_at__isnull=True, then=F("id")), default=None),
+            delete_id=Case(When(Q(archived_at__isnull=False) & ~in_use, then=F("id")), default=None),
         )
         .values(*definition.values_fields)
     )

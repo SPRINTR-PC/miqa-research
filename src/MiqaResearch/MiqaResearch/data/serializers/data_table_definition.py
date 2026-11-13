@@ -3,7 +3,7 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import Any, Literal
 
 from django.conf import settings
 from django.db.models import QuerySet
@@ -57,6 +57,7 @@ class DataTableColumn:
     default_sort_order: int | None = None
     filter: DataTableFilter | None = None
     button_label: str | None = None
+    button_style: Literal["destructive"] | None = None
 
 
 @dataclass(frozen=True)
@@ -80,6 +81,7 @@ class DataTableDefinition:
                 default_sort_order=column.default_sort_order,
                 filter=_filter_schema(column.filter),
                 button_label=column.button_label,
+                button_style=column.button_style,
             )
             for column in self.columns
         ]

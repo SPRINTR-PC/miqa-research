@@ -1257,10 +1257,11 @@ describe("DataTable", () => {
         columns: [
           { accessor: "name", label: "Name" },
           { accessor: "edit_id", label: "", data_type: "button", button_label: "Edit" } as any,
+          { accessor: "delete_id", label: "", data_type: "button", button_label: "Delete", button_style: "destructive" } as any,
         ],
         rows: [
-          { name: "Script A", edit_id: "id-a" },
-          { name: "Archived", edit_id: null },
+          { name: "Script A", edit_id: "id-a", delete_id: null },
+          { name: "Archived", edit_id: null, delete_id: "id-b" },
         ],
         pagination: { page: 1, page_size: 50, total_items: 2, total_pages: 1, has_next: false, has_previous: false },
       };
@@ -1277,8 +1278,17 @@ describe("DataTable", () => {
       const el = await mountWithButtonColumn();
 
       const buttons = el.shadowRoot!.querySelectorAll("tbody button");
-      expect(buttons).toHaveLength(1);
+      expect(buttons).toHaveLength(2);
       expect(buttons[0].textContent?.trim()).toBe("Edit");
+      document.body.removeChild(el);
+    });
+
+    it("marks a button column declared destructive so it can be styled as one", async () => {
+      const el = await mountWithButtonColumn();
+
+      const [edit, remove] = Array.from(el.shadowRoot!.querySelectorAll("tbody button"));
+      expect(edit.classList.contains("destructive")).toBe(false);
+      expect(remove.classList.contains("destructive")).toBe(true);
       document.body.removeChild(el);
     });
 
@@ -1293,7 +1303,7 @@ describe("DataTable", () => {
       expect((handler.mock.calls[0][0] as CustomEvent).detail).toEqual({
         accessor: "edit_id",
         value: "id-a",
-        row: { name: "Script A", edit_id: "id-a" },
+        row: { name: "Script A", edit_id: "id-a", delete_id: null },
       });
       document.body.removeEventListener("row-action", handler);
       document.body.removeChild(el);

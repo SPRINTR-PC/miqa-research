@@ -8,22 +8,24 @@ from pathlib import PurePath
 
 from asgiref.sync import sync_to_async
 from django.core.files.base import ContentFile
+from django.db import transaction
 from django.db.models import Max
 from django.utils import timezone
 
 from contract.constants.audit_log import (
     EVENT_TYPE_ETL_SCRIPT_ARCHIVED,
     EVENT_TYPE_ETL_SCRIPT_CREATED,
+    EVENT_TYPE_ETL_SCRIPT_DELETED,
     EVENT_TYPE_ETL_SCRIPT_UPDATED,
     EVENT_TYPE_ETL_SCRIPT_VERSION_CREATED,
 )
 from contract.constants.etl import ETL_SCRIPT_ORIGIN_CUSTOM, ETL_SCRIPT_ORIGIN_NATIVE
-from MiqaResearch.data.models import EtlScript, EtlScriptVersion, ResearchProject
+from MiqaResearch.data.models import EtlJob, EtlScript, EtlScriptVersion, PipelineBinding, ResearchProject
 from MiqaResearch.etl_sandbox.images import image_key_for_script_filename
 
 from ._hashing import sha256_of_upload
 from .audit import record_etl_event
-from .exceptions import EtlScriptStateError
+from .exceptions import EtlScriptNotDeletable, EtlScriptStateError
 
 
 def _require_manageable_custom_script(script: EtlScript, project: ResearchProject) -> None:
@@ -114,3 +116,28 @@ async def archive_custom_script(*, project, user, request, script) -> EtlScript:
         EVENT_TYPE_ETL_SCRIPT_ARCHIVED, user=user, request=request, project=project,
         metadata={"etl_script_id": str(script.id)})
     return script
+
+
+async def delete_archived_script(*, user, request, script) -> None:
+    """Superuser-only hard delete (caller enforces): an archived Script no Binding or Job uses, with its
+    Versions and their stored source files."""
+    script_id = script.id
+    project = await sync_to_async(lambda: script.project)()
+    await sync_to_async(_delete_archived_script_locked)(script)
+    await record_etl_event(
+        EVENT_TYPE_ETL_SCRIPT_DELETED, user=user, request=request, project=project,
+        metadata={"etl_script_id": str(script_id)})
+
+
+def _delete_archived_script_locked(script: EtlScript) -> None:
+    with transaction.atomic():
+        locked = EtlScript.objects.select_for_update().get(pk=script.pk)
+        if locked.archived_at is None:
+            raise EtlScriptNotDeletable("Only an archived Script can be deleted.")
+        versions = list(locked.versions.all())
+        if PipelineBinding.objects.filter(script_version__in=versions).exists() \
+                or EtlJob.objects.filter(script_version__in=versions).exists():
+            raise EtlScriptNotDeletable("A Binding or Job uses this Script, so it can't be deleted.")
+        sources = [version.source for version in versions]
+        locked.hard_delete()
+        transaction.on_commit(lambda: [source.delete(save=False) for source in sources])

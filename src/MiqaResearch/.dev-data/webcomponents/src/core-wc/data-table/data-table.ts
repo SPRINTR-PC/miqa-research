@@ -208,6 +208,14 @@ export class DataTable extends LitElement {
     button {
       padding: 0.5rem 0.75rem;
     }
+    /* Same look as the app's .btn.btn-destructive (e.g. the delete confirmation modal's button) */
+    button.destructive {
+      background-color: var(--color-destructive, #dc2626);
+      color: var(--color-destructive-foreground, hsl(0, 0%, 98%));
+      border: 1px solid transparent;
+      border-radius: 10px;
+      cursor: pointer;
+    }
   `];
 
   @property({ type: String })
@@ -601,6 +609,7 @@ export class DataTable extends LitElement {
     return html`<td>
       <button
         type="button"
+        class=${column.buttonStyle === "destructive" ? "destructive" : ""}
         @click=${() =>
           this.dispatchEvent(
             new CustomEvent("row-action", {
