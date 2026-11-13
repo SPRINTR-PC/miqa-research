@@ -16,9 +16,14 @@ from typing import TypedDict
 from django.db.models import Count, Exists, OuterRef, QuerySet
 
 from contract.constants.annotation import DERIVED_MODALITIES
-from MiqaResearch.data.models import DicomSeries, StudyParticipant
+from MiqaResearch.data.models import DicomSeries, ParticipantKey, StudyParticipant
 from MiqaResearch.readers.annotation_permissions import ParticipantRights
-from MiqaResearch.readers.participant_visibility import can_see_participant, visible_participants_in_any_project
+from MiqaResearch.readers.participant_keys import participant_alias_of
+from MiqaResearch.readers.participant_visibility import (
+    can_open_unlinked,
+    can_see_participant,
+    visible_participants_in_any_project,
+)
 
 
 class SeriesEntry(TypedDict):
@@ -40,6 +45,15 @@ class ViewerOpen:
     participant: StudyParticipant | None
     series: list[SeriesEntry]
     can_annotate: bool
+    participant_key: ParticipantKey | None = None  # set on an unlinked open (#416), where participant is None
+
+    @property
+    def project_id(self):
+        return self.participant.research_project_id if self.participant else self.participant_key.project_id
+
+    @property
+    def alias(self) -> str:
+        return self.participant.alias1 if self.participant else participant_alias_of(self.participant_key)
 
     @property
     def opened_uids(self) -> list[str]:
@@ -57,10 +71,25 @@ def viewer_open(user, project_id, participant_id, requested_uids: list[str]) -> 
     if participant is None or not can_see_participant(user, project_id, participant):
         raise ViewerOpenNotFound()
     requested = list(dict.fromkeys(uid for uid in requested_uids if uid))
-    rows = _rows(DicomSeries.objects.filter(study__study_participant=participant))
+    rows = _rows(DicomSeries.objects.filter(study__participant_key__study_participant=participant))
     if not requested or any(uid not in rows for uid in requested):
         raise ViewerOpenNotFound()
     return _open(user, participant, rows, requested, list(rows))
+
+
+def unlinked_viewer_open(user, project_id, key_id, requested_uids: list[str]) -> ViewerOpen:
+    """The open of `requested_uids` on the still unlinked Participant Key `key_id` (ADR 0035, #416): only for
+    who may open unlinked Studies of the project. Related Series are the key's own; nothing is annotatable."""
+    key = ParticipantKey.objects.filter(pk=key_id, project_id=project_id, study_participant__isnull=True).first()
+    if key is None or not can_open_unlinked(user, project_id):
+        raise ViewerOpenNotFound()
+    requested = list(dict.fromkeys(uid for uid in requested_uids if uid))
+    rows = _rows(DicomSeries.objects.filter(study__participant_key=key))
+    if not requested or any(uid not in rows for uid in requested):
+        raise ViewerOpenNotFound()
+    order = [*requested, *(uid for uid in rows if uid not in requested)]
+    listed = [{**rows[uid], "open": uid in requested} for uid in order]
+    return ViewerOpen(participant=None, series=listed, can_annotate=False, participant_key=key)
 
 
 def dev_viewer_open(user, open_uids: list[str], related_uids: list[str]) -> ViewerOpen:
@@ -68,13 +97,15 @@ def dev_viewer_open(user, open_uids: list[str], related_uids: list[str]) -> View
     whatever project, is left out (the dev page names series of any participant). The participant is the
     first opened series'."""
     visible = DicomSeries.objects.filter(
-        Exists(visible_participants_in_any_project(user).filter(pk=OuterRef("study__study_participant")))
+        Exists(visible_participants_in_any_project(user).filter(pk=OuterRef("study__participant_key__study_participant")))
     )
     rows = _rows(visible.filter(series_instance_uid__in=[*open_uids, *related_uids]))
     opened = list(dict.fromkeys(uid for uid in open_uids if uid in rows))
     if not opened:
         return ViewerOpen(participant=None, series=[], can_annotate=False)
-    participant = StudyParticipant.objects.get(dicomstudy__dicomseries__series_instance_uid=opened[0])
+    participant = StudyParticipant.objects.get(
+        participant_keys__dicomstudy__dicomseries__series_instance_uid=opened[0]
+    )
     return _open(user, participant, rows, opened, [uid for uid in related_uids if uid in rows])
 
 

@@ -6,28 +6,39 @@ same contract -- neither gets a separate, looser path.
 import io
 import json
 import tarfile
+import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
+from typing import BinaryIO
 
-from MiqaResearch.etl_shim import contract
+from mires_etl import contract
 
 from .exceptions import SandboxInputTooLarge
 from .spec import SandboxRunSpec
 
 
 def check_input_size(spec: SandboxRunSpec) -> None:
-    total = len(spec.script_source) + sum(len(content) for content in spec.input_files.values())
+    total = len(spec.script_source) + sum(staged.size for staged in spec.input_files)
     if total > spec.limits.max_input_bytes:
         raise SandboxInputTooLarge(
             f"Run {spec.run_id}'s staged input is {total} bytes, over the {spec.limits.max_input_bytes} byte cap.")
 
 
-def build_sandbox_archive(spec: SandboxRunSpec) -> bytes:
-    buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w") as tar:
-        _add_bytes(tar, contract.MANIFEST_FILENAME, json.dumps(spec.manifest).encode())
-        _add_bytes(tar, contract.script_filename(spec.image_key), spec.script_source)
-        for relative_path, content in spec.input_files.items():
-            _add_bytes(tar, f"{contract.INPUT_DIRNAME}/{relative_path}", content)
-    return buf.getvalue()
+@contextmanager
+def open_sandbox_archive(spec: SandboxRunSpec) -> Iterator[BinaryIO]:
+    """The `/sandbox` tar, written to a temp file on the scratch volume (deleted on exit) and yielded as a
+    file object positioned at 0, so RAM stays bounded by one copy chunk however big the inputs (#414)."""
+    with tempfile.TemporaryFile(dir=spec.scratch_dir) as archive:
+        with tarfile.open(fileobj=archive, mode="w") as tar:
+            _add_bytes(tar, contract.MANIFEST_FILENAME, json.dumps(spec.manifest).encode())
+            _add_bytes(tar, contract.script_filename(spec.image_key), spec.script_source)
+            for staged in spec.input_files:
+                info = tarfile.TarInfo(name=f"{contract.INPUT_DIRNAME}/{staged.relative_path}")
+                info.size = staged.size
+                with open(staged.local_path, "rb") as source:
+                    tar.addfile(info, source)
+        archive.seek(0)
+        yield archive
 
 
 def _add_bytes(tar: tarfile.TarFile, name: str, content: bytes) -> None:
@@ -36,16 +47,16 @@ def _add_bytes(tar: tarfile.TarFile, name: str, content: bytes) -> None:
     tar.addfile(info, io.BytesIO(content))
 
 
-def read_output_from_tar(tar_bytes: bytes) -> tuple[bytes | None, bytes]:
+def read_output_from_tar(tar_bytes: bytes) -> tuple[bytes | None, bytes, str]:
     """Parse a tar archive of `output/` (as produced by `tar -c -C /sandbox output` or Docker's
-    `get_archive`) into `(result_jsonl, log)`. Caller enforces `max_output_bytes` on the raw bytes
+    `get_archive`) into `(result_jsonl, log, image_manifest)`. Caller enforces `max_output_bytes` on the raw bytes
     *before* calling this -- it never inspects size itself.
     """
-    result_jsonl, log = None, b""
     with tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r") as tar:
         result_jsonl = _read_member(tar, f"{contract.OUTPUT_DIRNAME}/{contract.RESULT_FILENAME}")
         log = _read_member(tar, f"{contract.OUTPUT_DIRNAME}/{contract.LOG_FILENAME}") or b""
-    return result_jsonl, log
+        manifest = _read_member(tar, f"{contract.OUTPUT_DIRNAME}/{contract.PACKAGES_FILENAME}") or b""
+    return result_jsonl, log, manifest.decode("utf-8", errors="replace")
 
 
 def _read_member(tar: tarfile.TarFile, name: str) -> bytes | None:

@@ -10,11 +10,6 @@ participant enters a study:
   generated alias1) instead of failing the Job. Rows must therefore carry `person_source_value`.
 - Consent types are resolved by label within the project and created there when missing.
 """
-from datetime import datetime
-
-from ninja import Schema
-from pydantic import Field
-
 from helpers.db_fields import get_deterministic_hash
 from helpers.person_source_value import format_person_source_value
 from helpers.study_participant_alias import generate_study_participant_alias1
@@ -25,32 +20,15 @@ from MiqaResearch.data.models import (
     ResearchProject,
     StudyParticipant,
 )
+from mires_etl.schemas.participant_consent import ParticipantConsentRowSchema
 
 from .exceptions import AmbiguousParticipantReference
-from .registry import LoadResult, register_datatype
+from .registry import LoadResult, register_loader
 
 
-class ParticipantConsentRowSchema(Schema):
-    person_source_value: str = Field(
-        description="The participant's identifier in the source system; matches or creates the Study Participant.",
-        examples=["19900101-1234"])
-    name: str | None = Field(default=None, description="The participant's name, if the export has one.")
-    consent_type: str = Field(
-        description="Label of the consent type; created in the project when it does not exist.",
-        examples=["Biobank"])
-    consent_signed_date: datetime = Field(description="When the consent was signed. Part of the row's unique key.")
-    status: str | None = Field(default=None, description="Consent status as given by the source.")
-    consent_revoked_date: datetime | None = Field(default=None, description="When the consent was revoked, if it was.")
-    clinic_code: str = Field(
-        description="Code of the clinic the consent was given at; created when it does not exist.", examples=["UMEA"])
-    participant_information_version: str | None = Field(
-        default=None, description="Version of the participant information the participant was given.")
-    source: str | None = Field(default=None, description="Where this row came from, for provenance.")
-
-
-@register_datatype("participant_consent", ParticipantConsentRowSchema)
+@register_loader("participant_consent")
 def load_participant_consent_rows(
-        *, project: ResearchProject, etl_job, rows: list[ParticipantConsentRowSchema]) -> LoadResult:
+        *, project: ResearchProject, etl_job, rows: list[ParticipantConsentRowSchema], inputs=None) -> LoadResult:
     created = updated = 0
     for row in rows:
         participant = _get_or_create_participant(project, row)

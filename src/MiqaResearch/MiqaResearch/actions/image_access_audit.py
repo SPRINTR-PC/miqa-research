@@ -8,7 +8,7 @@
   frames are never audited one by one.
 
 Repeats are dropped by the entry's dedupe key within the same INSERT. `dicom_files` must have
-`series__study__study_participant` loaded.
+`series__study__participant_key` loaded.
 """
 from contract.constants.audit_log import (
     EVENT_TYPE_VIEWER_OPEN,
@@ -38,7 +38,7 @@ def audit_client_access(request, application, dicom_files) -> None:
         AuditLog(
             event_type=EVENT_TYPE_WADO_CLIENT_ACCESS,
             ip_address=get_client_ip(request),
-            project_id=series.study.study_participant.research_project_id,
+            project_id=series.study.participant_key.project_id,
             dedupe_key=f"wado-client:{token.pk}:{series.pk}",
             metadata={
                 "client_id": application.client_id,
@@ -61,7 +61,7 @@ def audit_viewer_series_open(request, user, dicom_files) -> None:
             user=user,
             ip_address=get_client_ip(request),
             session_key=session_key,
-            project_id=series.study.study_participant.research_project_id,
+            project_id=series.study.participant_key.project_id,
             dedupe_key=f"viewer-open:{user.pk}:{open_key}:{series.pk}" if open_key else None,
             metadata={"viewer_session": viewer, **_series_metadata(series, request)},
         )
@@ -69,17 +69,22 @@ def audit_viewer_series_open(request, user, dicom_files) -> None:
     ], ignore_conflicts=True)
 
 
-def audit_viewer_open(request, participant, series_uids: list[str], viewer_session: str) -> None:
+def audit_viewer_open(request, opened, viewer_session: str) -> None:
+    """One entry per page load; `opened` is the `ViewerOpen`. An unlinked open (#416) has no participant:
+    the project comes from the Participant Key, which the entry names."""
+    series_uids = opened.opened_uids
+    participant, key = opened.participant, opened.participant_key
     AuditLog.objects.create(
         event_type=EVENT_TYPE_VIEWER_OPEN,
         user=request.user,
         ip_address=get_client_ip(request),
         session_key=getattr(getattr(request, "session", None), "session_key", None),
-        project_id=participant.research_project_id,
+        project_id=opened.project_id,
         metadata={
             "viewer_session": viewer_session,
             "series_uids": series_uids,
-            "participant_ids": [str(participant.pk)],
+            "participant_ids": [str(participant.pk)] if participant else [],
+            **({"participant_key_id": str(key.pk)} if key else {}),
             "fused": len(series_uids) > 1,
         },
     )

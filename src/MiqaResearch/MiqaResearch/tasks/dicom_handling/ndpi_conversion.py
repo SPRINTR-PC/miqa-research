@@ -2,9 +2,8 @@
 
 Independently invocable: converts a Hamamatsu *.ndpi whole-slide image into a
 VL Whole Slide Microscopy Image IOD DICOM file set on disk. Nothing in
-`pipeline.run_ingestion` calls this -- an *.ndpi source is just an
-unparseable file to the ingestion pipeline, like any other non-DICOM
-content, so ingestion runs never trigger a conversion.
+DICOM ingestion calls this -- an *.ndpi source is just a non-DICOM file the
+`dicom_instance` script skips, so ingestion Jobs never trigger a conversion.
 
 Wraps `wsidicomizer.WsiDicomizer.convert` (selected per #107's tooling
 research) for its explicit lossless Hamamatsu NDPI support (via `opentile`)

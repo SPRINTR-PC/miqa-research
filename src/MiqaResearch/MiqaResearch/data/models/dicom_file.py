@@ -55,7 +55,7 @@ class DicomFile(models.Model):
         null=True,
         help_text=(
             "Frame offset index: [offset, length] per frame in the stored file "
-            "(tasks/dicom_handling/frame_index.py); "
+            "(actions/dicom_ingest/frame_index.py); "
             "null = not built yet, [] = no servable frames"
         ),
     )

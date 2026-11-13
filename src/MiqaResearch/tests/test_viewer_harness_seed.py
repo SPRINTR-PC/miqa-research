@@ -73,6 +73,22 @@ def test_seed_is_idempotent(settings):
 
 
 @pytest.mark.django_db
+def test_seed_tolerates_keys_that_have_become_unlinked(settings):
+    """ADR 0035 (#415): re-seeding finds its fixtures through the Participant Key's project, not the participant."""
+    from MiqaResearch.data.models import DicomStudy, ParticipantKey
+
+    settings.DEBUG = True
+    first = _seed()
+    studies = DicomStudy.objects.count()
+    ParticipantKey.objects.update(study_participant=None)
+
+    second = _seed()
+
+    assert second["ct"] == first["ct"]
+    assert DicomStudy.objects.count() == studies
+
+
+@pytest.mark.django_db
 def test_seed_gives_an_annotating_and_a_view_only_session(settings, client):
     """#280 role gating: the PI's dev page enables annotate tools, the view-only user's doesn't."""
     settings.DEBUG = True

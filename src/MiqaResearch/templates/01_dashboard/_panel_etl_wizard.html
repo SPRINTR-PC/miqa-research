@@ -13,6 +13,19 @@
     </label>
     <p class="text-sm text-muted-foreground mb-2">{% translate "Bindings pin one immutable version. Publishing a script edit creates a new version -- it never changes an existing one in place." %}</p>
     {% include '01_dashboard/_etl_raw_retention_fields.html' with form=binding_create_form %}
+    {{ binding_create_form.raw_retention_defaults|json_script:"etl-raw-retention-defaults" }}
+    <script>
+      (function () {
+        var script = document.currentScript, form = script.closest('form');
+        var defaults = JSON.parse(document.getElementById('etl-raw-retention-defaults').textContent);
+        var select = form.querySelector('[name="script_version"]');
+        if (!select) return;
+        select.addEventListener('change', function () {
+          var radio = form.querySelector('input[name="raw_retention"][value="' + defaults[select.value] + '"]');
+          if (radio && !radio.disabled) { radio.checked = true; radio.dispatchEvent(new Event('change', {bubbles: true})); }
+        });
+      })();
+    </script>
     <label class="etl-field"><span>{% translate "Grouping" %}</span>{{ binding_create_form.grouping_mode }}
       {% for error in binding_create_form.grouping_mode.errors %}<p class="etl-form-error">{{ error }}</p>{% endfor %}
     </label>

@@ -1,15 +1,15 @@
-"""Single-file DICOM ingestion (#119) — exercises the top-level pipeline seam
-`run_ingestion` directly, per the #98 testing decisions: assertions cover what
-ends up in the database/storage and what the run's report says, never internal
-stage call sequences.
+"""Single-file DICOM ingestion (#119, ported to the ETL path #419): layer B, the real native script plus the
+`dicom_instance` loader. Assertions cover what ends up in the database/storage and what the Job's
+`LoadResult` says, never internal stage call sequences.
 """
 from datetime import UTC, datetime
 
 import pytest
 
 from MiqaResearch.data.models import DicomFile, DicomSeries, DicomStudy, ResearchProject, StudyParticipant
-from MiqaResearch.tasks.dicom_handling.pipeline import run_ingestion
+from MiqaResearch.etl_datatypes import EtlLoadError
 from tests.dicom_fixtures import build_ct_image, build_generic_dataset, write_dicom
+from tests.dicom_ingest_helper import ingest_files
 
 
 @pytest.fixture(autouse=True)
@@ -18,28 +18,23 @@ def encryption_keys(settings):
     settings.SENSITIVE_DATA_HASH_KEY = "H2QCB14temR-C2JnLORSE5TxPwLd8iy3YygNPQ-corA="
 
 
-@pytest.fixture(autouse=True)
-def allow_tmp_sources(settings, tmp_path):
-    """#120: local sources must sit inside the configured allow-list — allow this test's tmp_path."""
-    settings.DICOM_ALLOWED_SOURCE_ROOTS = [tmp_path]
-
 @pytest.fixture
 def research_project(db):
     return ResearchProject.objects.create(name="Ingestion single-file project", description="Project for #119 tests")
 
 
-def test_ingestion_creates_linked_record_hierarchy_for_new_participant(research_project, tmp_path, settings):
+def test_ingestion_creates_linked_record_hierarchy_for_existing_participant(research_project, tmp_path, settings):
     settings.MEDIA_ROOT = tmp_path / "media"
+    StudyParticipant.objects.create(
+        alias1="Existing Alias One", person_source_value="P1001", research_project=research_project)
     src = write_dicom(build_ct_image(), tmp_path / "ct1.dcm")
 
-    report = run_ingestion(research_project, src)
+    report = ingest_files(research_project, src)
 
-    assert report.counts == {"ingested": 1, "skipped_duplicate": 0, "duplicate_conflict": 0, "error": 0}
-    result = report.results[0]
-    assert result.outcome == "ingested"
-    assert result.error is None
+    assert report.counts == {"ingested": 1, "skipped": 0}
+    assert report.load_result.kept_inputs == ()
 
-    # One participant, matched/created for the file's patient identifier
+    # Linked to the existing participant matching the file's patient identifier; none is created
     assert StudyParticipant.objects.count() == 1
     participant = StudyParticipant.objects.get()
     assert participant.research_project == research_project
@@ -50,7 +45,7 @@ def test_ingestion_creates_linked_record_hierarchy_for_new_participant(research_
     assert DicomSeries.objects.count() == 1
     assert DicomFile.objects.count() == 1
     dcm_file = DicomFile.objects.get()
-    assert dcm_file.series.study.study_participant == participant
+    assert dcm_file.series.study.participant_key.study_participant == participant
     assert dcm_file.research_project == research_project
     # Study datetime comes from the file's StudyDate/StudyTime tags
     assert dcm_file.series.study.study_datetime == datetime(2024, 3, 15, 10, 15, 0, 123456, tzinfo=UTC)
@@ -61,7 +56,7 @@ def test_created_records_carry_pseudonymized_uids_never_originals(research_proje
     ds = build_ct_image()
     src = write_dicom(ds, tmp_path / "ct1.dcm")
 
-    report = run_ingestion(research_project, src)
+    report = ingest_files(research_project, src)
 
     assert report.counts["ingested"] == 1
     dcm_file = DicomFile.objects.get()
@@ -78,8 +73,6 @@ def test_created_records_carry_pseudonymized_uids_never_originals(research_proje
     assert dcm_file.series.series_instance_uid == pseudonymize_uid(ds.SeriesInstanceUID, research_project)
     assert dcm_file.sop_instance_uid == pseudonymize_uid(ds.SOPInstanceUID, research_project)
     assert dcm_file.frame_of_reference_uid == pseudonymize_uid(ds.FrameOfReferenceUID, research_project)
-    # The report carries the same pseudonymized SOP Instance UID
-    assert report.results[0].sop_instance_uid == dcm_file.sop_instance_uid
 
 
 def test_pseudonyms_deterministic_within_project_and_distinct_across_projects(db, tmp_path, settings):
@@ -89,21 +82,21 @@ def test_pseudonyms_deterministic_within_project_and_distinct_across_projects(db
     source = build_ct_image()
     src = write_dicom(source, tmp_path / "ct1.dcm")
 
-    report_a = run_ingestion(project_a, src)
+    report_a = ingest_files(project_a, src)
     assert report_a.counts["ingested"] == 1
-    file_a = DicomFile.objects.get(series__study__study_participant__research_project=project_a)
+    file_a = DicomFile.objects.get(series__study__participant_key__project=project_a)
     # Second file with the same source UIDs in the same project -> same pseudonyms
     same_study_src = build_ct_image(sop_instance_uid="1.2.9999.42.1.1099")
     src2 = write_dicom(same_study_src, tmp_path / "ct2.dcm")
-    report_a2 = run_ingestion(project_a, src2)
+    report_a2 = ingest_files(project_a, src2)
     file_a2 = DicomFile.objects.exclude(pk=file_a.pk).get()
     assert report_a2.counts["ingested"] == 1
     assert file_a2.series.study.study_instance_uid == file_a.series.study.study_instance_uid
     assert file_a2.series.series_instance_uid == file_a.series.series_instance_uid
 
     # Same source file in another project -> different pseudonyms
-    report_b = run_ingestion(project_b, src)
-    file_b = DicomFile.objects.get(series__study__study_participant__research_project=project_b)
+    report_b = ingest_files(project_b, src)
+    file_b = DicomFile.objects.get(series__study__participant_key__project=project_b)
     assert report_b.counts["ingested"] == 1
     assert file_b.sop_instance_uid != file_a.sop_instance_uid
     assert file_b.series.study.study_instance_uid != file_a.series.study.study_instance_uid
@@ -113,7 +106,7 @@ def test_standard_image_geometry_populated_from_file_tags(research_project, tmp_
     settings.MEDIA_ROOT = tmp_path / "media"
     src = write_dicom(build_ct_image(), tmp_path / "ct1.dcm")
 
-    report = run_ingestion(research_project, src)
+    report = ingest_files(research_project, src)
 
     assert report.counts["ingested"] == 1
     dcm_file = DicomFile.objects.get()
@@ -129,7 +122,7 @@ def test_metadata_is_sanitized_by_the_deidentification_profile(research_project,
     settings.MEDIA_ROOT = tmp_path / "media"
     src = write_dicom(build_ct_image(), tmp_path / "ct1.dcm")
 
-    report = run_ingestion(research_project, src)
+    report = ingest_files(research_project, src)
 
     assert report.counts["ingested"] == 1
     metadata = DicomFile.objects.get().metadata
@@ -153,7 +146,7 @@ def test_metadata_uid_tags_are_pseudonymized(research_project, tmp_path, setting
     ds = build_ct_image()
     src = write_dicom(ds, tmp_path / "ct1.dcm")
 
-    report = run_ingestion(research_project, src)
+    report = ingest_files(research_project, src)
 
     assert report.counts["ingested"] == 1
     dcm_file = DicomFile.objects.get()
@@ -187,7 +180,7 @@ def test_nested_uid_references_are_pseudonymized_per_value(research_project, tmp
     ds.add_new(0x00081140, "SQ", [item])  # ReferencedImageSequence
     src = write_dicom(ds, tmp_path / "ct_ref.dcm")
 
-    report = run_ingestion(research_project, src)
+    report = ingest_files(research_project, src)
 
     assert report.counts["ingested"] == 1
     metadata = DicomFile.objects.get().metadata
@@ -218,7 +211,7 @@ def test_phi_inside_sequences_is_stripped_from_metadata(research_project, tmp_pa
     ds.SequenceOfUltrasoundRegions = [item]
     src = write_dicom(ds, tmp_path / "ct_sq.dcm")
 
-    report = run_ingestion(research_project, src)
+    report = ingest_files(research_project, src)
 
     assert report.counts["ingested"] == 1
     metadata = DicomFile.objects.get().metadata
@@ -233,29 +226,10 @@ def test_model_accepts_three_value_orientation_from_pipeline(research_project, t
     accepted by the model itself, not just by the permissive DB column."""
     settings.MEDIA_ROOT = tmp_path / "media"
     src = write_dicom(build_ct_image(), tmp_path / "ct1.dcm")
-    report = run_ingestion(research_project, src)
+    report = ingest_files(research_project, src)
     assert report.counts["ingested"] == 1
     dcm_file = DicomFile.objects.get()
     dcm_file.full_clean(exclude=["file"])
-
-
-def test_new_participant_demographics_populated_from_file(research_project, tmp_path, settings):
-    settings.MEDIA_ROOT = tmp_path / "media"
-    src = write_dicom(build_ct_image(), tmp_path / "ct1.dcm")
-
-    report = run_ingestion(research_project, src)
-
-    assert report.counts["ingested"] == 1
-    participant = StudyParticipant.objects.get()
-    assert participant.name == "DOE^JANE"
-    assert participant.year_of_birth == 1975
-    assert participant.month_of_birth == 1
-    assert participant.day_of_birth == 31
-    assert participant.gender == "F"
-    # Pseudonymous alias in the existing consent-enrollment style
-    assert len(participant.alias1.split()) == 3
-    # The report references the participant only by its pseudonymous alias
-    assert report.results[0].study_participant_alias == participant.alias1
 
 
 def test_reingest_for_existing_participant_never_overwrites_demographics(research_project, tmp_path, settings):
@@ -275,7 +249,7 @@ def test_reingest_for_existing_participant_never_overwrites_demographics(researc
         tmp_path / "ct1.dcm",
     )
 
-    report = run_ingestion(research_project, src)
+    report = ingest_files(research_project, src)
 
     assert report.counts["ingested"] == 1
     existing.refresh_from_db()
@@ -286,7 +260,7 @@ def test_reingest_for_existing_participant_never_overwrites_demographics(researc
     assert existing.day_of_birth == 5
     assert existing.gender == "M"
     # The new study hangs off the pre-existing participant
-    assert DicomStudy.objects.get().study_participant == existing
+    assert DicomStudy.objects.get().participant_key.study_participant == existing
 
 
 def test_file_stored_locally_and_retrievable_via_wado_rs(research_project, tmp_path, settings, client):
@@ -298,7 +272,7 @@ def test_file_stored_locally_and_retrievable_via_wado_rs(research_project, tmp_p
     src = write_dicom(build_ct_image(), tmp_path / "ct1.dcm")
     raw_bytes = src.read_bytes()
 
-    report = run_ingestion(research_project, src)
+    report = ingest_files(research_project, src)
 
     assert report.counts["ingested"] == 1
     dcm_file = DicomFile.objects.get()
@@ -322,30 +296,28 @@ def test_file_stored_locally_and_retrievable_via_wado_rs(research_project, tmp_p
     assert raw_bytes in response.content
 
 
-def test_file_without_patient_id_is_per_file_error(research_project, tmp_path, settings):
+def test_file_without_patient_id_fails_the_job_and_stores_nothing(research_project, tmp_path, settings):
     settings.MEDIA_ROOT = tmp_path / "media"
     ds = build_ct_image()
     del ds.PatientID
     src = write_dicom(ds, tmp_path / "noid.dcm")
 
-    report = run_ingestion(research_project, src)
+    with pytest.raises(EtlLoadError, match="Participant Key"):
+        ingest_files(research_project, src)
 
-    assert report.counts == {"ingested": 0, "skipped_duplicate": 0, "duplicate_conflict": 0, "error": 1}
-    result = report.results[0]
-    assert "patient identifier" in result.error
     assert StudyParticipant.objects.count() == 0
     assert DicomFile.objects.count() == 0
 
 
-def test_non_dicom_file_is_per_file_error(research_project, tmp_path, settings):
+def test_non_dicom_file_is_skipped_and_kept_in_the_source(research_project, tmp_path, settings):
     settings.MEDIA_ROOT = tmp_path / "media"
     src = tmp_path / "notdicom.bin"
     src.write_bytes(b"this is not a dicom file" * 100)
 
-    report = run_ingestion(research_project, src)
+    report = ingest_files(research_project, src)
 
-    assert report.counts == {"ingested": 0, "skipped_duplicate": 0, "duplicate_conflict": 0, "error": 1}
-    assert report.results[0].error == "not a DICOM file"
+    assert report.counts == {"ingested": 0, "skipped": 1}
+    assert report.load_result.kept_inputs == ("notdicom.bin",)
     assert DicomFile.objects.count() == 0
     assert StudyParticipant.objects.count() == 0
 
@@ -354,11 +326,11 @@ def test_reingesting_same_file_skips_duplicate(research_project, tmp_path, setti
     settings.MEDIA_ROOT = tmp_path / "media"
     src = write_dicom(build_ct_image(), tmp_path / "ct1.dcm")
 
-    first = run_ingestion(research_project, src)
-    second = run_ingestion(research_project, src)
+    first = ingest_files(research_project, src)
+    second = ingest_files(research_project, src)
 
     assert first.counts["ingested"] == 1
-    assert second.counts == {"ingested": 0, "skipped_duplicate": 1, "duplicate_conflict": 0, "error": 0}
+    assert second.counts == {"ingested": 0, "skipped": 0}  # an identical duplicate is a no-op
     assert DicomFile.objects.count() == 1
     assert DicomSeries.objects.count() == 1
     series = DicomSeries.objects.get()
@@ -371,9 +343,9 @@ def test_non_standard_sop_class_still_ingested_via_generic_handler(research_proj
     settings.MEDIA_ROOT = tmp_path / "media"
     src = write_dicom(build_generic_dataset(), tmp_path / "dose_sr.dcm")
 
-    report = run_ingestion(research_project, src)
+    report = ingest_files(research_project, src)
 
-    assert report.counts == {"ingested": 1, "skipped_duplicate": 0, "duplicate_conflict": 0, "error": 0}
+    assert report.counts == {"ingested": 1, "skipped": 0}
     dcm_file = DicomFile.objects.get()
     # Generic handler: no image geometry, but tags still captured
     assert dcm_file.image_orientation_patient is None
@@ -386,9 +358,9 @@ def test_file_without_preamble_still_ingested(research_project, tmp_path, settin
     settings.MEDIA_ROOT = tmp_path / "media"
     src = write_dicom(build_ct_image(), tmp_path / "nopreamble.dcm", with_preamble=False)
 
-    report = run_ingestion(research_project, src)
+    report = ingest_files(research_project, src)
 
-    assert report.counts == {"ingested": 1, "skipped_duplicate": 0, "duplicate_conflict": 0, "error": 0}
+    assert report.counts == {"ingested": 1, "skipped": 0}
     assert DicomFile.objects.count() == 1
 
 
@@ -400,10 +372,10 @@ def test_second_file_same_study_and_series_matches_existing_records(research_pro
         tmp_path / "ct2.dcm",
     )
 
-    run_ingestion(research_project, first)
-    report = run_ingestion(research_project, second)
+    ingest_files(research_project, first)
+    report = ingest_files(research_project, second)
 
-    assert report.counts == {"ingested": 1, "skipped_duplicate": 0, "duplicate_conflict": 0, "error": 0}
+    assert report.counts == {"ingested": 1, "skipped": 0}
     assert DicomStudy.objects.count() == 1
     assert DicomSeries.objects.count() == 1
     assert DicomFile.objects.count() == 2
@@ -417,35 +389,22 @@ def test_standard_image_without_frame_of_reference_uid_ingests(research_project,
     settings.MEDIA_ROOT = tmp_path / "media"
     src = write_dicom(build_ct_image(frame_of_reference_uid=None), tmp_path / "ct_nofor.dcm")
 
-    report = run_ingestion(research_project, src)
+    report = ingest_files(research_project, src)
 
-    assert report.counts == {"ingested": 1, "skipped_duplicate": 0, "duplicate_conflict": 0, "error": 0}
+    assert report.counts == {"ingested": 1, "skipped": 0}
     dcm_file = DicomFile.objects.get()
     assert dcm_file.frame_of_reference_uid is None
     assert dcm_file.image_orientation_patient == [1.0, 0.0, 0.0]
 
 
-def test_partial_birth_date_populates_only_known_parts(research_project, tmp_path, settings):
-    settings.MEDIA_ROOT = tmp_path / "media"
-    src = write_dicom(build_ct_image(patient_birth_date="1975"), tmp_path / "ct_partial_dob.dcm")
-
-    report = run_ingestion(research_project, src)
-
-    assert report.counts["ingested"] == 1
-    participant = StudyParticipant.objects.get()
-    assert participant.year_of_birth == 1975
-    assert participant.month_of_birth is None
-    assert participant.day_of_birth is None
-
-
-def test_truncated_dicom_file_is_per_file_error(research_project, tmp_path, settings):
+def test_truncated_dicom_file_fails_the_script_and_is_not_stored(research_project, tmp_path, settings):
     settings.MEDIA_ROOT = tmp_path / "media"
     src = write_dicom(build_ct_image(), tmp_path / "truncated.dcm")
     src.write_bytes(src.read_bytes()[: max(0, len(src.read_bytes()) - 300)])
 
-    report = run_ingestion(research_project, src)
+    with pytest.raises(RuntimeError, match="missing study_instance_uid"):
+        ingest_files(research_project, src)
 
-    assert report.counts == {"ingested": 0, "skipped_duplicate": 0, "duplicate_conflict": 0, "error": 1}
     assert DicomFile.objects.count() == 0
 
 
@@ -453,7 +412,7 @@ def test_series_carries_its_files_pseudonymized_frame_of_reference(research_proj
     settings.MEDIA_ROOT = tmp_path / "media"
     src = write_dicom(build_ct_image(frame_of_reference_uid="1.2.9999.42.1.1004"), tmp_path / "ct.dcm")
 
-    run_ingestion(research_project, src)
+    ingest_files(research_project, src)
 
     series = DicomSeries.objects.get()
     dcm_file = DicomFile.objects.get()
@@ -463,17 +422,17 @@ def test_series_carries_its_files_pseudonymized_frame_of_reference(research_proj
 
 def test_series_without_frame_of_reference_stays_null(research_project, tmp_path, settings):
     settings.MEDIA_ROOT = tmp_path / "media"
-    run_ingestion(research_project, write_dicom(build_ct_image(frame_of_reference_uid=None), tmp_path / "ct.dcm"))
+    ingest_files(research_project, write_dicom(build_ct_image(frame_of_reference_uid=None), tmp_path / "ct.dcm"))
 
     assert DicomSeries.objects.get().frame_of_reference_uid is None
 
 
 def test_series_whose_files_disagree_on_frame_of_reference_is_null(research_project, tmp_path, settings):
     settings.MEDIA_ROOT = tmp_path / "media"
-    run_ingestion(research_project, write_dicom(build_ct_image(), tmp_path / "ct1.dcm"))
+    ingest_files(research_project, write_dicom(build_ct_image(), tmp_path / "ct1.dcm"))
     assert DicomSeries.objects.get().frame_of_reference_uid is not None
 
     other = build_ct_image(sop_instance_uid="1.2.9999.42.1.2003", frame_of_reference_uid="1.2.9999.42.1.2004")
-    run_ingestion(research_project, write_dicom(other, tmp_path / "ct2.dcm"))
+    ingest_files(research_project, write_dicom(other, tmp_path / "ct2.dcm"))
 
     assert DicomSeries.objects.get().frame_of_reference_uid is None

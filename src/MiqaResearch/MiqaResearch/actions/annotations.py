@@ -35,14 +35,14 @@ from contract.constants.audit_log import (
     EVENT_TYPE_SEGMENTATION_SUPERSEDED,
 )
 from helpers.dicom_deidentification import deidentify
+from MiqaResearch.actions.dicom_ingest import frame_index, records
+from MiqaResearch.actions.dicom_ingest import storage as storage_stage
+from MiqaResearch.actions.dicom_ingest.metadata_dump import build_metadata_dump
 from MiqaResearch.actions.viewer_exceptions import NotAllowed, NotFound, ViewerActionError
 from MiqaResearch.data.models import AuditLog, DerivedObjectProvenance, DicomFile, DicomSeries
 from MiqaResearch.readers.annotation_permissions import ParticipantRights
 from MiqaResearch.readers.blinding import ParticipantBlinding, viewer_reveals
-from MiqaResearch.readers.participant_visibility import can_see_participant
-from MiqaResearch.tasks.dicom_handling import frame_index, records
-from MiqaResearch.tasks.dicom_handling import storage as storage_stage
-from MiqaResearch.tasks.dicom_handling.metadata_dump import build_metadata_dump
+from MiqaResearch.readers.participant_visibility import can_open_unlinked, can_see_participant
 
 logger = logging.getLogger(__name__)
 
@@ -94,9 +94,13 @@ def save_viewer_object(
     with transaction.atomic():
         sources = _source_series(source_series_uids)
         study = sources[0].study
-        participant = study.study_participant
-        project = participant.research_project
-        if project is None or not can_see_participant(user, project, participant):
+        participant = study.participant_key.study_participant
+        project = study.participant_key.project
+        if participant is None:
+            # unlinked Study (ADR 0035): hidden from who may not open it, else refused until linked
+            raise NotAllowed("link the Study to a participant before saving Annotations or Segmentations") \
+                if can_open_unlinked(user, project) else NotFound()
+        if not can_see_participant(user, project, participant):
             raise NotFound()
         rights = ParticipantRights(user, project, participant)
         if not rights.can_author:
@@ -146,15 +150,17 @@ def retire_object(*, user, object_id: UUID, request=None) -> DerivedObjectProven
     with transaction.atomic():
         provenance = (
             DerivedObjectProvenance.objects.select_for_update(of=("self",))
-            .select_related("series__study__study_participant__research_project")
+            .select_related(
+                "series__study__participant_key__study_participant", "series__study__participant_key__project"
+            )
             .filter(pk=object_id)
             .first()
         )
         if provenance is None:
             raise NotFound()
-        participant = provenance.series.study.study_participant
-        project = participant.research_project
-        if project is None or not can_see_participant(user, project, participant):
+        participant = provenance.series.study.participant_key.study_participant
+        project = provenance.series.study.participant_key.project
+        if participant is None or not can_see_participant(user, project, participant):
             raise NotFound()
         blinding = ParticipantBlinding(user, project, participant, viewer_reveals(request))
         if blinding.hides(provenance.author_id):
@@ -192,7 +198,9 @@ def _parse(raw_bytes: bytes) -> Dataset:
 def _source_series(uids: list[str]) -> list[DicomSeries]:
     found = {
         series.series_instance_uid: series
-        for series in DicomSeries.objects.select_related("study__study_participant__research_project").filter(
+        for series in DicomSeries.objects.select_related(
+            "study__participant_key__study_participant", "study__participant_key__project"
+        ).filter(
             series_instance_uid__in=uids
         )
     }
@@ -200,9 +208,15 @@ def _source_series(uids: list[str]) -> list[DicomSeries]:
         raise NotFound()
     ordered = list(dict.fromkeys(uids))
     sources = [found[uid] for uid in ordered]
-    if len({series.study.study_participant_id for series in sources}) > 1:
+    if len({_owner_of(series) for series in sources}) > 1:
         raise InvalidObject("all source series must belong to the same participant")
     return sources
+
+
+def _owner_of(series: DicomSeries):
+    """The participant the series belongs to, or its (unlinked) Participant Key."""
+    key = series.study.participant_key
+    return key.study_participant_id or key.pk
 
 
 def _shared_frame_of_reference(sources: list[DicomSeries]) -> str | None:
@@ -223,13 +237,13 @@ def _lock_head_to_supersede(
 ):
     predecessor = (
         DerivedObjectProvenance.objects.select_for_update(of=("self",))
-        .select_related("series__study")
+        .select_related("series__study__participant_key")
         .filter(pk=object_id)
         .first()
     )
     if (
         predecessor is None
-        or predecessor.series.study.study_participant_id != participant.pk
+        or predecessor.series.study.participant_key.study_participant_id != participant.pk
         or blinding.hides(predecessor.author_id)
     ):
         raise NotFound()

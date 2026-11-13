@@ -62,16 +62,19 @@ env = environ.Env(
     MIRES_CELERY_WORKER_PREFETCH_MULTIPLIER=(int, 1),
     MIRES_DATA_HASH_FERNET_KEY_ENCRYPTION=(str, "utf-8"),
     MIRES_DATA_HASH_KEY_VAULT_PATH=(str, "mires/datahashing"),
-    MIRES_DICOM_ALLOWED_SOURCE_ROOTS=(str, ""),
     MIRES_DICOM_S3_ENDPOINT_URL=(str, None),
     MIRES_DICOM_S3_REGION_NAME=(str, "us-east-1"),
     MIRES_DICOM_S3_ACCESS_KEY_ID=(str, None),
     MIRES_DICOM_S3_SECRET_ACCESS_KEY=(str, None),
     MIRES_DICOM_STORAGE_BACKEND=(str, "local"),
     MIRES_DICOM_S3_BUCKET=(str, None),
-    MIRES_DICOM_DELETE_ORIGINALS_AFTER_STORAGE=(bool, False),
     MIRES_DICOM_MAX_PIXEL_DIMENSIONS=(int, 200_000),
     MIRES_DICOM_MAX_FRAME_COUNT=(int, 500_000),
+    MIRES_DICOM_ORPHAN_DETECT_HOURS=(int, 2),
+    MIRES_DICOM_ORPHAN_GRACE_HOURS=(int, 24),
+    MIRES_DICOM_ORPHAN_MAX_DELETE_COUNT=(int, 100),
+    MIRES_DICOM_ORPHAN_MAX_DELETE_FRACTION=(float, 0.05),
+    MIRES_DICOM_ORPHAN_SWEEP_ACTION=(str, "delete"),
     MIRES_EMAIL_HOST=(str, None),
     MIRES_EMAIL_PORT=(int, 1234),
     MIRES_EMAIL_HOST_USER=(str, None),
@@ -93,6 +96,9 @@ env = environ.Env(
     MIRES_ETL_STORAGES=(str, "[]"),
     MIRES_SANDBOX_BACKEND=(str, "compose"),
     MIRES_SANDBOX_DOCKER_HOST=(str, "unix:///var/run/docker.sock"),
+    MIRES_SANDBOX_COMPOSE_STORAGE_LIMIT=(bool, False),
+    MIRES_ETL_SCRATCH_DIR=(str, ""),
+    MIRES_ETL_SCRATCH_MARGIN_BYTES=(int, 256 * 1024 ** 2),
     MIRES_SANDBOX_IMAGE_ALLOWLIST=(str, "{}"),
     MIRES_SANDBOX_DEFAULT_TIMEOUT_SECONDS=(int, 10 * 60),
     MIRES_SANDBOX_DEFAULT_MEMORY_MB=(int, 1024),
@@ -170,16 +176,8 @@ AUDIT_LOG_RETENTION_DAYS = env("MIRES_AUDIT_LOG_RETENTION_DAYS")
 # ADR 0024: data-access events (contract.constants.audit_log.DATA_ACCESS_EVENT_TYPES) are kept 10 years by default.
 DATA_ACCESS_AUDIT_RETENTION_DAYS = env("MIRES_DATA_ACCESS_AUDIT_RETENTION_DAYS")
 
-# DICOM ingestion (#120): local source paths must sit inside one of the
-# allowed roots (default-deny: nothing allowed until configured). The S3
-# settings configure the run's read-scoped S3 source client; the storage-write
-# path (#122) reuses the same connection settings, adding only a destination
-# bucket and the local/s3 toggle below.
-DICOM_ALLOWED_SOURCE_ROOTS: list[Path] = [
-    Path(part.strip()).expanduser()
-    for part in env("MIRES_DICOM_ALLOWED_SOURCE_ROOTS").split(",")
-    if part.strip()
-]
+# DICOM storage (#122): the S3 connection settings, the destination bucket and the local/s3 toggle below.
+# Ingestion itself is an ETL Job over an S3 Source Location (spec #411).
 DICOM_S3_ENDPOINT_URL: str | None = env("MIRES_DICOM_S3_ENDPOINT_URL")
 # Defaults to "us-east-1": most S3-compatible stores (RustFS included) still
 # require *some* region for SigV4 signing even when they don't enforce AWS's
@@ -239,6 +237,15 @@ ETL_STORAGES: list[dict] = json.loads(env("MIRES_ETL_STORAGES"))
 # how a PipelineBinding may lower, never raise, timeout/memory/CPU below them).
 SANDBOX_BACKEND: str = env("MIRES_SANDBOX_BACKEND")
 SANDBOX_DOCKER_HOST: str = env("MIRES_SANDBOX_DOCKER_HOST")
+# Compose only: pass `storage_opt size=` (inputs + outputs cap) to the sandbox container. Needs overlay2 on
+# XFS with project quotas; on other storage drivers container creation fails, so it is off by default (#414).
+SANDBOX_COMPOSE_STORAGE_LIMIT: bool = env("MIRES_SANDBOX_COMPOSE_STORAGE_LIMIT")
+# ETL runner scratch volume (#414): each Job's inputs are fetched here (mode 0700, removed once the Job is
+# finalized). It holds the original files, so deployments should use an encrypted volume. Empty = system temp
+# dir. A Job needs free space >= its total listed input size + ETL_SCRATCH_MARGIN_BYTES, else it is retried as an
+# infra-class failure.
+ETL_SCRATCH_DIR: str = env("MIRES_ETL_SCRATCH_DIR")
+ETL_SCRATCH_MARGIN_BYTES: int = env("MIRES_ETL_SCRATCH_MARGIN_BYTES")
 SANDBOX_IMAGE_ALLOWLIST: dict[str, str] = json.loads(env("MIRES_SANDBOX_IMAGE_ALLOWLIST"))
 SANDBOX_DEFAULT_TIMEOUT_SECONDS: int = env("MIRES_SANDBOX_DEFAULT_TIMEOUT_SECONDS")
 SANDBOX_DEFAULT_MEMORY_MB: int = env("MIRES_SANDBOX_DEFAULT_MEMORY_MB")
@@ -313,13 +320,6 @@ ETL_SOURCE_CLEANUP_MAX_ATTEMPTS: int = env("MIRES_ETL_SOURCE_CLEANUP_MAX_ATTEMPT
 ETL_SOURCE_CLEANUP_BACKOFF_BASE_SECONDS: int = env("MIRES_ETL_SOURCE_CLEANUP_BACKOFF_BASE_SECONDS")
 ETL_SOURCE_CLEANUP_BACKOFF_MAX_SECONDS: int = env("MIRES_ETL_SOURCE_CLEANUP_BACKOFF_MAX_SECONDS")
 
-# DICOM ingestion (#123): global default for source retention. A run deletes
-# its source file only once storage is verified, never merely on a successful
-# storage call. Layered: ResearchProject.dicom_delete_originals_after_storage
-# overrides this per project (None defers here); run_ingestion's
-# delete_originals_after_storage overrides both for a single run.
-DICOM_DELETE_ORIGINALS_AFTER_STORAGE: bool = env("MIRES_DICOM_DELETE_ORIGINALS_AFTER_STORAGE")
-
 # DICOM ingestion security (#114, #127): a file's *declared* Rows/Columns/
 # TotalPixelMatrixRows/TotalPixelMatrixColumns/NumberOfFrames tags are
 # rejected before any pixel data is decoded when they exceed these bounds --
@@ -329,6 +329,16 @@ DICOM_DELETE_ORIGINALS_AFTER_STORAGE: bool = env("MIRES_DICOM_DELETE_ORIGINALS_A
 # (tunable per deployment via env).
 DICOM_MAX_PIXEL_DIMENSIONS: int = env("MIRES_DICOM_MAX_PIXEL_DIMENSIONS")
 DICOM_MAX_FRAME_COUNT: int = env("MIRES_DICOM_MAX_FRAME_COUNT")
+
+# Orphan DICOM blob sweep (#420): a blob under DICOM/ with no DicomFile row is reported after
+# DETECT hours (outlasts the longest ETL Job) and deleted after GRACE hours, only if it was already
+# reportable at the previous run. Nothing is deleted if the deletable set exceeds MAX_DELETE_COUNT or
+# MAX_DELETE_FRACTION of listed blobs. SWEEP_ACTION (report | delete) governs the daily task.
+DICOM_ORPHAN_DETECT_HOURS: int = env("MIRES_DICOM_ORPHAN_DETECT_HOURS")
+DICOM_ORPHAN_GRACE_HOURS: int = env("MIRES_DICOM_ORPHAN_GRACE_HOURS")
+DICOM_ORPHAN_MAX_DELETE_COUNT: int = env("MIRES_DICOM_ORPHAN_MAX_DELETE_COUNT")
+DICOM_ORPHAN_MAX_DELETE_FRACTION: float = env("MIRES_DICOM_ORPHAN_MAX_DELETE_FRACTION")
+DICOM_ORPHAN_SWEEP_ACTION: str = env("MIRES_DICOM_ORPHAN_SWEEP_ACTION")
 
 
 def get_allowed_hosts_list(allowed_hosts_env) -> list[str]:

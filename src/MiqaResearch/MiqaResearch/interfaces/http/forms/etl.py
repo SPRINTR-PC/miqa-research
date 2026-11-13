@@ -243,7 +243,9 @@ class EtlBindingEditForm(forms.Form):
 
     def __init__(self, *args, location_grants, script_version_choices, can_choose_delete,
                  current_raw_retention=None, config_schemas=None, config_version_id=None, storage_id=None,
-                 **kwargs):
+                 raw_retention_defaults=None, **kwargs):
+        # Version id -> the Raw Retention its Datatype declares as default; the wizard preselects it (#418).
+        self.raw_retention_defaults = raw_retention_defaults or {}
         self.location_grants = location_grants
         self.storage_id = storage_id  # the Binding's Connected Storage (#394); grants count only on it
         self.can_choose_delete = can_choose_delete
@@ -254,6 +256,12 @@ class EtlBindingEditForm(forms.Form):
         # with one field per top-level property. `config_version_id` overrides the selection: to read
         # a posted form's config fields as rendered, for a Version since swapped out.
         self.config_version_id = config_version_id or self._selected_script_version_id()
+        if not self.is_bound and "raw_retention" not in self.initial:
+            default = self.raw_retention_defaults.get(self.config_version_id)
+            # Not preselected when it is Delete and the user cannot choose Delete (non-Admin): the field's own
+            # initial applies instead. Deliberate: see test_datatype_delete_default_is_not_preselected.
+            if default and not (default == PIPELINE_BINDING_RAW_RETENTION_DELETE and self.delete_locked):
+                self.fields["raw_retention"].initial = default
         schema = (config_schemas or {}).get(self.config_version_id)
         self.config_schema = ConfigSchema(schema) if schema is not None else None
         self._config_field_names = {}  # config key -> generated field name

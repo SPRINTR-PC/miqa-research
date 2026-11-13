@@ -19,10 +19,35 @@ e.g. `Exists(visible_participants(u, p).filter(pk=OuterRef(...)))`. The per-Site
 """
 from django.db.models import Exists, OuterRef, Q, QuerySet
 
-from contract.constants.research_project_role import PROJECT_ROLE_ADMIN, PROJECT_ROLE_PI
-from MiqaResearch.data.models import ClientBinding, ParticipantConsent, ResearchProjectUserRoleMap, StudyParticipant
+from contract.constants.research_project_role import PROJECT_ROLE_ADMIN, PROJECT_ROLE_DATA_MANAGER, PROJECT_ROLE_PI
+from MiqaResearch.data.models import (
+    ClientBinding,
+    ParticipantConsent,
+    ResearchProject,
+    ResearchProjectUserRoleMap,
+    StudyParticipant,
+)
 
 ALL_SITES_ROLES = (PROJECT_ROLE_ADMIN, PROJECT_ROLE_PI)
+UNLINKED_ACCESS_ROLES = (PROJECT_ROLE_ADMIN, PROJECT_ROLE_DATA_MANAGER)
+
+
+def projects_with_unlinked_access(user) -> QuerySet[ResearchProject]:
+    """Research Projects whose unlinked Dicom Studies (no Study Participant yet, ADR 0035) `user` may open:
+    project Admins and Data Managers, and superusers. Lazy, composes as a subquery."""
+    if not getattr(user, "is_authenticated", False):
+        return ResearchProject.objects.none()
+    if user.is_superuser:
+        return ResearchProject.objects.all()
+    roles = ResearchProjectUserRoleMap.objects.filter(
+        user=user, project=OuterRef("pk"), role__name__in=UNLINKED_ACCESS_ROLES
+    )
+    return ResearchProject.objects.filter(Exists(roles))
+
+
+def can_open_unlinked(user, project) -> bool:
+    """Whether `user` may open unlinked Studies of `project` (instance or pk)."""
+    return projects_with_unlinked_access(user).filter(pk=getattr(project, "pk", project)).exists()
 
 
 def visible_participants(user, project, roles=None) -> QuerySet[StudyParticipant]:

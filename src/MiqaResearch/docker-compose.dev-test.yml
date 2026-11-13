@@ -217,31 +217,21 @@ services:
     environment:
       - MIRES_DEBUG=1
       - MIRES_SITE_URL=http://mires_web:8000
-      # test_miqaresearch, not miqaresearch: this worker exists only to serve
-      # the dicom concurrency perf test (#126), which (via pytest-django)
-      # runs against Django's test database, not the dev one -- a separate
-      # database on the same server, so this must point at the same one the
-      # test process does for the two to see each other's writes.
+      # test_miqaresearch, not miqaresearch: this worker serves the DICOM backfill tasks
+      # (dicomIngestion queue) for tests that run (via pytest-django) against Django's test
+      # database, not the dev one -- a separate database on the same server, so this must
+      # point at the same one the test process does for the two to see each other's writes.
       - MIRES_DATABASE_URL=psql://postgres:postgres@mires_db:5432/test_miqaresearch
       - MIRES_CELERY_BROKER_URL=amqp://miresRabmin:miresRabmin@miresrabbit:5672//
       - MIRES_AUTH_TOKEN=2ac83c66b6affe116e16efc51ef752f583b37c52
       - SET_CELERY_PYTHON_PATH=1
-      # Unlike mires_worker_consent/email/ocr, this worker's task pseudonymizes
+      # Unlike mires_worker_consent/email/ocr, this worker's tasks pseudonymize
       # UIDs with Fernet encryption (helpers.dicom_uid.pseudonymize_uid), so it
       # actually needs a real FERNET_KEY -- found live: without MIRES_USE_VAULT,
       # FERNET_KEY is None and every file errors with "UID pseudonymization failed".
       - MIRES_USE_VAULT=1
       - MIRES_VAULT_URL=http://mires_vault:8200
       - MIRES_VAULT_TOKEN=AVeryUnsecretSecret
-      # Shared with mires_testrunner's dicom concurrency perf test (#126) --
-      # source files that test writes must be readable inside this worker
-      # container, since the task this worker runs executes *here*, not in
-      # the test process. Storage stays on local disk (the default);
-      # MIRES_MEDIA_ROOT points it at a scratch dir alongside the source
-      # root, so the test can find and clean up its output (see its
-      # docstring for why S3/RustFS isn't used here as an alternative).
-      - MIRES_DICOM_ALLOWED_SOURCE_ROOTS=/app/.dev-data/dicom_perf_concurrency
-      - MIRES_MEDIA_ROOT=/app/.dev-data/dicom_perf_concurrency_media
     depends_on:
       - mires_web
       - mires_db

@@ -45,7 +45,7 @@ from MiqaResearch.data.models import (
 from MiqaResearch.etl_datatypes import load_jsonl
 from MiqaResearch.etl_sandbox import SandboxLimits, SandboxRunSpec, resolve_limits
 from MiqaResearch.etl_sandbox.kubernetes_backend import KubernetesSandboxBackend
-from MiqaResearch.etl_shim import contract
+from mires_etl import contract
 
 IMAGE_REF = "localhost/mires-etl-sandbox-python:dev"
 NAMESPACE = "mires-etl-sandbox"

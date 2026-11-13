@@ -880,3 +880,19 @@ def test_a_json_config_field_can_set_null_and_left_blank_leaves_the_key_out(proj
     client.post(_create_url(project), _payload(project, version, config__source=entered), **HTMX)
 
     assert PipelineBinding.objects.get(project=project).config == config
+
+
+@pytest.mark.django_db
+def test_the_wizard_preselects_the_raw_retention_a_datatype_declares_as_default(project):
+    """#418: dicom_instance defaults to "delete" (an Admin can pick it); other Datatypes keep "move"."""
+    _grant_incoming_and_raw(project)
+    script = EtlScript.objects.create(
+        name="DICOM", origin=ETL_SCRIPT_ORIGIN_NATIVE, project=None, datatype_name="dicom_instance")
+    version = EtlScriptVersion.objects.create(
+        script=script, version=1, source=SimpleUploadedFile("script.py", b"print()"), sha256="0" * 64)
+    client = _client_as(_user_with_role(project, "Admin"))
+
+    body = client.get(_bindings_url(project)).content.decode()
+
+    assert re.search(r'value="delete"\s+checked', body)
+    assert json.dumps({str(version.id): "delete"}) in body

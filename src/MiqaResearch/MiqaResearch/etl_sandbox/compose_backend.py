@@ -20,9 +20,9 @@ from docker.errors import NotFound
 from requests.exceptions import ConnectionError as RequestsConnectionError
 from requests.exceptions import ReadTimeout
 
-from MiqaResearch.etl_shim import contract
+from mires_etl import contract
 
-from ._staging import build_sandbox_archive, check_input_size, read_output_from_tar
+from ._staging import check_input_size, open_sandbox_archive, read_output_from_tar
 from .backend import SandboxBackend
 from .images import resolve_sandbox_image
 from .spec import SandboxRunResult, SandboxRunSpec
@@ -45,6 +45,12 @@ class ComposeSandboxBackend(SandboxBackend):
         check_input_size(spec)
 
         client = self._get_client()
+        create_kwargs = {}
+        if _storage_limit_enabled():
+            # Bounds the container's writable layer (inputs + outputs). Only the overlay2-on-XFS-with-
+            # project-quotas driver honours it; elsewhere create() fails, so it is opt-in (#414).
+            create_kwargs["storage_opt"] = {
+                "size": str(spec.limits.max_input_bytes + spec.limits.max_output_bytes)}
         container = client.containers.create(
             image=image,
             name=_container_name(spec.run_id),
@@ -57,9 +63,11 @@ class ComposeSandboxBackend(SandboxBackend):
             cap_drop=["ALL"],
             security_opt=["no-new-privileges"],
             detach=True,
+            **create_kwargs,
         )
         try:
-            container.put_archive(SANDBOX_ROOT, build_sandbox_archive(spec))
+            with open_sandbox_archive(spec) as archive:
+                container.put_archive(SANDBOX_ROOT, archive)
             container.start()
             killed = False
             try:
@@ -77,8 +85,10 @@ class ComposeSandboxBackend(SandboxBackend):
                 container.kill()
                 exit_code, killed = contract.EXIT_TIMEOUT_OR_KILLED, True
 
-            result_jsonl, log = _retrieve_output(container, max_bytes=spec.limits.max_output_bytes)
-            return SandboxRunResult(exit_code=exit_code, result_jsonl=result_jsonl, log=log, killed=killed)
+            result_jsonl, log, image_manifest = _retrieve_output(container, max_bytes=spec.limits.max_output_bytes)
+            return SandboxRunResult(
+                exit_code=exit_code, result_jsonl=result_jsonl, log=log, killed=killed,
+                image_digest=container.attrs.get("Image") or "", image_manifest=image_manifest)
         finally:
             container.remove(force=True)
 
@@ -105,22 +115,27 @@ class ComposeSandboxBackend(SandboxBackend):
         return self._client
 
 
+def _storage_limit_enabled() -> bool:
+    from django.conf import settings
+    return settings.SANDBOX_COMPOSE_STORAGE_LIMIT
+
+
 def _container_name(run_id: str) -> str:
     return f"{CONTAINER_NAME_PREFIX}{run_id}"
 
 
-def _retrieve_output(container, *, max_bytes: int) -> tuple[bytes | None, bytes]:
+def _retrieve_output(container, *, max_bytes: int) -> tuple[bytes | None, bytes, str]:
     try:
         stream, _ = container.get_archive(f"{SANDBOX_ROOT}/{contract.OUTPUT_DIRNAME}")
     except NotFound:
-        return None, b""
+        return None, b"", ""
 
     buf = io.BytesIO()
     size = 0
     for chunk in stream:
         size += len(chunk)
         if size > max_bytes:
-            return None, b""
+            return None, b"", ""
         buf.write(chunk)
 
     return read_output_from_tar(buf.getvalue())

@@ -1,6 +1,6 @@
 """WADO for the browser viewer (#276): session callers, Participant Visibility per request, cache headers.
 
-Seam: the WADO HTTP endpoints, fed by `run_ingestion`. A session caller is a
+Seam: the WADO HTTP endpoints, fed by `ingest_files`. A session caller is a
 logged-in user (`client.force_login`); a client caller sends a Bearer token.
 """
 from datetime import UTC, datetime
@@ -24,9 +24,9 @@ from MiqaResearch.data.models import (
     ResearchProjectUserRoleMap,
 )
 from MiqaResearch.data.models.dicom_storage import DicomStorage
-from MiqaResearch.tasks.dicom_handling.pipeline import run_ingestion
 from tests.client_binding_helpers import bound_client
 from tests.dicom_fixtures import build_multiframe_ct, write_dicom
+from tests.dicom_ingest_helper import ingest_files
 
 User = get_user_model()
 TOKEN = "session-access-test-token"
@@ -42,7 +42,6 @@ def encryption_keys(settings):
 
 @pytest.fixture(autouse=True)
 def local_media(settings, tmp_path):
-    settings.DICOM_ALLOWED_SOURCE_ROOTS = [tmp_path]
     settings.MEDIA_ROOT = tmp_path / "media"
     settings.DEBUG = False
     settings.MIDDLEWARE = [m for m in settings.MIDDLEWARE if "debug_toolbar" not in m]
@@ -54,12 +53,13 @@ def world(db, tmp_path):
     project = ResearchProject.objects.create(name="Viewer project", description="Project for #276 tests")
     consent_type = ParticipantConsentType.objects.create(label="Participation", research_project=project)
     sites = {code: Clinic.objects.create(clinic_code=f"S-{code}", clinic_name=f"Site {code}") for code in "AB"}
-    report = run_ingestion(project, write_dicom(build_multiframe_ct(number_of_frames=3), tmp_path / "ct.dcm"))
+    report = ingest_files(project, write_dicom(build_multiframe_ct(number_of_frames=3), tmp_path / "ct.dcm"))
     assert report.counts["ingested"] == 1, report.results
     dicom_file = DicomFile.objects.get(sop_instance_uid=report.results[0].sop_instance_uid)
     ParticipantConsent.objects.create(
-        study_participant=dicom_file.series.study.study_participant, status="Signerat", clinic=sites["A"],
-        consent_type=consent_type, consent_signed_date=datetime(2026, 1, 1, 9, 0, tzinfo=UTC),
+        study_participant=dicom_file.series.study.participant_key.study_participant, status="Signerat",
+        clinic=sites["A"], consent_type=consent_type,
+        consent_signed_date=datetime(2026, 1, 1, 9, 0, tzinfo=UTC),
     )
     return {"project": project, "sites": sites, "file": dicom_file}
 
@@ -324,3 +324,38 @@ def test_denied_series_opens_are_not_audited(world, invisible_client):
 def test_client_callers_write_no_viewer_series_open(world, client, bearer):
     client.get(_metadata_urls(world["file"])[1], **bearer)
     assert _series_opens() == []
+
+
+# --- unlinked Studies (ADR 0035, #415) ---
+
+
+@pytest.fixture
+def unlinked(world):
+    """The world's Study with its Participant Key unlinked."""
+    key = world["file"].series.study.participant_key
+    key.study_participant = None
+    key.save(update_fields=["study_participant"])
+    return world
+
+
+def test_unlinked_study_is_hidden_from_ordinary_roles(unlinked, visible_client):
+    assert visible_client.get(_frames_url(unlinked["file"])).status_code == 404
+    assert visible_client.get(_metadata_urls(unlinked["file"])[1]).status_code == 404
+
+
+@pytest.mark.parametrize("role", ["Admin", "Data Manager"])
+def test_unlinked_study_opens_for_project_admins_and_data_managers_and_is_audited(unlinked, client, role):
+    client.force_login(_user_with_role(unlinked["project"], role))
+    assert client.get(_metadata_urls(unlinked["file"])[1]).status_code == 200
+    assert client.get(_frames_url(unlinked["file"])).status_code == 200
+    assert [entry.project_id for entry in _series_opens()] == [unlinked["project"].pk]
+
+
+def test_unlinked_study_admin_of_another_project_gets_404(unlinked, client):
+    other = ResearchProject.objects.create(name="Elsewhere", description="d")
+    client.force_login(_user_with_role(other, "Admin"))
+    assert client.get(_frames_url(unlinked["file"])).status_code == 404
+
+
+def test_unlinked_study_is_hidden_from_machine_clients(unlinked, client, bearer):
+    assert client.get(_metadata_urls(unlinked["file"])[1], **bearer).status_code == 404

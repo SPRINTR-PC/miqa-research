@@ -1,14 +1,17 @@
 """The ETL Datatype registry (#159): code-registered kinds of incoming data.
 
 Datatypes are never user-defined -- a Data Manager only ever picks one, by name, from this
-registry. `@register_datatype` binds a name to an output schema (what a Script's JSONL rows must
-match) and a loader (how validated rows get persisted); registering the same name twice is a hard
-error, since it would silently shadow whichever Datatype registered first.
+registry. Two registries (#412): schemas (what a Script's JSONL rows must match) register by name in
+the Django-free `mires_etl.schemas`; loaders (how validated rows get persisted) register by name here
+with `@register_loader`. A test keeps the name sets equal. Registering the same loader name twice is a
+hard error, since it would silently shadow whichever registered first.
 """
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from ninja import Schema
+from pydantic import BaseModel
+
+from mires_etl.schemas import SchemaNotRegistered, get_schema
 
 from .exceptions import DatatypeAlreadyRegistered, DatatypeNotRegistered
 
@@ -17,6 +20,10 @@ from .exceptions import DatatypeAlreadyRegistered, DatatypeNotRegistered
 class LoadResult:
     created: int
     updated: int
+    skipped: int = 0
+    # Relative paths of inputs the loader did not store: they stay in the source (#402).
+    kept_inputs: tuple[str, ...] = ()
+    log_lines: tuple[str, ...] = ()
 
     @property
     def total(self) -> int:
@@ -29,28 +36,44 @@ LoaderFunc = Callable[..., LoadResult]
 @dataclass(frozen=True)
 class DatatypeRegistration:
     name: str
-    schema: type[Schema]
+    schema: type[BaseModel]
     loader: LoaderFunc
+    default_raw_retention: str | None = None
 
 
-_REGISTRY: dict[str, DatatypeRegistration] = {}
+_LOADERS: dict[str, LoaderFunc] = {}
+_DEFAULT_RAW_RETENTION: dict[str, str] = {}
 
 
-def register_datatype(name: str, schema: type[Schema]) -> Callable[[LoaderFunc], LoaderFunc]:
+def register_loader(name: str, *, default_raw_retention: str | None = None) -> Callable[[LoaderFunc], LoaderFunc]:
+    """`default_raw_retention` ("move" | "delete"): what the Binding wizard preselects for this Datatype."""
     def decorator(loader: LoaderFunc) -> LoaderFunc:
-        if name in _REGISTRY:
+        if name in _LOADERS:
             raise DatatypeAlreadyRegistered(f"A Datatype named {name!r} is already registered.")
-        _REGISTRY[name] = DatatypeRegistration(name=name, schema=schema, loader=loader)
+        _LOADERS[name] = loader
+        if default_raw_retention:
+            _DEFAULT_RAW_RETENTION[name] = default_raw_retention
         return loader
     return decorator
 
 
 def get_datatype(name: str) -> DatatypeRegistration:
     try:
-        return _REGISTRY[name]
-    except KeyError:
+        schema = get_schema(name)
+    except SchemaNotRegistered:
         raise DatatypeNotRegistered(f"No Datatype is registered under {name!r}.") from None
+    try:
+        loader = _LOADERS[name]
+    except KeyError:
+        raise DatatypeNotRegistered(f"Datatype {name!r} has a schema but no loader.") from None
+    return DatatypeRegistration(
+        name=name, schema=schema, loader=loader, default_raw_retention=_DEFAULT_RAW_RETENTION.get(name))
 
 
 def registered_datatype_names() -> list[str]:
-    return sorted(_REGISTRY)
+    return sorted(_LOADERS)
+
+
+def loader_names() -> set[str]:
+    return set(_LOADERS)
+

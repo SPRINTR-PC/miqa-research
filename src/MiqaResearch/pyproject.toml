@@ -43,6 +43,17 @@ dependencies = [
 ]
 
 [dependency-groups]
+# Curated ETL sandbox package sets (#413). `etl-python` is what a Native Script may import beyond the
+# stdlib; `etl-shim` is what `mires_etl` itself needs. Versions come from uv.lock; a change to either
+# group means a new sandbox image key. The sandbox image installs only these two groups.
+etl-python = [
+    "pydicom",
+    "polars>=1.40.1",
+    "numpy>=2.4.6",
+]
+etl-shim = [
+    "pydantic",
+]
 dev = [
     {include-group = "docs"},
     "ruff>=0.15.11",

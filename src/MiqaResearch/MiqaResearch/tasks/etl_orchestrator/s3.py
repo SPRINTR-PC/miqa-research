@@ -8,11 +8,15 @@ pipeline's own S3 wrappers -- each is scoped to a different credential and bucke
 """
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
 import boto3
 from botocore.exceptions import ClientError
+
+DOWNLOAD_CHUNK_BYTES = 1024 * 1024
 
 
 class EtlBucketSourceError(Exception):
@@ -26,6 +30,7 @@ class EtlObjectRef:
     key: str
     etag: str
     last_modified: datetime | None
+    size: int = 0
 
 
 class EtlBucketSource:
@@ -50,7 +55,7 @@ class EtlBucketSource:
                     refs.append(EtlObjectRef(
                         bucket=self.bucket, key=key,
                         etag=obj.get("ETag", "").strip('"'),
-                        last_modified=obj.get("LastModified"),
+                        last_modified=obj.get("LastModified"), size=obj.get("Size", 0),
                     ))
             return refs
         except ClientError as exc:
@@ -61,6 +66,29 @@ class EtlBucketSource:
             return self._client.get_object(Bucket=self.bucket, Key=key)["Body"].read()
         except ClientError as exc:
             raise EtlBucketSourceError(f"ETL source object unreadable: {self.bucket}/{key}") from exc
+
+    def size_of(self, key: str) -> int:
+        """The object's current size per S3 (HEAD), the 'listed size' the runner admits and verifies against."""
+        try:
+            return self._client.head_object(Bucket=self.bucket, Key=key)["ContentLength"]
+        except ClientError as exc:
+            raise EtlBucketSourceError(f"ETL source object unreadable: {self.bucket}/{key}") from exc
+
+    def download(self, key: str, destination: Path) -> tuple[str, int]:
+        """Stream `key` to `destination` in chunks, returning `(sha256 hex, byte count)` computed in the same
+        pass; RAM is bounded by one chunk however large the object (#414)."""
+        digest, size = hashlib.sha256(), 0
+        try:
+            body = self._client.get_object(Bucket=self.bucket, Key=key)["Body"]
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            with open(destination, "wb") as out:
+                for chunk in body.iter_chunks(chunk_size=DOWNLOAD_CHUNK_BYTES):
+                    out.write(chunk)
+                    digest.update(chunk)
+                    size += len(chunk)
+        except ClientError as exc:
+            raise EtlBucketSourceError(f"ETL source object unreadable: {self.bucket}/{key}") from exc
+        return digest.hexdigest(), size
 
 
 class EtlStorageCredentialsNotConfigured(Exception):

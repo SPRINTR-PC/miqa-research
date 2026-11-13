@@ -24,7 +24,8 @@ from MiqaResearch.etl_sandbox import (
     resolve_sandbox_image,
 )
 from MiqaResearch.etl_sandbox.compose_backend import ComposeSandboxBackend
-from MiqaResearch.etl_shim import contract
+from mires_etl import contract
+from tests.sandbox_staging import stage_inputs
 
 # --- image allowlist -------------------------------------------------------
 
@@ -98,9 +99,13 @@ def _limits(**overrides):
     return SandboxLimits(**defaults)
 
 
-def _output_archive(*, result_jsonl: bytes | None, log: bytes) -> list[bytes]:
+def _output_archive(*, result_jsonl: bytes | None, log: bytes, packages: bytes | None = None) -> list[bytes]:
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w") as tar:
+        if packages is not None:
+            info = tarfile.TarInfo(name=f"output/{contract.PACKAGES_FILENAME}")
+            info.size = len(packages)
+            tar.addfile(info, io.BytesIO(packages))
         if result_jsonl is not None:
             info = tarfile.TarInfo(name=f"output/{contract.RESULT_FILENAME}")
             info.size = len(result_jsonl)
@@ -173,18 +178,21 @@ def test_run_creates_a_network_less_non_root_resource_limited_container(allowlis
     assert kwargs["labels"] == {"mires.etl.sandbox": "1", "mires.etl.run_id": "r1"}
 
 
-def test_run_stages_manifest_script_and_input_files_via_put_archive(allowlisted):
+def test_run_stages_manifest_script_and_input_files_via_put_archive(allowlisted, tmp_path):
     client = MagicMock()
     container = _fake_container()
     client.containers.create.return_value = container
     backend = ComposeSandboxBackend(client=client)
     spec = SandboxRunSpec(
         run_id="r1", image_key="python-etl-v1", manifest={"datatype": "measurement", "config": {"a": 1}},
-        script_source=b"SCRIPT_SOURCE", input_files={"source.csv": b"a,b\n1,2\n"}, limits=_limits())
+        script_source=b"SCRIPT_SOURCE", input_files=stage_inputs(tmp_path, {"source.csv": b"a,b\n1,2\n"}), limits=_limits())
+
+    captured = []
+    container.put_archive.side_effect = lambda path, data: captured.append((path, data.read()))
 
     backend.run(spec)
 
-    (path, archive_bytes), _ = container.put_archive.call_args
+    (path, archive_bytes), = captured
     assert path == "/sandbox"
     with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r") as tar:
         names = tar.getnames()
@@ -204,9 +212,12 @@ def test_run_stages_an_r_scripts_source_as_script_r(settings):
         run_id="r1", image_key="r-etl-v1", manifest={"datatype": "measurement"},
         script_source=b"main <- function(ctx) NULL", limits=_limits())
 
+    captured = []
+    container.put_archive.side_effect = lambda path, data: captured.append(data.read())
+
     backend.run(spec)
 
-    (_, archive_bytes), _ = container.put_archive.call_args
+    (archive_bytes,) = captured
     with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r") as tar:
         assert set(tar.getnames()) == {"manifest.json", "script.R"}
         assert tar.extractfile("script.R").read() == b"main <- function(ctx) NULL"
@@ -228,6 +239,22 @@ def test_run_returns_the_result_jsonl_and_log_on_success(allowlisted):
     assert result.result_jsonl == b'{"datatype": "measurement"}\nrow\n'
     assert result.log == b"hello\n"
     assert result.killed is False
+
+
+def test_run_returns_the_image_digest_and_the_baked_package_manifest(allowlisted):
+    client = MagicMock()
+    container = _fake_container(
+        output_archive=_output_archive(result_jsonl=None, log=b"", packages=b"pydicom==3.0.2\n"))
+    container.attrs = {"State": {"OOMKilled": False}, "Image": "sha256:feedbeef"}
+    client.containers.create.return_value = container
+    spec = SandboxRunSpec(
+        run_id="r1", image_key="python-etl-v1", manifest={"datatype": "measurement"}, script_source=b"",
+        limits=_limits())
+
+    result = ComposeSandboxBackend(client=client).run(spec)
+
+    assert result.image_digest == "sha256:feedbeef"
+    assert result.image_manifest == "pydicom==3.0.2\n"
 
 
 def test_run_always_removes_the_container_afterwards(allowlisted):

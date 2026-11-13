@@ -7,8 +7,8 @@ from importlib import import_module
 import pytest
 
 from MiqaResearch.data.models import DicomFile, DicomSeries, ResearchProject
-from MiqaResearch.tasks.dicom_handling.pipeline import run_ingestion
 from tests.dicom_fixtures import build_ct_image, write_dicom
+from tests.dicom_ingest_helper import ingest_files
 
 backfill_series_frame_of_reference = import_module(
     "MiqaResearch.data.migrations.0036_dicom_series_frame_of_reference"
@@ -23,7 +23,6 @@ def encryption_keys(settings):
 
 @pytest.fixture(autouse=True)
 def storage(settings, tmp_path):
-    settings.DICOM_ALLOWED_SOURCE_ROOTS = [tmp_path]
     settings.MEDIA_ROOT = tmp_path / "media"
 
 
@@ -38,7 +37,7 @@ def _ingest_series(research_project, tmp_path, series_uid, files):
         ds = build_ct_image(
             series_instance_uid=series_uid, sop_instance_uid=sop_uid, frame_of_reference_uid=frame_of_reference_uid
         )
-        run_ingestion(research_project, write_dicom(ds, tmp_path / f"{sop_uid}.dcm"))
+        ingest_files(research_project, write_dicom(ds, tmp_path / f"{sop_uid}.dcm"))
     series = DicomFile.objects.order_by("-id").first().series
     DicomSeries.objects.filter(pk=series.pk).update(frame_of_reference_uid=None)
     return series

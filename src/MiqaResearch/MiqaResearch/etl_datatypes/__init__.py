@@ -1,6 +1,8 @@
 from . import (
+    dicom_instance,  # noqa: F401  -- import triggers @register_loader("dicom_instance")
     measurement,  # noqa: F401  -- import triggers @register_datatype("measurement")
     participant_consent,  # noqa: F401  -- import triggers @register_datatype("participant_consent")
+    participant_key_link,  # noqa: F401  -- import triggers @register_loader("participant_key_link")
     visit_occurrence,  # noqa: F401  -- import triggers @register_datatype("visit_occurrence")
 )
 from .exceptions import (
@@ -9,11 +11,13 @@ from .exceptions import (
     DatatypeNotRegistered,
     EtlDatatypeError,
     EtlJobProjectMismatch,
+    EtlLoadError,
     EtlRowError,
     UnresolvableParticipantReference,
 )
+from .inputs import NO_INPUTS, JobInputs
 from .loader import load_jsonl
-from .registry import DatatypeRegistration, LoadResult, get_datatype, register_datatype, registered_datatype_names
+from .registry import DatatypeRegistration, LoadResult, get_datatype, register_loader, registered_datatype_names
 
 __all__ = [
     "AmbiguousParticipantReference",
@@ -21,12 +25,15 @@ __all__ = [
     "DatatypeNotRegistered",
     "DatatypeRegistration",
     "EtlDatatypeError",
+    "EtlLoadError",
+    "JobInputs",
+    "NO_INPUTS",
     "EtlJobProjectMismatch",
     "EtlRowError",
     "LoadResult",
     "UnresolvableParticipantReference",
     "get_datatype",
     "load_jsonl",
-    "register_datatype",
+    "register_loader",
     "registered_datatype_names",
 ]

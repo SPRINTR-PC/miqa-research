@@ -1,15 +1,15 @@
-"""Consent loads and DICOM ingestion format a person's identifier the same way (#241 review), so a
+"""Consent loads and DICOM Participant Key matching format a person's identifier the same way (#241 review), so a
 personnummer written with or without its dash, or with stray whitespace, is one Study Participant
-in a project whichever path saw the person first.
+in a project. DICOM ingestion never creates participants (ADR 0035): it only links to existing ones.
 """
 import json
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
-from pydicom.dataset import Dataset
 
 from contract.constants.etl import ETL_SCRIPT_ORIGIN_CUSTOM
 from helpers.person_source_value import PersonSourceValueCollision, reformat_stored_person_source_values
+from MiqaResearch.actions.participant_keys import link_study_keys
 from MiqaResearch.data.models import (
     EtlJob,
     EtlScript,
@@ -19,8 +19,8 @@ from MiqaResearch.data.models import (
     StudyParticipant,
 )
 from MiqaResearch.etl_datatypes import load_jsonl
-from MiqaResearch.etl_datatypes.participant_reference import ParticipantReferenceFields, resolve_participant
-from MiqaResearch.tasks.dicom_handling.participant import match_or_create_participant
+from MiqaResearch.etl_datatypes.participant_reference import resolve_participant
+from mires_etl.schemas import ParticipantReferenceFields
 
 SPELLINGS = ["19121212-1212", "191212121212", " 19121212-1212 "]
 
@@ -54,35 +54,23 @@ def _load_consent(project: ResearchProject, person_source_value: str) -> None:
         etl_job=EtlJob.objects.create(binding=binding, script_version=version), jsonl_text=json.dumps(row))
 
 
-def _ingest_dicom(project: ResearchProject, patient_id: str) -> StudyParticipant:
-    dataset = Dataset()
-    dataset.PatientID = patient_id
-    return match_or_create_participant(dataset, project)
+def _ingest_dicom(project: ResearchProject, patient_id: str) -> StudyParticipant | None:
+    """The participant a DICOM Study with this PatientID links to (None when no participant matches)."""
+    key = link_study_keys(project, [{"PatientID": patient_id}], match_person_source_value=True)
+    return key.study_participant
 
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("consent_spelling", SPELLINGS)
 @pytest.mark.parametrize("dicom_spelling", SPELLINGS)
-def test_dicom_ingestion_matches_the_participant_a_consent_load_created(project, consent_spelling, dicom_spelling):
+def test_dicom_study_links_to_the_participant_a_consent_load_created(project, consent_spelling, dicom_spelling):
     _load_consent(project, consent_spelling)
 
     participant = _ingest_dicom(project, dicom_spelling)
 
     assert StudyParticipant.objects.filter(research_project=project).count() == 1
     assert participant.person_source_value == "191212121212"
-
-
-@pytest.mark.django_db
-@pytest.mark.parametrize("dicom_spelling", SPELLINGS)
-@pytest.mark.parametrize("consent_spelling", SPELLINGS)
-def test_a_consent_load_matches_the_participant_dicom_ingestion_created(project, dicom_spelling, consent_spelling):
-    _ingest_dicom(project, dicom_spelling)
-
-    _load_consent(project, consent_spelling)
-
-    [participant] = StudyParticipant.objects.filter(research_project=project)
-    assert participant.person_source_value == "191212121212"
-    assert participant.participantconsent_set.count() == 1
+    assert participant == StudyParticipant.objects.get(research_project=project)
 
 
 @pytest.mark.django_db

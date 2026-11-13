@@ -3,8 +3,7 @@ Round-trip coverage for the DICOM ingestion schema changes (#98, #117):
 
 - DicomFile: image_position_patient, file_size_in_mb
 - DicomSeries: file_size_in_mb, removal of the dead wadors_uri field
-- ResearchProject: dicom_duplicate_handling, dicom_delete_originals_after_storage,
-  dicom_hashuid_salt_key (encrypted at rest)
+- ResearchProject: dicom_duplicate_handling, dicom_hashuid_salt_key (encrypted at rest)
 """
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -16,12 +15,20 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from helpers.db_fields import get_fernet
-from MiqaResearch.data.models import DicomFile, DicomSeries, DicomStudy, ResearchProject, StudyParticipant
+from MiqaResearch.data.models import (
+    DicomFile,
+    DicomSeries,
+    DicomStudy,
+    ParticipantKey,
+    ResearchProject,
+    StudyParticipant,
+)
 
 
 @pytest.fixture(autouse=True)
 def fernet_key(settings):
     settings.FERNET_KEY = b"EiGdHopiKZdBZwVCP4dVJitPrrDnOuGAd94W4EZpwQc="
+    settings.SENSITIVE_DATA_HASH_KEY = "H2QCB14temR-C2JnLORSE5TxPwLd8iy3YygNPQ-corA="
 
 
 @pytest.fixture
@@ -36,8 +43,11 @@ def study_participant(research_project):
 
 @pytest.fixture
 def dicom_study(study_participant):
+    key = ParticipantKey.objects.create(
+        project=study_participant.research_project, key_type="dicom:PatientID", value=f"pid-{uuid4().hex[:8]}",
+        study_participant=study_participant)
     return DicomStudy.objects.create(
-        study_participant=study_participant,
+        participant_key=key,
         study_datetime=datetime.now(UTC),
         study_instance_uid=f"1.2.840.{uuid4().int % 10**10}",
     )
@@ -75,15 +85,6 @@ def test_research_project_duplicate_handling_defaults_to_skip(db):
     project = ResearchProject.objects.create(name="Default handling project", description="...")
     project.refresh_from_db()
     assert project.dicom_duplicate_handling == "skip"
-
-
-@pytest.mark.django_db
-@pytest.mark.parametrize("override", [True, False, None])
-def test_research_project_delete_originals_override_round_trips(research_project, override):
-    research_project.dicom_delete_originals_after_storage = override
-    research_project.save()
-    research_project.refresh_from_db()
-    assert research_project.dicom_delete_originals_after_storage is override
 
 
 @pytest.mark.django_db

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DICOM files → dicom_instance config",
+  "type": "object",
+  "properties": {
+    "identifiers": {
+      "type": "object", "title": "Identifiers",
+      "description": "Header tags emitted per file as identifiers, and whether the loader also matches Study Participants by person_source_value.",
+      "properties": {
+        "tags": {
+          "type": "array", "items": {"type": "string", "minLength": 1}, "title": "Tags",
+          "description": "DICOM tag keywords or \"GGGG,EEEE\" codes, e.g. [\"PatientID\"]. Default: none."
+        },
+        "match_person_source_value": {
+          "type": "boolean", "title": "Match person_source_value",
+          "description": "Let the loader match a Study Participant by these identifiers' values."
+        }
+      },
+      "additionalProperties": false
+    },
+    "duplicate_handling": {
+      "type": "string", "enum": ["inherit", "skip", "update"], "title": "Duplicate handling",
+      "description": "A file whose SOP Instance is already stored with different content: inherit the project's setting, skip (leave the file in the source) or update (replace the stored file). Default: inherit."
+    }
+  },
+  "additionalProperties": false
+}

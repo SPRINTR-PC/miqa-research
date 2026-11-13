@@ -173,6 +173,22 @@ def script_version_config_schemas(versions: list[EtlScriptVersion]) -> dict[str,
     return {str(version.id): version.config_schema for version in versions}
 
 
+def script_version_default_raw_retentions(versions: list[EtlScriptVersion]) -> dict[str, str]:
+    """The Raw Retention each Version's Datatype declares as its default (#418), keyed like
+    `script_version_choices`; Versions whose Datatype declares none are left out."""
+    from MiqaResearch.etl_datatypes import DatatypeNotRegistered, get_datatype
+
+    defaults = {}
+    for version in versions:
+        try:
+            default = get_datatype(version.script.datatype_name).default_raw_retention
+        except DatatypeNotRegistered:
+            continue
+        if default:
+            defaults[str(version.id)] = default
+    return defaults
+
+
 async def get_project_settings(project: ResearchProject) -> EtlProjectSettings | None:
     return await EtlProjectSettings.objects.filter(project=project).afirst()
 
