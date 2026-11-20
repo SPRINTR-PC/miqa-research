@@ -365,4 +365,178 @@ public sealed class UploadPageViewModelTests
         await Start(page);
         Assert.AreEqual("", page.LockRefusal);
     }
+
+    private const long MiB = 1L << 20;
+
+    private static UploadProgress Snapshot(double? total, params UploadingFile[] files) => new(files, total);
+
+    private static UploadingFile Uploading(string path, long sent, long size, double? speed, string source = "wsi") =>
+        new(source, path, sent, size, speed);
+
+    /// <summary>Starts a Run that holds after its scripted events, so the page can be inspected while it "uploads".</summary>
+    private async Task<Task> StartHeld(UploadPageViewModel page)
+    {
+        _engine.Hold = true;
+        var run = Start(page);
+        await _engine.Started;
+        return run;
+    }
+
+    [TestMethod]
+    public async Task A_snapshot_fills_the_Uploading_now_card_with_bar_percent_speed_and_the_total()
+    {
+        _engine.Script.Add(File("a.ndpi", FileOutcome.Uploading));
+        _engine.Script.Add(File("b.ndpi", FileOutcome.Uploading));
+        _engine.Script.Add(Snapshot(9.2 * MiB, Uploading("a.ndpi", 42 * MiB, 100 * MiB, 3.1 * MiB), Uploading("b.ndpi", 61 * MiB, 100 * MiB, 6.1 * MiB)));
+        var page = NewPage();
+
+        var run = await StartHeld(page);
+
+        Assert.IsTrue(page.HasActiveUploads);
+        CollectionAssert.AreEqual(new[] { "a.ndpi", "b.ndpi" }, page.ActiveUploads.Select(u => u.Path).ToArray());
+        var a = page.ActiveUploads[0];
+        Assert.IsTrue(a.HasProgress);
+        Assert.AreEqual(42, a.Percent, 0.001);
+        Assert.AreEqual("42%", a.PercentText);
+        Assert.AreEqual("3.1 MiB/s", a.SpeedText);
+        Assert.AreEqual("9.2 MiB/s", page.TotalUploadSpeedText);
+        Assert.IsTrue(page.HasTotalUploadSpeed);
+        Assert.AreEqual(42 * MiB, page.Files[0].Progress!.BytesSent);
+        _engine.Release();
+        await run;
+    }
+
+    [TestMethod]
+    public async Task A_file_without_an_Upload_Speed_yet_shows_no_bar_or_speed_and_the_total_stays_empty()
+    {
+        _engine.Script.Add(File("a.ndpi", FileOutcome.Uploading));
+        _engine.Script.Add(Snapshot(null, Uploading("a.ndpi", 5 * MiB, 100 * MiB, null)));
+        var page = NewPage();
+
+        var run = await StartHeld(page);
+
+        Assert.AreEqual(1, page.ActiveUploads.Count);
+        Assert.IsFalse(page.ActiveUploads[0].HasProgress);
+        Assert.AreEqual("", page.ActiveUploads[0].SpeedText);
+        Assert.IsFalse(page.HasTotalUploadSpeed);
+        _engine.Release();
+        await run;
+    }
+
+    [TestMethod]
+    public async Task The_card_is_hidden_after_the_last_empty_snapshot_and_the_row_bar_is_gone()
+    {
+        _engine.Script.Add(File("a.ndpi", FileOutcome.Uploading));
+        _engine.Script.Add(Snapshot(3 * MiB, Uploading("a.ndpi", MiB, 100 * MiB, 3 * MiB)));
+        _engine.Script.Add(Snapshot(null));
+        var page = NewPage();
+
+        var run = await StartHeld(page);
+
+        Assert.IsFalse(page.HasActiveUploads);
+        Assert.AreEqual("", page.TotalUploadSpeedText);
+        Assert.IsFalse(page.Files[0].Progress!.HasProgress);
+        _engine.Release();
+        await run;
+    }
+
+    [TestMethod]
+    public async Task An_Archive_that_has_no_row_is_shown_in_the_card()
+    {
+        _engine.Script.Add(Snapshot(2 * MiB, Uploading("d/dicom-d.zip", MiB, 4 * MiB, 2 * MiB)));
+        var page = NewPage();
+
+        var run = await StartHeld(page);
+
+        Assert.AreEqual("dicom-d.zip", page.ActiveUploads.Single().Name);
+        Assert.AreEqual("25%", page.ActiveUploads.Single().PercentText);
+        Assert.AreEqual(0, page.Files.Count);
+        _engine.Release();
+        await run;
+    }
+
+    [TestMethod]
+    public async Task A_finished_row_reads_size_in_Upload_Time_and_leaves_the_card()
+    {
+        _engine.Script.Add(File("a.ndpi", FileOutcome.Uploading));
+        _engine.Script.Add(Snapshot(3 * MiB, Uploading("a.ndpi", 12 * MiB, 12 * MiB + MiB / 2, 3 * MiB)));
+        _engine.Script.Add(new FileOutcomeChanged("wsi", "a.ndpi", FileOutcome.Succeeded, null, 13_002_342, TimeSpan.FromSeconds(3.2)));
+        var page = NewPage();
+
+        var run = await StartHeld(page);
+
+        Assert.AreEqual("12.4 MiB in 3 s", page.Files.Single().Reason);
+        Assert.IsFalse(page.HasActiveUploads);
+        _engine.Release();
+        await run;
+    }
+
+    [TestMethod]
+    public async Task A_stale_snapshot_after_the_file_finished_does_not_bring_it_back()
+    {
+        _engine.Script.Add(new FileOutcomeChanged("wsi", "a.ndpi", FileOutcome.Succeeded, null, MiB, TimeSpan.FromSeconds(1)));
+        _engine.Script.Add(Snapshot(MiB, Uploading("a.ndpi", MiB, MiB, MiB)));
+        var page = NewPage();
+
+        var run = await StartHeld(page);
+
+        Assert.IsFalse(page.HasActiveUploads);
+        _engine.Release();
+        await run;
+    }
+
+    /// <summary>An engine that hands its progress sink to the test, so events can be reported while the Run is going.</summary>
+    private sealed class OpenEngine : IRunEngine
+    {
+        private readonly TaskCompletionSource<IProgress<RunEvent>> _sink = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _end = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Task<IProgress<RunEvent>> Sink => _sink.Task;
+        public void End() => _end.TrySetResult();
+
+        public async Task<RunResult> RunAsync(RunOptions options, IProgress<RunEvent> progress, CancellationToken cancellationToken)
+        {
+            _sink.SetResult(progress);
+            await _end.Task;
+            return new RunResult(Guid.NewGuid(), new Dictionary<FileOutcome, int>(), 0, null);
+        }
+    }
+
+    [TestMethod]
+    public async Task A_snapshot_touches_only_the_active_rows_in_a_large_file_list()
+    {
+        const int Count = 20_000;
+        var engine = new OpenEngine();
+        var page = new UploadPageViewModel(new FakeUploaderRuntime(Config, engine), a => a());
+        var run = Start(page);
+        var sink = await engine.Sink;
+        for (var i = 0; i < Count; i++) sink.Report(File($"f{i}.ndpi", i == 7 ? FileOutcome.Uploading : FileOutcome.Pending));
+        var rowChanges = 0;
+        foreach (var row in page.Files) row.PropertyChanged += (_, _) => rowChanges++;
+        var listChanges = 0;
+        page.Files.CollectionChanged += (_, _) => listChanges++;
+
+        sink.Report(Snapshot(MiB, Uploading("f7.ndpi", MiB, 10 * MiB, MiB)));
+
+        Assert.AreEqual(Count, page.Files.Count);
+        Assert.AreEqual(0, listChanges);
+        Assert.AreEqual(1, page.Files.Count(r => r.Progress is not null));
+        Assert.AreEqual("10%", page.ActiveUploads.Single().PercentText);
+        Assert.AreEqual(0, rowChanges); // no row of the list raised anything; the one active row's progress object changed
+        engine.End();
+        await run;
+    }
+
+    [TestMethod]
+    public void Sizes_speeds_and_times_are_binary_and_short()
+    {
+        Assert.AreEqual("12.4 MiB", TransferFormat.Size(13_002_342));
+        Assert.AreEqual("3.1 MiB/s", TransferFormat.Speed(3.1 * MiB));
+        Assert.AreEqual("<0.1 MiB/s", TransferFormat.Speed(1000));
+        Assert.AreEqual("0 MiB/s", TransferFormat.Speed(0));
+        Assert.AreEqual("<1 s", TransferFormat.Duration(TimeSpan.FromMilliseconds(900)));
+        Assert.AreEqual("3 s", TransferFormat.Duration(TimeSpan.FromSeconds(3.2)));
+        Assert.AreEqual("1 min 12 s", TransferFormat.Duration(TimeSpan.FromSeconds(72)));
+        Assert.AreEqual("1 min 0 s", TransferFormat.Duration(TimeSpan.FromSeconds(59.7)));
+        Assert.AreEqual("12.4 MiB in 3 s", TransferFormat.Finished(13_002_342, TimeSpan.FromSeconds(3)));
+    }
 }

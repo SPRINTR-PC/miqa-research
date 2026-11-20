@@ -9,6 +9,8 @@ public sealed class FileRowViewModel(string source, string path) : ViewModelBase
     private FileOutcome _outcome = FileOutcome.Pending;
     private string? _reason;
 
+    private UploadProgressViewModel? _progress;
+
     public string Source { get; } = source;
     public string Path { get; } = path;
 
@@ -62,9 +64,18 @@ public sealed class FileRowViewModel(string source, string path) : ViewModelBase
     public bool IsActive => Outcome is FileOutcome.Hashing or FileOutcome.Uploading or FileOutcome.Verifying;
     public bool IsMuted => Outcome is FileOutcome.Pending or FileOutcome.Skipped or FileOutcome.Ignored;
 
+    /// <summary>
+    /// The live bar, percent and Upload Speed while the file uploads; null until the first snapshot (rows are many, so it is created on demand).
+    /// Cleared when the file leaves Uploading.
+    /// </summary>
+    public UploadProgressViewModel? Progress => _progress;
+
+    internal UploadProgressViewModel EnsureProgress() => _progress ??= new UploadProgressViewModel(Source, Path);
+
     internal void Update(FileOutcome outcome, string? reason)
     {
         Outcome = outcome;
         Reason = reason;
+        if (outcome != FileOutcome.Uploading) _progress?.Clear();
     }
 }
