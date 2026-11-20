@@ -20,7 +20,7 @@ This folder contains the executable, `appsettings.json` (the Machine Config; edi
 Key bindings, besides F9-F12 and Ctrl+Q. Tab moves between the parts of a page and Enter activates the focused item; the mouse works where the terminal supports it and is never required.
 
 - **Upload:** R Run, D Dry run, S Scan, X Cancel the Run, T Retry failed files; 1-4 filter the file table (succeeded, failed, skipped, pending); Space includes or excludes the selected Source; L shows or hides the Log pane; End follows the active file again (moving the cursor stops following). Quitting during a Run asks whether to cancel the Run and quit, or go back.
-- **History:** 1-3 filter the Runs (All, Attention, Live); F shows failed outcomes only; R retries the failed files of the selected Run (opens Upload); X cancels the selected Run (a request to cancel for another user's Run); J or C exports a Report as JSON or CSV; F5 refreshes.
+- **History:** 1-3 filter the Runs (All, Attention, Live); F shows failed outcomes only; R retries the failed files of the selected Run (opens Upload); X cancels the selected Run (a request to cancel for another user's Run); J or C exports a Report as JSON or CSV; F5 refreshes. In the details of a Run a finished file shows how much was sent and its Upload Time (`12.4 MiB in 3 s`) plus the average speed (`4.1 MiB/s average`), and the header shows `Uploaded <size>`, the bytes of the Succeeded files (not for Dry Runs or Runs that uploaded nothing). Runs recorded before Upload Time was stored show neither.
 - **Settings:** the keys of the Settings TUI below.
 - **Help:** Up/Down choose a topic or scroll; PageUp, PageDown, Home and End scroll; Tab switches between the topic list and the text. The Keys topic repeats this list.
 

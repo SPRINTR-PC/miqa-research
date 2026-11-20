@@ -36,7 +36,8 @@ public sealed record RunSummary(
 /// <summary>The recorded result of one file in one Run.</summary>
 public sealed record RunFileOutcome(string Source, string RelativePath, string Outcome, long Bytes, long DurationMs, string? Reason, long? UploadMs = null);
 
-public sealed record RunDetail(RunSummary Summary, IReadOnlyList<RunFileOutcome> Files);
+/// <summary><see cref="UploadedBytes"/> is the sum of Bytes over the Succeeded rows of the Run (what it delivered), read beside the counts.</summary>
+public sealed record RunDetail(RunSummary Summary, IReadOnlyList<RunFileOutcome> Files, long UploadedBytes = 0);
 
 /// <summary>What the History page needs from the Run History; <see cref="RunHistory"/> is the implementation, view-model tests use a fake.</summary>
 public interface IRunHistory
@@ -217,6 +218,6 @@ public sealed class RunHistory(StateSettings state, TimeProvider time, ReportSet
         while (reader.Read())
             list.Add(new RunFileOutcome(reader.GetString(0), reader.GetString(1), reader.GetString(2),
                 reader.GetInt64(3), reader.GetInt64(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetInt64(6)));
-        return new RunDetail(summary, list);
+        return new RunDetail(summary, list, list.Where(f => f.Outcome == "Succeeded").Sum(f => f.Bytes));
     }
 }

@@ -44,7 +44,7 @@ public sealed class RunOutcomesSource(Func<IReadOnlyList<HistoryFileRow>> rows) 
             var list = rows();
             if (row < 0 || row >= list.Count) return "";
             var r = list[row];
-            return col switch { 0 => OutcomeSymbols.OfRecorded(r.Outcome), 1 => r.Source, 2 => r.Path, _ => r.ReasonText.Length > 0 ? r.ReasonText : r.OutcomeText };
+            return col switch { 0 => OutcomeSymbols.OfRecorded(r.Outcome), 1 => r.Source, 2 => r.Path, _ => r.TuiStatusText };
         }
     }
 }
@@ -247,7 +247,7 @@ public sealed class HistoryTuiPage : View, IShellPage
                 r.PropertyChanged += (_, _) => { if (ReferenceEquals(_watched, r)) RequestRefresh(); };
             }
 
-            _head.Text = $"{r.Title}  {OutcomeSymbols.OfRun(r.StatusText)} {r.StatusText}  {r.ExitText}\n{r.Who} · {r.ModeText} · {r.StartedText[5..]} · {r.DurationText}";
+            _head.Text = $"{r.Title}  {OutcomeSymbols.OfRun(r.StatusText)} {r.StatusText}  {r.ExitText}\n{r.Who} · {r.ModeText} · {r.StartedText[5..]} · {r.DurationText}{(r.HasUploaded ? " · " + r.UploadedText : "")}";
             _banner.Text = r.IsLiveOthers && r.ShowCancelRequested ? $"Live view of {r.StartedBy}'s Run (read-only). Cancel requested: it stops at its next cancel poll."
                 : r.IsLiveOthers ? $"Live view of {r.StartedBy}'s Run: read-only, you can watch it or ask it to stop. Heartbeat {r.HeartbeatText}."
                 : r.ShowCancelRequested ? "Cancel requested. The Run stops at its next cancel poll; in-flight .part files stay on the server."
