@@ -8,6 +8,8 @@ All commands run from the repository root. CI is out of scope; these are run by 
 | `dotnet test MiqaResearch.slnx --filter "TestCategory=Container"` | The container integration tests (below). |
 | `dotnet test MiqaResearch.slnx --filter "TestCategory=Scale"` | The Scale tests (below). |
 
+The Engine tests give an upload a duration with a fake clock: `FakeRemote.OnUpload` runs at the start of every upload and advances the `FakeTimeProvider` (see `UploadTimeTests`). The Upload State schema migration is tested by turning a database back to version 3 and opening it again.
+
 Per-OS checks that no test can do are in [release-checklist.md](release-checklist.md).
 
 ## Container category

@@ -34,7 +34,7 @@ public sealed record RunSummary(
     IReadOnlyDictionary<string, int> Counts);
 
 /// <summary>The recorded result of one file in one Run.</summary>
-public sealed record RunFileOutcome(string Source, string RelativePath, string Outcome, long Bytes, long DurationMs, string? Reason);
+public sealed record RunFileOutcome(string Source, string RelativePath, string Outcome, long Bytes, long DurationMs, string? Reason, long? UploadMs = null);
 
 public sealed record RunDetail(RunSummary Summary, IReadOnlyList<RunFileOutcome> Files);
 
@@ -201,9 +201,13 @@ public sealed class RunHistory(StateSettings state, TimeProvider time, ReportSet
         var summary = ReadSummaries(connection, command).SingleOrDefault();
         if (summary is null) return null;
 
+        // A database no Run has migrated yet (schema 3) has no UploadMs column.
+        using var versionCommand = connection.CreateCommand();
+        versionCommand.CommandText = "PRAGMA user_version";
+        var hasUploadMs = Convert.ToInt32(versionCommand.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture) >= 4;
         using var files = connection.CreateCommand();
-        files.CommandText = """
-            SELECT f.Source, f.RelativePath, r.Outcome, r.Bytes, r.DurationMs, r.Error
+        files.CommandText = $"""
+            SELECT f.Source, f.RelativePath, r.Outcome, r.Bytes, r.DurationMs, r.Error, {(hasUploadMs ? "r.UploadMs" : "NULL")}
             FROM RunFiles r JOIN Files f ON f.Id = r.FileId
             WHERE r.RunId = $id ORDER BY f.Source, f.RelativePath
             """;
@@ -212,7 +216,7 @@ public sealed class RunHistory(StateSettings state, TimeProvider time, ReportSet
         using var reader = files.ExecuteReader();
         while (reader.Read())
             list.Add(new RunFileOutcome(reader.GetString(0), reader.GetString(1), reader.GetString(2),
-                reader.GetInt64(3), reader.GetInt64(4), reader.IsDBNull(5) ? null : reader.GetString(5)));
+                reader.GetInt64(3), reader.GetInt64(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetInt64(6)));
         return new RunDetail(summary, list);
     }
 }

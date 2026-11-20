@@ -4,7 +4,8 @@ public abstract record RunEvent;
 
 public sealed record RunStarted(Guid RunId, DateTimeOffset StartedAt) : RunEvent;
 
-public sealed record FileOutcomeChanged(string Source, string RelativePath, FileOutcome Outcome, string? Reason) : RunEvent;
+public sealed record FileOutcomeChanged(string Source, string RelativePath, FileOutcome Outcome, string? Reason,
+    long? BytesSent = null, TimeSpan? UploadTime = null) : RunEvent;
 
 /// <summary>
 /// A Dry Run's plan for one Archive. <see cref="Status"/> is WouldBuild, WouldSkip, NeedsHashing (same members, changed size or mtime),

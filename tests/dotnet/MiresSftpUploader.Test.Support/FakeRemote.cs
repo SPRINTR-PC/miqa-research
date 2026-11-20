@@ -43,6 +43,9 @@ public sealed class FakeRemote : IRemote
     /// <summary>How long a hash command on a real file takes (it answers at once for <c>/dev/null</c>, which the start-of-Run probe uses).</summary>
     public TimeSpan CommandDelay { get; set; }
 
+    /// <summary>Runs at the start of every upload (before any injected fault), with the target path: a test advances a fake clock here to give an upload a duration.</summary>
+    public Func<string, CancellationToken, Task>? OnUpload { get; set; }
+
     /// <summary>Every command <c>RunCommandAsync</c> received, in order.</summary>
     public IReadOnlyList<string> Commands
     {
@@ -171,6 +174,7 @@ public sealed class FakeRemote : IRemote
 
         public async Task<RemoteResult> UploadAsync(Stream content, string path, CancellationToken ct)
         {
+            if (remote.OnUpload is { } onUpload) await onUpload(path, ct);
             if (remote.TakeFault(RemoteOperation.Upload, path) is { } fault) return fault;
             if (remote.WriteOnly && remote.Exists(path)) return Refused("cannot replace " + path);
             var buffer = new MemoryStream();

@@ -178,7 +178,7 @@ public sealed partial class Engine
                 if (uploaded.Verified) run.CountVerified();
                 foreach (var m in plan.Members) run.Succeed(m.Item, memberHashes[m.Item.File.RelativePath].Sha256, _time.GetElapsedTime(started));
                 run.CompleteArchive(work.Source.Name, plan.RelativePath, build.ZipSize, build.ZipSha256!, memberHashes, IsDirect);
-                store?.RecordArchiveSucceeded(run.RunId, key, build.ZipSize, build.ZipSha256!, members, uploaded: true, _time.GetUtcNow(), _time.GetElapsedTime(started), IsDirect);
+                store?.RecordArchiveSucceeded(run.RunId, key, build.ZipSize, build.ZipSha256!, members, uploaded: true, _time.GetUtcNow(), _time.GetElapsedTime(started), IsDirect, uploaded.UploadTime);
                 return;
             }
             if (failure.StartsWith(VerificationFailedReason, StringComparison.Ordinal)) run.CountVerificationFailure();
@@ -204,9 +204,12 @@ public sealed partial class Engine
             if (!ensure.IsOk) return UploadAttempt.From(ensure);
             if (store is not null) await store.MarkUploadingAsync(key, zipSize, 0, partPath);
 
+            TimeSpan uploadTime;
             await using (var staged = new FileStream(stagedPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan))
             {
+                var uploadStarted = _time.GetTimestamp();
                 var upload = await session.UploadAsync(staged, partPath, ct);
+                uploadTime = _time.GetElapsedTime(uploadStarted);
                 if (!upload.IsOk) return UploadAttempt.From(upload);
             }
             var level = _settings.Verification.AfterUpload;
@@ -225,7 +228,7 @@ public sealed partial class Engine
                 var rename = await session.RenameAsync(partPath, finalPath, overwrite: true, ct);
                 if (!rename.IsOk) return UploadAttempt.From(rename);
             }
-            return new UploadAttempt("uploaded", null, false, Verified: level != VerificationLevel.Off);
+            return new UploadAttempt("uploaded", null, false, Verified: level != VerificationLevel.Off, UploadTime: uploadTime);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

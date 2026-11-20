@@ -215,11 +215,11 @@ public sealed class RunHistoryTests
         var csv = History().Export(result.RunId, ReportFormat.Csv)!;
 
         var lines = csv.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
-        Assert.AreEqual("RunId,StartedAt,Status,ExitCode,StartedBy,Source,Path,Outcome,Bytes,DurationMs,Reason", lines[0]);
+        Assert.AreEqual("RunId,StartedAt,Status,ExitCode,StartedBy,Source,Path,Outcome,Bytes,DurationMs,Reason,UploadMs", lines[0]);
         Assert.HasCount(2, lines);
         StringAssert.StartsWith(lines[1], result.RunId + ",");
         StringAssert.Contains(lines[1], ",scans,\"odd, \"\"name\"\".txt\",Failed,");
-        StringAssert.EndsWith(lines[1], ",\"no space, sorry\"");
+        StringAssert.EndsWith(lines[1], ",\"no space, sorry\",");
     }
 
     [TestMethod]
