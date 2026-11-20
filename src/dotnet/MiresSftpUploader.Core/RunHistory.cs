@@ -34,6 +34,7 @@ public sealed record RunSummary(
     IReadOnlyDictionary<string, int> Counts);
 
 /// <summary>The recorded result of one file in one Run.</summary>
+/// <summary>DurationMs is the whole-file time (hash, upload, verify); UploadMs is the upload call only.</summary>
 public sealed record RunFileOutcome(string Source, string RelativePath, string Outcome, long Bytes, long DurationMs, string? Reason, long? UploadMs = null);
 
 /// <summary><see cref="UploadedBytes"/> is the sum of Bytes over the Succeeded rows of the Run (what it delivered), read beside the counts.</summary>
@@ -218,6 +219,11 @@ public sealed class RunHistory(StateSettings state, TimeProvider time, ReportSet
         while (reader.Read())
             list.Add(new RunFileOutcome(reader.GetString(0), reader.GetString(1), reader.GetString(2),
                 reader.GetInt64(3), reader.GetInt64(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetInt64(6)));
-        return new RunDetail(summary, list, list.Where(f => f.Outcome == "Succeeded").Sum(f => f.Bytes));
+
+        // A new query beside the counts: what the Run delivered.
+        using var uploaded = connection.CreateCommand();
+        uploaded.CommandText = "SELECT COALESCE(SUM(Bytes), 0) FROM RunFiles WHERE RunId = $id AND Outcome = 'Succeeded'";
+        uploaded.Parameters.AddWithValue("$id", runId.ToString());
+        return new RunDetail(summary, list, Convert.ToInt64(uploaded.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture));
     }
 }

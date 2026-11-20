@@ -207,7 +207,7 @@ public sealed partial class Engine
             TimeSpan uploadTime;
             await using (var staged = new FileStream(stagedPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan))
             {
-                using var metered = run.BeginUpload(label.Source, label.Path, zipSize);
+                using var metered = run.BeginUpload(label.Source, label.Path, zipSize, isArchive: true);
                 var uploadStarted = _time.GetTimestamp();
                 var upload = await session.UploadAsync(staged, partPath, ct, metered);
                 uploadTime = _time.GetElapsedTime(uploadStarted);

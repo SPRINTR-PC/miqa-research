@@ -10,6 +10,7 @@ using System;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 
 namespace MiresSftpUploader;
@@ -87,7 +88,8 @@ sealed class Program
     /// <summary>The shared stderr writer with the live status line, installed as <see cref="Console.Error"/>; null unless stderr is an interactive terminal.</summary>
     private static StatusLineWriter? InteractiveStatusLine()
     {
-        if (!StatusLineWriter.IsInteractive(Console.IsErrorRedirected, Environment.GetEnvironmentVariable("TERM"), Environment.GetEnvironmentVariable("CI")))
+        // After WindowsConsole.Attach (called first in Main), which re-opens stderr: ask the re-opened handle, not the cached Console value.
+        if (!StatusLineWriter.IsInteractive(WindowsConsole.IsErrorRedirected(), Environment.GetEnvironmentVariable("TERM"), Environment.GetEnvironmentVariable("CI")))
             return null;
         var status = new StatusLineWriter(Console.Error, () =>
         {
@@ -160,11 +162,37 @@ static class WindowsConsole
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool AttachConsole(uint processId);
 
+    private const int StdErrorHandle = -12;
+    private const uint CodePageUtf8 = 65001;
+
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr GetStdHandle(int handle);
+
+    [DllImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetConsoleMode(IntPtr handle, out uint mode);
+
+    [DllImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetConsoleOutputCP(uint codePage);
+
+    private static bool _attached;
+
     public static void Attach()
     {
         if (!OperatingSystem.IsWindows() || !AttachConsole(AttachParentProcess)) return;
+        _attached = true;
+        // The console now shows UTF-8, and the writers encode as UTF-8 (without a byte order mark), so the arrows and dots of the status line survive.
+        SetConsoleOutputCP(CodePageUtf8);
+        var utf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
         // The standard handles were invalid at startup; open them again now that a console is attached.
-        Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
-        Console.SetError(new StreamWriter(Console.OpenStandardError()) { AutoFlush = true });
+        Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), utf8) { AutoFlush = true });
+        Console.SetError(new StreamWriter(Console.OpenStandardError(), utf8) { AutoFlush = true });
     }
+
+    /// <summary>Whether stderr is redirected: on Windows after <see cref="Attach"/>, whether the re-opened stderr handle is not a console; elsewhere <see cref="Console.IsErrorRedirected"/>.</summary>
+    public static bool IsErrorRedirected() =>
+        _attached && OperatingSystem.IsWindows()
+            ? !GetConsoleMode(GetStdHandle(StdErrorHandle), out _)
+            : Console.IsErrorRedirected;
 }

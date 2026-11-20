@@ -29,7 +29,7 @@ public sealed class UploadPageViewModel : ViewModelBase
     private readonly ConcurrentQueue<RunEvent> _incoming = new();
     private readonly Dictionary<(string Source, string Path), FileRowViewModel> _rows = [];
     private readonly Dictionary<FileOutcome, int> _counts = [];
-    private readonly Dictionary<(string Source, string Path), UploadProgressViewModel> _uploads = [];
+    private readonly Dictionary<TransferKey, UploadProgressViewModel> _uploads = [];
     private string _totalUploadSpeedText = "";
     private int _flushPending;
     private CancellationTokenSource? _cancellation;
@@ -409,29 +409,27 @@ public sealed class UploadPageViewModel : ViewModelBase
             var other => (other == "ArchiveNameCollision" ? FileOutcome.Failed : FileOutcome.Skipped, other),
         };
         var row = new FileRowViewModel(plan.Source, plan.Name);
-        row.Update(outcome, $"Archive, rule {plan.Rule}: {plan.MemberCount} files, {FormatSize(plan.TotalSize)}. {text}");
+        row.Update(outcome, $"Archive, rule {plan.Rule}: {plan.MemberCount} files, {TransferFormat.Size(plan.TotalSize)}. {text}");
         _order.Add(row);
         if (IsVisible(row)) Files.Add(row);
     }
 
-    private static string FormatSize(long bytes) => TransferFormat.Size(bytes);
-
     /// <summary>Applies a snapshot: touches only the files in it and those that were in the previous one.</summary>
     private void ApplyProgress(UploadProgress snapshot)
     {
-        var inSnapshot = new HashSet<(string, string)>();
+        var inSnapshot = new HashSet<TransferKey>();
         foreach (var file in snapshot.Files)
         {
-            var key = (file.Source, file.RelativePath);
+            var key = file.Key;
             UploadProgressViewModel? state;
-            if (_rows.TryGetValue(key, out var row))
+            if (!file.IsArchive && _rows.TryGetValue((file.Source, file.RelativePath), out var row))
             {
                 if (row.Outcome != FileOutcome.Uploading) continue; // a stale snapshot of a file that already ended
                 state = row.EnsureProgress();
             }
             else if (!_uploads.TryGetValue(key, out state))
             {
-                state = new UploadProgressViewModel(file.Source, file.RelativePath); // an Archive: no row in the list
+                state = new UploadProgressViewModel(file.Source, file.RelativePath, file.IsArchive); // an Archive: no row in the list
             }
 
             inSnapshot.Add(key);
@@ -450,7 +448,7 @@ public sealed class UploadPageViewModel : ViewModelBase
 
     private void RemoveUpload(UploadProgressViewModel state)
     {
-        if (!_uploads.Remove((state.Source, state.Path))) return;
+        if (!_uploads.Remove(state.Key)) return;
         ActiveUploads.Remove(state);
         if (ActiveUploads.Count == 0) TotalUploadSpeedText = "";
     }

@@ -456,6 +456,23 @@ public sealed class UploadPageViewModelTests
     }
 
     [TestMethod]
+    public async Task An_Archive_with_the_path_of_a_file_gets_a_card_of_its_own_and_leaves_the_file_row_alone()
+    {
+        _engine.Script.Add(File("d/x.zip", FileOutcome.Uploading));
+        _engine.Script.Add(Snapshot(MiB, Uploading("d/x.zip", MiB, 4 * MiB, MiB), Uploading("d/x.zip", 2 * MiB, 8 * MiB, MiB) with { IsArchive = true }));
+        var page = NewPage();
+
+        var run = await StartHeld(page);
+
+        Assert.AreEqual(2, page.ActiveUploads.Count);
+        Assert.AreEqual(1, page.ActiveUploads.Count(u => u.Key.IsArchive));
+        Assert.AreEqual("25%", page.ActiveUploads.Single(u => !u.Key.IsArchive).PercentText);
+        Assert.AreEqual("25%", page.ActiveUploads.Single(u => u.Key.IsArchive).PercentText);
+        _engine.Release();
+        await run;
+    }
+
+    [TestMethod]
     public async Task A_finished_row_reads_size_in_Upload_Time_and_leaves_the_card()
     {
         _engine.Script.Add(File("a.ndpi", FileOutcome.Uploading));
@@ -533,10 +550,10 @@ public sealed class UploadPageViewModelTests
         Assert.AreEqual("3.1 MiB/s", TransferFormat.Speed(3.1 * MiB));
         Assert.AreEqual("<0.1 MiB/s", TransferFormat.Speed(1000));
         Assert.AreEqual("0 MiB/s", TransferFormat.Speed(0));
-        Assert.AreEqual("<1 s", TransferFormat.Duration(TimeSpan.FromMilliseconds(900)));
-        Assert.AreEqual("3 s", TransferFormat.Duration(TimeSpan.FromSeconds(3.2)));
-        Assert.AreEqual("1 min 12 s", TransferFormat.Duration(TimeSpan.FromSeconds(72)));
-        Assert.AreEqual("1 min 0 s", TransferFormat.Duration(TimeSpan.FromSeconds(59.7)));
+        Assert.AreEqual("<1 s", TransferFormat.UploadTime(TimeSpan.FromMilliseconds(900)));
+        Assert.AreEqual("3 s", TransferFormat.UploadTime(TimeSpan.FromSeconds(3.2)));
+        Assert.AreEqual("1 min 12 s", TransferFormat.UploadTime(TimeSpan.FromSeconds(72)));
+        Assert.AreEqual("1 min 0 s", TransferFormat.UploadTime(TimeSpan.FromSeconds(59.7)));
         Assert.AreEqual("12.4 MiB in 3 s", TransferFormat.Finished(13_002_342, TimeSpan.FromSeconds(3)));
     }
 }

@@ -21,7 +21,13 @@ public sealed record DataDirectoryChecked(DataDirectoryAccess Access) : RunEvent
 public sealed record FileMoved(string Source, string RelativePath) : RunEvent;
 
 /// <summary>One file (or Archive) that is uploading now: the bytes the server acknowledged so far and its Upload Speed in bytes per second (null until 2 samples exist).</summary>
-public sealed record UploadingFile(string Source, string RelativePath, long BytesSent, long Total, double? UploadSpeed);
+public sealed record UploadingFile(string Source, string RelativePath, long BytesSent, long Total, double? UploadSpeed, bool IsArchive = false)
+{
+    public TransferKey Key => new(Source, RelativePath, IsArchive);
+}
+
+/// <summary>Identifies one file or Archive in a Run. An Archive is keyed apart from a file, so an Archive path equal to a file path cannot collide with it.</summary>
+public readonly record struct TransferKey(string Source, string Path, bool IsArchive = false);
 
 /// <summary>
 /// A snapshot of every file uploading now, about 4 times a second, with the total Upload Speed over them (bytes per second; null

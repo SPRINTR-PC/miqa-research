@@ -29,7 +29,7 @@ public static class TransferFormat
     }
 
     /// <summary>An Upload Time as <c>&lt;1 s</c>, <c>3 s</c> or <c>1 min 12 s</c> (whole seconds, rounded).</summary>
-    public static string Duration(TimeSpan time)
+    public static string UploadTime(TimeSpan time)
     {
         if (time < TimeSpan.FromSeconds(1)) return "<1 s";
         var seconds = (long)Math.Round(time.TotalSeconds, MidpointRounding.AwayFromZero);
@@ -37,13 +37,13 @@ public static class TransferFormat
     }
 
     /// <summary>What a finished file delivered: <c>12.4 MiB in 3 s</c>.</summary>
-    public static string Finished(long bytesSent, TimeSpan uploadTime) => $"{Size(bytesSent)} in {Duration(uploadTime)}";
+    public static string Finished(long bytesSent, TimeSpan uploadTime) => $"{Size(bytesSent)} in {UploadTime(uploadTime)}";
 
     /// <summary>An Upload Time stored in milliseconds (the Run History) as <c>&lt;1 s</c>, <c>3 s</c> or <c>1 min 12 s</c>.</summary>
-    public static string Duration(long uploadMs) => Duration(TimeSpan.FromMilliseconds(uploadMs));
+    public static string UploadTime(long uploadMs) => UploadTime(TimeSpan.FromMilliseconds(uploadMs));
 
-    /// <summary>What a file in the Run History delivered: <c>12.4 MiB in 3 s</c>.</summary>
-    public static string Sent(long bytes, long uploadMs) => $"{Size(bytes)} in {Duration(uploadMs)}";
+    /// <summary>What a file in the Run History delivered, from stored milliseconds: <c>12.4 MiB in 3 s</c>.</summary>
+    public static string Finished(long bytes, long uploadMs) => Finished(bytes, TimeSpan.FromMilliseconds(uploadMs));
 
     /// <summary>The average speed of a finished file, <c>4.1 MiB/s</c>: bytes divided by the Upload Time; empty when the Upload Time is zero.</summary>
     public static string AverageSpeed(long bytes, long uploadMs) =>

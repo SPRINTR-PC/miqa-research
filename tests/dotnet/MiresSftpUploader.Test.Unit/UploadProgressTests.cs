@@ -226,4 +226,40 @@ public sealed class UploadProgressTests
             if (value is UploadProgress snapshot) lock (_gate) _snapshots.Add(snapshot);
         }
     }
+
+    [TestMethod]
+    public void Two_samples_in_the_same_instant_show_no_speed_and_a_later_one_does()
+    {
+        var events = new List<RunEvent>();
+        using var meter = new UploadMeter(_time, events.Add);
+        using var active = meter.Begin("src", "a.bin", 1000);
+        var now = _time.GetTimestamp();
+
+        active.Report(100);
+        Assert.IsNull(active.Sample(now, _time), "one sample");
+        active.Report(200);
+        Assert.IsNull(active.Sample(now, _time), "two samples at the same instant: no seconds to divide by");
+
+        _time.Advance(TimeSpan.FromSeconds(1));
+        active.Report(300);
+        Assert.AreEqual(200.0, active.Sample(_time.GetTimestamp(), _time)!.Value, 0.001, "bytes 100 to 300 over 1 s");
+    }
+
+    [TestMethod]
+    public void An_Archive_whose_path_equals_a_file_path_is_metered_apart_from_it()
+    {
+        var events = new List<RunEvent>();
+        using var meter = new UploadMeter(_time, events.Add);
+        using var file = meter.Begin("src", "d/x.zip", 100);
+        using var archive = meter.Begin("src", "d/x.zip", 400, isArchive: true);
+        file.Report(10);
+        archive.Report(40);
+
+        _time.Advance(UploadMeter.Interval);
+
+        var snapshot = events.OfType<UploadProgress>().Last();
+        Assert.AreEqual(2, snapshot.Files.Count);
+        Assert.AreEqual(10L, snapshot.Files.Single(f => !f.IsArchive).BytesSent);
+        Assert.AreEqual(40L, snapshot.Files.Single(f => f.IsArchive).BytesSent);
+    }
 }

@@ -9,7 +9,7 @@ namespace MiresSftpUploader.ViewModels;
 /// shown (<see cref="HasProgress"/> false) until the snapshot carries an Upload Speed, which Core only computes from 2 samples.
 /// An Archive has no row in the file list, so these also stand alone in <see cref="UploadPageViewModel.ActiveUploads"/>.
 /// </summary>
-public sealed class UploadProgressViewModel(string source, string path) : ViewModelBase
+public sealed class UploadProgressViewModel(string source, string path, bool isArchive = false) : ViewModelBase
 {
     private long _bytesSent;
     private long _total;
@@ -17,6 +17,7 @@ public sealed class UploadProgressViewModel(string source, string path) : ViewMo
 
     public string Source { get; } = source;
     public string Path { get; } = path;
+    public TransferKey Key { get; } = new(source, path, isArchive);
 
     /// <summary>The last path segment, for a narrow card.</summary>
     public string Name { get; } = path[(path.LastIndexOfAny(['/', '\\']) + 1)..];

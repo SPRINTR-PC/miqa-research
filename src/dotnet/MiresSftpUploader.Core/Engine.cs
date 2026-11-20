@@ -1059,7 +1059,7 @@ public sealed partial class Engine : IRunEngine
         public UploadMeter? Meter { get; set; }
 
         /// <summary>Meters one upload attempt of a file or Archive; the result is the progress sink for <c>UploadAsync</c> and ends the metering when disposed.</summary>
-        internal UploadMeter.Active? BeginUpload(string source, string path, long total) => Meter?.Begin(source, path, total);
+        internal UploadMeter.Active? BeginUpload(string source, string path, long total, bool isArchive = false) => Meter?.Begin(source, path, total, isArchive);
 
         /// <summary>The account has Write-only Access: the Run trusts the Upload State instead of the server.</summary>
         public bool WriteOnly { get; set; }

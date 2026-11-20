@@ -13,7 +13,7 @@ internal sealed class UploadMeter : IDisposable
     private readonly TimeProvider _time;
     private readonly Action<RunEvent> _emit;
     private readonly object _gate = new();
-    private readonly Dictionary<(string Source, string Path), Active> _active = new();
+    private readonly Dictionary<TransferKey, Active> _active = new();
     private ITimer? _timer;
     private bool _emittedFiles;
     private bool _disposed;
@@ -25,9 +25,9 @@ internal sealed class UploadMeter : IDisposable
     }
 
     /// <summary>Starts metering a file or Archive attempt at 0 bytes (a retry replaces the earlier attempt). Dispose the result when the attempt ends.</summary>
-    public Active Begin(string source, string path, long total)
+    public Active Begin(string source, string path, long total, bool isArchive = false)
     {
-        var active = new Active(this, (source, path), total);
+        var active = new Active(this, new TransferKey(source, path, isArchive), total);
         lock (_gate)
         {
             if (_disposed) return active;
@@ -45,11 +45,11 @@ internal sealed class UploadMeter : IDisposable
             var now = _time.GetTimestamp();
             var files = new List<UploadingFile>(_active.Count);
             double? total = null;
-            foreach (var a in _active.Values.OrderBy(a => a.Key.Source, StringComparer.Ordinal).ThenBy(a => a.Key.Path, StringComparer.Ordinal))
+            foreach (var a in _active.Values.OrderBy(a => a.Key.Source, StringComparer.Ordinal).ThenBy(a => a.Key.Path, StringComparer.Ordinal).ThenBy(a => a.Key.IsArchive))
             {
                 var speed = a.Sample(now, _time);
                 if (speed is { } s) total = (total ?? 0) + s;
-                files.Add(new UploadingFile(a.Key.Source, a.Key.Path, Math.Min(a.Bytes, a.Total), a.Total, speed));
+                files.Add(new UploadingFile(a.Key.Source, a.Key.Path, Math.Min(a.Bytes, a.Total), a.Total, speed, a.Key.IsArchive));
             }
             _emittedFiles = true;
             _emit(new UploadProgress(files, total));
@@ -81,12 +81,12 @@ internal sealed class UploadMeter : IDisposable
     }
 
     /// <summary>One file being uploaded. The sink is the progress parameter of <c>UploadAsync</c>.</summary>
-    internal sealed class Active(UploadMeter meter, (string Source, string Path) key, long total) : IProgress<long>, IDisposable
+    internal sealed class Active(UploadMeter meter, TransferKey key, long total) : IProgress<long>, IDisposable
     {
         private readonly Queue<(long Timestamp, long Bytes)> _samples = new();
         private long _bytes;
 
-        public (string Source, string Path) Key { get; } = key;
+        public TransferKey Key { get; } = key;
         public long Total { get; } = total;
         public long Bytes => Volatile.Read(ref _bytes);
 

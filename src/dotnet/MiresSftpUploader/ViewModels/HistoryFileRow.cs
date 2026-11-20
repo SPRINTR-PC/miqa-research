@@ -22,7 +22,7 @@ public sealed class HistoryFileRow(RunFileOutcome file)
     private bool HasTransfer => IsSucceeded && UploadMs is not null;
 
     /// <summary>"12.4 MiB in 3 s" for a Succeeded file with a stored Upload Time (Runs from before it was stored show nothing).</summary>
-    public string TransferText => HasTransfer ? TransferFormat.Sent(Bytes, UploadMs!.Value) : "";
+    public string TransferText => HasTransfer ? TransferFormat.Finished(Bytes, UploadMs!.Value) : "";
 
     private string AverageText => HasTransfer ? TransferFormat.AverageSpeed(Bytes, UploadMs!.Value) : "";
 
