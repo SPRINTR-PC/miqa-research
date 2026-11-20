@@ -170,7 +170,7 @@ public sealed partial class Engine
             var (uploaded, failure) = await UploadWithRetriesAsync($"Archive {work.Source.Name}/{plan.RelativePath}", attempt =>
             {
                 foreach (var m in plan.Members) run.Set(m.Item, FileOutcome.Uploading, null);
-                return TryUploadStagedAsync(session, run, attempt, store, staged, finalPath, key, build.ZipSize, build.ZipSha256!, work.Delivered,
+                return TryUploadStagedAsync(session, run, attempt, store, staged, finalPath, (work.Source.Name, plan.RelativePath), key, build.ZipSize, build.ZipSha256!, work.Delivered,
                     () => { foreach (var m in plan.Members) run.Set(m.Item, FileOutcome.Verifying, null); }, ct);
             }, ct);
             if (uploaded is not null)
@@ -195,7 +195,7 @@ public sealed partial class Engine
         before.Count == now.Count && now.All(kv => before.TryGetValue(kv.Key, out var p) && p.Sha256 == kv.Value.Sha256);
 
     private async Task<UploadAttempt> TryUploadStagedAsync(
-        IRemoteSession session, RunState run, int attempt, UploadStateStore? store, string stagedPath, string finalPath, FileKey key, long zipSize, string zipSha256, bool delivered, Action markVerifying, CancellationToken ct)
+        IRemoteSession session, RunState run, int attempt, UploadStateStore? store, string stagedPath, string finalPath, (string Source, string Path) label, FileKey key, long zipSize, string zipSha256, bool delivered, Action markVerifying, CancellationToken ct)
     {
         var partPath = UploadTarget(finalPath, run, attempt);
         try
@@ -208,7 +208,7 @@ public sealed partial class Engine
             await using (var staged = new FileStream(stagedPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan))
             {
                 var uploadStarted = _time.GetTimestamp();
-                var upload = await session.UploadAsync(staged, partPath, ct);
+                var upload = await session.UploadAsync(staged, partPath, ct, metered);
                 uploadTime = _time.GetElapsedTime(uploadStarted);
                 if (!upload.IsOk) return UploadAttempt.From(upload);
             }

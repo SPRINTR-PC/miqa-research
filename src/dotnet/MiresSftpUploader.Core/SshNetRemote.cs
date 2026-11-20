@@ -187,8 +187,32 @@ public sealed class SshNetRemote(SftpConnection connection) : IRemote
             }
         }
 
-        public Task<RemoteResult> UploadAsync(Stream content, string path, CancellationToken ct) =>
-            RunAsync(client => client.UploadFileAsync(content, path, ct), ct);
+        public Task<RemoteResult> UploadAsync(Stream content, string path, CancellationToken ct, IProgress<long>? progress = null) =>
+            progress is null
+                ? RunAsync(client => client.UploadFileAsync(content, path, ct), ct)
+                : RunAsync(client => client.UploadFileAsync(content, path, canOverride: true, new AcknowledgedBytes(progress), ct), ct);
+
+        /// <summary>
+        /// Runs inline on SSH.NET's receive thread, about once per 32 KiB, and the reports can arrive out of order: it keeps the
+        /// maximum total reported and does nothing else.
+        /// </summary>
+        private sealed class AcknowledgedBytes(IProgress<long> sink) : IProgress<UploadFileProgressReport>
+        {
+            private long _max;
+
+            public void Report(UploadFileProgressReport value)
+            {
+                var total = (long)Math.Min(value.TotalBytesUploaded, long.MaxValue);
+                long seen;
+                do
+                {
+                    seen = Volatile.Read(ref _max);
+                    if (total <= seen) return;
+                }
+                while (Interlocked.CompareExchange(ref _max, total, seen) != seen);
+                sink.Report(total);
+            }
+        }
 
         public Task<RemoteResult> RenameAsync(string from, string to, bool overwrite, CancellationToken ct) =>
             RunAsync(client => Task.Run(() =>

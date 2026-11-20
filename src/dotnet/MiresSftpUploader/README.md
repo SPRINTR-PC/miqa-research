@@ -24,6 +24,10 @@ Key bindings, besides F9-F12 and Ctrl+Q. Tab moves between the parts of a page a
 - **Settings:** the keys of the Settings TUI below.
 - **Help:** Up/Down choose a topic or scroll; PageUp, PageDown, Home and End scroll; Tab switches between the topic list and the text. The Keys topic repeats this list.
 
+## Upload progress
+
+While a Run uploads, the Engine publishes an `UploadProgress` snapshot about 4 times a second: for every file or Archive uploading now its source, path, bytes sent, total and **Upload Speed**, plus the total Upload Speed; a last snapshot with no files clears the total. Bytes sent are the bytes the server has acknowledged, not the bytes read from the file. Upload Speed is smoothed over a 3 s sliding window and absent until 2 samples exist; a retry starts the file again at 0. Scans and Dry Runs emit no snapshots. The Avalonia UI, the TUI and the Headless Run are consumers of these snapshots.
+
 ## Settings TUI
 
 On a machine without a display (for example over SSH) run `MiresSftpUploader --configure` to open the **Settings TUI** (the TUI on its Settings page), a full-screen terminal editor with the same pages, Locked Settings, validation and save rules as the Settings page. `--configure` is supported on Linux and macOS; Windows is unverified (the Windows build is a `WinExe` and an interactive console session from it has not been tested). It needs an interactive terminal of at least 80x24 and refuses with exit code 2 and one line on stderr when stdin or stdout is redirected, when `TERM` is `dumb` or unset (Unix), or when the terminal is too small. Only `--data-dir` and `--log-level` are honoured with it.
