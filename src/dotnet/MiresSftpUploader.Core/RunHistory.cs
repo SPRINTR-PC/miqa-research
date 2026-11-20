@@ -34,9 +34,11 @@ public sealed record RunSummary(
     IReadOnlyDictionary<string, int> Counts);
 
 /// <summary>The recorded result of one file in one Run.</summary>
-public sealed record RunFileOutcome(string Source, string RelativePath, string Outcome, long Bytes, long DurationMs, string? Reason);
+/// <summary>DurationMs is the whole-file time (hash, upload, verify); UploadMs is the upload call only.</summary>
+public sealed record RunFileOutcome(string Source, string RelativePath, string Outcome, long Bytes, long DurationMs, string? Reason, long? UploadMs = null);
 
-public sealed record RunDetail(RunSummary Summary, IReadOnlyList<RunFileOutcome> Files);
+/// <summary><see cref="UploadedBytes"/> is the sum of Bytes over the Succeeded rows of the Run (what it delivered), read beside the counts.</summary>
+public sealed record RunDetail(RunSummary Summary, IReadOnlyList<RunFileOutcome> Files, long UploadedBytes = 0);
 
 /// <summary>What the History page needs from the Run History; <see cref="RunHistory"/> is the implementation, view-model tests use a fake.</summary>
 public interface IRunHistory
@@ -201,9 +203,13 @@ public sealed class RunHistory(StateSettings state, TimeProvider time, ReportSet
         var summary = ReadSummaries(connection, command).SingleOrDefault();
         if (summary is null) return null;
 
+        // A database no Run has migrated yet (schema 3) has no UploadMs column.
+        using var versionCommand = connection.CreateCommand();
+        versionCommand.CommandText = "PRAGMA user_version";
+        var hasUploadMs = Convert.ToInt32(versionCommand.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture) >= 4;
         using var files = connection.CreateCommand();
-        files.CommandText = """
-            SELECT f.Source, f.RelativePath, r.Outcome, r.Bytes, r.DurationMs, r.Error
+        files.CommandText = $"""
+            SELECT f.Source, f.RelativePath, r.Outcome, r.Bytes, r.DurationMs, r.Error, {(hasUploadMs ? "r.UploadMs" : "NULL")}
             FROM RunFiles r JOIN Files f ON f.Id = r.FileId
             WHERE r.RunId = $id ORDER BY f.Source, f.RelativePath
             """;
@@ -212,7 +218,12 @@ public sealed class RunHistory(StateSettings state, TimeProvider time, ReportSet
         using var reader = files.ExecuteReader();
         while (reader.Read())
             list.Add(new RunFileOutcome(reader.GetString(0), reader.GetString(1), reader.GetString(2),
-                reader.GetInt64(3), reader.GetInt64(4), reader.IsDBNull(5) ? null : reader.GetString(5)));
-        return new RunDetail(summary, list);
+                reader.GetInt64(3), reader.GetInt64(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetInt64(6)));
+
+        // A new query beside the counts: what the Run delivered.
+        using var uploaded = connection.CreateCommand();
+        uploaded.CommandText = "SELECT COALESCE(SUM(Bytes), 0) FROM RunFiles WHERE RunId = $id AND Outcome = 'Succeeded'";
+        uploaded.Parameters.AddWithValue("$id", runId.ToString());
+        return new RunDetail(summary, list, Convert.ToInt64(uploaded.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture));
     }
 }

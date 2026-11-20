@@ -29,6 +29,8 @@ public sealed class UploadPageViewModel : ViewModelBase
     private readonly ConcurrentQueue<RunEvent> _incoming = new();
     private readonly Dictionary<(string Source, string Path), FileRowViewModel> _rows = [];
     private readonly Dictionary<FileOutcome, int> _counts = [];
+    private readonly Dictionary<TransferKey, UploadProgressViewModel> _uploads = [];
+    private string _totalUploadSpeedText = "";
     private int _flushPending;
     private CancellationTokenSource? _cancellation;
     private readonly List<FileRowViewModel> _order = [];
@@ -57,6 +59,8 @@ public sealed class UploadPageViewModel : ViewModelBase
         CancelCommand = ReactiveCommand.Create(() => { _cancellation?.Cancel(); }, this.WhenAnyValue(x => x.IsRunning));
         RetryFailedCommand = ReactiveCommand.CreateFromTask(() => RunAsync(dryRun: false, retry: true), this.WhenAnyValue(x => x.CanRetry, x => x.IsBlocked, (retry, blocked) => retry && !blocked));
 
+        ActiveUploads.CollectionChanged += (_, _) => this.RaisePropertyChanged(nameof(HasActiveUploads));
+
         Refresh();
     }
 
@@ -64,6 +68,28 @@ public sealed class UploadPageViewModel : ViewModelBase
 
     /// <summary>The files shown: all of the Run, or only those matching <see cref="Filter"/>.</summary>
     public ObservableCollection<FileRowViewModel> Files { get; } = [];
+
+    /// <summary>
+    /// The files and Archives uploading right now (at most the parallel upload limit), in the order of the latest snapshot. Only these
+    /// few items change on a snapshot; the file list is not touched.
+    /// </summary>
+    public ObservableCollection<UploadProgressViewModel> ActiveUploads { get; } = [];
+
+    /// <summary>Whether the "Uploading now" card shows: something uploads.</summary>
+    public bool HasActiveUploads => ActiveUploads.Count > 0;
+
+    /// <summary>The total Upload Speed over the files uploading now (<c>9.2 MiB/s</c>); empty when none has a speed yet.</summary>
+    public string TotalUploadSpeedText
+    {
+        get => _totalUploadSpeedText;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _totalUploadSpeedText, value);
+            this.RaisePropertyChanged(nameof(HasTotalUploadSpeed));
+        }
+    }
+
+    public bool HasTotalUploadSpeed => _totalUploadSpeedText.Length > 0;
 
     public ReactiveCommand<Unit, Unit> StartCommand { get; }
     public ReactiveCommand<Unit, Unit> DryRunCommand { get; }
@@ -272,6 +298,7 @@ public sealed class UploadPageViewModel : ViewModelBase
         {
             var result = await engine.RunAsync(options, new QueueProgress(this), cancellation.Token);
             Flush();
+            ApplyProgress(new UploadProgress([], null));
             Status = Describe(result, dryRun, scan);
             if (result.ExitCode == ExitCodes.LockHeld) LockRefusal = result.Reason ?? "Another Run holds the lock";
             _retryOf = dryRun ? null : _lastRunId;
@@ -325,6 +352,9 @@ public sealed class UploadPageViewModel : ViewModelBase
                     Apply(file);
                     changed = true;
                     break;
+                case UploadProgress progress:
+                    ApplyProgress(progress);
+                    break;
                 case ArchivePlanned plan:
                     AddArchiveRow(plan);
                     break;
@@ -353,7 +383,11 @@ public sealed class UploadPageViewModel : ViewModelBase
 
         var wasVisible = !isNew && IsVisible(row!);
         _counts[row!.Outcome] = Count(row.Outcome) - 1;
-        row.Update(change.Outcome, change.Reason);
+        var reason = change is { Outcome: FileOutcome.Succeeded, BytesSent: { } sent, UploadTime: { } time }
+            ? TransferFormat.Finished(sent, time)
+            : change.Reason;
+        row.Update(change.Outcome, reason);
+        if (row.Outcome != FileOutcome.Uploading && row.Progress is { } done) RemoveUpload(done);
         _counts[row.Outcome] = Count(row.Outcome) + 1;
 
         var visible = IsVisible(row);
@@ -375,18 +409,49 @@ public sealed class UploadPageViewModel : ViewModelBase
             var other => (other == "ArchiveNameCollision" ? FileOutcome.Failed : FileOutcome.Skipped, other),
         };
         var row = new FileRowViewModel(plan.Source, plan.Name);
-        row.Update(outcome, $"Archive, rule {plan.Rule}: {plan.MemberCount} files, {FormatSize(plan.TotalSize)}. {text}");
+        row.Update(outcome, $"Archive, rule {plan.Rule}: {plan.MemberCount} files, {TransferFormat.Size(plan.TotalSize)}. {text}");
         _order.Add(row);
         if (IsVisible(row)) Files.Add(row);
     }
 
-    private static string FormatSize(long bytes) => bytes switch
+    /// <summary>Applies a snapshot: touches only the files in it and those that were in the previous one.</summary>
+    private void ApplyProgress(UploadProgress snapshot)
     {
-        >= 1L << 30 => $"{bytes / (double)(1L << 30):0.#} GiB",
-        >= 1L << 20 => $"{bytes / (double)(1L << 20):0.#} MiB",
-        >= 1L << 10 => $"{bytes / (double)(1L << 10):0.#} KiB",
-        _ => $"{bytes} bytes",
-    };
+        var inSnapshot = new HashSet<TransferKey>();
+        foreach (var file in snapshot.Files)
+        {
+            var key = file.Key;
+            UploadProgressViewModel? state;
+            if (!file.IsArchive && _rows.TryGetValue((file.Source, file.RelativePath), out var row))
+            {
+                if (row.Outcome != FileOutcome.Uploading) continue; // a stale snapshot of a file that already ended
+                state = row.EnsureProgress();
+            }
+            else if (!_uploads.TryGetValue(key, out state))
+            {
+                state = new UploadProgressViewModel(file.Source, file.RelativePath, file.IsArchive); // an Archive: no row in the list
+            }
+
+            inSnapshot.Add(key);
+            state.Apply(file);
+            if (_uploads.TryAdd(key, state)) ActiveUploads.Add(state);
+        }
+
+        foreach (var stale in _uploads.Where(kv => !inSnapshot.Contains(kv.Key)).Select(kv => kv.Value).ToList())
+        {
+            stale.Clear();
+            RemoveUpload(stale);
+        }
+
+        TotalUploadSpeedText = snapshot.TotalUploadSpeed is { } total && ActiveUploads.Count > 0 ? TransferFormat.Speed(total) : "";
+    }
+
+    private void RemoveUpload(UploadProgressViewModel state)
+    {
+        if (!_uploads.Remove(state.Key)) return;
+        ActiveUploads.Remove(state);
+        if (ActiveUploads.Count == 0) TotalUploadSpeedText = "";
+    }
 
     private bool IsVisible(FileRowViewModel row) =>
         _filter == FileFilter.None
@@ -407,6 +472,9 @@ public sealed class UploadPageViewModel : ViewModelBase
         _order.Clear();
         _counts.Clear();
         Files.Clear();
+        _uploads.Clear();
+        ActiveUploads.Clear();
+        TotalUploadSpeedText = "";
         this.RaisePropertyChanged(nameof(Succeeded));
         this.RaisePropertyChanged(nameof(Failed));
         this.RaisePropertyChanged(nameof(Skipped));

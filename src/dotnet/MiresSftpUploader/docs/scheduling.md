@@ -98,7 +98,7 @@ Only one Run can use the Upload State at a time, whether it was started by the s
 
 ## When a scheduled Run fails
 
-A Headless Run prints exactly one line on stdout, for example `succeeded=12 skipped=340 failed=0 exit=0 report=/var/lib/mires-sftp-uploader/reports/run-<id>.json`. The log goes to stderr and to the log file. The tool sends no notifications; watch the scheduler's last result or the exit code.
+A Headless Run prints exactly one line on stdout, for example `succeeded=12 skipped=340 failed=0 exit=0 report=/var/lib/mires-sftp-uploader/reports/run-<id>.json`. The log goes to stderr and to the log file. In an interactive terminal stderr also carries a live status line (`↑ 9.2 MiB/s · 3 uploading · 412 of 1,280 files done`), which is not drawn when stderr is redirected or `CI` is set, so a scheduled Run's stderr holds no progress. While files upload the log file also gets one `progress: ...` line every 10 s (logger `MiresSftpUploader.Progress`, file only, never stderr), which shows how far a scheduled Run got. The tool sends no notifications; watch the scheduler's last result or the exit code.
 
 | Exit code | Meaning | What to check |
 |---|---|---|
@@ -111,6 +111,6 @@ A Headless Run prints exactly one line on stdout, for example `succeeded=12 skip
 
 Where things are:
 
-- **Report:** `--report <path>` writes one for this Run. Without it, the Report goes to `Report:Directory`, or to `reports/` inside the Data Directory. Past Runs: `MiresSftpUploader --list-runs`, and `--export-run <id>` prints or saves a Report.
+- **Report:** `--report <path>` writes one for this Run. Without it, the Report goes to `Report:Directory`, or to `reports/` inside the Data Directory. Past Runs: `MiresSftpUploader --list-runs`, and `--export-run <id>` prints or saves a Report. Each file of a Report has `bytes`, `durationMs` (all attempts, with retries) and `uploadMs`, the **Upload Time** of the attempt that delivered it (JSON `uploadMs` is the last field, CSV `UploadMs` the last column; empty for files that were not uploaded and for Runs recorded before this was kept).
 - **Log:** `Logging:Directory`, by default the `logs` folder in the service account's own application-data folder (Windows `%APPDATA%\MiresSftpUploader`, macOS `~/Library/Application Support/MiresSftpUploader`, Linux `~/.config/mires-sftp-uploader`). The default level is `Info`; use `--log-level Debug` for more. Secrets are never written to the log.
 - **Data Directory:** Windows `%ProgramData%\MiresSftpUploader`, macOS `/Users/Shared/MiresSftpUploader`, Linux `/var/lib/mires-sftp-uploader`; change it with `MIRES_DATA_DIR` or `--data-dir`. A scheduled Run never falls back to another folder: if the account cannot use it, the Run exits 2 and says which path, which account and which command to run.

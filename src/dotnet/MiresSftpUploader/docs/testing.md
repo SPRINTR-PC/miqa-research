@@ -8,6 +8,8 @@ All commands run from the repository root. CI is out of scope; these are run by 
 | `dotnet test MiqaResearch.slnx --filter "TestCategory=Container"` | The container integration tests (below). |
 | `dotnet test MiqaResearch.slnx --filter "TestCategory=Scale"` | The Scale tests (below). |
 
+The Engine tests give an upload an Upload Time with a fake clock: `FakeRemote.OnUpload` runs at the start of every upload and advances the `FakeTimeProvider` (see `UploadTimeTests`). The Upload State schema migration is tested by turning a database back to version 3 and opening it again.
+
 Per-OS checks that no test can do are in [release-checklist.md](release-checklist.md).
 
 ## Container category
@@ -17,7 +19,24 @@ These tests run the same contract tests against the real adapters: an OpenSSH SF
 - The first run pulls the images; later runs reuse them.
 - With podman, start its Docker-compatible API socket and point `DOCKER_HOST` at it.
 - `MIRES_TEST_4GIB=1` also enables the 4 GiB hash proof (`SftpHashProofTests`); without it that test ends Inconclusive.
+- They include the upload progress contract: the reported acknowledged bytes are monotonic and the last one equals the size of the object.
 - They cover the `.part`-rename hash proof (the server's SHA-256 equals the Manifest), faults and a write-only account, and S3 listing and change detection.
+
+## Upload progress (Unit)
+
+`UploadProgressTests` drive the Engine with a `FakeTimeProvider` and a `FakeRemote` that reports acknowledged bytes as it consumes its stream in `UploadChunkSize` chunks. `FakeRemote.OnUploadChunk` is the throttle: a test awaits in it after each chunk, advances the clock by 250 ms (one meter tick) and reads the `UploadProgress` snapshots. They cover bytes, total and speeds, the 2-sample rule, the window, out-of-order reports, retries, the final clearing snapshot, Archives and Dry Runs.
+
+## Upload progress view models (Unit, Ui)
+
+`UploadPageViewModelTests` feed `UploadProgress` snapshots and Succeeded events (with bytes sent and Upload Time) to `UploadPageViewModel` through `FakeRunEngine.Script`, and through a small engine that hands out its progress sink to report events while the Run goes. They cover the active-uploads list and the total, no bar before an Upload Speed exists, the hidden card, Archives without a row, the `12.4 MiB in 3 s` text, stale snapshots, and that a snapshot over a 20,000-row list raises nothing on the list or its rows. `TransferFormat` (sizes, speeds, durations) is tested there too. `MainWindowSmokeTests` checks that the Avalonia "Uploading now" card shows and hides. There is no screenshot test: the headless platform does not render frames.
+
+## Upload progress in the TUI (Unit)
+
+`TuiStatusCellTests` build rows through the real `UploadPageViewModel` (held `FakeRunEngine` with snapshots and Succeeded events) and assert the Status cell text: bar, percent and speed, 0% and 100%, no bar before an Upload Speed exists, the bar dropped first at narrow widths (22, 21, 5 characters), `Succeeded 12.4 MiB in 3 s`, and unchanged text for other rows. `UploadTuiPageTests` (real `Application.Run` loop) show the cell and `↑ 9.2 MiB/s total` on screen, their disappearance after the clearing snapshot, the bar dropped at 80 columns with a long path, and that one snapshot of 8 files causes at most 2 redraws.
+
+## Headless progress (Unit)
+
+`HeadlessProgressTests` feed `RunEvent`s to `HeadlessProgress` with a `FakeTimeProvider` (the 10 s log line needs no waiting) and a `StatusLineWriter` over a `StringWriter`; a small terminal emulation (carriage return, overwrite) turns what was written into the screen, so a test can assert that a status line is never left in front of a log line, that it is cut to the width and that nothing of a longer line remains. `StatusLineWriter.IsInteractive` is a pure function of redirection, `TERM` and `CI`. `HeadlessRunnerTests` check that stdout is exactly the summary line with a status writer, `AppLoggingTests` that the progress logger name goes to the file target only (a first Final rule). The process-level path (real `Console.IsErrorRedirected`, `Console.SetError`, Windows console) is covered only by the release checklist.
 
 ## Scale category
 

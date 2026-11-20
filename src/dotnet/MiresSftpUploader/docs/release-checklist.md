@@ -34,6 +34,8 @@ Target: `win-x64`.
 - **Expect:** A sees B's Run as in progress and B's Run stops within the cancel poll interval (cross-user cancel).
 - [ ] **Do (`AttachConsole`, cmd.exe):** from `cmd.exe` and PowerShell run `MiresSftpUploader.exe --version`, `--help`, `--headless --dry-run`, `--validate-config`, and `MiresSftpUploader.exe --version > out.txt`.
 - **Expect:** output appears in the console, the prompt returns at once (the executable is a `WinExe` and attaches to the parent console in `Program.cs`), the redirect fills `out.txt`, and `echo %ERRORLEVEL%` shows the exit code.
+- [ ] **Do (Headless status line):** from `cmd.exe` and PowerShell run a real `MiresSftpUploader.exe --headless` of a Source with a large file; then again with `2> err.txt` and with `set CI=1`.
+- **Expect:** in the console one status line (`↑ ... MiB/s · ... uploading · ... files done`) is rewritten in place, the arrow and dot display correctly, it is cleared before the summary line and on Ctrl+C; redirected or with `CI` set there is no status line; stdout holds only the summary; the log file gets a `progress:` line every 10 s. **Never verified on Windows.**
 - [ ] **Do (`AttachConsole`, Task Scheduler):** import `scheduler/task.xml` (item 10), run it, read **Last Run Result**.
 - **Expect:** the Run's exit code (0, 1, 3 or 4), no hung task, no flashing window, and the log and Report written even though there is no parent console. **Never verified.** If `AttachConsole` misbehaves here, build the console shim (a console-subsystem launcher) instead.
 

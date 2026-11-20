@@ -29,6 +29,15 @@ public sealed class FakeRemote : IRemote
 
     private readonly List<(RemoteOperation Operation, string Path)> _operations = new();
 
+    /// <summary>How many bytes the fake consumes from an upload stream at a time when it reports progress.</summary>
+    public int UploadChunkSize { get; set; } = 81920;
+
+    /// <summary>
+    /// Called after the fake consumed a chunk of an upload that asked for progress and reported the cumulative bytes: with the path,
+    /// the cumulative bytes and the progress sink. Awaiting in it throttles the upload; a test may also report to the sink itself.
+    /// </summary>
+    public Func<string, long, IProgress<long>, Task>? OnUploadChunk { get; set; }
+
     /// <summary>Every operation attempted, in order, including the ones that were refused.</summary>
     public IReadOnlyList<(RemoteOperation Operation, string Path)> Operations
     {
@@ -42,6 +51,9 @@ public sealed class FakeRemote : IRemote
 
     /// <summary>How long a hash command on a real file takes (it answers at once for <c>/dev/null</c>, which the start-of-Run probe uses).</summary>
     public TimeSpan CommandDelay { get; set; }
+
+    /// <summary>Runs at the start of every upload (before any injected fault), with the target path: a test advances a fake clock here to give an upload a duration.</summary>
+    public Func<string, CancellationToken, Task>? OnUpload { get; set; }
 
     /// <summary>Every command <c>RunCommandAsync</c> received, in order.</summary>
     public IReadOnlyList<string> Commands
@@ -169,12 +181,14 @@ public sealed class FakeRemote : IRemote
             return Task.FromResult(RemoteResult.Ok);
         }
 
-        public async Task<RemoteResult> UploadAsync(Stream content, string path, CancellationToken ct)
+        public async Task<RemoteResult> UploadAsync(Stream content, string path, CancellationToken ct, IProgress<long>? progress = null)
         {
+            if (remote.OnUpload is { } onUpload) await onUpload(path, ct);
             if (remote.TakeFault(RemoteOperation.Upload, path) is { } fault) return fault;
             if (remote.WriteOnly && remote.Exists(path)) return Refused("cannot replace " + path);
             var buffer = new MemoryStream();
-            await content.CopyToAsync(buffer, ct);
+            if (progress is null) await content.CopyToAsync(buffer, ct);
+            else await ConsumeReportingAsync(content, buffer, path, progress, ct);
             lock (remote._gate)
             {
                 var parent = path[..Math.Max(path.LastIndexOf('/'), 0)];
@@ -198,6 +212,20 @@ public sealed class FakeRemote : IRemote
                 remote._files[path] = stored;
             }
             return RemoteResult.Ok;
+        }
+
+        private async Task ConsumeReportingAsync(Stream content, MemoryStream buffer, string path, IProgress<long> progress, CancellationToken ct)
+        {
+            var chunk = new byte[Math.Max(remote.UploadChunkSize, 1)];
+            long total = 0;
+            int read;
+            while ((read = await content.ReadAsync(chunk, ct)) > 0)
+            {
+                buffer.Write(chunk, 0, read);
+                total += read;
+                progress.Report(total);
+                if (remote.OnUploadChunk is { } hook) await hook(path, total, progress);
+            }
         }
 
         public Task<RemoteResult> RenameAsync(string from, string to, bool overwrite, CancellationToken ct)

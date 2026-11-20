@@ -76,6 +76,27 @@ public sealed class HeadlessRunnerTests : ConfigurationTestBase
     }
 
     [TestMethod]
+    public async Task With_a_status_line_stdout_is_still_exactly_the_summary_line_and_no_status_line_is_left_on_stderr()
+    {
+        AddFile();
+        File.WriteAllText(MachinePath, Machine());
+        var cli = CliOptions.Parse(["--headless"]).Options!;
+        var configuration = new Configuration(new ConfigurationLocations(MachinePath, UserPath, new Dictionary<string, string?>()));
+        var runtime = new UploaderRuntime(configuration, new StaticRemoteFactory(_remote), NullLoggerFactory.Instance, TimeProvider.System, cli);
+        var stdout = new StringWriter();
+        var stderr = new StringWriter();
+        var status = new StatusLineWriter(stderr, () => 80);
+
+        var exit = await HeadlessRunner.RunAsync(cli, runtime, stdout, status, CancellationToken.None, status, NullLoggerFactory.Instance, TimeProvider.System);
+
+        Assert.AreEqual(0, exit, stderr.ToString());
+        StringAssert.StartsWith(stdout.ToString(), "succeeded=1 skipped=0 failed=0 exit=0 report=");
+        Assert.AreEqual(1, stdout.ToString().TrimEnd().Split('\n').Length, stdout.ToString());
+        status.WriteLine("after the run");
+        Assert.AreEqual("after the run" + Environment.NewLine, stderr.ToString().Replace("\r", "").TrimStart(' ', '\n'));
+    }
+
+    [TestMethod]
     public async Task Dry_run_uploads_nothing()
     {
         AddFile();

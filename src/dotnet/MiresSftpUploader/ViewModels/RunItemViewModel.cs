@@ -108,6 +108,14 @@ public sealed class RunItemViewModel : ViewModelBase
     public int MovedAway => Count("MovedAway");
     public int Pending => Count("Pending") + Count("Hashing") + Count("Uploading") + Count("Verifying");
 
+    /// <summary>The bytes the Run delivered: the sum over its Succeeded rows, known once the outcomes are loaded.</summary>
+    public long UploadedBytes { get; private set; }
+
+    /// <summary>The details header shows the total only for a Run that uploaded something; never for a Dry Run.</summary>
+    public bool HasUploaded => !IsDryRun && UploadedBytes > 0;
+
+    public string UploadedText => HasUploaded ? $"Uploaded {TransferFormat.Size(UploadedBytes)}" : "";
+
     public string CountsText => $"{Succeeded} succeeded · {Failed} failed · {Skipped} skipped";
 
     /// <summary>Percent of the files that were not Ignored that have reached a final outcome.</summary>
@@ -175,8 +183,9 @@ public sealed class RunItemViewModel : ViewModelBase
             this.RaisePropertyChanged(name);
     }
 
-    internal void SetFiles(IReadOnlyList<RunFileOutcome> files)
+    internal void SetFiles(IReadOnlyList<RunFileOutcome> files, long uploadedBytes)
     {
+        UploadedBytes = uploadedBytes;
         Files.Clear();
         foreach (var file in files)
         {
@@ -184,6 +193,9 @@ public sealed class RunItemViewModel : ViewModelBase
         }
         RebuildVisible();
         this.RaisePropertyChanged(nameof(TooRecent));
+        this.RaisePropertyChanged(nameof(UploadedBytes));
+        this.RaisePropertyChanged(nameof(HasUploaded));
+        this.RaisePropertyChanged(nameof(UploadedText));
     }
 
     private void RebuildVisible()

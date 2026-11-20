@@ -37,7 +37,7 @@ internal sealed record OrphanPart(string Destination, string PartPath);
 /// </summary>
 internal sealed class UploadStateStore : IAsyncDisposable
 {
-    internal const int SchemaVersion = 3;
+    internal const int SchemaVersion = 4;
 
     private static readonly string[] Migrations =
     [
@@ -113,6 +113,8 @@ internal sealed class UploadStateStore : IAsyncDisposable
             PRIMARY KEY (Destination, RemotePath, Source, Name)
         );
         """,
+        // 4: how long the delivering attempt's upload took (Upload Time), for Succeeded rows only; no backfill
+        "ALTER TABLE RunFiles ADD COLUMN UploadMs INTEGER NULL;",
     ];
 
     private const int BatchSize = 200;
@@ -226,11 +228,11 @@ internal sealed class UploadStateStore : IAsyncDisposable
     public Task MarkUploadingAsync(FileKey key, long size, long mtimeTicks, string partPath) =>
         Enqueue(c => Upsert(c, key, "Uploading", size, mtimeTicks, sha256: null, error: null, partPath, success: null));
 
-    public void RecordSucceeded(Guid runId, FileKey key, long size, long mtimeTicks, string sha256, DateTimeOffset now, TimeSpan duration, bool directUpload = false) =>
+    public void RecordSucceeded(Guid runId, FileKey key, long size, long mtimeTicks, string sha256, DateTimeOffset now, TimeSpan duration, bool directUpload = false, TimeSpan? uploadTime = null) =>
         _ = Enqueue(c =>
         {
             Upsert(c, key, "Succeeded", size, mtimeTicks, sha256, error: null, partPath: null, success: now.UtcTicks, directUpload);
-            InsertRunFile(c, runId, key, "Succeeded", size, duration, null, now);
+            InsertRunFile(c, runId, key, "Succeeded", size, duration, null, now, uploadTime);
         });
 
     public void RecordSkipped(Guid runId, FileKey key, DateTimeOffset now, string reason = "unchanged") =>
@@ -264,7 +266,7 @@ internal sealed class UploadStateStore : IAsyncDisposable
     /// Records an Archive delivered (or confirmed unchanged) with its zip hash and members; the member rows are replaced as a set.
     /// </summary>
     public void RecordArchiveSucceeded(Guid runId, FileKey key, long zipSize, string zipSha256,
-        IReadOnlyList<ArchiveMemberRecord> members, bool uploaded, DateTimeOffset now, TimeSpan duration, bool directUpload = false) =>
+        IReadOnlyList<ArchiveMemberRecord> members, bool uploaded, DateTimeOffset now, TimeSpan duration, bool directUpload = false, TimeSpan? uploadTime = null) =>
         _ = Enqueue(c =>
         {
             // An unchanged Archive keeps how it was delivered.
@@ -280,7 +282,7 @@ internal sealed class UploadStateStore : IAsyncDisposable
                     WHERE Destination=$d AND RemotePath=$r AND Source=$s AND RelativePath=$p
                     """, ("$m", m.Path), ("$size", m.Size), ("$mtime", m.MtimeTicks), ("$sha", m.Sha256), ("$modified", m.ModifiedTicks),
                     ("$d", key.Destination), ("$r", key.RemotePath), ("$s", key.Source), ("$p", key.RelativePath));
-            if (uploaded) InsertRunFile(c, runId, key, "Succeeded", zipSize, duration, null, now);
+            if (uploaded) InsertRunFile(c, runId, key, "Succeeded", zipSize, duration, null, now, uploadTime);
             else InsertRunFile(c, runId, key, "Skipped", 0, TimeSpan.Zero, "unchanged", now);
         });
 
@@ -657,14 +659,14 @@ internal sealed class UploadStateStore : IAsyncDisposable
             ("$sha", sha256), ("$size", size), ("$mtime", mtime), ("$status", status),
             ("$success", success), ("$error", error), ("$part", partPath), ("$direct", directUpload is null ? null : directUpload.Value ? 1 : 0));
 
-    private static void InsertRunFile(SqliteConnection c, Guid runId, FileKey key, string outcome, long bytes, TimeSpan duration, string? error, DateTimeOffset now) =>
+    private static void InsertRunFile(SqliteConnection c, Guid runId, FileKey key, string outcome, long bytes, TimeSpan duration, string? error, DateTimeOffset now, TimeSpan? uploadTime = null) =>
         Exec(c, """
-            INSERT OR REPLACE INTO RunFiles (RunId, FileId, Outcome, Bytes, DurationMs, Error, RecordedAt)
-            SELECT $run, Id, $outcome, $bytes, $ms, $error, $now FROM Files
+            INSERT OR REPLACE INTO RunFiles (RunId, FileId, Outcome, Bytes, DurationMs, Error, RecordedAt, UploadMs)
+            SELECT $run, Id, $outcome, $bytes, $ms, $error, $now, $upload FROM Files
             WHERE Destination=$d AND RemotePath=$r AND Source=$s AND RelativePath=$p
             """,
             ("$run", runId.ToString()), ("$outcome", outcome), ("$bytes", bytes), ("$ms", (long)duration.TotalMilliseconds),
-            ("$error", error), ("$now", now.UtcTicks),
+            ("$error", error), ("$now", now.UtcTicks), ("$upload", uploadTime is { } t ? (long)t.TotalMilliseconds : null),
             ("$d", key.Destination), ("$r", key.RemotePath), ("$s", key.Source), ("$p", key.RelativePath));
 
     internal static int Exec(SqliteConnection c, string sql, params (string Name, object? Value)[] parameters)

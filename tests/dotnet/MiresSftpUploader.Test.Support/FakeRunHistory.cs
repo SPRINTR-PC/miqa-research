@@ -25,7 +25,8 @@ public sealed class FakeRunHistory : IRunHistory
             new RunSummary(Guid.NewGuid(), status, exitCode, startedBy, mode, "Ui", started,
                 endedAt ?? (status == "Running" ? null : started.AddMinutes(3)), heartbeat ?? started, cancelRequested,
                 counts ?? new Dictionary<string, int>()),
-            files ?? []);
+            files ?? [],
+            (files ?? []).Where(f => f.Outcome == "Succeeded").Sum(f => f.Bytes));
         _runs.Add(detail);
         return detail;
     }

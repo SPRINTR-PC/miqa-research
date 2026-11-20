@@ -122,7 +122,7 @@ public sealed class HistoryPageViewModel : ViewModelBase, IDisposable
         if (_history.GetRun(item.RunId) is { } detail)
         {
             item.Update(detail.Summary);
-            item.SetFiles(detail.Files);
+            item.SetFiles(detail.Files, detail.UploadedBytes);
         }
     }
 
@@ -174,7 +174,7 @@ public sealed class HistoryPageViewModel : ViewModelBase, IDisposable
     private void Apply(RunItemViewModel item, RunDetail detail)
     {
         item.Update(detail.Summary);
-        if (item.IsExpanded || ReferenceEquals(item, Selected) || !item.IsLive) item.SetFiles(detail.Files);
+        if (item.IsExpanded || ReferenceEquals(item, Selected) || !item.IsLive) item.SetFiles(detail.Files, detail.UploadedBytes);
     }
 
     private void StopWatching()

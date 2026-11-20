@@ -34,6 +34,8 @@ public sealed partial class Engine : IRunEngine
     public async Task<RunResult> RunAsync(RunOptions options, IProgress<RunEvent> progress, CancellationToken cancellationToken)
     {
         var run = new RunState(Guid.NewGuid(), _time.GetUtcNow(), progress, _logger, _settings.Redactor);
+        using var meter = new UploadMeter(_time, progress.Report);
+        run.Meter = meter;
         progress.Report(new RunStarted(run.RunId, run.StartedAt));
         _logger.LogInformation("Run {RunId} started by {User}", run.RunId, options.StartedBy);
 
@@ -86,7 +88,7 @@ public sealed partial class Engine : IRunEngine
         if (result.MoveFailures > 0) counts["MoveFailed"] = result.MoveFailures;
         var summary = new RunSummary(run.RunId, "Finished", result.ExitCode, options.StartedBy, ModeOf(options),
             options.Trigger.ToString(), run.StartedAt, now, now, false, counts);
-        var files = run.SnapshotFiles().Select(e => new RunFileOutcome(e.Source, e.Path, e.Outcome.ToString(), e.Bytes, e.DurationMs, e.Reason)).ToList();
+        var files = run.SnapshotFiles().Select(e => new RunFileOutcome(e.Source, e.Path, e.Outcome.ToString(), e.Bytes, e.DurationMs, e.Reason, e.UploadMs)).ToList();
         try
         {
             ReportWriter.WriteFile(path, ReportWriter.Render(new RunDetail(summary, files), format));
@@ -658,8 +660,8 @@ public sealed partial class Engine : IRunEngine
         if (uploaded is { Sha256: { } sha256 })
         {
             if (uploaded.Verified) run.CountVerified();
-            run.Succeed(item, sha256, _time.GetElapsedTime(started), IsDirect);
-            store?.RecordSucceeded(run.RunId, key, item.File.Size, mtime, sha256, _time.GetUtcNow(), _time.GetElapsedTime(started), IsDirect);
+            run.Succeed(item, sha256, _time.GetElapsedTime(started), IsDirect, uploaded.UploadTime);
+            store?.RecordSucceeded(run.RunId, key, item.File.Size, mtime, sha256, _time.GetUtcNow(), _time.GetElapsedTime(started), IsDirect, uploaded.UploadTime);
             return;
         }
 
@@ -735,11 +737,15 @@ public sealed partial class Engine : IRunEngine
 
             string sha256;
             long bytesRead;
+            TimeSpan uploadTime;
             await using (var raw = await item.Source.OpenReadAsync(item.File.RelativePath, ct))
             await using (var hashing = new HashingReadStream(raw))
             {
+                using var metered = run.BeginUpload(item.Source.Name, item.File.RelativePath, item.File.Size);
                 run.Set(item, FileOutcome.Uploading, null);
-                var upload = await session.UploadAsync(hashing, partPath, ct);
+                var uploadStarted = _time.GetTimestamp();
+                var upload = await session.UploadAsync(hashing, partPath, ct, metered);
+                uploadTime = _time.GetElapsedTime(uploadStarted);
                 if (!upload.IsOk) return UploadAttempt.From(upload);
                 sha256 = hashing.FinishHash();
                 bytesRead = hashing.BytesRead;
@@ -771,7 +777,7 @@ public sealed partial class Engine : IRunEngine
                 var rename = await session.RenameAsync(partPath, finalPath, overwrite: true, ct);
                 if (!rename.IsOk) return UploadAttempt.From(rename);
             }
-            return new UploadAttempt(sha256, null, false, Verified: level != VerificationLevel.Off);
+            return new UploadAttempt(sha256, null, false, Verified: level != VerificationLevel.Off, UploadTime: uploadTime);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -1013,7 +1019,7 @@ public sealed partial class Engine : IRunEngine
         public FileKey Key(string destination) => new(destination, RemotePath, Source.Name, File.RelativePath);
     }
 
-    private sealed record UploadAttempt(string? Sha256, string? Reason, bool Permanent, bool Verified = false)
+    private sealed record UploadAttempt(string? Sha256, string? Reason, bool Permanent, bool Verified = false, TimeSpan? UploadTime = null)
     {
         public static UploadAttempt From(RemoteResult failed) =>
             failed.Kind == RemoteResultKind.Denied
@@ -1048,6 +1054,13 @@ public sealed partial class Engine : IRunEngine
             lock (_gate) _remotePaths[source] = path;
         }
         public UploadStateStore? Store { get; set; }
+
+        /// <summary>The Run's meter of acknowledged bytes (set by <c>RunAsync</c>).</summary>
+        public UploadMeter? Meter { get; set; }
+
+        /// <summary>Meters one upload attempt of a file or Archive; the result is the progress sink for <c>UploadAsync</c> and ends the metering when disposed.</summary>
+        internal UploadMeter.Active? BeginUpload(string source, string path, long total, bool isArchive = false) => Meter?.Begin(source, path, total, isArchive);
+
         /// <summary>The account has Write-only Access: the Run trusts the Upload State instead of the server.</summary>
         public bool WriteOnly { get; set; }
         public string WriteOnlyReason { get; set; } = "";
@@ -1074,8 +1087,8 @@ public sealed partial class Engine : IRunEngine
         internal void Set(FileWork item, FileOutcome outcome, string? reason) =>
             Update(item, e => { e.Outcome = outcome; e.Reason = reason; });
 
-        internal void Succeed(FileWork item, string sha256, TimeSpan duration, bool directUpload = false) =>
-            Update(item, e => { e.Outcome = FileOutcome.Succeeded; e.Reason = null; e.Sha256 = sha256; e.Bytes = e.Size; e.DurationMs = (long)duration.TotalMilliseconds; e.DirectUpload = directUpload; });
+        internal void Succeed(FileWork item, string sha256, TimeSpan duration, bool directUpload = false, TimeSpan? uploadTime = null) =>
+            Update(item, e => { e.Outcome = FileOutcome.Succeeded; e.Reason = null; e.Sha256 = sha256; e.Bytes = e.Size; e.DurationMs = (long)duration.TotalMilliseconds; e.DirectUpload = directUpload; e.UploadMs = uploadTime is { } t ? (long)t.TotalMilliseconds : null; });
 
         internal void Skip(FileWork item, string sha256, string reason) =>
             Update(item, e => { e.Outcome = FileOutcome.Skipped; e.Reason = reason; e.Sha256 = sha256; });
@@ -1095,7 +1108,8 @@ public sealed partial class Engine : IRunEngine
                 if (entry.Reason is not null) entry.Reason = redactor.Redact(entry.Reason);
             }
             LogFinalOutcome(item, entry);
-            progress.Report(new FileOutcomeChanged(item.Source.Name, item.File.RelativePath, entry.Outcome, entry.Reason));
+            progress.Report(new FileOutcomeChanged(item.Source.Name, item.File.RelativePath, entry.Outcome, entry.Reason,
+                entry.UploadMs is { } uploadMs ? entry.Bytes : null, entry.UploadMs is { } ms ? TimeSpan.FromMilliseconds(ms) : null));
         }
 
         /// <summary>Info for a file that ended Succeeded or Skipped, Error for one that Failed. Intermediate outcomes are not logged.</summary>
@@ -1159,6 +1173,7 @@ public sealed partial class Engine : IRunEngine
         public bool Carried { get; set; }
         public long Bytes { get; set; }
         public long DurationMs { get; set; }
+        public long? UploadMs { get; set; }
         public string Path { get; } = path;
         public long Size { get; } = size;
         public FileOutcome Outcome { get; set; }
@@ -1166,6 +1181,6 @@ public sealed partial class Engine : IRunEngine
         public string? Sha256 { get; set; }
         public bool DirectUpload { get; set; }
 
-        public FileEntry Clone() => new(Source, Path, Size) { DirectUpload = DirectUpload, Outcome = Outcome, Reason = Reason, Sha256 = Sha256, Bytes = Bytes, DurationMs = DurationMs, Carried = Carried, Modified = Modified, ArchivePath = ArchivePath, EntryName = EntryName, ChangeToken = ChangeToken, Moved = Moved };
+        public FileEntry Clone() => new(Source, Path, Size) { DirectUpload = DirectUpload, Outcome = Outcome, Reason = Reason, Sha256 = Sha256, Bytes = Bytes, DurationMs = DurationMs, UploadMs = UploadMs, Carried = Carried, Modified = Modified, ArchivePath = ArchivePath, EntryName = EntryName, ChangeToken = ChangeToken, Moved = Moved };
     }
 }
