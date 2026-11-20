@@ -48,6 +48,14 @@ _Avoid_: Preview, simulation
 The status of one file in a Run: Pending, Hashing, Uploading, Verifying, Succeeded, Failed, Skipped or Ignored. A Skipped file carries a reason, such as unchanged or Too Recent.
 _Avoid_: Result, state (of a file)
 
+**Upload Speed**:
+The bytes per second the server has acknowledged while a file is Uploading, smoothed over a short window. Shown for each uploading file, and as a total summed over the files uploading right now (never a Run-wide average). Gone when nothing is uploading.
+_Avoid_: Throughput, bandwidth
+
+**Upload Time**:
+How long the upload of a file took: the wall-clock time of the upload call of the attempt that delivered it, kept in the Run History with the bytes sent. Hashing happens in the same pass as the upload, so it is part of this time; verification, the rename and the building of an Archive are not.
+_Avoid_: Duration, elapsed time
+
 **Too Recent**:
 The reason a file is Skipped because it was modified more recently than the configured minimum age, or after the configured cutoff. It is picked up by a later Run, and an Archive with any Too Recent member is deferred as a whole.
 _Avoid_: Locked file, in-use file
