@@ -26,6 +26,10 @@ These tests run the same contract tests against the real adapters: an OpenSSH SF
 
 `UploadProgressTests` drive the Engine with a `FakeTimeProvider` and a `FakeRemote` that reports acknowledged bytes as it consumes its stream in `UploadChunkSize` chunks. `FakeRemote.OnUploadChunk` is the throttle: a test awaits in it after each chunk, advances the clock by 250 ms (one meter tick) and reads the `UploadProgress` snapshots. They cover bytes, total and speeds, the 2-sample rule, the window, out-of-order reports, retries, the final clearing snapshot, Archives and Dry Runs.
 
+## Headless progress (Unit)
+
+`HeadlessProgressTests` feed `RunEvent`s to `HeadlessProgress` with a `FakeTimeProvider` (the 10 s log line needs no waiting) and a `StatusLineWriter` over a `StringWriter`; a small terminal emulation (carriage return, overwrite) turns what was written into the screen, so a test can assert that a status line is never left in front of a log line, that it is cut to the width and that nothing of a longer line remains. `StatusLineWriter.IsInteractive` is a pure function of redirection, `TERM` and `CI`. `HeadlessRunnerTests` check that stdout is exactly the summary line with a status writer, `AppLoggingTests` that the progress logger name goes to the file target only (a first Final rule). The process-level path (real `Console.IsErrorRedirected`, `Console.SetError`, Windows console) is covered only by the release checklist.
+
 ## Scale category
 
 Opt-in volume tests in `tests/dotnet/MiresSftpUploader.Test.Unit/ScaleTests.cs`. They are not part of the everyday run and take a few seconds. They drive the Engine and run one at a time, because they measure the process heap and the number of Upload State commits (the commit count is the one internal hook, `UploadStateStore.CommitCount`: no public behaviour tells how many transactions were used).

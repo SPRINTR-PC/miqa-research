@@ -106,6 +106,8 @@ public sealed class AppLogging : IDisposable
             ArchiveEvery = FileArchivePeriod.Day,
             MaxArchiveDays = config.RetainDays,
         };
+        // The 10 s progress lines of a Headless Run go to the log file only: a first, final rule keeps them from the console rule below.
+        if (headless) configuration.LoggingRules.Add(new LoggingRule(HeadlessProgress.LoggerName, minimum, NLog.LogLevel.Fatal, file) { Final = true });
         configuration.AddRule(minimum, NLog.LogLevel.Fatal, file);
 
         if (!fileOnly && (config.Console ?? headless))
