@@ -12,8 +12,12 @@ public interface IRemoteSession : IAsyncDisposable
     /// <summary>Creates the directory and any missing parents; Ok if it already exists.</summary>
     Task<RemoteResult> EnsureDirectoryAsync(string path, CancellationToken cancellationToken);
 
-    /// <summary>Writes the stream to <paramref name="path"/>, replacing any existing object. Reads the stream to its end exactly once.</summary>
-    Task<RemoteResult> UploadAsync(Stream content, string path, CancellationToken cancellationToken);
+    /// <summary>
+    /// Writes the stream to <paramref name="path"/>, replacing any existing object. Reads the stream to its end exactly once.
+    /// <paramref name="progress"/>, when given, receives the cumulative bytes the server has acknowledged. It may be called on the
+    /// adapter's receive thread, so a sink must do no more than an atomic write. Manifest and marker uploads pass none.
+    /// </summary>
+    Task<RemoteResult> UploadAsync(Stream content, string path, CancellationToken cancellationToken, IProgress<long>? progress = null);
 
     Task<RemoteResult> RenameAsync(string from, string to, bool overwrite, CancellationToken cancellationToken);
 

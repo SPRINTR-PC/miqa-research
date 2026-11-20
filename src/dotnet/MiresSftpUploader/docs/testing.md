@@ -17,7 +17,12 @@ These tests run the same contract tests against the real adapters: an OpenSSH SF
 - The first run pulls the images; later runs reuse them.
 - With podman, start its Docker-compatible API socket and point `DOCKER_HOST` at it.
 - `MIRES_TEST_4GIB=1` also enables the 4 GiB hash proof (`SftpHashProofTests`); without it that test ends Inconclusive.
+- They include the upload progress contract: the reported acknowledged bytes are monotonic and the last one equals the size of the object.
 - They cover the `.part`-rename hash proof (the server's SHA-256 equals the Manifest), faults and a write-only account, and S3 listing and change detection.
+
+## Upload progress (Unit)
+
+`UploadProgressTests` drive the Engine with a `FakeTimeProvider` and a `FakeRemote` that reports acknowledged bytes as it consumes its stream in `UploadChunkSize` chunks. `FakeRemote.OnUploadChunk` is the throttle: a test awaits in it after each chunk, advances the clock by 250 ms (one meter tick) and reads the `UploadProgress` snapshots. They cover bytes, total and speeds, the 2-sample rule, the window, out-of-order reports, retries, the final clearing snapshot, Archives and Dry Runs.
 
 ## Scale category
 
