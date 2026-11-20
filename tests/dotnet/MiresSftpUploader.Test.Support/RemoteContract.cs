@@ -88,6 +88,41 @@ public abstract class RemoteContract
     }
 
     [TestMethod]
+    public async Task Upload_progress_is_monotonic_and_ends_at_the_size_of_the_object()
+    {
+        await using var session = await Connect(CreateRemote());
+        var dir = UniqueDirectory();
+        await session.EnsureDirectoryAsync(dir, CancellationToken.None);
+        var payload = new byte[300_000];
+        new Random(11).NextBytes(payload);
+        var reports = new RecordingProgress();
+
+        var upload = await session.UploadAsync(new MemoryStream(payload), dir + "/f.bin", CancellationToken.None, reports);
+
+        Assert.IsTrue(upload.IsOk, upload.Reason);
+        var seen = reports.Values;
+        Assert.IsNotEmpty(seen);
+        for (var i = 1; i < seen.Count; i++) Assert.IsGreaterThan(seen[i - 1], seen[i], "reports never move backwards");
+        Assert.AreEqual(payload.Length, seen[^1]);
+    }
+
+    private sealed class RecordingProgress : IProgress<long>
+    {
+        private readonly object _gate = new();
+        private readonly List<long> _values = [];
+
+        public IReadOnlyList<long> Values
+        {
+            get { lock (_gate) return _values.ToArray(); }
+        }
+
+        public void Report(long value)
+        {
+            lock (_gate) _values.Add(value);
+        }
+    }
+
+    [TestMethod]
     public async Task Download_returns_the_uploaded_bytes()
     {
         await using var session = await Connect(CreateRemote());

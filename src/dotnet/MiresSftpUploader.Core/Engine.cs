@@ -34,6 +34,8 @@ public sealed partial class Engine : IRunEngine
     public async Task<RunResult> RunAsync(RunOptions options, IProgress<RunEvent> progress, CancellationToken cancellationToken)
     {
         var run = new RunState(Guid.NewGuid(), _time.GetUtcNow(), progress, _logger, _settings.Redactor);
+        using var meter = new UploadMeter(_time, progress.Report);
+        run.Meter = meter;
         progress.Report(new RunStarted(run.RunId, run.StartedAt));
         _logger.LogInformation("Run {RunId} started by {User}", run.RunId, options.StartedBy);
 
@@ -739,9 +741,10 @@ public sealed partial class Engine : IRunEngine
             await using (var raw = await item.Source.OpenReadAsync(item.File.RelativePath, ct))
             await using (var hashing = new HashingReadStream(raw))
             {
+                using var metered = run.BeginUpload(item.Source.Name, item.File.RelativePath, item.File.Size);
                 run.Set(item, FileOutcome.Uploading, null);
                 var uploadStarted = _time.GetTimestamp();
-                var upload = await session.UploadAsync(hashing, partPath, ct);
+                var upload = await session.UploadAsync(hashing, partPath, ct, metered);
                 uploadTime = _time.GetElapsedTime(uploadStarted);
                 if (!upload.IsOk) return UploadAttempt.From(upload);
                 sha256 = hashing.FinishHash();
@@ -1051,6 +1054,13 @@ public sealed partial class Engine : IRunEngine
             lock (_gate) _remotePaths[source] = path;
         }
         public UploadStateStore? Store { get; set; }
+
+        /// <summary>The Run's meter of acknowledged bytes (set by <c>RunAsync</c>).</summary>
+        public UploadMeter? Meter { get; set; }
+
+        /// <summary>Meters one upload attempt of a file or Archive; the result is the progress sink for <c>UploadAsync</c> and ends the metering when disposed.</summary>
+        internal UploadMeter.Active? BeginUpload(string source, string path, long total) => Meter?.Begin(source, path, total);
+
         /// <summary>The account has Write-only Access: the Run trusts the Upload State instead of the server.</summary>
         public bool WriteOnly { get; set; }
         public string WriteOnlyReason { get; set; } = "";
