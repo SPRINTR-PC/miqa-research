@@ -41,6 +41,8 @@ sealed class Program
             return SettingsTuiEntry.Run(new ConsoleTerminalEnvironment(), Console.Error, () => RunSettingsTui(configuration, options, ShellTab.Upload), "--tui");
 
         var headless = options?.Headless == true;
+        // Before logging starts, so the stderr console target and the status line share one writer.
+        var status = headless ? InteractiveStatusLine() : null;
         Logging = StartLogging(configuration, headless);
         try
         {
@@ -52,7 +54,7 @@ sealed class Program
                 options);
 
             if (headless)
-                return RunHeadless(options!, runtime);
+                return RunHeadless(options!, runtime, status);
 
             AppHost.Current = new AppHost(configuration, runtime, Logging, options);
             return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
@@ -82,18 +84,34 @@ sealed class Program
     /// <summary>The seam to the SFTP server for the window and the Headless Run alike.</summary>
     private static IRemoteFactory RemoteFactory => new SshNetRemoteFactory();
 
-    private static int RunHeadless(CliOptions options, IUploaderRuntime runtime)
+    /// <summary>The shared stderr writer with the live status line, installed as <see cref="Console.Error"/>; null unless stderr is an interactive terminal.</summary>
+    private static StatusLineWriter? InteractiveStatusLine()
+    {
+        if (!StatusLineWriter.IsInteractive(Console.IsErrorRedirected, Environment.GetEnvironmentVariable("TERM"), Environment.GetEnvironmentVariable("CI")))
+            return null;
+        var status = new StatusLineWriter(Console.Error, () =>
+        {
+            try { return Console.WindowWidth; }
+            catch (IOException) { return 80; }
+        });
+        Console.SetError(status);
+        return status;
+    }
+
+    private static int RunHeadless(CliOptions options, IUploaderRuntime runtime, StatusLineWriter? status)
     {
         using var cancellation = new CancellationTokenSource();
         ConsoleCancelEventHandler onCancel = (_, e) =>
         {
             e.Cancel = true;
+            status?.Clear();
             cancellation.Cancel();
         };
         Console.CancelKeyPress += onCancel;
         try
         {
-            return HeadlessRunner.RunAsync(options, runtime, Console.Out, Console.Error, cancellation.Token).GetAwaiter().GetResult();
+            return HeadlessRunner.RunAsync(options, runtime, Console.Out, Console.Error, cancellation.Token,
+                status, (ILoggerFactory?)Logging?.LoggerFactory ?? NullLoggerFactory.Instance, TimeProvider.System).GetAwaiter().GetResult();
         }
         finally
         {

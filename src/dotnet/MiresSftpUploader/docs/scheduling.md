@@ -98,7 +98,7 @@ Only one Run can use the Upload State at a time, whether it was started by the s
 
 ## When a scheduled Run fails
 
-A Headless Run prints exactly one line on stdout, for example `succeeded=12 skipped=340 failed=0 exit=0 report=/var/lib/mires-sftp-uploader/reports/run-<id>.json`. The log goes to stderr and to the log file. The tool sends no notifications; watch the scheduler's last result or the exit code.
+A Headless Run prints exactly one line on stdout, for example `succeeded=12 skipped=340 failed=0 exit=0 report=/var/lib/mires-sftp-uploader/reports/run-<id>.json`. The log goes to stderr and to the log file. In an interactive terminal stderr also carries a live status line (`↑ 9.2 MiB/s · 3 uploading · 412 of 1,280 files done`), which is not drawn when stderr is redirected or `CI` is set, so a scheduled Run's stderr holds no progress. While files upload the log file also gets one `progress: ...` line every 10 s (logger `MiresSftpUploader.Progress`, file only, never stderr), which shows how far a scheduled Run got. The tool sends no notifications; watch the scheduler's last result or the exit code.
 
 | Exit code | Meaning | What to check |
 |---|---|---|

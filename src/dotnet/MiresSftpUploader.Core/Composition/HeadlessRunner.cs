@@ -1,3 +1,6 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+
 namespace MiresSftpUploader.Core;
 
 /// <summary>
@@ -6,7 +9,8 @@ namespace MiresSftpUploader.Core;
 /// </summary>
 public static class HeadlessRunner
 {
-    public static async Task<int> RunAsync(CliOptions cli, IUploaderRuntime runtime, TextWriter stdout, TextWriter stderr, CancellationToken cancellationToken)
+    public static async Task<int> RunAsync(CliOptions cli, IUploaderRuntime runtime, TextWriter stdout, TextWriter stderr, CancellationToken cancellationToken,
+        StatusLineWriter? statusLine = null, ILoggerFactory? loggers = null, TimeProvider? time = null)
     {
         var prepared = runtime.Prepare(headless: true);
         if (prepared.Config is not { } config || prepared.Engine is not { } engine)
@@ -31,7 +35,19 @@ public static class HeadlessRunner
         };
 
         var plans = new PlanCollector();
-        var result = await engine.RunAsync(options, plans, cancellationToken);
+        RunResult result;
+        using (var progress = new HeadlessProgress(statusLine, loggers ?? NullLoggerFactory.Instance, time ?? TimeProvider.System))
+        {
+            try
+            {
+                result = await engine.RunAsync(options, new Fanout(plans, progress), cancellationToken);
+            }
+            finally
+            {
+                // Before the summary, and on every way out, so no status line stays on the terminal.
+                statusLine?.Clear();
+            }
+        }
         foreach (var plan in plans.Plans) stderr.WriteLine(Describe(plan));
         HeadlessSummary.Write(stdout, result, result.ReportPath);
         return result.ExitCode;
@@ -40,6 +56,14 @@ public static class HeadlessRunner
     /// <summary>One line on stderr per zip Archive a Dry Run planned.</summary>
     private static string Describe(ArchivePlanned plan) =>
         $"archive: {plan.Source}/{plan.Name} rule={plan.Rule} files={plan.MemberCount} bytes={plan.TotalSize} status={plan.Status}";
+
+    private sealed class Fanout(params IProgress<RunEvent>[] targets) : IProgress<RunEvent>
+    {
+        public void Report(RunEvent value)
+        {
+            foreach (var target in targets) target.Report(value);
+        }
+    }
 
     /// <summary>Keeps the Archive plans of a Dry Run; unlike <see cref="Progress{T}"/> it takes each event on the spot, so none is missing when the Run ends.</summary>
     private sealed class PlanCollector : IProgress<RunEvent>
