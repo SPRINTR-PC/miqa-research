@@ -289,4 +289,99 @@ public sealed class HistoryPageViewModelTests
         Assert.IsFalse(item.IsLive);
         await Eventually(() => Can(item.RetryCommand) && !Can(item.CancelCommand)); // CanExecute follows IsAbandoned asynchronously
     }
+
+    private static RunFileOutcome Sent(string path, long bytes, long? uploadMs, string outcome = "Succeeded") =>
+        new("wsi", path, outcome, bytes, 99999, null, uploadMs);
+
+    private HistoryFileRow RowOf(RunFileOutcome file)
+    {
+        _history.Add(counts: Counts(ok: 1), files: [file]);
+        var run = NewPage().Runs.Single();
+        run.IsExpanded = true;
+        return run.Files.Single();
+    }
+
+    [TestMethod]
+    public void A_finished_file_with_an_Upload_Time_shows_size_time_and_the_average_speed()
+    {
+        var row = RowOf(Sent("a.svs", 13_002_342, 3000)); // 12.4 MiB in 3 s
+
+        Assert.AreEqual("12.4 MiB in 3 s", row.TransferText);
+        Assert.AreEqual("12.4 MiB in 3 s · 4.1 MiB/s average", row.DetailText);
+        Assert.AreEqual("Succeeded 12.4 MiB in 3 s · 4.1 MiB/s", row.TuiStatusText);
+    }
+
+    [TestMethod]
+    public void A_file_without_an_Upload_Time_shows_nothing_extra()
+    {
+        var row = RowOf(Sent("old.svs", 13_002_342, null));
+
+        Assert.AreEqual("", row.TransferText);
+        Assert.AreEqual("", row.DetailText);
+        Assert.AreEqual("Succeeded", row.TuiStatusText);
+    }
+
+    [TestMethod]
+    public void Rows_that_did_not_succeed_show_no_transfer_text()
+    {
+        var row = RowOf(Sent("bad.svs", 100, 2000, outcome: "Failed"));
+
+        Assert.AreEqual("", row.TransferText);
+        Assert.AreEqual("Failed", row.TuiStatusText);
+    }
+
+    [TestMethod]
+    [DataRow(0L, "<1 s")]
+    [DataRow(999L, "<1 s")]
+    [DataRow(1000L, "1 s")]
+    [DataRow(3000L, "3 s")]
+    [DataRow(59_000L, "59 s")]
+    [DataRow(60_000L, "1 min 0 s")]
+    [DataRow(72_000L, "1 min 12 s")]
+    public void Durations_read_under_a_second_seconds_and_minutes_with_seconds(long uploadMs, string expected)
+    {
+        Assert.AreEqual($"5 bytes in {expected}", RowOf(Sent("a", 5, uploadMs)).TransferText);
+    }
+
+    [TestMethod]
+    public void A_zero_Upload_Time_shows_the_text_but_no_average_speed()
+    {
+        var row = RowOf(Sent("tiny", 5, 0));
+
+        Assert.AreEqual("5 bytes in <1 s", row.DetailText);
+    }
+
+    [TestMethod]
+    public void The_header_shows_Uploaded_with_the_total_of_Succeeded_bytes()
+    {
+        _history.Add(counts: Counts(ok: 2, failed: 1), files: [Sent("a", 1 << 20, 1000), Sent("b", 3 << 20, 1000), Sent("c", 99, 1, "Failed")]);
+        var run = NewPage().Runs.Single();
+        run.IsExpanded = true;
+
+        Assert.IsTrue(run.HasUploaded);
+        Assert.AreEqual("Uploaded 4 MiB", run.UploadedText);
+    }
+
+    [TestMethod]
+    public void The_header_total_is_hidden_for_Dry_Runs_and_Runs_that_uploaded_nothing()
+    {
+        _history.Add(mode: "DryRun", counts: Counts(ok: 1), files: [Sent("a", 1 << 20, 1000)]);
+        _history.Add(counts: Counts(skipped: 1), files: [Sent("b", 1 << 20, null, "Skipped")]);
+        var page = NewPage();
+        foreach (var run in page.Runs) run.IsExpanded = true;
+
+        Assert.IsFalse(page.Runs[0].HasUploaded);
+        Assert.IsFalse(page.Runs[1].HasUploaded);
+        Assert.AreEqual("", page.Runs[1].UploadedText);
+    }
+
+    [TestMethod]
+    public void A_live_Run_of_another_account_shows_the_total_of_the_rows_recorded_so_far()
+    {
+        _history.Add(status: "Running", exitCode: null, startedBy: "bo", counts: Counts(ok: 1, pending: 4), files: [Sent("a", 2 << 20, 2000)]);
+        var run = NewPage("anna").Runs.Single();
+        run.IsExpanded = true;
+
+        Assert.AreEqual("Uploaded 2 MiB", run.UploadedText);
+    }
 }

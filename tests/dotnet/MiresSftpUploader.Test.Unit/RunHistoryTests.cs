@@ -65,6 +65,21 @@ public sealed class RunHistoryTests
     }
 
     [TestMethod]
+    public async Task A_Run_detail_carries_the_sum_of_Bytes_over_its_Succeeded_rows()
+    {
+        var remote = new FakeRemote();
+        var source = new FakeSource("scans").Add("a.txt", "alpha").Add("b.txt", "beta");
+        var uploaded = await Run(NewEngine(remote, source));
+        // The second Run finds a.txt and b.txt unchanged (Skipped) and fails the new one: nothing Succeeded.
+        source.Add("c.txt", "gamma!");
+        remote.Inject(RemoteOperation.Upload, RemoteResult.Failed("disk full"), times: 5, pathContains: "c.txt");
+        var failing = await Run(NewEngine(remote, source));
+
+        Assert.AreEqual(9L, History().GetRun(uploaded.RunId)!.UploadedBytes, "alpha (5) + beta (4)");
+        Assert.AreEqual(0L, History().GetRun(failing.RunId)!.UploadedBytes, "Skipped and Failed rows do not count");
+    }
+
+    [TestMethod]
     public async Task List_runs_filters_by_needs_attention_and_limit()
     {
         var (_, failing, _, _) = await TwoRuns();

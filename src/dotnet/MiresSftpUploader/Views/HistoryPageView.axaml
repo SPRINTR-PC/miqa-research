@@ -10,7 +10,7 @@
                 <Ellipse Classes="dot" Classes.ok="{Binding IsSucceeded}" Classes.fail="{Binding IsFailed}" Classes.active="{Binding IsActive}"/>
                 <StackPanel Grid.Column="1" Spacing="1">
                     <TextBlock Text="{Binding Path}" TextTrimming="CharacterEllipsis" Classes.muted="{Binding IsMuted}"/>
-                    <TextBlock Text="{Binding ReasonText}" FontSize="11" Classes="muted" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Text="{Binding DetailLine}" FontSize="11" Classes="muted" TextTrimming="CharacterEllipsis"/>
                 </StackPanel>
                 <TextBlock Grid.Column="2" Text="{Binding OutcomeText}" VerticalAlignment="Center"/>
             </Grid>
@@ -64,6 +64,7 @@
                                 <TextBlock Classes="muted" VerticalAlignment="Center" Text="{Binding ExitText}"/>
                             </StackPanel>
                             <TextBlock Classes="muted" TextWrapping="Wrap"><Run Text="{Binding Who}"/><Run Text=" · "/><Run Text="{Binding ModeText}"/><Run Text=" · started "/><Run Text="{Binding StartedText}"/><Run Text=" · "/><Run Text="{Binding DurationText}"/></TextBlock>
+                            <TextBlock x:Name="HistoryUploadedTotal" FontWeight="SemiBold" Text="{Binding UploadedText}" IsVisible="{Binding HasUploaded}"/>
 
                             <Border x:Name="LiveBanner" Classes="card" BorderBrush="{DynamicResource MInfo}" IsVisible="{Binding IsLiveOthers}">
                                 <StackPanel Spacing="4">
