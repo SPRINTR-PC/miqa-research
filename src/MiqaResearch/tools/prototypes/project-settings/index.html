@@ -1,0 +1,234 @@
+<!doctype html>
+<!--
+PROTOTYPE, THROWAWAY (wayfinder map "Project Settings view", ticket "Prototype: Project Settings tab layout").
+Question: how should the Project Settings tab be laid out? Three structurally different variants, stub data, no backend.
+Open this file directly. URL params: ?variant=A|B|C  &state=active|archived|eligible|deleted  &role=pi|custodian|member
+Arrow keys switch variant. Links mires.css from the app for fonts/colours only.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PROTOTYPE – Project Settings</title>
+<link rel="stylesheet" href="../../../static/css/mires.css">
+<style>
+  body{margin:0;font-family:system-ui,sans-serif}
+  .wrap{max-width:1100px;margin:0 auto;padding:16px 16px 120px}
+  .muted{color:#6b7280;font-size:.85rem}
+  .chip{display:inline-block;border-radius:999px;padding:2px 10px;font-size:.8rem;background:#e5e7eb;margin-right:6px}
+  .chip.warn{background:#fde68a}.chip.bad{background:#fecaca}.chip.ok{background:#bbf7d0}
+  .tabs{display:flex;gap:4px;background:#f1f5f9;border-radius:8px;padding:4px;margin:12px 0;flex-wrap:wrap}
+  .tabs a,.tabs span{padding:6px 12px;border-radius:6px;font-size:.9rem;cursor:default;color:#475569}
+  .tabs .on{background:#fff;box-shadow:0 1px 2px #0002;color:#111}
+  .banner{border:1px solid #f59e0b;background:#fffbeb;border-radius:8px;padding:10px 14px;margin:8px 0}
+  .banner.del{border-color:#ef4444;background:#fef2f2}
+  .card{border:1px solid #e5e7eb;border-radius:10px;padding:16px;margin:12px 0;background:#fff}
+  .card.danger{border-color:#fca5a5}
+  h2{margin:0 0 8px;font-size:1.15rem} h3{margin:12px 0 6px;font-size:1rem}
+  label{display:block;font-size:.85rem;margin:8px 0 2px;font-weight:600}
+  input[type=text],input[type=date],textarea,select{width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font:inherit}
+  textarea{min-height:70px}
+  button,.btn2{padding:6px 12px;border-radius:6px;border:1px solid #94a3b8;background:#fff;cursor:pointer;font:inherit}
+  button.primary{background:#2563eb;color:#fff;border-color:#2563eb}
+  button.dangerb{background:#dc2626;color:#fff;border-color:#dc2626}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  table{border-collapse:collapse;width:100%;font-size:.9rem} th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #e5e7eb;vertical-align:top}
+  .row{display:flex;gap:16px;flex-wrap:wrap} .row>*{flex:1;min-width:220px}
+  .side{display:grid;grid-template-columns:200px 1fr;gap:16px}
+  .nav a{display:block;padding:7px 10px;border-radius:6px;color:#334155;text-decoration:none;cursor:pointer}
+  .nav a.on{background:#e0e7ff;font-weight:600} .nav a.ph{color:#94a3b8}
+  .rail{position:sticky;top:12px;align-self:start;font-size:.85rem}
+  .rail a{display:block;padding:3px 0;color:#2563eb;cursor:pointer}
+  .main2{display:grid;grid-template-columns:1fr 170px;gap:16px}
+  .ver{border-left:3px solid #cbd5e1;margin:6px 0 6px 6px;padding:2px 10px}
+  .ver.inforce{border-color:#16a34a}.ver.dep{border-color:#f87171;opacity:.75}
+  .md{background:#f8fafc;border-radius:6px;padding:8px;font-size:.9rem}
+  .ph-box{border:1px dashed #94a3b8;border-radius:8px;padding:14px;color:#64748b}
+  #bar{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);background:#111827;color:#fff;border-radius:999px;padding:8px 14px;display:flex;gap:10px;align-items:center;box-shadow:0 4px 14px #0006;font-size:.85rem;z-index:99;flex-wrap:wrap;justify-content:center;max-width:96vw}
+  #bar button{background:#374151;color:#fff;border-color:#4b5563;padding:3px 10px}
+  #bar select{width:auto;padding:2px 4px;background:#1f2937;color:#fff;border-color:#4b5563}
+  .modal{position:fixed;inset:0;background:#0007;display:flex;align-items:center;justify-content:center;z-index:50}
+  .modal>div{background:#fff;border-radius:10px;padding:18px;width:min(560px,92vw);max-height:90vh;overflow:auto}
+  .tl{border-left:2px solid #cbd5e1;margin-left:6px;padding-left:12px}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<div id="bar"></div>
+<script>
+/* ---------- stub data ---------- */
+const P={name:"COVID Imaging Cohort",desc:"Longitudinal imaging and consent data for the post-COVID cohort.",pis:["Anna Berg"],participants:1243,sites:3,roleUsers:["Anna Berg (PI)","Olle Sand (Admin)","Erik Lund (Data Manager)"]};
+const KIND={ethics_approval:"Ethics approval",participant_information:"Participant information",custom:"Custom"};
+const DOCS=[
+ {id:1,kind:"ethics_approval",label:"Ethics approval (EPM)",desc:"Approval and amendments from the ethics review authority.",roles:[],versions:[
+  {n:1,from:"2023-03-01",ref:"2023-00123-01",by:"Anna Berg",at:"2023-03-04",file:"ethics_2023.pdf",size:"412 KB",note:"Original approval"},
+  {n:2,from:"2024-06-15",ref:"2023-00123-02",by:"Anna Berg",at:"2024-06-20",file:"ethics_amendment_2024.pdf",size:"220 KB",note:"Amendment: added site 3"}]},
+ {id:2,kind:"participant_information",label:"Participant information – adult (sv)",desc:"Swedish information sheet for adults.",roles:[],versions:[
+  {n:1,from:"2023-04-01",by:"Olle Sand",at:"2023-04-02",file:"pis_sv_v1.pdf",size:"180 KB",dep:"2024-02-10",note:"First edition"},
+  {n:2,from:"2024-02-10",by:"Olle Sand",at:"2024-02-10",md:"**Version 2** – plain-language rewrite.\n\n- Shorter\n- Adds data-sharing paragraph",note:"Rewrite",dep:"2025-09-01"},
+  {n:3,from:"2025-09-01",ref:"2023-00123-02",by:"Anna Berg",at:"2025-08-28",file:"pis_sv_v3.pdf",size:"205 KB",note:"Aligned with amendment"}]},
+ {id:3,kind:"custom",label:"Data management plan",desc:"Internal DMP.",roles:["PI","Admin","Data Manager"],versions:[
+  {n:1,from:"2023-05-02",by:"Erik Lund",at:"2023-05-02",md:"# DMP\nData stored in MIQA Research.\nRetention: 10 years.",note:""}]}
+];
+const MAP=[
+ {src:"PIS v1.0",ver:"Participant information – adult (sv) · v1",n:214},
+ {src:"PIS v2.0",ver:"Participant information – adult (sv) · v2",n:530},
+ {src:"v3",ver:"Participant information – adult (sv) · v3",n:88},
+ {src:"Info_2022",ver:null,n:37}];
+const ARCH={by:"Anna Berg",at:"2026-10-01",reason:"Study **completed**. Final report filed.\n\nData kept 2 years for follow-up publications.",custodian:"Erik Lund",monitor:true,
+  eligFuture:"2028-10-01",eligReached:"2026-11-01"};
+const HIST=[{at:"2025-02-12",ev:"Archived by Olle Sand – “Pause during audit”",end:"Unarchived 2025-03-01 by Olle Sand – “Audit done”"}];
+
+/* ---------- state from URL ---------- */
+const q=new URLSearchParams(location.search);
+const S={variant:q.get("variant")||"A",state:q.get("state")||"archived",role:q.get("role")||"pi",
+  section:q.get("section")||"general",tab:q.get("tab")||"general",sel:+(q.get("doc")||1),modal:null};
+const VARS={A:"Sidebar sections",B:"One page + danger zone",C:"Sub-tabs, master-detail"};
+function sync(){const u=new URLSearchParams({variant:S.variant,state:S.state,role:S.role,section:S.section,tab:S.tab,doc:S.sel});history.replaceState(null,"","?"+u)}
+function go(patch){Object.assign(S,patch);sync();render()}
+const $=h=>{const d=document.createElement("div");d.innerHTML=h;return d};
+const esc=s=>String(s??"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const md=s=>`<div class="md">${esc(s).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/^# (.*)$/gm,"<b>$1</b>").replace(/^- (.*)$/gm,"• $1").replace(/\n/g,"<br>")}</div>`;
+const isArch=()=>S.state!=="active", isDel=()=>S.state==="deleted", reached=()=>S.state==="eligible"||S.state==="deleted";
+const elig=()=>S.state==="eligible"||S.state==="deleted"?ARCH.eligReached:ARCH.eligFuture;
+const inforce=d=>[...d.versions].filter(v=>!v.dep&&v.from<="2026-11-20").sort((a,b)=>a.from<b.from?1:-1)[0];
+const canSettings=()=>S.role==="pi"||S.role==="custodian"&&isArch();
+const canEdit=()=>S.role==="pi";
+function visibleDocs(){return DOCS.filter(d=>S.role!=="member"||!d.roles.length)}
+
+/* ---------- shared pieces ---------- */
+function header(){
+  const tabs=["Consent Statistics","Goals","ETL Pipelines","API Clients"];
+  const docsTab=visibleDocs().length;
+  return `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><h1 style="margin:0">${P.name}</h1>
+   <span class="chip">${P.participants} participants</span><span class="chip">${P.sites} sites</span>
+   ${isDel()?'<span class="chip bad">Data deleted</span>':isArch()?'<span class="chip warn">Archived</span>':''}</div>
+   <div class="muted">${P.desc}</div>
+   ${isArch()?`<div class="banner ${isDel()?'del':''}">${isDel()?'<b>Data deleted on 2028-11-03.</b> The project record, documents and audit trail remain.':'<b>This project is archived and read-only.</b> ETL bindings are inactive and API clients are disabled. Custodian: '+ARCH.custodian+'.'}</div>`:''}
+   <div class="tabs">${tabs.map(t=>`<span>${t}</span>`).join("")}${docsTab?`<span ${S.tab==="__docs"?'class="on"':''}>Documents</span>`:''}${canSettings()?'<span class="on">⚙ Settings</span>':''}</div>`;
+}
+const frozenNote=()=>isArch()?'<span class="muted"> · read-only while archived</span>':'';
+
+function general(){return `<div class="card"><h2>General</h2>
+ <div class="row"><div><label>Display name</label><input type="text" value="${P.name}" ${canEdit()?"":"disabled"}></div>
+ <div><label>Principal Investigator(s)</label><div class="muted">${P.pis.join(", ")} – <a style="color:#2563eb;cursor:pointer" onclick="go({section:'users',tab:'people'})">managed under Users &amp; Roles</a></div></div></div>
+ <label>Description</label><textarea ${canEdit()?"":"disabled"}>${P.desc}</textarea>
+ <div style="margin-top:8px"><button class="primary" ${canEdit()?"":"disabled"}>Save</button><span class="muted"> Name &amp; description stay editable when archived.</span></div></div>`}
+
+function archiveForm(){return `<div class="card"><h2>Archive project</h2>
+ <p class="muted">Makes the project read-only, deactivates all ETL pipeline bindings, disables API clients. Bindings must be re-enabled by hand after unarchiving.</p>
+ <label>Reason (Markdown) *</label><textarea placeholder="Why is this project being archived?"></textarea>
+ <div class="row"><div><label>Archive custodian *</label><select><option>Me (Anna Berg)</option><option>Erik Lund</option><option>Olle Sand</option></select><div class="muted">Must hold a role on this project.</div></div>
+ <div><label>Deletion eligible date</label><input type="date"><div class="muted">Empty = no deletion desired.</div></div></div>
+ <label><input type="checkbox" checked> Include this project's data in the general monitor view</label>
+ <div style="margin-top:8px"><button class="dangerb" onclick="go({modal:'archive'})">Archive project…</button></div></div>`}
+
+function archivedPanel(){const can=S.role==="pi";return `<div class="card"><h2>Archived ${frozenNote()}</h2>
+ <div class="muted">Archived ${ARCH.at} by ${ARCH.by}</div>${md(ARCH.reason)}
+ <div class="row"><div><label>Archive custodian</label><select ${can?"":"disabled"}><option>${ARCH.custodian}</option><option>Anna Berg</option></select></div>
+ <div><label>Deletion eligible date</label><input type="date" value="${elig()}" ${can?"":"disabled"}></div></div>
+ <label><input type="checkbox" ${ARCH.monitor?"checked":""} ${can?"":"disabled"}> Include in general monitor view</label>
+ <div style="margin-top:8px">${can?'<button class="primary">Save changes</button> <button onclick="go({modal:\'unarchive\'})" '+(S.state==="deleted"?'disabled title="Blocked: data deletion has started"':'')+'>Unarchive…</button>':'<span class="muted">Only PI, Project Admin, staff and superusers can edit.</span>'}</div>
+ <h3>History</h3><div class="tl">${HIST.map(h=>`<div class="muted">${h.at} ${h.ev}<br>${h.end}</div>`).join("")}</div></div>`}
+
+function deletion(){const ok=reached()&&(S.role==="custodian"||S.role==="pi");
+ if(isDel())return `<div class="card danger"><h2>Data deletion</h2><div class="chip ok">Completed 2028-11-03 by Erik Lund</div>
+  <table><tr><th>Category</th><th>Deleted</th></tr><tr><td>Participants</td><td>1243</td></tr><tr><td>DICOM files</td><td>412 880</td></tr><tr><td>Consents</td><td>3 102</td></tr><tr><td>PROMs</td><td>560</td></tr></table>${md("Deleted per retention plan.")}</div>`;
+ return `<div class="card danger"><h2>Delete project data</h2>
+  <p class="muted">Irreversible. Removes participants, imaging, consents, PROMs, ETL jobs, API client bindings. Keeps the project record, roles, documents, archive history, audit log.</p>
+  <div>${reached()?'<span class="chip ok">Eligible since '+elig()+'</span>':'<span class="chip warn">Not eligible until '+elig()+'</span>'} <span class="muted">Custodian: ${ARCH.custodian}</span></div>
+  <div style="margin-top:8px"><button class="dangerb" ${ok?"":"disabled"} onclick="go({modal:'delete'})">Delete project data…</button>
+  ${ok?"":'<span class="muted"> '+(reached()?"Only the custodian or a superuser can delete.":"Available once the eligible date is reached.")+'</span>'}</div></div>`}
+
+function archiveSection(){return isArch()?archivedPanel()+deletion():archiveForm()}
+
+function docRow(d){const v=inforce(d);return `<tr><td><b>${d.label}</b><div class="muted">${d.desc}</div></td><td>${KIND[d.kind]}</td>
+ <td>${v?`v${v.n} · from ${v.from}`:'<span class="chip bad">none in force</span>'}</td>
+ <td>${d.roles.length?d.roles.join(", "):'<span class="muted">all members</span>'}</td></tr>`}
+function verBlock(d,v){const cls=v.dep?"dep":v===inforce(d)?"inforce":"";
+ return `<div class="ver ${cls}"><b>v${v.n}</b> · valid from ${v.from} ${v===inforce(d)?'<span class="chip ok">in force</span>':''}${v.dep?`<span class="chip bad">deprecated ${v.dep}</span>`:''}
+ ${v.ref?` · ref ${v.ref}`:''}<div class="muted">${v.file?`📎 ${v.file} (${v.size})`:'📝 Markdown text'} · uploaded by ${v.by} ${v.at}${v.note?` · “${v.note}”`:''}</div>
+ ${v.md?md(v.md):''}<div>${v.file?'<button>Download</button> ':''}${!v.dep&&!isDel()?'<button>Deprecate…</button>':''}</div></div>`}
+function uploadForm(){return `<div class="card"><h3>New version / new document</h3><div class="row">
+ <div><label>Document</label><select><option>New document…</option>${DOCS.map(d=>`<option>${d.label}</option>`).join("")}</select></div>
+ <div><label>Kind</label><select>${Object.values(KIND).map(k=>`<option>${k}</option>`).join("")}</select></div>
+ <div><label>Valid from</label><input type="date"></div><div><label>Reference no.</label><input type="text" placeholder="optional"></div></div>
+ <label>File <i>or</i> Markdown text</label><div class="row"><input type="text" placeholder="[choose file…]"><textarea placeholder="…or write Markdown"></textarea></div>
+ <label>Visible to roles</label><select multiple size="3"><option>All project members (default)</option><option>PI</option><option>Admin</option><option>Data Manager</option><option>Investigator</option></select>
+ <div style="margin-top:8px"><button class="primary">Upload</button><span class="muted"> Versions are immutable; correct mistakes with a new version.</span></div></div>`}
+function mapping(){return `<div class="card"><h2>Participant information mapping</h2>
+ <p class="muted">Source labels sent with consents → participant-information versions. ${isArch()?'<b>Frozen while archived</b> (rewrites consent rows).':''}</p>
+ <table><tr><th>Source label</th><th>Consents</th><th>Linked version</th></tr>
+ ${MAP.map(m=>`<tr><td>${m.src}</td><td>${m.n}</td><td>${m.ver?m.ver:'<span class="chip warn">unmapped</span> <select '+(isArch()?'disabled':'')+'><option>choose version…</option></select>'}</td></tr>`).join("")}</table>
+ <div class="muted" style="margin-top:6px">⚠ 12 consents signed before their linked version's valid-from date.</div></div>`}
+const ph=(t,l)=>`<div class="card"><h2>${t}</h2><div class="ph-box">Placeholder – designed in a separate map. ${l}</div></div>`;
+const usersPh=()=>ph("Users & Roles","Shows project roles: "+P.roleUsers.join(", ")+".");
+const goalsPh=()=>ph("Goals","Links to the existing Goals tab for now.");
+
+function memberDocs(){return `<div class="card"><h2>Documents</h2><p class="muted">Read-only. Only documents you may see are listed.</p>
+ ${visibleDocs().map(d=>`<h3>${d.label} <span class="chip">${KIND[d.kind]}</span></h3>${d.versions.map(v=>verBlock(d,v).replace(/<button>Deprecate…<\/button>/,"")).join("")}`).join("")}</div>`}
+
+/* ---------- variants ---------- */
+function VA(){ // ETL-style left sidebar
+ const secs=[["general","General"],["archive",isArch()?"Archive & retention":"Archive"],["documents","Documents"],["consent","Consent linking"],["users","Users & Roles"],["goals","Goals"]];
+ const cust=S.role==="custodian"; const allow=cust?["archive"]:secs.map(s=>s[0]);
+ const sec=allow.includes(S.section)?S.section:allow[0];
+ const body={general,archive:archiveSection,documents:()=>docsA(),consent:mapping,users:usersPh,goals:goalsPh}[sec]();
+ return `<div class="side"><div class="nav card" style="padding:8px;margin:0">${secs.filter(s=>allow.includes(s[0])).map(s=>`<a class="${s[0]===sec?"on":""} ${["users","goals"].includes(s[0])?"ph":""}" onclick="go({section:'${s[0]}'})">${s[1]}</a>`).join("")}</div><div>${body}</div></div>`}
+function docsA(){return `<div class="card"><h2>Documents</h2>${["ethics_approval","participant_information","custom"].map(k=>{const ds=DOCS.filter(d=>d.kind===k);return `<h3>${KIND[k]}</h3>${ds.length?ds.map(d=>`<div><b>${d.label}</b> <span class="muted">· ${d.roles.length?'visible to '+d.roles.join(", "):'all members'}</span>${d.versions.map(v=>verBlock(d,v)).join("")}</div>`).join(""):'<div class="muted">none</div>'}`}).join("")}</div>${uploadForm()}`}
+
+function VB(){ // single page, status-first, danger zone last
+ const a=isArch();
+ return `<div class="main2"><div>
+  <div class="card" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap"><b>Status</b> ${isDel()?'<span class="chip bad">Data deleted</span>':a?'<span class="chip warn">Archived</span> since '+ARCH.at:'<span class="chip ok">Active</span>'}
+   <span class="muted">${a?'Custodian '+ARCH.custodian+' · eligible '+elig():'ETL bindings active'}</span></div>
+  <div id="s-general">${general()}</div>
+  <div id="s-docs"><div class="card"><h2>Documents</h2><table><tr><th>Document</th><th>Kind</th><th>In force</th><th>Visible to</th></tr>${DOCS.map(docRow).join("")}</table>
+   <details style="margin-top:8px"><summary>Version history &amp; actions</summary>${DOCS.map(d=>`<h3>${d.label}</h3>${d.versions.map(v=>verBlock(d,v)).join("")}`).join("")}</details></div>
+   <details class="card"><summary><b>Add document / version</b></summary>${uploadForm()}</details></div>
+  <div id="s-consent">${mapping()}</div><div id="s-users">${usersPh()}</div><div id="s-goals">${goalsPh()}</div>
+  <div id="s-danger"><div class="card danger"><h2>Danger zone</h2>
+   ${a?`<div id="archived-detail">${archivedPanel()}</div>${deletion()}`:`<p>Archiving freezes the project and starts the retention clock.</p><button class="dangerb" onclick="go({modal:'archive'})">Archive project…</button>`}</div></div>
+ </div><div class="rail card">${[["general","General"],["docs","Documents"],["consent","Consent linking"],["users","Users & Roles"],["goals","Goals"],["danger",a?"Archive & deletion":"Danger zone"]].map(s=>`<a onclick="document.getElementById('s-${s[0]}').scrollIntoView({behavior:'smooth'})">${s[1]}</a>`).join("")}</div></div>`}
+
+function VC(){ // sub-tabs, master-detail docs, archive as its own timeline tab
+ const T=[["general","General"],["docs","Documents"],["archive",isArch()?"Retention":"Archive"],["people","Users & goals"]];
+ const allow=S.role==="custodian"?["archive"]:T.map(t=>t[0]);const tab=allow.includes(S.tab)?S.tab:allow[0];
+ let body;
+ if(tab==="general")body=general();
+ else if(tab==="people")body=usersPh()+goalsPh();
+ else if(tab==="archive")body=isArch()?`<div class="row" style="align-items:start"><div>${archivedPanel()}</div><div>${deletion()}</div></div>`:`<div class="card"><h2>Project lifecycle</h2><div class="tl"><div><span class="chip ok">Active</span> now</div><div class="muted">↓ Archive (PI, Admin, staff, superuser)</div><div><span class="chip">Archived</span> read-only, custodian, retention date</div><div class="muted">↓ Delete data (custodian / superuser, after date)</div><div><span class="chip">Data deleted</span> record + documents kept</div></div></div>${archiveForm()}`;
+ else{const d=DOCS.find(x=>x.id===S.sel)||DOCS[0];
+  body=`<div class="row" style="align-items:start;flex-wrap:nowrap"><div style="max-width:260px"><div class="card" style="padding:8px">${DOCS.map(x=>`<a style="display:block;padding:7px;border-radius:6px;cursor:pointer;${x.id===d.id?'background:#e0e7ff':''}" onclick="go({sel:${x.id}})"><b>${x.label}</b><div class="muted">${KIND[x.kind]} · ${inforce(x)?'v'+inforce(x).n+' in force':'none in force'}</div></a>`).join("")}<button style="margin-top:6px;width:100%" onclick="go({modal:'upload'})">+ New document</button></div></div>
+   <div><div class="card"><h2>${d.label}</h2><div class="muted">${d.desc}</div><div style="margin:6px 0">Visible to: <b>${d.roles.length?d.roles.join(", "):"all members"}</b> <button>Change</button></div>
+   <h3>Versions (newest first)</h3>${[...d.versions].reverse().map(v=>verBlock(d,v)).join("")}<button onclick="go({modal:'upload'})">+ New version</button></div>
+   ${d.kind==="participant_information"?`<div class="card"><h3>Linked consents</h3>${mapping().replace('<div class="card">','<div>')}</div>`:''}</div></div>`}
+ return `<div class="tabs" style="background:none;border-bottom:1px solid #e5e7eb;border-radius:0">${T.filter(t=>allow.includes(t[0])).map(t=>`<a class="${t[0]===tab?"on":""}" style="cursor:pointer" onclick="go({tab:'${t[0]}'})">${t[1]}</a>`).join("")}</div>${body}`}
+
+/* ---------- modals ---------- */
+function modal(){const m=S.modal;if(!m)return"";
+ const close='<button onclick="go({modal:null})">Cancel</button>';
+ const bodies={
+  archive:`<h2>Archive ${P.name}?</h2><p>Read-only freeze; all ETL bindings deactivated; API clients disabled.</p><label>Reason (Markdown) *</label><textarea></textarea><label>Archive custodian *</label><select><option>Me</option></select><label>Deletion eligible date</label><input type="date"><div style="margin-top:10px"><button class="dangerb" onclick="go({modal:null,state:'archived'})">Archive</button> ${close}</div>`,
+  unarchive:`<h2>Unarchive?</h2><p>ETL bindings stay <b>inactive</b> – re-enable them by hand. API clients work again.</p><label>Reason (Markdown) *</label><textarea></textarea><div style="margin-top:10px"><button class="primary" onclick="go({modal:null,state:'active'})">Unarchive</button> ${close}</div>`,
+  delete:`<h2>Delete all project data</h2><table><tr><td>Participants</td><td>1243</td></tr><tr><td>DICOM files</td><td>412 880</td></tr><tr><td>Consents</td><td>3 102</td></tr><tr><td>PROMs</td><td>560</td></tr></table><p><b>Irreversible.</b> The project record, documents, archive history and audit log are kept.</p><label>Type the project name</label><input type="text" placeholder="${P.name}"><label><input type="checkbox"> I understand this cannot be undone</label><label>Note (Markdown) *</label><textarea></textarea><div style="margin-top:10px"><button class="dangerb" onclick="go({modal:null,state:'deleted'})">Delete data</button> ${close}</div>`,
+  upload:`<h2>Upload</h2>${uploadForm().replace(/class="card"/,"")} ${close}`};
+ return `<div class="modal"><div>${bodies[m]}</div></div>`}
+
+/* ---------- render ---------- */
+function render(){
+ const app=document.getElementById("app");
+ let main;
+ if(S.role==="member")main=memberDocs();
+ else if(!canSettings())main='<div class="card">Settings tab hidden for this viewer.</div>';
+ else main={A:VA,B:VB,C:VC}[S.variant]();
+ app.innerHTML=header()+main+modal();
+ const opt=(a,cur)=>a.map(([v,l])=>`<option value="${v}" ${v===cur?"selected":""}>${l}</option>`).join("");
+ document.getElementById("bar").innerHTML=`<button onclick="cyc(-1)">←</button><b>${S.variant} (${VARS[S.variant]})</b><button onclick="cyc(1)">→</button>
+  | state <select onchange="go({state:this.value,modal:null})">${opt([["active","Active"],["archived","Archived"],["eligible","Archived, deletion eligible"],["deleted","Data deleted"]],S.state)}</select>
+  | viewer <select onchange="go({role:this.value})">${opt([["pi","PI / Admin / staff"],["custodian","Archive custodian"],["member","Ordinary member"]],S.role)}</select>`}
+function cyc(d){const k=Object.keys(VARS);go({variant:k[(k.indexOf(S.variant)+d+k.length)%k.length],modal:null})}
+addEventListener("keydown",e=>{if(/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))return;if(e.key==="ArrowLeft")cyc(-1);if(e.key==="ArrowRight")cyc(1)});
+render();
+</script>
+</body>
+</html>
