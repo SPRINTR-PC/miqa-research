@@ -26,6 +26,10 @@ These tests run the same contract tests against the real adapters: an OpenSSH SF
 
 `UploadProgressTests` drive the Engine with a `FakeTimeProvider` and a `FakeRemote` that reports acknowledged bytes as it consumes its stream in `UploadChunkSize` chunks. `FakeRemote.OnUploadChunk` is the throttle: a test awaits in it after each chunk, advances the clock by 250 ms (one meter tick) and reads the `UploadProgress` snapshots. They cover bytes, total and speeds, the 2-sample rule, the window, out-of-order reports, retries, the final clearing snapshot, Archives and Dry Runs.
 
+## Upload progress view models (Unit, Ui)
+
+`UploadPageViewModelTests` feed `UploadProgress` snapshots and Succeeded events (with bytes sent and Upload Time) to `UploadPageViewModel` through `FakeRunEngine.Script`, and through a small engine that hands out its progress sink to report events while the Run goes. They cover the active-uploads list and the total, no bar before an Upload Speed exists, the hidden card, Archives without a row, the `12.4 MiB in 3 s` text, stale snapshots, and that a snapshot over a 20,000-row list raises nothing on the list or its rows. `TransferFormat` (sizes, speeds, durations) is tested there too. `MainWindowSmokeTests` checks that the Avalonia "Uploading now" card shows and hides. There is no screenshot test: the headless platform does not render frames.
+
 ## Scale category
 
 Opt-in volume tests in `tests/dotnet/MiresSftpUploader.Test.Unit/ScaleTests.cs`. They are not part of the everyday run and take a few seconds. They drive the Engine and run one at a time, because they measure the process heap and the number of Upload State commits (the commit count is the one internal hook, `UploadStateStore.CommitCount`: no public behaviour tells how many transactions were used).
