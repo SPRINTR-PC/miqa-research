@@ -17,6 +17,12 @@ public sealed class FileRowsSource(IReadOnlyList<FileRowViewModel> rows) : ITabl
 
     public int Rows => rows.Count;
 
+    /// <summary>
+    /// The width the Status column has on screen; an uploading row drops its bar when the bar does not fit (see <see cref="TuiStatusCell"/>).
+    /// The page sets it on every refresh.
+    /// </summary>
+    public int StatusWidth { get; set; } = int.MaxValue;
+
     public object this[int row, int col]
     {
         get
@@ -28,7 +34,7 @@ public sealed class FileRowsSource(IReadOnlyList<FileRowViewModel> rows) : ITabl
                 0 => OutcomeSymbols.Of(r.Outcome),
                 1 => r.Source,
                 2 => r.Path,
-                _ => r.HasReason ? r.Reason! : r.OutcomeText,
+                _ => TuiStatusCell.Of(r, StatusWidth),
             };
         }
     }
