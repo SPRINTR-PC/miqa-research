@@ -10,6 +10,7 @@ using System;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 
 namespace MiresSftpUploader;
@@ -41,6 +42,8 @@ sealed class Program
             return SettingsTuiEntry.Run(new ConsoleTerminalEnvironment(), Console.Error, () => RunSettingsTui(configuration, options, ShellTab.Upload), "--tui");
 
         var headless = options?.Headless == true;
+        // Before logging starts, so the stderr console target and the status line share one writer.
+        var status = headless ? InteractiveStatusLine() : null;
         Logging = StartLogging(configuration, headless);
         try
         {
@@ -52,7 +55,7 @@ sealed class Program
                 options);
 
             if (headless)
-                return RunHeadless(options!, runtime);
+                return RunHeadless(options!, runtime, status);
 
             AppHost.Current = new AppHost(configuration, runtime, Logging, options);
             return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
@@ -82,18 +85,35 @@ sealed class Program
     /// <summary>The seam to the SFTP server for the window and the Headless Run alike.</summary>
     private static IRemoteFactory RemoteFactory => new SshNetRemoteFactory();
 
-    private static int RunHeadless(CliOptions options, IUploaderRuntime runtime)
+    /// <summary>The shared stderr writer with the live status line, installed as <see cref="Console.Error"/>; null unless stderr is an interactive terminal.</summary>
+    private static StatusLineWriter? InteractiveStatusLine()
+    {
+        // After WindowsConsole.Attach (called first in Main), which re-opens stderr: ask the re-opened handle, not the cached Console value.
+        if (!StatusLineWriter.IsInteractive(WindowsConsole.IsErrorRedirected(), Environment.GetEnvironmentVariable("TERM"), Environment.GetEnvironmentVariable("CI")))
+            return null;
+        var status = new StatusLineWriter(Console.Error, () =>
+        {
+            try { return Console.WindowWidth; }
+            catch (IOException) { return 80; }
+        });
+        Console.SetError(status);
+        return status;
+    }
+
+    private static int RunHeadless(CliOptions options, IUploaderRuntime runtime, StatusLineWriter? status)
     {
         using var cancellation = new CancellationTokenSource();
         ConsoleCancelEventHandler onCancel = (_, e) =>
         {
             e.Cancel = true;
+            status?.Clear();
             cancellation.Cancel();
         };
         Console.CancelKeyPress += onCancel;
         try
         {
-            return HeadlessRunner.RunAsync(options, runtime, Console.Out, Console.Error, cancellation.Token).GetAwaiter().GetResult();
+            return HeadlessRunner.RunAsync(options, runtime, Console.Out, Console.Error, cancellation.Token,
+                status, (ILoggerFactory?)Logging?.LoggerFactory ?? NullLoggerFactory.Instance, TimeProvider.System).GetAwaiter().GetResult();
         }
         finally
         {
@@ -142,11 +162,37 @@ static class WindowsConsole
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool AttachConsole(uint processId);
 
+    private const int StdErrorHandle = -12;
+    private const uint CodePageUtf8 = 65001;
+
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr GetStdHandle(int handle);
+
+    [DllImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetConsoleMode(IntPtr handle, out uint mode);
+
+    [DllImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetConsoleOutputCP(uint codePage);
+
+    private static bool _attached;
+
     public static void Attach()
     {
         if (!OperatingSystem.IsWindows() || !AttachConsole(AttachParentProcess)) return;
+        _attached = true;
+        // The console now shows UTF-8, and the writers encode as UTF-8 (without a byte order mark), so the arrows and dots of the status line survive.
+        SetConsoleOutputCP(CodePageUtf8);
+        var utf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
         // The standard handles were invalid at startup; open them again now that a console is attached.
-        Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
-        Console.SetError(new StreamWriter(Console.OpenStandardError()) { AutoFlush = true });
+        Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), utf8) { AutoFlush = true });
+        Console.SetError(new StreamWriter(Console.OpenStandardError(), utf8) { AutoFlush = true });
     }
+
+    /// <summary>Whether stderr is redirected: on Windows after <see cref="Attach"/>, whether the re-opened stderr handle is not a console; elsewhere <see cref="Console.IsErrorRedirected"/>.</summary>
+    public static bool IsErrorRedirected() =>
+        _attached && OperatingSystem.IsWindows()
+            ? !GetConsoleMode(GetStdHandle(StdErrorHandle), out _)
+            : Console.IsErrorRedirected;
 }

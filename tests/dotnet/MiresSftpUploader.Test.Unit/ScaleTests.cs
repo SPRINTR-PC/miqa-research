@@ -152,9 +152,9 @@ public sealed class ScaleTests
         {
             private static bool IsManifest(string path) => path.EndsWith("manifest.json.part", StringComparison.Ordinal);
 
-            public async Task<RemoteResult> UploadAsync(Stream content, string path, CancellationToken ct)
+            public async Task<RemoteResult> UploadAsync(Stream content, string path, CancellationToken ct, IProgress<long>? progress = null)
             {
-                if (!IsManifest(path)) return await session.UploadAsync(content, path, ct);
+                if (!IsManifest(path)) return await session.UploadAsync(content, path, ct, progress);
                 var buffer = new byte[81920];
                 int read;
                 while ((read = await content.ReadAsync(buffer, ct)) > 0) owner.ManifestBytes += read;

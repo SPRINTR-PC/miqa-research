@@ -45,6 +45,28 @@ public sealed class AppLoggingTests
     }
 
     [TestMethod]
+    public void The_Headless_progress_lines_go_to_the_log_file_and_not_to_the_stderr_console_target()
+    {
+        using var logging = Start(headless: true);
+
+        var rules = logging.LogFactory.Configuration!.LoggingRules;
+        var first = rules[0];
+        Assert.AreEqual(HeadlessProgress.LoggerName, first.LoggerNamePattern);
+        Assert.IsTrue(first.Final, "no later rule may route the progress lines to the console");
+        Assert.IsInstanceOfType<FileTarget>(first.Targets.Single());
+        Assert.IsTrue(rules.Skip(1).Any(r => r.Targets.Any(t => t is ConsoleTarget)), "other messages still reach stderr");
+    }
+
+    [TestMethod]
+    public void The_progress_logger_name_is_logged_to_the_file_in_a_Headless_Run()
+    {
+        using (var logging = Start(headless: true))
+            logging.LoggerFactory.CreateLogger(HeadlessProgress.LoggerName).LogInformation("progress: 1 of 2 files done, 1 uploading");
+
+        StringAssert.Contains(ReadAllLogs(), "progress: 1 of 2 files done, 1 uploading");
+    }
+
+    [TestMethod]
     public void File_only_logging_has_no_console_and_no_pane_target_even_when_the_console_is_switched_on()
     {
         using var logging = AppLogging.Start(new LoggingConfig { Directory = _dir, Console = true }, NoSection, headless: true, Redactor.None, _dir, fileOnly: true);

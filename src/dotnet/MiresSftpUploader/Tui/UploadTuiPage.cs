@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Linq;
 using System.Text;
@@ -26,6 +27,9 @@ public sealed class UploadTuiPage : View, IShellPage
     public const int LeftWidth = 27;
     public const int LogRows = 8;
 
+    /// <summary>Room for <c>↑ 999.9 MiB/s total</c> and a space, right of the progress bar.</summary>
+    private const int TotalWidth = 21;
+
     /// <summary>What is left of the 80-column key bar after the shell's own "F9-F12 Page" and "Ctrl+Q Quit".</summary>
     private const int HintBudget = 50;
 
@@ -39,6 +43,8 @@ public sealed class UploadTuiPage : View, IShellPage
     private readonly ProgressBar _bar = new() { ProgressBarFormat = ProgressBarFormat.SimplePlusPercentage };
     private readonly ObservableCollection<string> _sourceItems = [];
     private readonly ListView _sources;
+    private readonly Label _total = new() { HotKeySpecifier = NoHotKey, TextAlignment = Alignment.End };
+    private readonly FileRowsSource _rows;
     private readonly Label _summary = new() { HotKeySpecifier = NoHotKey };
     private readonly Label _banner = new() { HotKeySpecifier = NoHotKey, Height = 0 };
     private readonly CheckBox[] _filters = [new(), new(), new(), new()];
@@ -64,7 +70,8 @@ public sealed class UploadTuiPage : View, IShellPage
         _dialogs = dialogs;
         CanFocus = true;
 
-        _table.Table = new FileRowsSource(vm.Files);
+        _rows = new FileRowsSource(vm.Files);
+        _table.Table = _rows;
         _table.Style.AlwaysShowHeaders = true;
         _table.Style.ShowHorizontalHeaderOverline = false;
         _table.Style.ExpandLastColumn = true;
@@ -146,6 +153,8 @@ public sealed class UploadTuiPage : View, IShellPage
 
         vm.PropertyChanged += OnVmChanged;
         vm.Files.CollectionChanged += (_, _) => RequestRefresh();
+        // The live bar, percent and speed of a few files change about 4 times a second; every change asks for the same debounced refresh.
+        vm.ActiveUploads.CollectionChanged += OnActiveUploadsChanged;
         _vm.Refresh();
         Build();
         RefreshAll();
@@ -225,6 +234,8 @@ public sealed class UploadTuiPage : View, IShellPage
             _banner.Height = _banner.Text.Length > 0 ? 1 : 0;
             for (var i = 0; i < 5; i++) _buttons[i].Enabled = Allowed(i);
 
+            _total.Text = _vm.HasTotalUploadSpeed ? $"↑ {_vm.TotalUploadSpeedText} total" : "";
+            UpdateStatusWidth();
             _table.Update();
             if (_vm.IsFollowing && _vm.Files.Count > 0)
             {
@@ -248,6 +259,36 @@ public sealed class UploadTuiPage : View, IShellPage
         SetNeedsLayout();
         SetNeedsDraw();
         ChromeChanged?.Invoke();
+    }
+
+    /// <summary>The narrowest cell that still holds percent and speed (<c>100% 999.9 MiB/s</c>).</summary>
+    private const int MinProgressWidth = 16;
+
+    /// <summary>
+    /// Works out how wide the Status column is: the table width minus the other columns as the table sizes them (to their content in the rows
+    /// on screen, within their limits). When the File column would leave Status too narrow for percent and speed, the File column gives way.
+    /// </summary>
+    private void UpdateStatusWidth()
+    {
+        var width = _table.Viewport.Width;
+        if (width <= 0)
+        {
+            _rows.StatusWidth = int.MaxValue;
+            return;
+        }
+
+        int sourceWidth = 6, fileWidth = 12;
+        var last = Math.Min(_vm.Files.Count, _table.RowOffset + Math.Max(_table.Viewport.Height, 1));
+        for (var i = Math.Max(_table.RowOffset, 0); i < last; i++)
+        {
+            sourceWidth = Math.Max(sourceWidth, Math.Min(_vm.Files[i].Source.Length, 14));
+            fileWidth = Math.Max(fileWidth, Math.Min(_vm.Files[i].Path.Length, 30));
+        }
+
+        const int overhead = 1 + 4; // the symbol column and the separators
+        var fileMax = Math.Clamp(width - overhead - sourceWidth - MinProgressWidth, 12, 30);
+        _table.Style.ColumnStyles[2] = new ColumnStyle { MinWidth = 12, MaxWidth = fileMax };
+        _rows.StatusWidth = width - overhead - sourceWidth - Math.Min(fileWidth, fileMax);
     }
 
     /// <summary>The reason no Run can start, shown on the page: Data Directory, configuration problems, or no Source included.</summary>
@@ -283,6 +324,13 @@ public sealed class UploadTuiPage : View, IShellPage
     }
 
     private void Report(Exception error) => _dialogs.ShowMessage("Error", error.Message);
+
+    private void OnActiveUploadsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems is not null) foreach (UploadProgressViewModel u in e.OldItems) u.PropertyChanged -= OnVmChanged;
+        if (e.NewItems is not null) foreach (UploadProgressViewModel u in e.NewItems) u.PropertyChanged += OnVmChanged;
+        RequestRefresh();
+    }
 
     private void OnVmChanged(object? sender, PropertyChangedEventArgs e) => RequestRefresh();
 
@@ -400,8 +448,13 @@ public sealed class UploadTuiPage : View, IShellPage
         _summary.Height = 1;
         _bar.X = LeftWidth + 1;
         _bar.Y = 1;
-        _bar.Width = Dim.Fill();
+        _bar.Width = Dim.Fill(TotalWidth);
         _bar.Height = 1;
+        _total.X = Pos.AnchorEnd(TotalWidth);
+        _total.Y = 1;
+        _total.Width = TotalWidth;
+        _total.Height = 1;
+        _total.SetScheme(Theme.Base);
         _banner.X = LeftWidth + 1;
         _banner.Y = Pos.Bottom(_bar);
         _banner.Width = Dim.Fill();
@@ -415,7 +468,7 @@ public sealed class UploadTuiPage : View, IShellPage
         _logFrame.Height = LogRows;
         _logFrame.SetScheme(Theme.Pane);
 
-        Add(sources, files, run, _summary, _bar, _banner, _table, _logFrame);
+        Add(sources, files, run, _summary, _bar, _total, _banner, _table, _logFrame);
     }
 
     protected override void Dispose(bool disposing)
@@ -424,6 +477,7 @@ public sealed class UploadTuiPage : View, IShellPage
         {
             _disposed = true;
             _vm.PropertyChanged -= OnVmChanged;
+            _vm.ActiveUploads.CollectionChanged -= OnActiveUploadsChanged;
         }
 
         base.Dispose(disposing);

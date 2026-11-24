@@ -129,6 +129,28 @@
                     <TextBlock DockPanel.Dock="Right" Classes="muted" Text="{Binding Upload.Status}"/>
                     <ProgressBar x:Name="OverallProgress" Value="{Binding Upload.OverallProgress}" Maximum="100" Height="10" Margin="0,0,16,0" VerticalAlignment="Center"/>
                 </DockPanel>
+                <!-- Uploading now: the few files uploading right now; hidden when nothing uploads. -->
+                <Border x:Name="UploadingNowCard" DockPanel.Dock="Top" Classes="card" Padding="12,8" Margin="0,0,0,10" IsVisible="{Binding Upload.HasActiveUploads}">
+                    <StackPanel Spacing="6">
+                        <DockPanel>
+                            <TextBlock x:Name="TotalUploadSpeed" DockPanel.Dock="Right" Classes="muted" Text="{Binding Upload.TotalUploadSpeedText, StringFormat='↑ {0} total'}"
+                                       IsVisible="{Binding Upload.HasTotalUploadSpeed}"/>
+                            <TextBlock Classes="h" Text="Uploading now"/>
+                        </DockPanel>
+                        <ItemsControl ItemsSource="{Binding Upload.ActiveUploads}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:UploadProgressViewModel">
+                                    <Grid ColumnDefinitions="*,200,48,100" MinHeight="24">
+                                        <TextBlock Text="{Binding Name}" ToolTip.Tip="{Binding Path}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                        <ProgressBar Grid.Column="1" Value="{Binding Percent}" Maximum="100" Height="8" Margin="8,0" VerticalAlignment="Center" IsVisible="{Binding HasProgress}"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding PercentText}" IsVisible="{Binding HasProgress}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="3" Text="{Binding SpeedText}" IsVisible="{Binding HasProgress}" Classes="muted" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
                 <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
                     <Button x:Name="RetryButton" DockPanel.Dock="Right" Content="Retry failed" Command="{Binding Upload.RetryFailedCommand}"/>
                     <TextBlock Classes="h" Text="Files"/>

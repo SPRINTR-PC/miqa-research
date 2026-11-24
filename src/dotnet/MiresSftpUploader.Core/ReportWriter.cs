@@ -75,6 +75,7 @@ internal static class ReportWriter
                 json.WriteNumber("bytes", file.Bytes);
                 json.WriteNumber("durationMs", file.DurationMs);
                 if (file.Reason is null) json.WriteNull("reason"); else json.WriteString("reason", file.Reason);
+                if (file.UploadMs is { } uploadMs) json.WriteNumber("uploadMs", uploadMs); else json.WriteNull("uploadMs");
                 json.WriteEndObject();
             }
             json.WriteEndArray();
@@ -87,7 +88,7 @@ internal static class ReportWriter
     private static string Csv(RunDetail run)
     {
         var summary = run.Summary;
-        var text = new StringBuilder("RunId,StartedAt,Status,ExitCode,StartedBy,Source,Path,Outcome,Bytes,DurationMs,Reason\r\n");
+        var text = new StringBuilder("RunId,StartedAt,Status,ExitCode,StartedBy,Source,Path,Outcome,Bytes,DurationMs,Reason,UploadMs\r\n");
         foreach (var file in run.Files)
         {
             text.AppendJoin(',',
@@ -101,7 +102,8 @@ internal static class ReportWriter
                 file.Outcome,
                 file.Bytes.ToString(CultureInfo.InvariantCulture),
                 file.DurationMs.ToString(CultureInfo.InvariantCulture),
-                Quote(file.Reason ?? ""));
+                Quote(file.Reason ?? ""),
+                file.UploadMs?.ToString(CultureInfo.InvariantCulture) ?? "");
             text.Append("\r\n");
         }
         return text.ToString();

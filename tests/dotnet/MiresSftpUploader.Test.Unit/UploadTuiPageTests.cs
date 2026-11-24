@@ -396,6 +396,102 @@ public sealed class UploadTuiPageTests : ConfigurationTestBase
         Assert.HasCount(2, engine.Calls);
     }
 
+    // ------------------------------------------------------------------ progress and speed
+
+    private const long MiB = 1L << 20;
+
+    private static UploadingFile Sending(string path, long sent, long total, double? speed, string source = "wsi") =>
+        new(source, path, sent, total, speed);
+
+    [TestMethod, Timeout(60000)]
+    public void An_uploading_row_shows_bar_percent_and_speed_and_the_progress_line_the_total()
+    {
+        var engine = new FakeRunEngine { Hold = true };
+        engine.Script.AddRange([
+            File("a.ndpi", FileOutcome.Uploading), File("b.ndpi", FileOutcome.Uploading),
+            new UploadProgress([Sending("a.ndpi", 42 * MiB, 100 * MiB, 3.1 * MiB), Sending("b.ndpi", 10 * MiB, 100 * MiB, null)], 9.2 * MiB)]);
+        var s = Start(engine);
+
+        RunAndWaitForEvents(s);
+
+        s.Host.WaitUntilShows("███░░░░░ 42% 3.1 MiB/s");
+        Assert.Contains("↑ 9.2 MiB/s total", s.Host.Screen, s.Host.Screen);
+        Assert.Contains("Uploading", s.Host.Screen, "the file without an Upload Speed yet shows no bar");
+        s.Engine.Release();
+    }
+
+    [TestMethod, Timeout(60000)]
+    public void The_total_and_the_bar_are_gone_when_nothing_uploads_and_a_finished_row_shows_what_was_sent()
+    {
+        var engine = new FakeRunEngine { Hold = true };
+        engine.Script.AddRange([
+            File("a.ndpi", FileOutcome.Uploading),
+            new UploadProgress([Sending("a.ndpi", 42 * MiB, 100 * MiB, 3.1 * MiB)], 3.1 * MiB),
+            new FileOutcomeChanged("wsi", "a.ndpi", FileOutcome.Succeeded, null, 13_002_342, TimeSpan.FromSeconds(3)),
+            new UploadProgress([], null)]);
+        var s = Start(engine);
+
+        RunAndWaitForEvents(s);
+
+        s.Host.WaitUntilShows("Succeeded 12.4 MiB in 3 s");
+        Assert.DoesNotContain("MiB/s total", s.Host.Screen, s.Host.Screen);
+        Assert.DoesNotContain("███", s.Host.Screen, s.Host.Screen);
+        s.Engine.Release();
+    }
+
+    [TestMethod, Timeout(60000)]
+    public void At_80_columns_with_a_long_path_the_bar_is_dropped_and_percent_and_speed_stay()
+    {
+        var path = "slides/2026/batch-17/sample-0042-long-name.ndpi";
+        var engine = new FakeRunEngine { Hold = true };
+        engine.Script.AddRange([File(path, FileOutcome.Uploading), new UploadProgress([Sending(path, 42 * MiB, 100 * MiB, 3.1 * MiB)], 3.1 * MiB)]);
+        var s = Start(engine, 80, 24);
+
+        RunAndWaitForEvents(s);
+
+        s.Host.WaitUntilShows("42% 3.1 MiB/s");
+        Assert.DoesNotContain("░", s.Host.Screen, s.Host.Screen);
+        s.Engine.Release();
+    }
+
+    [TestMethod, Timeout(60000)]
+    public void A_snapshot_of_many_files_redraws_once_not_once_per_row()
+    {
+        var paths = Enumerable.Range(0, 8).Select(i => $"f{i}.ndpi").ToList();
+        var engine = new LiveEngine();
+        var s = Start(engine);
+        s.Host.Press(Key.R);
+        s.Host.WaitUntil(() => engine.Progress is not null, "the Run started");
+        foreach (var p in paths) engine.Progress!.Report(File(p, FileOutcome.Uploading));
+        s.Host.WaitUntil(() => s.Vm.Files.Count == 8, "8 rows");
+        Thread.Sleep(300);
+        var refreshes = 0;
+        s.Host.OnUi(() => s.Page.ChromeChanged += () => refreshes++);
+
+        engine.Progress!.Report(new UploadProgress(paths.Select(p => Sending(p, 10 * MiB, 100 * MiB, MiB)).ToList(), 8.0 * MiB));
+
+        s.Host.WaitUntilShows("↑ 8.0 MiB/s total");
+        Thread.Sleep(300);
+        Assert.IsLessThanOrEqualTo(2, refreshes, "one refresh for the burst, not one per row");
+        engine.Finish.Set();
+    }
+
+    /// <summary>An Engine whose events the test reports itself, after the Run has started.</summary>
+    private sealed class LiveEngine : IRunEngine
+    {
+        public IProgress<RunEvent>? Progress { get; private set; }
+        public ManualResetEventSlim Finish { get; } = new();
+
+        public async Task<RunResult> RunAsync(RunOptions options, IProgress<RunEvent> progress, CancellationToken cancellationToken)
+        {
+            var id = Guid.NewGuid();
+            progress.Report(new RunStarted(id, DateTimeOffset.UnixEpoch));
+            Progress = progress;
+            await Task.Run(() => Finish.Wait(TimeSpan.FromSeconds(60)));
+            return new RunResult(id, new Dictionary<FileOutcome, int>(), ExitCodes.Ok, null);
+        }
+    }
+
     // ------------------------------------------------------------------ scale
 
     [TestMethod, Timeout(120000)]

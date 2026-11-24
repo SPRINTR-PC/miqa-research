@@ -24,7 +24,7 @@ public class HistoryPageSmokeTests
 
     private static RunFileOutcome File(string path, string outcome, string? reason = null) => new("wsi", path, outcome, 10, 1, reason);
 
-    private static (MainWindow Window, MainWindowViewModel Vm, FakeRunHistory History) Create(UiTheme theme = UiTheme.Dark)
+    private static (MainWindow Window, MainWindowViewModel Vm, FakeRunHistory History) Create(UiTheme theme = UiTheme.Dark, Action<FakeRunHistory>? seed = null)
     {
         var history = new FakeRunHistory();
         history.Add(status: "Running", exitCode: null, startedBy: "sofia", counts: Counts(ok: 2));
@@ -32,6 +32,7 @@ public class HistoryPageSmokeTests
         history.Add(exitCode: 1, startedBy: "anna", counts: Counts(ok: 1, failed: 1, skipped: 1, movedAway: 1),
             files: [File("a", "Succeeded"), File("b", "Failed", "RemoteDenied"), File("c", "Skipped", "TooRecent"), File("d", "MovedAway")]);
         history.Add(status: "Abandoned", exitCode: null, startedBy: "bo", counts: Counts(failed: 1));
+        seed?.Invoke(history);
         var upload = new UploadPageViewModel(new FakeUploaderRuntime(new AppConfig(), new FakeRunEngine()), a => a());
         var page = new HistoryPageViewModel(history, "anna", a => a(), _ => Task.FromResult<string?>(null));
         var vm = new MainWindowViewModel(upload, null, theme, _ => null, page);
@@ -101,5 +102,33 @@ public class HistoryPageSmokeTests
         Select(3); // Abandoned Run
         Assert.True(Find<Control>(window, "AbandonedBanner").IsVisible);
         Assert.True(Find<Button>(window, "HistoryRetryButton").IsEffectivelyEnabled);
+    }
+
+    [AvaloniaFact]
+    public void The_header_shows_what_a_Run_uploaded_but_not_for_a_Dry_Run_or_an_empty_upload()
+    {
+        Guid uploaded = default, dryRun = default, empty = default;
+        var (window, vm, _) = Create(seed: h =>
+        {
+            uploaded = h.Add(counts: Counts(ok: 1), files: [File("a", "Succeeded")]).Summary.RunId;
+            dryRun = h.Add(mode: "DryRun", counts: Counts(ok: 1), files: [File("a", "Succeeded")]).Summary.RunId;
+            empty = h.Add(counts: Counts(skipped: 1), files: [File("a", "Skipped", "unchanged")]).Summary.RunId;
+        });
+        window.Show();
+        vm.ShowHistoryCommand.Execute().Subscribe();
+        var page = vm.History!;
+
+        TextBlock Total(Guid id)
+        {
+            page.Selected = page.Runs.Single(r => r.RunId == id);
+            Dispatcher.UIThread.RunJobs();
+            window.UpdateLayout();
+            return Find<TextBlock>(window, "HistoryUploadedTotal");
+        }
+
+        Assert.True(Total(uploaded).IsVisible);
+        Assert.Equal("Uploaded 10 bytes", Total(uploaded).Text);
+        Assert.False(Total(dryRun).IsVisible);
+        Assert.False(Total(empty).IsVisible);
     }
 }

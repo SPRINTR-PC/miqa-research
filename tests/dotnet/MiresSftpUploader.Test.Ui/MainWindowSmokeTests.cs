@@ -119,6 +119,36 @@ public class MainWindowSmokeTests
     }
 
     [AvaloniaFact]
+    public async Task The_Uploading_now_card_shows_the_active_files_and_the_total_and_hides_when_nothing_uploads()
+    {
+        var (window, vm, engine) = Create();
+        window.Show();
+        var card = Find<Border>(window, "UploadingNowCard");
+        Assert.False(card.IsVisible);
+        const long MiB = 1L << 20;
+        engine.Script.Add(new FileOutcomeChanged("wsi", "a.ndpi", FileOutcome.Uploading, null));
+        engine.Script.Add(new UploadProgress([new UploadingFile("wsi", "a.ndpi", 42 * MiB, 100 * MiB, 3.1 * MiB)], 3.1 * MiB));
+        engine.Hold = true;
+
+        var run = vm.Upload.StartCommand.Execute().ToTask();
+        await engine.Started;
+
+        Assert.True(card.IsVisible);
+        Dispatcher.UIThread.RunJobs();
+        window.UpdateLayout();
+        var texts = card.GetVisualDescendants().OfType<TextBlock>().Select(t => t.Text).ToList();
+        Assert.Contains("Uploading now", texts);
+        Assert.Contains("↑ 3.1 MiB/s total", texts);
+        Assert.Contains("42%", texts);
+        Assert.Contains("3.1 MiB/s", texts);
+        Assert.Equal(42, card.GetVisualDescendants().OfType<ProgressBar>().Single().Value, 3);
+
+        engine.Release();
+        await run;
+        Assert.False(card.IsVisible);
+    }
+
+    [AvaloniaFact]
     public void The_top_bar_highlights_the_button_of_the_page_shown_and_the_run_controls_belong_to_the_Upload_page()
     {
         var (window, vm, _) = Create();
